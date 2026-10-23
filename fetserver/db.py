@@ -1,0 +1,148 @@
+"""SQLite storage: WAL, synchronous=FULL, explicit transactions, versioned migrations."""
+from __future__ import annotations
+
+import logging
+import sqlite3
+import threading
+from contextlib import contextmanager
+
+log = logging.getLogger("fetserver.db")
+
+# Each entry upgrades the schema by one version (PRAGMA user_version).
+MIGRATIONS = [
+    """
+    CREATE TABLE targets (
+        device_id       TEXT PRIMARY KEY,
+        name            TEXT,
+        arduino_sn      INTEGER,
+        arduino_version TEXT,
+        bridge_fw       TEXT,
+        calibre_x10     INTEGER NOT NULL DEFAULT 45,
+        align_x_h       INTEGER NOT NULL DEFAULT 0,
+        align_y_h       INTEGER NOT NULL DEFAULT 0,
+        first_seen_ms   INTEGER NOT NULL,
+        last_seen_ms    INTEGER NOT NULL,
+        last_ip         TEXT,
+        rssi            INTEGER,
+        queue_depth     INTEGER,
+        overflow_count  INTEGER,
+        boot_count      INTEGER,
+        uptime_ms       INTEGER,
+        config_json     TEXT
+    );
+    CREATE TABLE boots (
+        device_id     TEXT NOT NULL,
+        boot_count    INTEGER NOT NULL,
+        boot_start_ms INTEGER NOT NULL,
+        PRIMARY KEY (device_id, boot_count)
+    );
+    -- Append-only record of everything a target sent. Never updated except parse_error.
+    CREATE TABLE events (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id    TEXT NOT NULL,
+        boot_count   INTEGER NOT NULL,
+        seq          INTEGER NOT NULL,
+        type         TEXT NOT NULL,
+        event_ms     INTEGER NOT NULL,
+        time_quality TEXT NOT NULL,
+        recv_ms      INTEGER NOT NULL,
+        uptime_ms    INTEGER,
+        raw          TEXT,
+        data_json    TEXT,
+        parse_error  TEXT,
+        UNIQUE (device_id, boot_count, seq)
+    );
+    CREATE INDEX events_time ON events (device_id, event_ms);
+    -- Derived from events; can be rebuilt (rescore) without touching raw data.
+    CREATE TABLE shots (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id        INTEGER NOT NULL UNIQUE REFERENCES events(id),
+        device_id       TEXT NOT NULL,
+        event_ms        INTEGER NOT NULL,
+        shot_number     INTEGER,
+        is_miss         INTEGER NOT NULL,
+        x_h             INTEGER,
+        y_h             INTEGER,
+        ax_h            INTEGER,
+        ay_h            INTEGER,
+        n INTEGER, e INTEGER, s INTEGER, w INTEGER,
+        arduino_time_s  REAL,
+        v_ref           REAL,
+        temp_c          REAL,
+        face            INTEGER,
+        calibre_x10     INTEGER,
+        scoring_version INTEGER NOT NULL,
+        ring            INTEGER NOT NULL,
+        tenths          INTEGER NOT NULL
+    );
+    CREATE INDEX shots_target ON shots (device_id, id);
+    CREATE TABLE commands (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id  TEXT NOT NULL,
+        type       TEXT NOT NULL,
+        line       TEXT,
+        created_ms INTEGER NOT NULL,
+        sent_ms    INTEGER,
+        acked_ms   INTEGER,
+        status     TEXT NOT NULL DEFAULT 'queued',
+        result     TEXT
+    );
+    CREATE INDEX commands_pending ON commands (device_id, status);
+    """,
+]
+
+
+class Database:
+    def __init__(self, path: str):
+        self.path = path
+        self._local = threading.local()
+        self._write_lock = threading.Lock()
+        with self.write() as conn:
+            self._migrate(conn)
+
+    def conn(self) -> sqlite3.Connection:
+        c = getattr(self._local, "conn", None)
+        if c is None:
+            c = sqlite3.connect(self.path, isolation_level=None, timeout=10.0)
+            c.row_factory = sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA synchronous=FULL")   # a commit is on disk before we acknowledge
+            c.execute("PRAGMA foreign_keys=ON")
+            c.execute("PRAGMA busy_timeout=10000")
+            self._local.conn = c
+        return c
+
+    @contextmanager
+    def write(self):
+        """One atomic transaction. Everything inside commits together or not at all."""
+        with self._write_lock:
+            c = self.conn()
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                yield c
+            except BaseException:
+                c.execute("ROLLBACK")
+                raise
+            else:
+                c.execute("COMMIT")
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if version > len(MIGRATIONS):
+            raise RuntimeError(f"database is newer (v{version}) than this server (v{len(MIGRATIONS)})")
+        for i in range(version, len(MIGRATIONS)):
+            log.info("applying migration %d", i + 1)
+            for stmt in _split(MIGRATIONS[i]):
+                conn.execute(stmt)
+            conn.execute(f"PRAGMA user_version={i + 1}")
+
+    def integrity_check(self) -> str:
+        return self.conn().execute("PRAGMA integrity_check").fetchone()[0]
+
+
+def _split(script: str):
+    """Split a script into statements, ignoring comment-only lines."""
+    lines = [ln for ln in script.splitlines() if not ln.strip().startswith("--")]
+    for stmt in "\n".join(lines).split(";"):
+        if stmt.strip():
+            yield stmt

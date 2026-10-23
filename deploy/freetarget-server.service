@@ -1,0 +1,21 @@
+[Unit]
+Description=freETarget club server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=freetarget
+Group=freetarget
+WorkingDirectory=/opt/freetarget-server
+ExecStart=/usr/bin/python3 -m fetserver serve --data-dir /var/lib/freetarget --port 8080
+Restart=always
+RestartSec=2
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/freetarget
+
+[Install]
+WantedBy=multi-user.target
