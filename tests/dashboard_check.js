@@ -168,6 +168,10 @@ assert(apage.includes('r="2.85"'), 'pellets drawn at the projectile size');
 assert(apage.includes('#c026d3') && apage.includes('stroke="#fff"'), 'marks have a halo so they show on black and white');
 assert(!/<i>Lot 7<\/i>/.test(apage + coachView(D.targets) + overlayView(asMine(ammoT), state(), '')), 'label is escaped');
 assert(apage.includes('&lt;i&gt;Lot 7&lt;/i&gt;'));
+assert.strictEqual(ammoT.shooter, 'Alice'); assert.strictEqual(ammoT.label, '<i>Lot 7</i>');
+assert(apage.includes('Shooter Alice · Label &lt;i&gt;Lot 7&lt;/i&gt;'), 'the info panel shows shooter and label separately');
+const acard0 = coachView([ammoT]);
+assert(acard0.includes('Alice · <span class="lbl">&lt;i&gt;Lot 7&lt;/i&gt;</span>'), 'the card shows both');
 // the oval encloses every shot and the centre mark sits at the reported mean (checked on the numbers the page draws)
 const mk = ammoMarks(av);
 assert(mk.oval && mk.center && mk.oval.a >= mk.oval.b && mk.center.x === am.center_x_mm);
@@ -188,10 +192,15 @@ assert(aov.includes('Ammo test') && aov.includes('data-kind="ammo"') && aov.incl
 assert(aov.includes('id="f_proj"') && aov.includes('value="5.7"') && aov.includes('data-mm="4.5"') && aov.includes('data-mm="5.7"'), 'projectile size can be typed or chosen');
 assert(aov.includes('class="sel">.22 LR') && !aov.includes('class="sel">4.5 mm'), 'the active projectile is highlighted');
 assert(!aov.includes('id="f_bull"') && aov.includes('New test') && aov.includes('Test label'));
+assert(!aov.includes('id="shooter"') && !aov.includes('data-act="setshooter"'), 'the shooter cannot be edited in an ammo test');
+assert(aov.includes('<h4>Shooter</h4><p><b>Alice</b></p>') && aov.includes('id="label"') && aov.includes('data-act="setlabel"') && aov.includes('value="&lt;i&gt;Lot 7&lt;/i&gt;"'), 'read-only shooter, editable label');
 const nov = overlayView(asMine(recordT), state(), 'Alice');
+assert(nov.includes('id="shooter"') && !nov.includes('id="label"'), 'other modes keep the shooter field');
 assert(!nov.includes('f_proj') && nov.includes('id="f_bull"') && nov.includes('data-kind="ammo"'), 'other modes keep their own settings and offer Ammo test');
-const revList = overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 5, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {size_mm: 7.5, shots: 5}}]}), '');
+const revList = overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 5, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {size_mm: 7.5, shots: 5}, label: 'RWS <b>R10</b>'}]}), '');
 assert(revList.includes('ammo test') && revList.includes('7.50 mm'), 'finished tests are reviewable by group size');
+assert(revList.includes('RWS &lt;b&gt;R10&lt;/b&gt; · x · 5 shots'), 'the review list shows the label and the shooter');
+assert(overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', label: null, started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 0, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {shots: 0}}]}), '').includes('no label'));
 const arev = shooterView(ammoT, state({review: {sid: av.series_id, stream: 'scored', shot: av.count}, reviewView: Object.assign({}, av, {open: false, started: '2026-10-23T22:00:00Z', full_count: av.count})}));
 assert(arev.includes('Reviewing an ammo test') && arev.includes('<h3>Group</h3>') && !arev.includes('data-act="rstream"'));
 // ammo auto zoom starts one ring tighter

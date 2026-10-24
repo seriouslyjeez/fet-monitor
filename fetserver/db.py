@@ -174,6 +174,10 @@ MIGRATIONS = [
     ALTER TABLE series_new RENAME TO series;
     CREATE INDEX series_target ON series (device_id, started_ms);
     """,
+    """
+    -- An ammo test has a shooter (fixed once the test starts) and a free-text label (ammo, lot) that can change.
+    ALTER TABLE series ADD COLUMN label TEXT;
+    """,
 ]
 
 

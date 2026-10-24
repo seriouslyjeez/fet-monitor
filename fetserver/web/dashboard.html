@@ -48,7 +48,7 @@ table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{back
 .lastbig{display:flex;align-items:baseline;gap:10px}.lastbig .v{font-size:52px;font-weight:800;line-height:1}.lastbig .xbig{font-size:30px;color:var(--accent);font-weight:800}
 .banner{background:var(--hi);border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:14px}
 /* ammo test */
-.kv{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}.kv span:first-child{color:var(--mut)}
+.lbl{font-weight:500;color:var(--mut)}.kv{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}.kv span:first-child{color:var(--mut)}
 .scroll{max-height:300px;overflow:auto}.unit{font-size:20px;color:var(--mut);font-weight:600}
 table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 /* overlay */
@@ -104,6 +104,8 @@ function reviewShot(k, ps, full, move) {
   return clamp(k);
 }
 const reviewPage = v => (v.kind === 'ammo' ? 10 : v.bull_size);   // shots per review jump: a target picture, or ten shots in an ammo test
+// Ammo tests carry two names: the shooter (fixed once the test starts) and a label (ammo, lot) that can change.
+const whoText = (shooter, label) => esc(shooter || '–') + (label ? ' · <span class="lbl">' + esc(label) + '</span>' : '');
 const scoreText = s => s.miss ? 'M' : dec(s.decimal);
 const mm2 = v => (v == null ? '–' : v.toFixed(2));
 // Ammo test overlays for the face: the oval around the group and the group centre (both in mm relative to the first shot)
@@ -190,7 +192,7 @@ function ammoCard(t) {
     '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
     faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, color: modeColor('ammo')}, ammoMarks(v))) +
-    '<div class="who">' + esc(t.shooter || 'Ammo test') + '</div>' +
+    '<div class="who">' + whoText(t.shooter || 'Ammo test', t.label) + '</div>' +
     '<div class="scorebox"><div class="tot"><div class="big num">' + (a.shots ? a.size_mm.toFixed(1) : '–') + '</div><div class="sub">mm group</div><div class="sub num">' + v.count + ' shots</div></div>' +
     '<div class="rows">' + (a.shots ? '<div class="kv"><span>Spread c-c</span><b>' + mm2(a.spread_cc_mm) + ' mm</b></div>' +
       '<div class="kv"><span>Oval</span><b>' + mm2(e.outer_major_mm) + ' × ' + mm2(e.outer_minor_mm) + '</b></div>' +
@@ -282,7 +284,7 @@ function infoPanel(t, v, mode, S) {
   }
   return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
-    '<div class="mut">' + esc(v.shooter || t.shooter || 'No shooter set') + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
+    '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No shooter set')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
 }
 function shooterView(t, S) {
@@ -319,8 +321,12 @@ function overlayView(t, S, name) {
             '<button data-act="proj" data-mm="5.7" class="' + (st.projectile_mm === 5.7 ? 'sel' : '') + '">.22 LR (5.7 mm)</button></div>' +
             '<div class="fields" style="margin-top:8px"><label for="f_proj">Projectile size (mm)</label><input id="f_proj" type="number" step="0.01" min="1" max="10" value="' + esc(st.projectile_mm) + '"></div>' +
             '<button data-act="saveproj" style="margin-top:8px">Set size</button><p class="mut">Changing the size re-scores this test and changes the group size shown.</p></section>' : '') +
-         '<section><h4>' + (t.kind === 'ammo' ? 'Test label' : 'Shooter') + '</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="' + (t.kind === 'ammo' ? 'Ammo, lot' : 'Shooter name') + '" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
-         '<p class="mut">' + (t.kind === 'ammo' ? 'A new test starts over: the next shot becomes the first shot.' : 'A new shooter, or a new series, starts counting from shot 1.') + '</p><button data-act="newseries">' + (t.kind === 'ammo' ? 'New test' : 'New series') + '</button></section>' +
+         (t.kind === 'ammo' ?
+           '<section><h4>Shooter</h4><p><b>' + esc(t.shooter || name || '–') + '</b></p><p class="mut">Fixed for this test: whoever was in control when it started. A new test takes whoever is in control then.</p></section>' +
+           '<section><h4>Test label</h4><div class="row"><input id="label" value="' + esc(t.label || '') + '" placeholder="Ammo, lot" maxlength="60" style="flex:1"> <button data-act="setlabel">Set</button></div>' +
+           '<p class="mut">Can be changed at any time without starting over.</p><button data-act="newseries">New test</button><p class="mut">A new test starts over: the next shot becomes the first shot.</p></section>' :
+           '<section><h4>Shooter</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="Shooter name" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
+           '<p class="mut">A new shooter, or a new series, starts counting from shot 1.</p><button data-act="newseries">New series</button></section>') +
          (t.kind === 'ammo' ? '' : '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
          '<label for="f_bull">Shots per target picture</label><input id="f_bull" type="number" min="1" max="100" value="' + st.bull_size + '">' +
          '<label for="f_group">Shots per aggregate group</label><input id="f_group" type="number" min="1" max="100" value="' + st.group_size + '">' +
@@ -330,7 +336,7 @@ function overlayView(t, S, name) {
   }
   h += '<section><h4>Review</h4>' + (S.seriesList.length ? S.seriesList.map(g => {
     const a = g.kind === 'match' ? g.scored : g.scored;
-    if (g.kind === 'ammo' && g.ammo) return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ammo test · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots' +
+    if (g.kind === 'ammo' && g.ammo) return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ammo test · ' + (g.label ? esc(g.label) : '<span class="mut">no label</span>') + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots' +
       (g.ammo.shots ? ' · <b>' + g.ammo.size_mm.toFixed(2) + ' mm</b>' : '') + (g.open ? ' · live' : '') + '</button>';
     return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ' + esc(g.kind) + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots · <b>' + dec(a.decimal) + '</b>' +
       (g.kind === 'match' && g.sighter.shots ? ' <span class="mut">(+' + g.sighter.shots + ' sighters)</span>' : '') + (g.open ? ' · live' : '') + '</button>';
@@ -420,6 +426,8 @@ async function act(el) {
     await setMode(el.dataset.mode);
   } else if (a === 'kind') {
     if (el.dataset.kind !== t.kind) await setMode(KIND_MODE[el.dataset.kind]);
+  } else if (a === 'setlabel') {
+    await setMode('ammo', {label: val('label') || ''});
   } else if (a === 'setshooter') {
     const who = (val('shooter') || '').trim();
     if (who) await setMode(t.mode, {shooter: who});

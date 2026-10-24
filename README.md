@@ -1,4 +1,4 @@
-# freETarget club server (v0.5.1: series, zoom, scoring screens, ammo test)
+# freETarget club server (v0.5.2: series, zoom, scoring screens, ammo test)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -57,6 +57,9 @@ the right series. Misses are listed as M, count as 0 and take a shot number.
 * Live figures: **group size** (extreme spread, centre to centre, plus one projectile diameter = outside edge to
   outside edge), spread centre to centre, oval long x short and its direction, width x height, mean radius, and
   the group centre relative to the first shot.
+* An ammo test has two names. The **shooter** is whoever was in control when the test started; it is shown
+  read-only and does not change, even if someone else takes over. The **test label** (ammo, lot) can be edited at
+  any time without starting over, and a new test starts with no label. Review lists show both.
 * *New test* (in the gear) starts over: the next shot becomes the first shot. Finished tests are in Review with
   their group size. Changing the projectile size re-scores the live test.
 * The raw coordinates (`x_mm`, `y_mm` in /shots) stay in the target's own frame; only the dashboard views and
@@ -124,7 +127,7 @@ backup from /var/backups/freetarget in that case.
 | POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match, projectile_mm}`; needs the control claim. `projectile_mm` (1-10) re-scores a live ammo test |
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |
 | POST /targets/<id>/control/release | browser | Release the claim |
-| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series}`; 403 without the claim. Practice is its own series; sighter and record share a match series; `mode: "ammo"` starts an open-ended ammo test (the view then carries `ammo`: group size, oval, centre) |
+| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series, label}`; 403 without the claim. Practice is its own series; sighter and record share a match series; `mode: "ammo"` starts an open-ended ammo test (the view then carries `ammo`: group size, oval, centre) |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 | POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 

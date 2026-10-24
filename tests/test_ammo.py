@@ -7,7 +7,7 @@ from fetserver.core import BadRequest, Core, even_h
 from fetserver.db import Database
 from fetserver.groupstats import convex_hull, group_stats, min_enclosing_ellipse
 from fetserver.scoring import score_xy
-from tests.test_series import ALICE, BASE, MISS, SHOT, SeriesCase
+from tests.test_series import ALICE, BASE, BOB, MISS, SHOT, SeriesCase
 
 
 class GroupStats(unittest.TestCase):
@@ -198,6 +198,48 @@ class AmmoSeries(SeriesCase):
         self.assertEqual((v["count"], v["ammo"]["shots"], "size_mm" in v["ammo"]), (1, 0, False))
         self.assertEqual(self.core.list_series("a1")[0]["ammo"]["shots"], 0)
 
+    def test_shooter_is_fixed_and_the_label_is_free(self):
+        self.ammo(label="RWS R10 lot 1")
+        v = self.view()
+        self.assertEqual((v["shooter"], v["label"]), ("Alice", "RWS R10 lot 1"))
+        self.shoot("1.00", "1.00")
+        sid = v["series_id"]
+        r = self.core.set_mode("a1", ALICE, "ammo", label="  RWS R10 lot 2  ")       # relabel: same test, same shots
+        self.assertEqual((r["series_id"], r["label"], r["shooter"]), (sid, "RWS R10 lot 2", "Alice"))
+        self.assertEqual((self.view()["count"], self.view()["label"]), (1, "RWS R10 lot 2"))
+        r = self.core.set_mode("a1", ALICE, "ammo", shooter="Mallory")             # a shooter argument cannot rename the shooter
+        self.assertEqual((r["series_id"], r["shooter"], r["label"]), (sid, "Alice", "RWS R10 lot 2"))
+        self.core.set_mode("a1", ALICE, "ammo", label="")                          # an empty label clears it
+        self.assertIsNone(self.view()["label"])
+        self.assertEqual(self.core.list_targets()[0]["label"], None)
+        self.assertEqual(len(self.core.list_series("a1")), 1)
+
+    def test_taking_over_control_does_not_change_the_shooter_until_a_new_test(self):
+        self.ammo(label="Lot A")
+        sid = self.view()["series_id"]
+        self.core.acquire_control("a1", BOB, "Bob", takeover=True)
+        r = self.core.set_mode("a1", BOB, "ammo", label="Lot A2")
+        self.assertEqual((r["series_id"], r["shooter"], r["label"]), (sid, "Alice", "Lot A2"))
+        r = self.core.set_mode("a1", BOB, "ammo", new_series=True, label="Lot B")
+        self.assertNotEqual(r["series_id"], sid)
+        self.assertEqual((r["shooter"], r["label"]), ("Bob", "Lot B"))
+        s = self.core.list_series("a1")
+        self.assertEqual([(g["shooter"], g["label"]) for g in s], [("Bob", "Lot B"), ("Alice", "Lot A2")])   # both shown in review
+        self.assertEqual(self.core.series_view(sid)["shooter"], "Alice")
+        self.assertEqual(self.core.series_view(sid)["label"], "Lot A2")
+
+    def test_a_new_test_starts_unlabelled_and_label_validation(self):
+        self.ammo(label="Lot A")
+        self.core.set_mode("a1", ALICE, "ammo", new_series=True)
+        self.assertIsNone(self.view()["label"])                                     # never carry a stale label onto new ammo
+        for bad in (5, ["x"], {"a": 1}):
+            with self.assertRaises(BadRequest):
+                self.core.set_mode("a1", ALICE, "ammo", label=bad)
+        self.core.set_mode("a1", ALICE, "ammo", label="x" * 200)
+        self.assertEqual(len(self.view()["label"]), 60)
+        self.core.set_mode("a1", ALICE, "practice", label="ignored")               # labels belong to ammo tests only
+        self.assertIsNone(self.view()["label"])
+
     def test_empty_ammo_view(self):
         self.ammo()
         v = self.view()
@@ -252,6 +294,8 @@ class UpgradeFromV04(unittest.TestCase):
             r = core.set_mode("a1", ALICE, "ammo")
             self.assertEqual((r["kind"], r["series_id"]), ("ammo", 3))          # ids keep counting after the rebuild
             self.assertEqual(core.list_targets()[0]["settings"]["projectile_mm"], 4.5)
+            self.assertIsNone(core.list_targets()[0]["label"])
+            self.assertEqual(new.conn().execute("PRAGMA user_version").fetchone()[0], len(full))
 
 
 if __name__ == "__main__":

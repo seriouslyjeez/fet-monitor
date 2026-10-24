@@ -63,7 +63,7 @@ class DashboardLogic(unittest.TestCase):
             hb("lane-5", "Lane 5")
             core.acquire_control("lane-5", ALICE, "Alice")
             core.set_settings("lane-5", ALICE, projectile_mm=5.7)
-            core.set_mode("lane-5", ALICE, "ammo", shooter="<i>Lot 7</i>")
+            core.set_mode("lane-5", ALICE, "ammo", label="<i>Lot 7</i>")
             for dx, dy in ((0, 0), (1.1, 0.4), (-0.8, 1.2), (0.3, -1.5), (2.0, 0.9), (-1.4, -0.6), (0.7, 1.9), (-0.2, 0.1),
                            (1.6, -1.1), (-1.9, 0.8), (0.4, 0.4), (1.0, 1.0), (-0.5, -1.0)):
                 shoot("lane-5", "%.2f" % (12.0 + dx), "%.2f" % (-8.0 + dy))

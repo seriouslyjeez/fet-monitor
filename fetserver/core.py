@@ -420,13 +420,17 @@ class Core:
         c.execute("UPDATE leases SET expires_ms=? WHERE device_id=?", (now + self.lease_ms, device_id))
         return lease
 
-    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_series: bool = False) -> dict:
+    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_series: bool = False, label=None) -> dict:
         """Switch practice / sighter / record / ammo test. Only the current holder of the control claim may do this.
 
         Practice is its own series. Sighter and record belong to a match series: moving between them
         stays in the same series, so record shots pick up where they left off. Changing between practice
         and match, changing the shooter, or asking for a new series starts a fresh series. An ammo test
-        is its own open-ended series: the first shot is the reference (10.9) and the rest are measured from it."""
+        is its own open-ended series: the first shot is the reference (10.9) and the rest are measured from it.
+
+        An ammo test has two names. The *shooter* is whoever was in control when the test started and does not
+        change for the life of the test (a `shooter` argument is ignored). The *label* (ammo, lot) is free text
+        that can be changed at any time without starting over; an empty label clears it."""
         self._check_client(client_id)
         if mode not in MODES:
             raise BadRequest(f"mode must be one of {list(MODES)}")
@@ -434,6 +438,10 @@ class Core:
             if not isinstance(shooter, str):
                 raise BadRequest("shooter must be text")
             shooter = shooter.strip()[:60] or None
+        if label is not None:
+            if not isinstance(label, str):
+                raise BadRequest("label must be text")
+            label = label.strip()[:60] or ""
         now = self.now_ms()
         kind = KIND_OF_MODE.get(mode, "match")
         with self.db.write() as c:
@@ -441,9 +449,13 @@ class Core:
             seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
                             (device_id,)).fetchone()
             ser = self._series_of(c, seg) if seg else None
-            if shooter is None:
+            live_ammo = kind == "ammo" and ser is not None and ser["ended_ms"] is None and ser["kind"] == "ammo" and not new_series
+            if kind == "ammo":
+                shooter = ser["shooter"] if live_ammo else lease["holder_name"]   # fixed for the test; takes whoever holds control
+            elif shooter is None:
                 shooter = (ser["shooter"] if ser else None) or lease["holder_name"]
-            if ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and ser["shooter"] == shooter and not new_series:
+            if live_ammo or (ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and kind != "ammo"
+                             and ser["shooter"] == shooter and not new_series):
                 series_id = ser["id"]
                 changed = seg["mode"] != mode
                 if changed:
@@ -451,17 +463,23 @@ class Core:
                     seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
                 else:
                     seg_id = seg["id"]
+                if kind == "ammo" and label is not None and (ser["label"] or "") != label:
+                    c.execute("UPDATE series SET label=? WHERE id=?", (label or None, series_id))
+                    changed = True
             else:
                 if seg:
                     c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
                 if ser is not None and ser["ended_ms"] is None:
                     c.execute("UPDATE series SET ended_ms=? WHERE id=?", (now, ser["id"]))
                 series_id = self._new_series(c, device_id, kind, shooter, now)
+                if kind == "ammo" and label:
+                    c.execute("UPDATE series SET label=? WHERE id=?", (label, series_id))
                 seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
                 changed = True
         if changed:
             self.hub.publish({"type": "mode", "device_id": device_id})
         return {"segment_id": seg_id, "series_id": series_id, "kind": kind, "mode": mode, "shooter": shooter,
+                "label": self.db.conn().execute("SELECT label FROM series WHERE id=?", (series_id,)).fetchone()[0],
                 "started": iso(now)}
 
     SETTING_LIMITS = {"bull_size": (1, 100), "group_size": (1, 100), "total_practice": (1, 1000), "total_match": (1, 1000)}
@@ -557,7 +575,7 @@ class Core:
                            **self._aggregate(chunk)})
         bull_count = max(1, -(-n // bs))
         idx = bull_count - 1 if bull is None else max(0, min(int(bull), bull_count - 1))
-        return {"series_id": ser["id"], "kind": ser["kind"], "stream": stream, "shooter": ser["shooter"],
+        return {"series_id": ser["id"], "kind": ser["kind"], "stream": stream, "shooter": ser["shooter"], "label": ser["label"],
                 "open": ser["ended_ms"] is None, "count": n, "total": ser["total"] if stream == "scored" else None,
                 "bull_size": bs, "group_size": gs, "agg": self._aggregate(rows), "groups": groups,
                 "bull_index": idx, "bull_count": bull_count,
@@ -570,7 +588,7 @@ class Core:
         off = (ref["ax_h"], ref["ay_h"]) if ref else (0, 0)
         pts = [(r["ax_h"] - off[0], r["ay_h"] - off[1]) for r in rows if not r["is_miss"]]
         n = len(rows)
-        return {"series_id": ser["id"], "kind": "ammo", "stream": "scored", "shooter": ser["shooter"],
+        return {"series_id": ser["id"], "kind": "ammo", "stream": "scored", "shooter": ser["shooter"], "label": ser["label"],
                 "open": ser["ended_ms"] is None, "count": n, "total": None,
                 "bull_size": max(1, n), "group_size": max(1, n), "agg": self._aggregate(rows), "groups": [],
                 "bull_index": 0, "bull_count": 1, "bull_shots": [self._brief(r, off) for r in rows],
@@ -581,11 +599,11 @@ class Core:
     def _empty_view(t, kind: str = "practice") -> dict:
         zero = {"decimal": 0.0, "integer": 0, "x": 0, "misses": 0, "shots": 0}
         if kind == "ammo":
-            return {"series_id": None, "kind": "ammo", "stream": "scored", "shooter": None, "open": True, "count": 0,
+            return {"series_id": None, "kind": "ammo", "stream": "scored", "shooter": None, "label": None, "open": True, "count": 0,
                     "total": None, "bull_size": 1, "group_size": 1, "agg": zero, "groups": [], "bull_index": 0,
                     "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
                     "ammo": group_stats([], t["projectile_h"]) | {"misses": 0}}
-        return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "open": True, "count": 0,
+        return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "label": None, "open": True, "count": 0,
                 "total": t["total_match"] if kind == "match" else t["total_practice"],
                 "bull_size": t["bull_size"], "group_size": t["group_size"], "agg": zero, "groups": [],
                 "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0}
@@ -616,7 +634,7 @@ class Core:
                 "bridge_fw": r["bridge_fw"], "rssi": r["rssi"], "queue_depth": r["queue_depth"],
                 "overflow_count": r["overflow_count"], "ip": r["last_ip"], "shot_count": r["shot_count"],
                 "calibre_x10": r["calibre_x10"],
-                "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "series_id": view["series_id"],
+                "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "label": view["label"], "series_id": view["series_id"],
                 "settings": self._settings_view(r),
                 "lease": self._lease_view(lease, now, client_id), "view": view,
             })
@@ -627,7 +645,7 @@ class Core:
         c = self.db.conn()
         out = []
         for g in c.execute("SELECT * FROM series WHERE device_id=? ORDER BY id DESC LIMIT ?", (device_id, limit)).fetchall():
-            item = {"id": g["id"], "kind": g["kind"], "shooter": g["shooter"], "started": iso(g["started_ms"]),
+            item = {"id": g["id"], "kind": g["kind"], "shooter": g["shooter"], "label": g["label"], "started": iso(g["started_ms"]),
                     "ended": iso(g["ended_ms"]) if g["ended_ms"] is not None else None, "open": g["ended_ms"] is None,
                     "bull_size": g["bull_size"], "group_size": g["group_size"], "total": g["total"]}
             for stream in ("scored", "sighter"):

@@ -92,8 +92,8 @@ class Api(ServerCase):
         sim.heartbeat()
         cid = "http-client-0001"
         self.assertEqual(self.call("POST", "/api/v1/targets/lane-7/control", {"client_id": cid, "name": "Al"}, token=None)[0], 200)
-        st, body = self.call("POST", "/api/v1/targets/lane-7/mode", {"client_id": cid, "mode": "ammo", "shooter": "Lot 1"}, token=None)
-        self.assertEqual((st, body["kind"]), (200, "ammo"))
+        st, body = self.call("POST", "/api/v1/targets/lane-7/mode", {"client_id": cid, "mode": "ammo", "label": "Lot 1"}, token=None)
+        self.assertEqual((st, body["kind"], body["shooter"], body["label"]), (200, "ammo", "Al", "Lot 1"))
         st, body = self.call("POST", "/api/v1/targets/lane-7/settings", {"client_id": cid, "projectile_mm": 5.7}, token=None)
         self.assertEqual((st, body["projectile_mm"]), (200, 5.7))
         self.assertEqual(self.call("POST", "/api/v1/targets/lane-7/settings", {"client_id": cid, "projectile_mm": 50}, token=None)[0], 400)
