@@ -233,6 +233,40 @@ class Heartbeat(CoreCase):
         self.assertEqual(len(self.hb()["commands"]), 1)
 
 
+class Upgrade(unittest.TestCase):
+    def test_v0_2_database_upgrades_and_keeps_working(self):
+        from fetserver import db as dbmod
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "old.db")
+            full = dbmod.MIGRATIONS
+            dbmod.MIGRATIONS = full[:3]                      # the schema v0.2 shipped with
+            try:
+                old = Database(path)
+                with old.write() as c:
+                    c.execute("INSERT INTO targets (device_id, name, first_seen_ms, last_seen_ms) VALUES ('a1','Lane 1',1,1)")
+                    c.execute("INSERT INTO segments (device_id, mode, shooter, started_ms) VALUES ('a1','record','Old Shooter',1)")
+                    c.execute("INSERT INTO events (device_id, boot_count, seq, type, event_ms, time_quality, recv_ms) "
+                              "VALUES ('a1',1,1,'shot',2,'ok',2)")
+                    c.execute("INSERT INTO shots (event_id, device_id, event_ms, shot_number, is_miss, x_h, y_h, ax_h, ay_h, "
+                              "scoring_version, ring, tenths, segment_id) VALUES (1,'a1',2,1,0,0,0,0,0,1,10,109,1)")
+                self.assertEqual(old.conn().execute("PRAGMA user_version").fetchone()[0], 3)
+                old.conn().close()
+            finally:
+                dbmod.MIGRATIONS = full
+            new = Database(path)
+            self.assertEqual(new.conn().execute("PRAGMA user_version").fetchone()[0], len(full))
+            self.assertEqual(new.integrity_check(), "ok")
+            core = Core(new, now_ms=lambda: 1_000_000)
+            t = core.list_targets()[0]                       # an old segment with no series must not break the page
+            self.assertEqual((t["mode"], t["shooter"], t["view"]["count"]), ("record", None, 0))
+            core.handle_events({"device_id": "a1", "boot_count": 1, "uptime_ms": 10, "events": [
+                {"seq": 2, "type": "shot", "uptime_ms": 5, "raw": REAL_SHOT}]})
+            t = core.list_targets()[0]
+            self.assertEqual((t["mode"], t["kind"], t["view"]["count"], t["view"]["stream"]), ("record", "match", 1, "scored"))
+            self.assertEqual(t["shooter"], "Old Shooter")
+            self.assertEqual(new.conn().execute("SELECT COUNT(*) FROM shots").fetchone()[0], 2)    # the old shot is untouched
+
+
 class Maintenance(CoreCase):
     def test_rescore_is_stable(self):
         self.send([self.ev(1), self.ev(2, raw=REAL_MISS)])

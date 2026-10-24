@@ -11,7 +11,7 @@ from typing import Callable, Optional
 from .db import Database
 from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
-from .scoring import SCORING_VERSION, score_xy
+from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 
 log = logging.getLogger("fetserver.core")
 
@@ -65,7 +65,9 @@ def iso(ms: int) -> str:
 class Core:
     def __init__(self, db: Database, now_ms: Optional[Callable[[], int]] = None,
                  offline_after_ms: int = 15000, heartbeat_interval_ms: int = 5000,
-                 lease_ms: int = 60000, shot_lag_ms: int = 0, hub: Optional[Hub] = None):
+                 lease_ms: int = 60000, shot_lag_ms: int = 0, hub: Optional[Hub] = None,
+                 idle_new_series_ms: int = 30 * 60 * 1000):
+        self.idle_new_series_ms = idle_new_series_ms   # a practice series left idle this long starts afresh
         self.hub = hub or Hub()
         self.lease_ms = lease_ms
         self.shot_lag_ms = shot_lag_ms      # how long after detection a shot line reaches us (to be measured)
@@ -197,18 +199,71 @@ class Core:
             sc = score_xy(ax, ay, calibre * 10)
             ring, tenths = sc.ring, sc.tenths
         # The mode in force when the shot happened (not when it arrived), so a delayed upload
-        # lands in the right segment.
-        seg = c.execute("""SELECT id FROM segments WHERE device_id=? AND started_ms<=?
-                           AND (ended_ms IS NULL OR ended_ms>?) ORDER BY id DESC LIMIT 1""",
-                        (device_id, event_ms, event_ms)).fetchone()
+        # lands in the right segment and series.
+        seg_id, series_id, stream, series_no = self._assign_series(c, device_id, event_ms)
         c.execute(
             """INSERT INTO shots (event_id, device_id, event_ms, shot_number, is_miss, x_h, y_h, ax_h, ay_h,
                                   n, e, s, w, arduino_time_s, v_ref, temp_c, face, calibre_x10,
-                                  scoring_version, ring, tenths, segment_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                  scoring_version, ring, tenths, segment_id, series_id, series_no, stream)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (event_id, device_id, event_ms, sl.shot, int(sl.miss), sl.x_h, sl.y_h, ax, ay,
              sl.n, sl.e, sl.s, sl.w, sl.time_s, sl.v_ref, sl.temp_c, sl.face, calibre,
-             SCORING_VERSION, ring, tenths, seg["id"] if seg else None))
+             SCORING_VERSION, ring, tenths, seg_id, series_id, series_no, stream))
+
+    # ---- series -------------------------------------------------------------
+    @staticmethod
+    def _new_series(c, device_id: str, kind: str, shooter, start_ms: int) -> int:
+        t = c.execute("SELECT bull_size, group_size, total_practice, total_match FROM targets WHERE device_id=?",
+                      (device_id,)).fetchone()
+        total = t["total_match"] if kind == "match" else t["total_practice"]
+        return c.execute("""INSERT INTO series (device_id, kind, shooter, started_ms, bull_size, group_size, total)
+                            VALUES (?,?,?,?,?,?,?)""",
+                         (device_id, kind, shooter, start_ms, t["bull_size"], t["group_size"], total)).lastrowid
+
+    @staticmethod
+    def _new_segment(c, device_id: str, mode: str, shooter, series_id: int, start_ms: int) -> int:
+        return c.execute("INSERT INTO segments (device_id, mode, shooter, started_ms, series_id) VALUES (?,?,?,?,?)",
+                         (device_id, mode, shooter, start_ms, series_id)).lastrowid
+
+    def _series_of(self, c, seg):
+        """The series a segment belongs to (older databases have segments without one)."""
+        if seg["series_id"] is None:
+            kind = "practice" if seg["mode"] == "practice" else "match"
+            sid = self._new_series(c, seg["device_id"], kind, seg["shooter"], seg["started_ms"])
+            if seg["ended_ms"] is not None:
+                c.execute("UPDATE series SET ended_ms=? WHERE id=?", (seg["ended_ms"], sid))
+            c.execute("UPDATE segments SET series_id=? WHERE id=?", (sid, seg["id"]))
+        else:
+            sid = seg["series_id"]
+        return c.execute("SELECT * FROM series WHERE id=?", (sid,)).fetchone()
+
+    def _assign_series(self, c, device_id: str, event_ms: int):
+        """Returns (segment_id, series_id, stream, series_no) for a shot fired at event_ms."""
+        seg = c.execute("""SELECT * FROM segments WHERE device_id=? AND started_ms<=?
+                           AND (ended_ms IS NULL OR ended_ms>?) ORDER BY id DESC LIMIT 1""",
+                        (device_id, event_ms, event_ms)).fetchone()
+        if seg is None:
+            if c.execute("SELECT 1 FROM segments WHERE device_id=? AND ended_ms IS NULL", (device_id,)).fetchone():
+                return None, None, "scored", None        # fired before the first recorded mode: left unassigned
+            sid = self._new_series(c, device_id, "practice", None, event_ms)   # first shot on a never-configured target
+            self._new_segment(c, device_id, "practice", None, sid, event_ms)
+            seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL", (device_id,)).fetchone()
+        ser = self._series_of(c, seg)
+        stream = "sighter" if seg["mode"] == "sighter" else "scored"
+        n = c.execute("SELECT COUNT(*) FROM shots WHERE series_id=? AND stream=?", (ser["id"], stream)).fetchone()[0]
+        if seg["ended_ms"] is None:                      # only the live series rolls over, never a closed one
+            last = c.execute("SELECT MAX(event_ms) FROM shots WHERE series_id=?", (ser["id"],)).fetchone()[0]
+            full = stream == "scored" and n >= ser["total"]
+            idle = ser["kind"] == "practice" and last is not None and event_ms - last > self.idle_new_series_ms
+            if full or idle:
+                c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (event_ms, seg["id"]))
+                c.execute("UPDATE series SET ended_ms=? WHERE id=?", (event_ms, ser["id"]))
+                sid = self._new_series(c, device_id, ser["kind"], ser["shooter"], event_ms)
+                self._new_segment(c, device_id, seg["mode"], seg["shooter"], sid, event_ms)
+                seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL", (device_id,)).fetchone()
+                ser = c.execute("SELECT * FROM series WHERE id=?", (sid,)).fetchone()
+                n = 0
+        return seg["id"], ser["id"], stream, n + 1
 
     def _apply_config(self, c, device_id: str, d: dict) -> None:
         if not isinstance(d, dict):
@@ -323,8 +378,20 @@ class Core:
             self.hub.publish({"type": "lease", "device_id": device_id})
         return released
 
-    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_segment: bool = False) -> dict:
-        """Switch practice / sighter / record. Only the current holder of the control claim may do this."""
+    def _require_lease(self, c, device_id: str, client_id: str, now: int):
+        self._require_target(c, device_id)
+        lease = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
+        if lease is None or lease["expires_ms"] <= now or lease["client_id"] != client_id:
+            raise Forbidden("take control of this target first")
+        c.execute("UPDATE leases SET expires_ms=? WHERE device_id=?", (now + self.lease_ms, device_id))
+        return lease
+
+    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_series: bool = False) -> dict:
+        """Switch practice / sighter / record. Only the current holder of the control claim may do this.
+
+        Practice is its own series. Sighter and record belong to a match series: moving between them
+        stays in the same series, so record shots pick up where they left off. Changing between practice
+        and match, changing the shooter, or asking for a new series starts a fresh series."""
         self._check_client(client_id)
         if mode not in MODES:
             raise BadRequest(f"mode must be one of {list(MODES)}")
@@ -333,28 +400,66 @@ class Core:
                 raise BadRequest("shooter must be text")
             shooter = shooter.strip()[:60] or None
         now = self.now_ms()
+        kind = "practice" if mode == "practice" else "match"
         with self.db.write() as c:
-            self._require_target(c, device_id)
-            lease = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
-            if lease is None or lease["expires_ms"] <= now or lease["client_id"] != client_id:
-                raise Forbidden("take control of this target first")
-            cur = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
+            lease = self._require_lease(c, device_id, client_id, now)
+            seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
                             (device_id,)).fetchone()
+            ser = self._series_of(c, seg) if seg else None
             if shooter is None:
-                shooter = (cur["shooter"] if cur else None) or lease["holder_name"]
-            c.execute("UPDATE leases SET expires_ms=? WHERE device_id=?", (now + self.lease_ms, device_id))
-            if cur and cur["mode"] == mode and cur["shooter"] == shooter and not new_segment:
-                seg_id = cur["id"]                       # nothing to change
-                changed = False
+                shooter = (ser["shooter"] if ser else None) or lease["holder_name"]
+            if ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and ser["shooter"] == shooter and not new_series:
+                series_id = ser["id"]
+                changed = seg["mode"] != mode
+                if changed:
+                    c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+                    seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
+                else:
+                    seg_id = seg["id"]
             else:
-                if cur:
-                    c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, cur["id"]))
-                seg_id = c.execute("INSERT INTO segments (device_id, mode, shooter, started_ms) VALUES (?,?,?,?)",
-                                   (device_id, mode, shooter, now)).lastrowid
+                if seg:
+                    c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+                if ser is not None and ser["ended_ms"] is None:
+                    c.execute("UPDATE series SET ended_ms=? WHERE id=?", (now, ser["id"]))
+                series_id = self._new_series(c, device_id, kind, shooter, now)
+                seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
                 changed = True
         if changed:
             self.hub.publish({"type": "mode", "device_id": device_id})
-        return {"segment_id": seg_id, "mode": mode, "shooter": shooter, "started": iso(now)}
+        return {"segment_id": seg_id, "series_id": series_id, "kind": kind, "mode": mode, "shooter": shooter,
+                "started": iso(now)}
+
+    SETTING_LIMITS = {"bull_size": (1, 100), "group_size": (1, 100), "total_practice": (1, 1000), "total_match": (1, 1000)}
+
+    def set_settings(self, device_id: str, client_id: str, **values) -> dict:
+        """Shots per bull / per aggregate group / in total. Applies to the live series and to new ones."""
+        self._check_client(client_id)
+        clean = {}
+        for k, v in values.items():
+            if v is None:
+                continue
+            if k not in self.SETTING_LIMITS:
+                raise BadRequest(f"unknown setting {k}")
+            lo, hi = self.SETTING_LIMITS[k]
+            clean[k] = _int(v, k, lo, hi)
+        now = self.now_ms()
+        with self.db.write() as c:
+            self._require_lease(c, device_id, client_id, now)
+            if clean:
+                cols = ", ".join(f"{k}=?" for k in clean)
+                c.execute(f"UPDATE targets SET {cols} WHERE device_id=?", (*clean.values(), device_id))
+                live = c.execute("""SELECT s.* FROM series s JOIN segments g ON g.series_id=s.id
+                                    WHERE g.device_id=? AND g.ended_ms IS NULL ORDER BY g.id DESC LIMIT 1""",
+                                 (device_id,)).fetchone()
+                if live is not None:
+                    key = "total_match" if live["kind"] == "match" else "total_practice"
+                    c.execute("UPDATE series SET bull_size=COALESCE(?,bull_size), group_size=COALESCE(?,group_size), "
+                              "total=COALESCE(?,total) WHERE id=?",
+                              (clean.get("bull_size"), clean.get("group_size"), clean.get(key), live["id"]))
+            t = c.execute("SELECT bull_size, group_size, total_practice, total_match FROM targets WHERE device_id=?",
+                          (device_id,)).fetchone()
+        self.hub.publish({"type": "mode", "device_id": device_id})
+        return dict(t)
 
     # ---- queries ------------------------------------------------------------
     @staticmethod
@@ -364,10 +469,45 @@ class Core:
         return {"shots": r["n"], "misses": r["m"], "total_decimal": r["t"] / 10.0, "total_integer": r["ri"]}
 
     @staticmethod
-    def _shot_brief(r) -> dict:
+    def _brief(r) -> dict:
         miss = bool(r["is_miss"])
-        return {"shot_number": r["shot_number"], "miss": miss, "ring": r["ring"], "decimal": r["tenths"] / 10.0,
+        return {"id": r["id"], "n": r["series_no"] if r["series_no"] is not None else r["shot_number"],
+                "shot_number": r["shot_number"], "miss": miss, "ring": r["ring"], "decimal": r["tenths"] / 10.0,
+                "inner": (not miss) and is_inner_ten(r["tenths"]),
                 "x_mm": None if miss else r["ax_h"] / 100.0, "y_mm": None if miss else r["ay_h"] / 100.0}
+
+    @staticmethod
+    def _aggregate(rows) -> dict:
+        return {"decimal": sum(r["tenths"] for r in rows) / 10.0, "integer": sum(r["ring"] for r in rows),
+                "x": sum(1 for r in rows if not r["is_miss"] and is_inner_ten(r["tenths"])),
+                "misses": sum(1 for r in rows if r["is_miss"]), "shots": len(rows)}
+
+    def _stream_view(self, c, ser, stream: str, bull=None) -> dict:
+        """Everything a screen needs about one stream (scored or sighter) of a series."""
+        rows = c.execute("SELECT * FROM shots WHERE series_id=? AND stream=? ORDER BY series_no, id",
+                         (ser["id"], stream)).fetchall()
+        n, bs, gs = len(rows), ser["bull_size"], ser["group_size"]
+        groups = []
+        for i in range(0, n, gs):
+            chunk = rows[i:i + gs]
+            groups.append({"index": i // gs, "first": i + 1, "last": i + len(chunk), "complete": len(chunk) == gs,
+                           **self._aggregate(chunk)})
+        bull_count = max(1, -(-n // bs))
+        idx = bull_count - 1 if bull is None else max(0, min(int(bull), bull_count - 1))
+        return {"series_id": ser["id"], "kind": ser["kind"], "stream": stream, "shooter": ser["shooter"],
+                "open": ser["ended_ms"] is None, "count": n, "total": ser["total"] if stream == "scored" else None,
+                "bull_size": bs, "group_size": gs, "agg": self._aggregate(rows), "groups": groups,
+                "bull_index": idx, "bull_count": bull_count,
+                "bull_shots": [self._brief(r) for r in rows[idx * bs:(idx + 1) * bs]],
+                "last_shot": self._brief(rows[-1]) if rows else None}
+
+    @staticmethod
+    def _empty_view(t, kind: str = "practice") -> dict:
+        zero = {"decimal": 0.0, "integer": 0, "x": 0, "misses": 0, "shots": 0}
+        return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "open": True, "count": 0,
+                "total": t["total_match"] if kind == "match" else t["total_practice"],
+                "bull_size": t["bull_size"], "group_size": t["group_size"], "agg": zero, "groups": [],
+                "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None}
 
     def list_targets(self, client_id: Optional[str] = None) -> list:
         now = self.now_ms()
@@ -380,13 +520,12 @@ class Core:
             did = r["device_id"]
             seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
                             (did,)).fetchone()
-            if seg:
-                recent = c.execute("SELECT * FROM shots WHERE segment_id=? ORDER BY id DESC LIMIT 10", (seg["id"],)).fetchall()
-                stats = self._segment_stats(c, seg["id"])
+            ser = c.execute("SELECT * FROM series WHERE id=?", (seg["series_id"],)).fetchone() if seg and seg["series_id"] else None
+            mode = seg["mode"] if seg else "practice"
+            if ser is not None:
+                view = self._stream_view(c, ser, "sighter" if mode == "sighter" else "scored")
             else:
-                recent = c.execute("SELECT * FROM shots WHERE device_id=? ORDER BY id DESC LIMIT 10", (did,)).fetchall()
-                stats = {"shots": 0, "misses": 0, "total_decimal": 0.0, "total_integer": 0}
-            recent = [self._shot_brief(x) for x in reversed(recent)]
+                view = self._empty_view(r, "practice" if mode == "practice" else "match")
             lease = c.execute("SELECT * FROM leases WHERE device_id=?", (did,)).fetchone()
             out.append({
                 "device_id": did, "name": r["name"] or did,
@@ -396,19 +535,54 @@ class Core:
                 "bridge_fw": r["bridge_fw"], "rssi": r["rssi"], "queue_depth": r["queue_depth"],
                 "overflow_count": r["overflow_count"], "ip": r["last_ip"], "shot_count": r["shot_count"],
                 "calibre_x10": r["calibre_x10"],
-                "mode": seg["mode"] if seg else "practice", "shooter": seg["shooter"] if seg else None,
-                "segment_id": seg["id"] if seg else None, "segment": stats,
-                "lease": self._lease_view(lease, now, client_id),
-                "recent_shots": recent, "last_shot": recent[-1] if recent else None,
+                "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "series_id": view["series_id"],
+                "settings": {"bull_size": r["bull_size"], "group_size": r["group_size"],
+                             "total_practice": r["total_practice"], "total_match": r["total_match"]},
+                "lease": self._lease_view(lease, now, client_id), "view": view,
             })
         return out
+
+    def list_series(self, device_id: str, limit: int = 50) -> list:
+        limit = max(1, min(int(limit), 500))
+        c = self.db.conn()
+        out = []
+        for g in c.execute("SELECT * FROM series WHERE device_id=? ORDER BY id DESC LIMIT ?", (device_id, limit)).fetchall():
+            item = {"id": g["id"], "kind": g["kind"], "shooter": g["shooter"], "started": iso(g["started_ms"]),
+                    "ended": iso(g["ended_ms"]) if g["ended_ms"] is not None else None, "open": g["ended_ms"] is None,
+                    "bull_size": g["bull_size"], "group_size": g["group_size"], "total": g["total"]}
+            for stream in ("scored", "sighter"):
+                rows = c.execute("SELECT tenths, ring, is_miss FROM shots WHERE series_id=? AND stream=?",
+                                 (g["id"], stream)).fetchall()
+                item[stream] = self._aggregate(rows)
+            out.append(item)
+        return out
+
+    def series_view(self, series_id: int, stream: str = "scored", bull=None) -> dict:
+        if stream not in ("scored", "sighter"):
+            raise BadRequest("stream must be scored or sighter")
+        c = self.db.conn()
+        ser = c.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
+        if ser is None:
+            raise NotFound(f"unknown series {series_id}")
+        view = self._stream_view(c, ser, stream, bull)
+        view["started"] = iso(ser["started_ms"])
+        view["ended"] = iso(ser["ended_ms"]) if ser["ended_ms"] is not None else None
+        view["device_id"] = ser["device_id"]
+        return view
+
+    @staticmethod
+    def _segment_stats(c, seg_id: int) -> dict:
+        r = c.execute("""SELECT COUNT(*) AS n, COALESCE(SUM(tenths),0) AS t, COALESCE(SUM(ring),0) AS ri,
+                                COALESCE(SUM(is_miss),0) AS m FROM shots WHERE segment_id=?""", (seg_id,)).fetchone()
+        return {"shots": r["n"], "misses": r["m"], "total_decimal": r["t"] / 10.0, "total_integer": r["ri"]}
 
     def list_segments(self, device_id: str, limit: int = 50) -> list:
         limit = max(1, min(int(limit), 500))
         c = self.db.conn()
         out = []
         for g in c.execute("SELECT * FROM segments WHERE device_id=? ORDER BY id DESC LIMIT ?", (device_id, limit)):
-            out.append({"id": g["id"], "mode": g["mode"], "shooter": g["shooter"], "started": iso(g["started_ms"]),
+            out.append({"id": g["id"], "series_id": g["series_id"], "mode": g["mode"], "shooter": g["shooter"],
+                        "started": iso(g["started_ms"]),
                         "ended": iso(g["ended_ms"]) if g["ended_ms"] is not None else None,
                         "open": g["ended_ms"] is None, **self._segment_stats(c, g["id"])})
         return out
@@ -432,7 +606,9 @@ class Core:
                 "ring": r["ring"], "decimal": r["tenths"] / 10.0,
                 "counts": {"N": r["n"], "E": r["e"], "S": r["s"], "W": r["w"]},
                 "scoring_version": r["scoring_version"],
-                "segment_id": r["segment_id"], "mode": r["seg_mode"] or "practice", "shooter": r["seg_shooter"],
+                "segment_id": r["segment_id"], "series_id": r["series_id"], "series_no": r["series_no"],
+                "stream": r["stream"], "inner": (not miss) and is_inner_ten(r["tenths"]),
+                "mode": r["seg_mode"] or "practice", "shooter": r["seg_shooter"],
             })
         return out
 

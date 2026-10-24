@@ -126,6 +126,32 @@ MIGRATIONS = [
         data_json  TEXT
     );
     """,
+    """
+    -- A series is one practice run or one match. A match series holds sighter and record segments;
+    -- record shots keep accumulating across sighter detours. Shots per bull (target face), per
+    -- aggregate group and in total are the shooter's choice, remembered per target.
+    ALTER TABLE targets ADD COLUMN bull_size INTEGER NOT NULL DEFAULT 10;
+    ALTER TABLE targets ADD COLUMN group_size INTEGER NOT NULL DEFAULT 10;
+    ALTER TABLE targets ADD COLUMN total_practice INTEGER NOT NULL DEFAULT 20;
+    ALTER TABLE targets ADD COLUMN total_match INTEGER NOT NULL DEFAULT 60;
+    CREATE TABLE series (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id  TEXT NOT NULL,
+        kind       TEXT NOT NULL CHECK (kind IN ('practice','match')),
+        shooter    TEXT,
+        started_ms INTEGER NOT NULL,
+        ended_ms   INTEGER,
+        bull_size  INTEGER NOT NULL,
+        group_size INTEGER NOT NULL,
+        total      INTEGER NOT NULL
+    );
+    CREATE INDEX series_target ON series (device_id, started_ms);
+    ALTER TABLE segments ADD COLUMN series_id INTEGER;
+    ALTER TABLE shots ADD COLUMN series_id INTEGER;
+    ALTER TABLE shots ADD COLUMN series_no INTEGER;
+    ALTER TABLE shots ADD COLUMN stream TEXT;
+    CREATE INDEX shots_series ON shots (series_id, stream, series_no);
+    """,
 ]
 
 

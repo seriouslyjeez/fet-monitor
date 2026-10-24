@@ -17,6 +17,7 @@ import urllib.request
 from typing import Callable, List, Optional
 
 VERSION = "4.3.0 December 21, 2023"
+GOOD_SPREAD_MM = 2.1     # about half the shots score a ten, nearly all the rest a nine
 ECHO_SAMPLE = ('{\n"NAME":"TARGET",\n"ANGLE": 45,\n"CALIBREx10": 45,\n"SENSOR": 230.000000,\n"SN": 302,\n'
                '"VERSION": "4.3.0 December 21, 2023",\n"BD_REV": 3.20\n}')
 
@@ -36,7 +37,8 @@ def miss_line(n: int, counts=(0, 5596, 13199, 0)) -> str:
 class SimTarget:
     def __init__(self, url: str, token: str, device_id: str = "sim-01", name: str = "Sim target",
                  clock_ms: Optional[Callable[[], int]] = None, seed: int = 1, ack_loss: float = 0.0,
-                 batch_size: int = 10):
+                 batch_size: int = 10, spread_mm: float = 8.0):
+        self.spread_mm = spread_mm          # standard deviation of the shot scatter on each axis
         self.url, self.token, self.device_id, self.name = url.rstrip("/"), token, device_id, name
         self.clock_ms = clock_ms or (lambda: int(time.time() * 1000))
         self.rng = random.Random(seed)
@@ -69,7 +71,7 @@ class SimTarget:
     def fire(self, x_mm: Optional[float] = None, y_mm: Optional[float] = None) -> None:
         self.shot_no += 1
         if x_mm is None:
-            x_mm, y_mm = self.rng.gauss(0, 8), self.rng.gauss(0, 8)
+            x_mm, y_mm = self.rng.gauss(0, self.spread_mm), self.rng.gauss(0, self.spread_mm)
         counts = [self.rng.randint(0, 600) for _ in range(4)]
         counts[self.rng.randrange(4)] = 0
         self._enqueue("shot", shot_line(self.shot_no, x_mm, y_mm, counts, self.uptime_ms() / 1000.0))
@@ -133,10 +135,14 @@ def main(argv=None) -> int:
     ap.add_argument("--shots", type=int, default=20)
     ap.add_argument("--interval", type=float, default=1.0)
     ap.add_argument("--miss-rate", type=float, default=0.05)
-    ap.add_argument("--boot-count", type=int, default=None, help="default: current time, so every run is a new boot")
+    ap.add_argument("--good", action="store_true",
+                    help="a good shooter: mostly 9s and 10s, with a fair number of inner tens (spread %.1f mm)" % GOOD_SPREAD_MM)
+    ap.add_argument("--spread", type=float, default=None, help="scatter in mm (default 8, or %.1f with --good)" % GOOD_SPREAD_MM)
+    ap.add_argument("--boot-count", type=int, default=None, help="default: random, so every run is a new boot")
     args = ap.parse_args(argv)
-    t = SimTarget(args.url, args.token, args.device_id, args.name)
-    t.boot_count = args.boot_count if args.boot_count is not None else int(time.time())
+    spread = args.spread if args.spread is not None else (GOOD_SPREAD_MM if args.good else 8.0)
+    t = SimTarget(args.url, args.token, args.device_id, args.name, spread_mm=spread, seed=random.randrange(2**31))
+    t.boot_count = args.boot_count if args.boot_count is not None else random.randrange(1, 2**31)
     t.send_config()
     for i in range(args.shots):
         t.fire_miss() if t.rng.random() < args.miss_rate else t.fire()

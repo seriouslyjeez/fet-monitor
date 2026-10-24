@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
 
 SCORING_VERSION = 1
+# Inner ten (X) for 10 m air rifle: a 4.5 mm pellet covers the whole 0.5 mm ten dot when its centre is within
+# 2.00 mm, which is exactly the 10.2 band. One setting so it is easy to change.
+INNER_TEN_MIN_TENTHS = 102
 DEFAULT_PELLET_DIA_H = 450  # 4.5 mm in hundredths of a millimetre
 
 
@@ -68,3 +71,7 @@ def score_xy(x_h: int, y_h: int, pellet_dia_h: int = DEFAULT_PELLET_DIA_H) -> Sc
                 if 100 * r2 <= limit * limit:
                     return Score(ring, ring * 10 + 9 - j)
     return MISS
+
+
+def is_inner_ten(tenths: int) -> bool:
+    return tenths >= INNER_TEN_MIN_TENTHS

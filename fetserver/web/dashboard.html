@@ -5,52 +5,104 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>freETarget</title>
 <style>
-:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa}}
-*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
-header h1{font-size:17px;margin:0}header a{color:var(--fg);text-decoration:none;padding:4px 10px;border-radius:6px}header a.on{background:var(--accent);color:#fff}
-#live{margin-left:auto;font-size:13px;color:var(--mut)}main{padding:16px;max-width:1200px;margin:0 auto}
+:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:#fff}
+#live{margin-left:auto;font-size:12px;color:var(--mut)}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
+.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:#fff;white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}
+button,input,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
+.face{display:block;width:100%;height:auto;border-radius:6px}
+/* all targets */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
 .card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;color:inherit;text-decoration:none}
 .card:hover{border-color:var(--accent)}.card.off{opacity:.55}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.badge{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;color:#fff}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}
-.face{display:block;width:100%;height:auto;border-radius:6px;margin:8px 0}.big{font-size:22px;font-weight:700}.mut{color:var(--mut);font-size:13px}
-.shoot{display:grid;grid-template-columns:minmax(260px,560px) 1fr;gap:16px;align-items:start}@media (max-width:760px){.shoot{grid-template-columns:1fr}}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}.panel h3{margin:0 0 8px;font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.last{font-size:56px;font-weight:800;line-height:1}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
-button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button.sel{outline:3px solid var(--accent)}button:disabled{opacity:.5;cursor:default}
-.modes{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.modes button{flex:1;min-width:90px;font-weight:600}
-table{width:100%;border-collapse:collapse}td,th{padding:4px 6px;text-align:right;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}
-#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 14px;border-radius:8px;display:none}
+.card .face{margin:8px auto;max-width:300px}.who{font-weight:600;margin:2px 0 6px;min-height:1.35em}
+.scorebox{display:flex;gap:8px;align-items:stretch}
+.tot{flex:0 0 92px;border:1px solid var(--line);border-radius:8px;text-align:center;padding:6px 4px;background:var(--hi)}
+.tot .big{font-size:30px;font-weight:800;line-height:1.05}.tot .sub{font-size:14px;color:var(--mut)}
+.rows{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
+.grprow{display:flex;gap:4px;flex-wrap:wrap}.grp{border:1px solid var(--line);border-radius:6px;padding:1px 7px;text-align:center;line-height:1.15}
+.grp b{display:block;font-size:14px}.grp small{color:var(--mut);font-size:11px}.grp.part{border-style:dashed}
+.shotrow{display:grid;gap:2px}.cell{text-align:center;font-size:12px;padding:3px 0;border-radius:4px;background:var(--bg);min-height:23px;font-variant-numeric:tabular-nums}
+.cell.x{background:var(--accent);color:#fff;font-weight:700}.cell.m{color:var(--bad);font-weight:700}.cell.e{opacity:.5}
+/* single target */
+.shoot{display:grid;grid-template-columns:minmax(300px,1.5fr) minmax(290px,1fr);gap:14px;align-items:start}@media (max-width:820px){.shoot{grid-template-columns:1fr}}
+.zoombar{display:flex;gap:3px;align-items:center;margin-bottom:6px;flex-wrap:wrap}.zoombar span{font-size:13px;color:var(--mut);margin-right:4px}
+.zoombar button{padding:4px 9px;min-width:34px;font-size:14px}
+.left .face{width:min(100%,calc(100vh - 160px));margin:0 auto}
+.pager{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:8px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.panel h3{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.gear{padding:3px 9px;font-size:18px;line-height:1}.title{font-size:20px;font-weight:700}
+.modes{display:flex;gap:6px;margin-top:8px}.modes button{flex:1;font-weight:600;padding:9px}
+table.t{width:100%;border-collapse:collapse}table.t td,table.t th{padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+table.t th{color:var(--mut);font-weight:500;font-size:12px}table.t td:first-child,table.t th:first-child{text-align:left}
+table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{background:var(--hi);font-weight:700}
+.xm{color:var(--accent);font-weight:800;margin-left:4px}.miss{color:var(--bad);font-weight:700}
+.lastbig{display:flex;align-items:baseline;gap:10px}.lastbig .v{font-size:60px;font-weight:800;line-height:1}.lastbig .xbig{font-size:30px;color:var(--accent);font-weight:800}
+.banner{background:var(--hi);border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:14px}
+/* overlay */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
+#overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}
+.sheet h2{margin:0 0 4px;font-size:18px}.sheet section{border-top:1px solid var(--line);padding:10px 0}.sheet section:first-of-type{border-top:0}
+.sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
+.rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 14px;border-radius:8px;display:none;z-index:20}
 </style>
 </head>
 <body>
 <header><h1>freETarget</h1><a href="#/" id="nav-coach">All targets</a><span id="live">connecting…</span></header>
-<main id="app"></main><div id="toast"></div>
+<main id="app"></main>
+<div id="overlay"></div>
+<div id="toast"></div>
 <script>
 'use strict';
 const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const dec = v => (v == null ? '–' : v.toFixed(1));
-const ringR = k => 0.25 + 2.5 * (10 - k);                       // outer radius of ring k in mm (ISSF 10 m air rifle)
-const tenths = list => list.reduce((a, s) => a + Math.round(s.decimal * 10), 0);
-const total = list => ({dec: tenths(list) / 10, int: list.reduce((a, s) => a + s.ring, 0), misses: list.filter(s => s.miss).length});
+const ringR = k => 0.25 + 2.5 * (10 - k);        // outer radius of ring k in mm (ISSF 10 m air rifle)
+const FULL = 26, AUTO_START = 8;                 // full view half-width in mm; Auto never zooms in past the 8 ring
+const zoomHalf = k => ringR(k) + 1.5;            // view half-width when zoomed to ring k
 
-// Target face with shots. Pure function: returns an SVG string. y is up in the data, down on screen.
+// Auto zoom: the smallest ring (8, 7 ... 1) that holds every pellet completely, else the full target.
+function autoRing(shots, pr) {
+  let ext = 0;
+  shots.forEach(s => { if (!s.miss && s.x_mm != null) ext = Math.max(ext, Math.hypot(s.x_mm, s.y_mm) + pr); });
+  for (let k = AUTO_START; k >= 1; k--) if (ringR(k) >= ext) return k;
+  return 0;
+}
+function halfFor(zoom, shots, pr) {
+  if (zoom === 'auto') { const k = autoRing(shots, pr); return k ? zoomHalf(k) : FULL; }
+  const k = parseInt(zoom, 10);
+  return k >= 1 && k <= 9 ? zoomHalf(k) : FULL;
+}
+const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
+const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
+const clock = iso => new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+const when = iso => new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+const scoreText = s => s.miss ? 'M' : dec(s.decimal);
+
+// Target face. Pure function returning an SVG string. Data y is up, screen y is down.
+// o: half (view half-width, mm), pellet (mm), color, mini, corner (black top-right corner = shots are not scored)
 function faceSvg(shots, o) {
   o = o || {};
-  const mini = !!o.mini, pr = (o.pellet || 4.5) / 2, col = o.color || 'var(--accent)', black = ringR(4);
-  let s = '<svg class="face" viewBox="-26 -26 52 52" role="img" aria-label="Target face"><rect x="-26" y="-26" width="52" height="52" fill="#fff"/>' +
-          '<circle r="' + black + '" fill="#111"/>';
+  const mini = !!o.mini, pr = (o.pellet || 4.5) / 2, H = o.half || FULL, col = o.color || 'var(--accent)', black = ringR(4);
+  const sw = Math.max(0.06, 0.18 * H / FULL) * (mini ? 1.6 : 1), f = Math.max(0.35, Math.min(1, H / 14));   // outlines thin out as we zoom in
+  let s = '<svg class="face" viewBox="' + (-H) + ' ' + (-H) + ' ' + (2 * H) + ' ' + (2 * H) + '" role="img" aria-label="Target face">' +
+          '<rect x="' + (-H) + '" y="' + (-H) + '" width="' + (2 * H) + '" height="' + (2 * H) + '" fill="#fff"/><circle r="' + black + '" fill="#111"/>';
   for (let k = 1; k <= 10; k++) {
-    s += '<circle r="' + ringR(k) + '" fill="' + (k === 10 ? '#fff' : 'none') + '" stroke="' + (ringR(k) <= black ? '#fff' : '#111') +
-         '" stroke-width="' + (mini ? 0.3 : 0.18) + '"/>';
+    s += '<circle r="' + ringR(k) + '" fill="' + (k === 10 ? '#fff' : 'none') + '" stroke="' + (ringR(k) <= black ? '#fff' : '#111') + '" stroke-width="' + sw + '"/>';
   }
   if (!mini) {
     for (let k = 1; k <= 8; k++) {
       const m = ringR(k) - 1.25, fill = m < black ? '#fff' : '#111';
+      if (m > H - 0.9) continue;
       [[0, -m], [0, m], [-m, 0], [m, 0]].forEach(p => {
         s += '<text x="' + p[0] + '" y="' + p[1] + '" font-size="1.7" text-anchor="middle" dominant-baseline="central" fill="' + fill + '">' + k + '</text>';
       });
@@ -58,23 +110,144 @@ function faceSvg(shots, o) {
   }
   const pts = shots.filter(x => !x.miss && x.x_mm != null);
   pts.forEach((x, i) => {
-    const isLast = i === pts.length - 1;
-    s += '<circle cx="' + x.x_mm + '" cy="' + (-x.y_mm) + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
-         (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) + '"/>';
-    if (!mini) {
-      s += '<text x="' + x.x_mm + '" y="' + (-x.y_mm) + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' +
-           esc(x.shot_number) + '</text>';
+    const isLast = i === pts.length - 1, sx = x.x_mm, sy = -x.y_mm;
+    if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
+      s += '<circle cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
+           (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) * f + '"/>';
+      if (!mini) {
+        s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
+      }
+    } else {                                                         // outside a fixed zoom: mark where it went off
+      const k = (H * 0.9) / Math.max(Math.abs(sx), Math.abs(sy)), r = Math.max(0.5, H * 0.07);
+      s += '<circle cx="' + (sx * k) + '" cy="' + (sy * k) + '" r="' + r + '" fill="#fff" stroke="#e11d48" stroke-width="' + (r * 0.3) + '" stroke-dasharray="' + (r * 0.6) + '"/>';
+      if (!mini) s += '<text x="' + (sx * k) + '" y="' + (sy * k) + '" font-size="' + (r * 1.3) + '" text-anchor="middle" dominant-baseline="central" fill="#e11d48">' + esc(x.n) + '</text>';
     }
   });
+  if (o.corner) {                                                    // practice and sighter shots are not scored
+    const L = H * (mini ? 0.34 : 0.3);
+    s += '<polygon class="corner" points="' + H + ',' + (-H) + ' ' + (H - L) + ',' + (-H) + ' ' + H + ',' + (-H + L) + '" fill="#000"/>';
+  }
   return s + '</svg>';
 }
-const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
-const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
-const clock = iso => new Date(iso).toLocaleTimeString();
+
+// ---- All targets ----
+function strip(v) {
+  const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length;
+  let c = '';
+  for (let i = 0; i < n; i++) {
+    const s = v.bull_shots[i];
+    c += s ? '<span class="cell' + (s.inner ? ' x' : '') + (s.miss ? ' m' : '') + '">' + esc(scoreText(s)) + '</span>' : '<span class="cell e"></span>';
+  }
+  return '<div class="shotrow" style="grid-template-columns:repeat(' + Math.max(1, n) + ',1fr)">' + c + '</div>';
+}
+function groupsRow(v) {
+  if (!v.groups.length) return '<div class="grprow"><span class="mut">no shots yet</span></div>';
+  return '<div class="grprow">' + v.groups.slice(-6).map(g => '<span class="grp' + (g.complete ? '' : ' part') + '" title="shots ' + g.first + '–' + g.last + '"><b>' +
+    dec(g.decimal) + '</b><small>' + g.integer + (g.x ? ' · X' + g.x : '') + '</small></span>').join('') + '</div>';
+}
+function coachCard(t) {
+  const v = t.view, pr = t.calibre_x10 / 20, half = halfFor('auto', v.bull_shots, pr);
+  return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
+    '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
+    (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
+    faceSvg(v.bull_shots, {mini: true, half: half, pellet: t.calibre_x10 / 10, color: modeColor(t.mode), corner: t.mode !== 'record'}) +
+    '<div class="who">' + esc(t.shooter || '–') + '</div>' +
+    '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
+    '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div></a>';
+}
+function coachView(targets) {
+  if (!targets.length) return '<p class="mut">No targets have reported yet. Power one on and check its WiFi setup.</p>';
+  return '<p class="mut">' + targets.filter(t => t.online).length + ' of ' + targets.length + ' targets online</p><div class="grid">' + targets.map(coachCard).join('') + '</div>';
+}
+
+// ---- Single target ----
+function shotsTable(v) {
+  const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length;
+  let rows = '';
+  for (let i = 0; i < n; i++) {                                      // filled from the top; empty rows keep the layout still
+    const s = v.bull_shots[i], last = s && i === v.bull_shots.length - 1;
+    rows += s ? '<tr class="' + (last ? 'last' : '') + '"><td>' + esc(s.n) + '</td><td>' + (s.miss ? '<span class="miss">M</span>' : dec(s.decimal) + (s.inner ? '<span class="xm">X</span>' : '')) +
+                '</td><td>' + (s.miss ? '0' : s.ring) + '</td></tr>' : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
+  }
+  const first = v.bull_shots.length ? v.bull_shots[0].n : null, last = v.bull_shots.length ? v.bull_shots[v.bull_shots.length - 1].n : null;
+  return '<div class="panel"><h3>' + (first ? 'Shots ' + first + (last > first ? '–' + last : '') : 'Shots') + '</h3><table class="t"><tr><th>#</th><th>Score</th><th>Int</th></tr>' + rows + '</table></div>';
+}
+function aggRow(label, a) {
+  return '<tr><td>' + label + '</td><td><b>' + dec(a.decimal) + '</b></td><td>' + a.integer + '</td><td>' + a.x + '</td></tr>';
+}
+function lastPanel(v) {
+  const L = v.last_shot, g = v.groups.length ? v.groups[v.groups.length - 1] : null;
+  const big = L ? (L.miss ? '<span class="v miss">M</span>' : '<span class="v">' + dec(L.decimal) + '</span>' + (L.inner ? '<span class="xbig">X</span>' : '')) : '<span class="v">–</span>';
+  const sub = L ? 'Shot ' + esc(L.n) + (L.miss ? ' · miss' : ' · ring ' + L.ring) : 'No shots yet';
+  return '<div class="panel"><h3>Last shot</h3><div class="lastbig">' + big + '</div><div class="mut">' + sub + '</div>' +
+    '<table class="t" style="margin-top:8px"><tr><th></th><th>Decimal</th><th>Integer</th><th>X</th></tr>' +
+    (g ? aggRow('Group ' + (g.index + 1) + ' <span class="mut">(' + g.first + '–' + g.last + ')</span>', g) : '') +
+    aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg) + '</table></div>';
+}
+function zoomBar(zoom) {
+  const opts = ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto'];
+  return '<div class="zoombar"><span>Zoom</span>' + opts.map(z => '<button data-act="zoom" data-z="' + z + '" class="' + (zoom === z ? 'sel' : '') + '">' +
+    (z === 'off' ? 'Off' : z === 'auto' ? 'Auto' : z) + '</button>').join('') + '</div>';
+}
+function infoPanel(t, v, mode, S) {
+  const reviewing = !!S.review, L = t.lease;
+  let ctl = '';
+  if (!reviewing && t.kind === 'match') {
+    ctl = '<div class="modes">' + ['sighter', 'record'].map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '"' + (L.mine ? '' : ' disabled') + '>' + MODES[m] + '</button>').join('') + '</div>' +
+          (L.mine ? '' : '<div class="mut">Open the gear and take control to switch.</div>');
+  }
+  return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
+    '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
+    '<div class="mut">' + esc(v.shooter || t.shooter || 'No shooter set') + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
+    (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + ' shots waiting on the target' : '') + '</div>' + ctl + '</div>';
+}
+function shooterView(t, S) {
+  const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
+  const mode = reviewing ? (v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
+  const pr = t.calibre_x10 / 20, half = halfFor(S.zoom, v.bull_shots, pr);
+  const banner = reviewing ? '<div class="banner">Reviewing a ' + esc(v.kind) + ' series from ' + esc(when(v.started)) +
+    (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
+    ' <button data-act="rback">Back to live</button></div>' : '';
+  const pager = reviewing && v.bull_count > 1 ? '<div class="pager"><button data-act="bull" data-d="-1"' + (v.bull_index === 0 ? ' disabled' : '') + '>◀</button><span>Target ' + (v.bull_index + 1) + ' of ' + v.bull_count +
+    '</span><button data-act="bull" data-d="1"' + (v.bull_index >= v.bull_count - 1 ? ' disabled' : '') + '>▶</button></div>' : '';
+  return '<div class="shoot"><div class="left">' + zoomBar(S.zoom) +
+    faceSvg(v.bull_shots, {half: half, pellet: t.calibre_x10 / 10, color: modeColor(mode), corner: mode !== 'record'}) + pager + '</div>' +
+    '<div class="right">' + banner + infoPanel(t, v, mode, S) + shotsTable(v) + lastPanel(v) + '</div></div>';
+}
+
+// ---- Gear overlay ----
+function overlayView(t, S, name) {
+  const L = t.lease, st = t.settings, who = esc(name || '');
+  let h = '<div class="sheet"><div class="row"><h2>' + esc(t.name) + ' settings</h2><button data-act="gearclose">Close</button></div>';
+  h += '<section><h4>Control</h4>';
+  if (L.mine) h += '<p>You are in control. It renews while this page is open.</p><button data-act="release">Release control</button>';
+  else if (L.held_by) h += '<p><b>' + esc(L.held_by) + '</b> is in control.</p><button data-act="takeover">Take over</button>';
+  else h += '<p class="mut">Nobody is in control.</p><div class="row"><input id="who" value="' + who + '" placeholder="Your name" maxlength="40" style="flex:1"> <button class="pri" data-act="take">Take control</button></div>';
+  h += '</section>';
+  if (L.mine) {
+    h += '<section><h4>Mode</h4><div class="seg"><button data-act="kind" data-kind="practice" class="' + (t.kind === 'practice' ? 'sel' : '') + '">Practice</button>' +
+         '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button></div>' +
+         '<p class="mut">' + (t.kind === 'match' ? 'Sighter and Record buttons are on the main screen. Record shots carry on where they left off.' : 'Practice shots are not scored in a match.') + '</p></section>' +
+         '<section><h4>Shooter</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="Shooter name" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
+         '<p class="mut">A new shooter, or a new series, starts counting from shot 1.</p><button data-act="newseries">New series</button></section>' +
+         '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
+         '<label for="f_bull">Shots per target picture</label><input id="f_bull" type="number" min="1" max="100" value="' + st.bull_size + '">' +
+         '<label for="f_group">Shots per aggregate group</label><input id="f_group" type="number" min="1" max="100" value="' + st.group_size + '">' +
+         '<label for="f_tp">Total shots, practice</label><input id="f_tp" type="number" min="1" max="1000" value="' + st.total_practice + '">' +
+         '<label for="f_tm">Total shots, match</label><input id="f_tm" type="number" min="1" max="1000" value="' + st.total_match + '"></div>' +
+         '<p class="mut">Applies to the current series and to new ones.</p><button data-act="savesettings">Save</button></details></section>';
+  }
+  h += '<section><h4>Review</h4>' + (S.seriesList.length ? S.seriesList.map(g => {
+    const a = g.kind === 'match' ? g.scored : g.scored;
+    return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ' + esc(g.kind) + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots · <b>' + dec(a.decimal) + '</b>' +
+      (g.kind === 'match' && g.sighter.shots ? ' <span class="mut">(+' + g.sighter.shots + ' sighters)</span>' : '') + (g.open ? ' · live' : '') + '</button>';
+  }).join('') : '<p class="mut">No series yet.</p>') + '</section></div>';
+  return h;
+}
 
 // ---- browser only from here ----
-const S = {targets: [], seg: null, shots: [], segments: [], viewSeg: null, busy: false, again: false};
-let CID, timer;
+const S = {targets: [], review: null, reviewView: null, seriesList: [], gear: false, adv: false, zoom: 'auto', sse: false, busy: false, again: false};
+let CID;
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 function clientId() {
   CID = store('fet_cid') || Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
@@ -87,84 +260,56 @@ async function post(p, body) {
 }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
 const route = () => { const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
   if (S.busy) { S.again = true; return; }
   S.busy = true;
   try {
     S.targets = (await get('/targets?client_id=' + CID)).targets;
-    const r = route(), t = r.id && S.targets.find(x => x.device_id === r.id);
-    if (t) {
-      S.segments = (await get('/targets/' + r.id + '/segments?limit=50')).segments;
-      const seg = S.viewSeg || t.segment_id;
-      S.shots = seg ? (await get('/targets/' + r.id + '/shots?limit=1000&segment_id=' + seg)).shots : t.recent_shots;
+    const t = current();
+    if (t && S.review) {
+      S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + (S.review.bull != null ? '&bull=' + S.review.bull : ''));
+      S.review.bull = S.reviewView.bull_index;
     }
+    if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
-    document.getElementById('live').dataset.err = '';
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
   S.busy = false;
   if (S.again) { S.again = false; refresh(); }
 }
 
-function coachView() {
-  if (!S.targets.length) return '<p class="mut">No targets have reported yet. Power one on and check its WiFi setup.</p>';
-  const on = S.targets.filter(t => t.online).length;
-  return '<p class="mut">' + on + ' of ' + S.targets.length + ' targets online</p><div class="grid">' + S.targets.map(t => {
-    const g = t.segment, who = t.lease.held_by ? ' · controlled by ' + esc(t.lease.held_by) : '';
-    return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
-      '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
-      faceSvg(t.recent_shots, {mini: true, color: modeColor(t.mode), pellet: t.calibre_x10 / 10}) +
-      '<div class="row"><span>' + esc(t.shooter || '–') + '</span><span class="big">' + dec(g.total_decimal) + '</span></div>' +
-      '<div class="mut">' + g.shots + ' shots · integer ' + g.total_integer + ' · last ' + (t.last_shot ? (t.last_shot.miss ? 'miss' : dec(t.last_shot.decimal)) : '–') + who + '</div>' +
-      (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
-      (t.queue_depth ? '<div class="mut">' + t.queue_depth + ' shots waiting on the target</div>' : '') + '</a>';
-  }).join('') + '</div>';
-}
-
-function controlPanel(t) {
-  const name = store('fet_name') || '', L = t.lease;
-  if (L.mine) {
-    return '<p>You are in control. It renews automatically while this page is open.</p><div class="modes">' +
-      Object.keys(MODES).map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '">' + MODES[m] + '</button>').join('') + '</div>' +
-      '<div class="row"><input id="shooter" value="' + esc(t.shooter || name) + '" placeholder="Shooter name" maxlength="60" style="flex:1">' +
-      '<button data-act="newseries">New series</button></div><p class="mut">Changing the shooter name: click the current mode again.</p>' +
-      '<button data-act="release">Release control</button>';
-  }
-  if (L.held_by) return '<p><b>' + esc(L.held_by) + '</b> is in control.</p><button data-act="takeover">Take over</button>';
-  return '<p class="mut">Nobody is in control. Take control to change the mode.</p><div class="row"><input id="who" value="' + esc(name) + '" placeholder="Your name" maxlength="40" style="flex:1"><button class="pri" data-act="take">Take control</button></div>';
-}
-
-function shooterView(t) {
-  const live = !S.viewSeg, shots = S.shots, tot = total(shots), last = shots.filter(s => !s.miss).slice(-1)[0] || shots.slice(-1)[0];
-  const viewing = S.segments.find(g => g.id === (S.viewSeg || t.segment_id));
-  const mode = viewing ? viewing.mode : t.mode;
-  const opts = '<option value="">Live (current)</option>' + S.segments.filter(g => !g.open).map(g =>
-    '<option value="' + g.id + '"' + (S.viewSeg === g.id ? ' selected' : '') + '>' + esc(clock(g.started)) + ' · ' + MODES[g.mode] + ' · ' + esc(g.shooter || '–') + ' · ' + g.shots + ' shots · ' + dec(g.total_decimal) + '</option>').join('');
-  const rows = (live ? shots.slice().reverse() : shots).map(s => '<tr><td>' + esc(s.shot_number) + '</td><td>' + (s.miss ? 'miss' : s.ring) + '</td><td>' + dec(s.decimal) + '</td><td>' +
-    (s.miss ? '–' : s.x_mm.toFixed(2) + ', ' + s.y_mm.toFixed(2)) + '</td></tr>').join('');
-  return '<p><a href="#/">← All targets</a></p><div class="shoot"><div>' + faceSvg(shots, {color: modeColor(mode), pellet: t.calibre_x10 / 10}) +
-    '<p class="mut">' + (tot.misses ? tot.misses + ' miss(es) have no position and are not drawn. ' : '') + 'Positions in mm from the centre.</p></div><div>' +
-    '<div class="panel"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(mode) + '</div>' +
-    '<div class="mut">' + esc((viewing && viewing.shooter) || t.shooter || 'No shooter set') + (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (live ? '' : ' · reviewing a past series') + '</div></div>' +
-    '<div class="panel"><h3>' + (live ? 'Last shot' : 'Series') + '</h3><div class="row"><span class="last">' + (last ? (last.miss ? 'miss' : dec(last.decimal)) : '–') + '</span>' +
-    '<div style="text-align:right"><div class="big">' + tot.dec.toFixed(1) + '</div><div class="mut">' + shots.length + ' shots · integer ' + tot.int + '</div></div></div></div>' +
-    '<div class="panel"><h3>Control</h3>' + controlPanel(t) + '</div>' +
-    '<div class="panel"><h3>Review</h3><select id="seg" style="width:100%">' + opts + '</select></div>' +
-    '<div class="panel"><h3>Shots</h3><table><tr><th>#</th><th>Ring</th><th>Score</th><th>x, y (mm)</th></tr>' + (rows || '<tr><td colspan="4" class="mut">No shots yet</td></tr>') + '</table></div></div></div>';
-}
-
 function render() {
-  const app = document.getElementById('app'), r = route(), keep = document.activeElement && document.activeElement.id;
+  const app = document.getElementById('app'), t = current(), r = route();
   document.getElementById('nav-coach').className = r.id ? '' : 'on';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
-  const t = r.id && S.targets.find(x => x.device_id === r.id);
-  const typing = keep === 'shooter' || keep === 'who';
-  if (typing) return;                                              // never redraw under someone's typing
-  app.innerHTML = r.id ? (t ? shooterView(t) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView();
+  app.innerHTML = r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets);
+  renderOverlay(t);
+}
+function renderOverlay(t) {
+  const o = document.getElementById('overlay');
+  o.className = S.gear && t ? 'open' : '';
+  if (!S.gear || !t) { o.innerHTML = ''; return; }
+  const ae = document.activeElement;
+  if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)) return;      // never redraw under someone's typing
+  o.innerHTML = overlayView(t, S, store('fet_name') || '');
 }
 
 async function act(el) {
-  const r = route(), id = r.id, a = el.dataset.act, val = n => (document.getElementById(n) || {}).value;
+  const t = current(), id = t && t.device_id, a = el.dataset.act, val = n => (document.getElementById(n) || {}).value;
+  const setMode = async (mode, extra) => {
+    const res = await post('/targets/' + id + '/mode', Object.assign({mode: mode}, extra || {}));
+    if (res.status === 403) toast('You no longer have control of this target'); else if (res.status !== 200) toast(res.data.error || 'Could not change mode');
+    return res;
+  };
+  if (a === 'zoom') { S.zoom = el.dataset.z; store('fet_zoom', S.zoom); return render(); }
+  if (a === 'gear') { S.gear = true; await refresh(); return; }
+  if (a === 'gearclose') { S.gear = false; return render(); }
+  if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
+  if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', bull: null}; S.gear = false; return refresh(); }
+  if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.bull = null; return refresh(); }
+  if (a === 'bull') { S.review.bull = Math.max(0, (S.review.bull || 0) + (+el.dataset.d)); return refresh(); }
+  if (!id) return;
   if (a === 'take' || a === 'takeover') {
     const name = (val('who') || store('fet_name') || '').trim();
     if (!name) return toast('Enter your name first');
@@ -174,20 +319,30 @@ async function act(el) {
     if (res.status !== 200 && res.status !== 409) toast(res.data.error || 'Could not take control');
   } else if (a === 'release') {
     await post('/targets/' + id + '/control/release', {});
-  } else if (a === 'mode' || a === 'newseries') {
-    const t = S.targets.find(x => x.device_id === id), shooter = (val('shooter') || '').trim() || undefined;
-    const res = await post('/targets/' + id + '/mode', {mode: a === 'mode' ? el.dataset.mode : t.mode, shooter: shooter, new_segment: a === 'newseries'});
-    if (res.status === 403) toast('You no longer have control of this target'); else if (res.status !== 200) toast(res.data.error || 'Could not change mode');
+  } else if (a === 'mode') {
+    await setMode(el.dataset.mode);
+  } else if (a === 'kind') {
+    if (el.dataset.kind !== t.kind) await setMode(el.dataset.kind === 'match' ? 'sighter' : 'practice');
+  } else if (a === 'setshooter') {
+    const who = (val('shooter') || '').trim();
+    if (who) await setMode(t.mode, {shooter: who});
+  } else if (a === 'newseries') {
+    await setMode(t.kind === 'match' ? 'sighter' : 'practice', {new_series: true});
+  } else if (a === 'savesettings') {
+    const n = k => { const v = parseInt(val(k), 10); return isNaN(v) ? undefined : v; };
+    const res = await post('/targets/' + id + '/settings', {bull_size: n('f_bull'), group_size: n('f_group'), total_practice: n('f_tp'), total_match: n('f_tm')});
+    if (res.status === 200) toast('Saved'); else toast(res.data.error || 'Could not save');
   }
-  S.viewSeg = null;
+  S.review = null; S.reviewView = null;
   refresh();
 }
 
 function boot() {
   clientId();
+  S.zoom = store('fet_zoom') || 'auto';
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) act(el); });
-  document.addEventListener('change', e => { if (e.target.id === 'seg') { S.viewSeg = e.target.value ? +e.target.value : null; refresh(); } });
-  window.addEventListener('hashchange', () => { S.viewSeg = null; S.shots = []; refresh(); });
+  document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   let pending;
   try {
@@ -196,16 +351,16 @@ function boot() {
     es.onmessage = () => { clearTimeout(pending); pending = setTimeout(refresh, 150); };
     es.onerror = () => { S.sse = false; };
   } catch (e) { S.sse = false; }
-  timer = setInterval(refresh, 5000);
+  setInterval(refresh, 5000);
   setInterval(renew, 20000);
   refresh();
 }
 function renew() {                                               // keep the control claim alive while we hold it
-  const r = route(), t = r.id && S.targets.find(x => x.device_id === r.id);
-  if (t && t.lease.mine) post('/targets/' + r.id + '/control', {name: store('fet_name') || 'Shooter'});
+  const t = current();
+  if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== "undefined") module.exports = {faceSvg, esc, dec, ringR, total, tenths, S, coachView, shooterView};
+if (typeof module !== 'undefined') module.exports = {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
 </script>
 </body>
 </html>

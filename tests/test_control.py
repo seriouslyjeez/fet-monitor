@@ -109,24 +109,32 @@ class Modes(CtlCase):
     def test_defaults_idempotence_and_new_series(self):
         self.core.acquire_control("a1", ALICE, "Alice")
         a = self.core.set_mode("a1", ALICE, "sighter")
-        self.assertEqual(a["shooter"], "Alice")                                          # defaults to the person in control
+        self.assertEqual((a["shooter"], a["kind"]), ("Alice", "match"))               # defaults to the person in control
         self.assertEqual(self.core.set_mode("a1", ALICE, "sighter")["segment_id"], a["segment_id"])
-        b = self.core.set_mode("a1", ALICE, "sighter", new_segment=True)
-        self.assertNotEqual(b["segment_id"], a["segment_id"])
-        c = self.core.set_mode("a1", ALICE, "record", shooter="Carol")
+        r = self.core.set_mode("a1", ALICE, "record")                                  # same match, new segment
+        self.assertEqual(r["series_id"], a["series_id"])
+        self.assertNotEqual(r["segment_id"], a["segment_id"])
+        n = self.core.set_mode("a1", ALICE, "record", new_series=True)
+        self.assertNotEqual(n["series_id"], a["series_id"])
+        c = self.core.set_mode("a1", ALICE, "record", shooter="Carol")                 # a different shooter: fresh series
         self.assertEqual(c["shooter"], "Carol")
-        self.assertEqual(self.core.set_mode("a1", ALICE, "practice")["shooter"], "Carol")   # kept until changed
+        self.assertNotEqual(c["series_id"], n["series_id"])
+        p = self.core.set_mode("a1", ALICE, "practice")
+        self.assertEqual((p["shooter"], p["kind"]), ("Carol", "practice"))             # kept until changed
+        self.assertNotEqual(p["series_id"], c["series_id"])
         segs = self.core.list_segments("a1")
-        self.assertEqual([g["mode"] for g in segs], ["practice", "record", "sighter", "sighter"])
-        self.assertEqual([g["open"] for g in segs], [True, False, False, False])
+        self.assertEqual([g["mode"] for g in segs], ["practice", "record", "record", "record", "sighter"])
+        self.assertEqual([g["open"] for g in segs], [True, False, False, False, False])
+        kinds = [(g["kind"], g["open"]) for g in self.core.list_series("a1")]
+        self.assertEqual(kinds, [("practice", True), ("match", False), ("match", False), ("match", False)])
 
-    def test_default_mode_is_practice_with_no_segment(self):
+    def test_default_mode_is_practice_with_no_series(self):
         t = self.target()
-        self.assertEqual((t["mode"], t["segment_id"], t["shooter"]), ("practice", None, None))
+        self.assertEqual((t["mode"], t["series_id"], t["shooter"], t["kind"]), ("practice", None, None, "practice"))
+        self.assertEqual((t["view"]["count"], t["view"]["total"], t["view"]["bull_size"]), (0, 20, 10))
 
     def test_shot_takes_the_mode_in_force_when_it_was_fired(self):
         self.core.acquire_control("a1", ALICE, "Alice")
-        self.shoot(5_000)                                                                # before any mode: unassigned
         self.at(10_000)
         self.core.set_mode("a1", ALICE, "record")
         self.shoot(12_000, "0.00", "0.00")                                               # record, 10.9
@@ -136,11 +144,12 @@ class Modes(CtlCase):
         self.shoot(20_000, "2.00", "0.00", deliver_at=45_000)
         self.shoot(35_000, "0.00", "3.00")                                               # sighter
         by_shot = {s["shot_number"]: s for s in self.core.list_shots("a1")}
-        self.assertEqual([by_shot[i]["mode"] for i in (1, 2, 3, 4)], ["practice", "record", "record", "sighter"])
-        self.assertIsNone(by_shot[1]["segment_id"])
-        segs = {g["mode"]: g for g in self.core.list_segments("a1")}
-        self.assertEqual((segs["record"]["shots"], segs["record"]["total_decimal"], segs["record"]["total_integer"]), (2, 21.1, 20))   # 10.9 + 10.2
-        self.assertEqual(segs["sighter"]["shots"], 1)
+        self.assertEqual([by_shot[i]["stream"] for i in (1, 2, 3)], ["scored", "scored", "sighter"])
+        self.assertEqual([by_shot[i]["series_no"] for i in (1, 2, 3)], [1, 2, 1])
+        t = self.target()
+        self.assertEqual((t["mode"], t["view"]["stream"], t["view"]["count"]), ("sighter", "sighter", 1))
+        rec = self.core.series_view(t["series_id"], "scored")
+        self.assertEqual((rec["agg"]["shots"], rec["agg"]["decimal"], rec["agg"]["integer"]), (2, 21.1, 20))  # 10.9 + 10.2
 
     def test_shot_lag_moves_shots_earlier(self):
         self.core.shot_lag_ms = 3000
@@ -151,8 +160,9 @@ class Modes(CtlCase):
         self.core.set_mode("a1", ALICE, "sighter")
         self.shoot(12_000, deliver_at=12_000)         # printed at 12 s, really fired at 9 s -> before record began
         self.assertIsNone(self.core.list_shots("a1")[0]["segment_id"])
+        self.assertIsNone(self.core.list_shots("a1")[0]["series_no"])
 
-    def test_totals_misses_recent_and_filters(self):
+    def test_totals_misses_and_filters(self):
         self.core.acquire_control("a1", ALICE, "Alice")
         self.at(1_000)
         self.core.set_mode("a1", ALICE, "record")
@@ -160,16 +170,19 @@ class Modes(CtlCase):
             self.shoot(2_000 + i * 100, "0.00", "0.00")
         self.shoot(5_000, raw=MISS % 99)
         t = self.target(ALICE)
-        self.assertEqual(t["segment"], {"shots": 13, "misses": 1, "total_decimal": 130.8, "total_integer": 120})
-        self.assertEqual(len(t["recent_shots"]), 10)
-        self.assertTrue(t["last_shot"]["miss"])
-        self.assertIsNone(t["last_shot"]["x_mm"])
+        v = t["view"]
+        self.assertEqual((v["count"], v["total"], v["agg"]["decimal"], v["agg"]["integer"], v["agg"]["misses"], v["agg"]["x"]),
+                         (13, 60, 130.8, 120, 1, 12))
+        self.assertEqual(len(v["bull_shots"]), 3)                    # shots 11..13 of the second bull
+        self.assertTrue(v["last_shot"]["miss"])
+        self.assertIsNone(v["last_shot"]["x_mm"])
         self.at(6_000)
         self.core.set_mode("a1", ALICE, "practice")
         self.shoot(7_000)
-        first = self.core.list_segments("a1")[1]["id"]
-        self.assertEqual(len(self.core.list_shots("a1", segment_id=first)), 13)
+        first = self.core.list_series("a1")[1]["id"]
+        self.assertEqual(len(self.core.list_shots("a1", segment_id=self.core.list_segments("a1")[1]["id"])), 13)
         self.assertEqual(len(self.core.list_shots("a1")), 14)
+        self.assertEqual(self.core.series_view(first)["agg"]["shots"], 13)
 
     def test_changes_are_announced(self):
         q = self.core.hub.subscribe()
@@ -226,6 +239,35 @@ class Http(HttpCase):
         self.assertEqual(self.call("POST", p + "/control/release", {"client_id": BOB})[1], {"released": True})
         self.assertEqual(self.call("POST", "/api/v1/targets/ghost/control", {"client_id": ALICE, "name": "A"})[0], 404)
         self.assertEqual(self.call("GET", p + "/shots?segment_id=abc")[0], 400)
+
+    def test_series_settings_and_review_over_http(self):
+        p = "/api/v1/targets/a1"
+        self.assertEqual(self.call("POST", p + "/settings", {"client_id": ALICE, "bull_size": 5})[0], 403)
+        self.call("POST", p + "/control", {"client_id": ALICE, "name": "Alice"})
+        s, b = self.call("POST", p + "/settings", {"client_id": ALICE, "bull_size": 5, "total_practice": 8})
+        self.assertEqual((s, b["bull_size"], b["total_practice"], b["group_size"]), (200, 5, 8, 10))
+        self.assertEqual(self.call("POST", p + "/settings", {"client_id": ALICE, "bull_size": 0})[0], 400)
+        self.assertEqual(self.call("POST", p + "/settings", {"client_id": ALICE, "bull_size": "5"})[0], 400)
+        s, b = self.call("POST", p + "/mode", {"client_id": ALICE, "mode": "sighter"})
+        self.assertEqual((s, b["kind"]), (200, "match"))
+        self.call("POST", p + "/mode", {"client_id": ALICE, "mode": "record"})
+        for i in range(7):
+            self.core.handle_events({"device_id": "a1", "boot_count": 1, "uptime_ms": 60_000 + i, "events": [
+                {"seq": i + 1, "type": "shot", "uptime_ms": 60_000 + i, "raw": SHOT % (i + 1, "2.00", "0.00")}]})
+        s, b = self.call("GET", f"/api/v1/targets?client_id={ALICE}")
+        v = b["targets"][0]["view"]
+        self.assertEqual((v["count"], v["bull_size"], v["bull_index"], [x["n"] for x in v["bull_shots"]], v["agg"]["x"]),
+                         (7, 5, 1, [6, 7], 7))
+        s, b = self.call("GET", p + "/series")
+        sid = b["series"][0]["id"]
+        self.assertEqual((s, b["series"][0]["scored"]["shots"], b["series"][0]["sighter"]["shots"]), (200, 7, 0))
+        s, b = self.call("GET", f"/api/v1/series/{sid}?stream=scored&bull=0")
+        self.assertEqual((s, [x["n"] for x in b["bull_shots"]], b["bull_count"]), (200, [1, 2, 3, 4, 5], 2))
+        self.assertEqual(self.call("GET", f"/api/v1/series/{sid}?stream=bogus")[0], 400)
+        self.assertEqual(self.call("GET", f"/api/v1/series/{sid}?bull=x")[0], 400)
+        self.assertEqual(self.call("GET", "/api/v1/series/99999")[0], 404)
+        s, b = self.call("POST", p + "/mode", {"client_id": ALICE, "mode": "record", "new_series": True})
+        self.assertNotEqual(b["series_id"], sid)
 
     def test_dashboard_page_is_served(self):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/", timeout=5) as r:

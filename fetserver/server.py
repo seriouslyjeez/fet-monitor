@@ -16,7 +16,8 @@ from .core import BadRequest, Core, Forbidden, NotFound, iso
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|commands|control|control/release|mode)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|commands|control|control/release|mode|settings)$")
+SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})$")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
@@ -142,6 +143,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 raise BadRequest("since_id, limit and segment_id must be integers")
             return self._send(200, {"shots": core.list_shots(m.group(1), since, limit, seg)})
+        sm = SERIES_RE.match(url.path)
+        if sm:
+            try:
+                bull = int(q["bull"][0]) if "bull" in q else None
+            except ValueError:
+                raise BadRequest("bull must be an integer")
+            return self._send(200, core.series_view(int(sm.group(1)), q.get("stream", ["scored"])[0], bull))
+        if m and m.group(2) == "series":
+            try:
+                limit = int(q.get("limit", ["50"])[0])
+            except ValueError:
+                raise BadRequest("limit must be an integer")
+            return self._send(200, {"series": core.list_series(m.group(1), limit)})
         if m and m.group(2) == "segments":
             try:
                 limit = int(q.get("limit", ["50"])[0])
@@ -163,7 +177,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
-        if m and m.group(2) in ("commands", "control", "control/release", "mode"):
+        if m and m.group(2) in ("commands", "control", "control/release", "mode", "settings"):
             payload = self._read_json()
             if not isinstance(payload, dict):
                 raise BadRequest("body must be an object")
@@ -175,8 +189,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200 if res["granted"] else 409, res)
             if what == "control/release":
                 return self._send(200, {"released": core.release_control(did, payload.get("client_id"))})
+            if what == "settings":
+                return self._send(200, core.set_settings(did, payload.get("client_id"),
+                                                         **{k: payload.get(k) for k in core.SETTING_LIMITS}))
             return self._send(200, core.set_mode(did, payload.get("client_id"), payload.get("mode"),
-                                                 payload.get("shooter"), bool(payload.get("new_segment"))))
+                                                 payload.get("shooter"), bool(payload.get("new_series"))))
         self._send(404, {"error": "not found"})
 
 

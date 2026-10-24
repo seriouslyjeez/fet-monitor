@@ -1,33 +1,57 @@
-# freETarget club server (v0.2: core + dashboards)
+# freETarget club server (v0.3: series, zoom, scoring screens)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
-durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API.
-Standard library only: Python 3.9 or newer, nothing to install.
+durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
+and a web dashboard. Standard library only: Python 3.9 or newer, nothing to install.
 
-Open `http://<pi-address>:8080/` in any browser (phone, tablet, PC):
+Open `http://<pi-address>:8080/` in any browser (phone, tablet, PC).
 
-* **All targets (coach view)**: a card per target with online state, mode, shooter, a mini target
-  face with the latest shots, the current series total (decimal and integer), and who is in control.
-  Click a card to open that target.
-* **Single target (shooter view)**: a full ISSF face with numbered shots, last shot, series total,
-  the shot list, and control. Review: pick any past series from the list to replay it on the face.
-* **Control**: enter your name and tap *Take control*. While you hold it you can switch
-  Practice / Sighter / Record, set the shooter name, and start a new series. The claim lasts 60 s
-  and renews itself while the page is open; if you close the page it frees itself. Someone else can
-  *Take over* (after a confirmation). Mode changes need the claim; viewing does not.
-* A shot takes the mode that was active when it was fired, not when it arrived, so a delayed
-  upload still lands in the right series. Misses are listed with no position and count as 0.
+**All targets (coach view).** One card per target: name and online dot, a target picture that
+auto-zooms, the shooter, then a score box. The big number on the left is the total in decimal with
+the integer score and X count under it. To its right, the top row lists the aggregate of each group
+of 10 shots and the bottom row shows the shots on the current target picture. Click a card to open it.
 
-Not built yet: relabelling or excluding shots after the fact, user accounts, OTA firmware hosting.
-The protocol is described in the project spec ("freETarget Club Network: Protocol and Architecture Spec").
+**Single target (shooter view).** The target is the focus. Above it is the zoom bar:
+*Off* (whole target), *1-9* (zoom to that ring and stay there), *Auto* (starts on the 8 ring, then
+widens one ring at a time so the worst shot is always fully in view). Your choice is remembered per
+browser. On the right: target name and info, the shots on the current picture (filled from the top),
+then Last shot with the decimal and integer aggregate of the current group and of the whole series.
+Inner tens (10.2 and above) show an **X** and are totalled.
+
+**Practice and sighter shots are not scored**, so the target's top-right corner is black, as on paper.
+
+**Counting.** Shots are numbered within the series. The picture and the shot list reset when
+shot 11 arrives (not before, so you can study shot 10) while the number keeps counting.
+A practice series is 20 shots; the 21st shot starts a new series at 1. A practice series left idle for 30
+minutes also starts afresh. In a match, sighters count up with no limit (the picture still resets every
+10) and record shots count to 60, picking up where they left off if you go back to sighters and return.
+
+**The gear icon** holds everything that is not scoring:
+* *Control*: take, take over or release. Viewing never needs it. The claim lasts 60 s, renews itself while the
+  page is open, and frees itself when the page closes.
+* *Mode*: Practice or Match. In Match the **Sighter** and **Record** buttons appear on the main screen
+  (usable only by whoever is in control). Everyone else sees the current mode.
+* *Shooter* name, and a *New series* button. A new shooter starts a new series.
+* *Advanced*: shots per target picture, shots per aggregate group, total shots for practice and for match
+  (defaults 10 / 10 / 20 / 60). Saved per target and applied to the live series and new ones.
+* *Review*: any past series; page through its target pictures; in a match, switch between record and sighters.
+
+A shot takes the mode that was active when it was fired, not when it arrived, so a delayed upload still lands in
+the right series. Misses are listed as M, count as 0 and take a shot number.
+
+Not built yet: relabelling or excluding shots after the fact, user accounts, OTA firmware hosting, CSV export,
+match rules (when sighters are allowed, etc.).
 
 ## Try it (any computer)
 
     python3 -m fetserver serve --data-dir ./data --port 8080
     # in another terminal; the device token is in ./data/device_token
-    python3 -m fetserver.simtarget --token "$(cat data/device_token)" --shots 20 --interval 1
+    python3 -m fetserver.simtarget --token "$(cat data/device_token)" --shots 20 --interval 1 --good
     curl http://127.0.0.1:8080/api/v1/targets
     curl http://127.0.0.1:8080/api/v1/targets/sim-01/shots
+
+`--good` makes the simulated shooter mostly score 9s and 10s (with a fair number of inner tens); `--spread MM` sets the
+scatter directly; without either it is a poor shooter (8 mm). Use `--miss-rate 0.1` to add some misses.
 
 ## Tests
 
@@ -69,12 +93,15 @@ backup from /var/backups/freetarget in that case.
 | POST /events | target (X-FET-Token) | Batch of up to 50 events; reply `acked` is a list of `[boot_count, seq]` pairs (duplicates included), `rejected` lists malformed events |
 | POST /heartbeat | target (X-FET-Token) | Status in; `server_time_ms`, `heartbeat_interval_ms` and pending `commands` out |
 | GET /health | anyone | Liveness |
-| GET /targets?client_id= | browser | Targets with online state, mode, shooter, series totals, recent shots, control claim (`mine` is relative to client_id) |
+| GET /targets?client_id= | browser | Targets with online state, mode, shooter, settings, control claim (`mine` is relative to client_id) and `view`: the current stream's count, groups, aggregate, current target-picture shots and last shot |
 | GET /targets/<id>/shots?since_id=&limit=&segment_id= | browser | Shots with aligned x/y in mm, ring, decimal score, mode |
-| GET /targets/<id>/segments | browser | Series history, newest first, with totals |
+| GET /targets/<id>/series | browser | Series history, newest first, with scored and sighter totals |
+| GET /series/<n>?stream=scored\|sighter&bull=<k> | browser | Full view of a series stream, with the k-th target picture (for review) |
+| GET /targets/<id>/segments | browser | Mode segments (older view of the same history) |
+| POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match}`; needs the control claim |
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |
 | POST /targets/<id>/control/release | browser | Release the claim |
-| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_segment}`; 403 without the claim |
+| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series}`; 403 without the claim. Practice is its own series; sighter and record share a match series |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 | POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 
