@@ -136,3 +136,9 @@ assert(rpage.includes('Reviewing') && rpage.includes('Back to live') && rpage.in
 assert(rv.bull_count > 1 && rpage.includes('data-act="bull"'));
 assert(!/data-act="mode"/.test(rpage), 'no mode buttons while reviewing');
 console.log('OK');
+// --- v0.4 layout: red corner, 5-on-5 strip, every group beside Last shot
+assert(faceSvg([], {half: 26, corner: true}).includes('fill="#dc2626"') && !/class="corner"[^>]*fill="#000"/.test(faceSvg([], {half: 26, corner: true})), 'corner is red');
+assert(/repeat\(5,minmax\(0,1fr\)\)/.test(strip(v)), 'ten shots stack 5 over 5');
+assert(/\.grprow\{[^}]*repeat\(6,/.test(require('fs').readFileSync(__dirname + '/../fetserver/web/dashboard.html', 'utf8')), 'six group slots always reserved');
+v.groups.forEach(gr => assert(lp.includes('Group ' + (gr.index + 1) + '<'), 'every group stays listed: ' + gr.index));
+assert(lp.indexOf('Last shot') < lp.indexOf('Group 1'));

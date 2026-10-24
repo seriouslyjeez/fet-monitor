@@ -1,4 +1,4 @@
-# freETarget club server (v0.3: series, zoom, scoring screens)
+# freETarget club server (v0.4: series, zoom, scoring screens)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -18,7 +18,7 @@ browser. On the right: target name and info, the shots on the current picture (f
 then Last shot with the decimal and integer aggregate of the current group and of the whole series.
 Inner tens (10.2 and above) show an **X** and are totalled.
 
-**Practice and sighter shots are not scored**, so the target's top-right corner is black, as on paper.
+**Practice and sighter shots are not scored**, so the target's top-right corner is red (black vanished when zoomed in).
 
 **Counting.** Shots are numbered within the series. The picture and the shot list reset when
 shot 11 arrives (not before, so you can study shot 10) while the number keeps counting.

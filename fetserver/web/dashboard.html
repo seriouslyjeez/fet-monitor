@@ -23,12 +23,12 @@ button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-colo
 .card:hover{border-color:var(--accent)}.card.off{opacity:.55}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .card .face{margin:8px auto;max-width:300px}.who{font-weight:600;margin:2px 0 6px;min-height:1.35em}
 .scorebox{display:flex;gap:8px;align-items:stretch}
-.tot{flex:0 0 92px;border:1px solid var(--line);border-radius:8px;text-align:center;padding:6px 4px;background:var(--hi)}
-.tot .big{font-size:30px;font-weight:800;line-height:1.05}.tot .sub{font-size:14px;color:var(--mut)}
+.tot{flex:0 0 96px;border:1px solid var(--line);border-radius:8px;text-align:center;padding:6px 4px;background:var(--hi)}
+.tot .big{font-size:28px;font-weight:800;line-height:1.05}.tot .sub{font-size:14px;color:var(--mut)}
 .rows{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
-.grprow{display:flex;gap:4px;flex-wrap:wrap}.grp{border:1px solid var(--line);border-radius:6px;padding:1px 7px;text-align:center;line-height:1.15}
-.grp b{display:block;font-size:14px}.grp small{color:var(--mut);font-size:11px}.grp.part{border-style:dashed}
-.shotrow{display:grid;gap:2px}.cell{text-align:center;font-size:12px;padding:3px 0;border-radius:4px;background:var(--bg);min-height:23px;font-variant-numeric:tabular-nums}
+.grprow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px}.grp{border:1px solid var(--line);border-radius:6px;padding:1px 2px;text-align:center;line-height:1.15;min-width:0}
+.grp b{display:block;font-size:13px}.grp small{display:block;color:var(--mut);font-size:10.5px}.grp.part{border-style:dashed}
+.shotrow{display:grid;gap:2px}.cell{min-width:0;text-align:center;font-size:12px;padding:3px 0;border-radius:4px;background:var(--bg);min-height:23px;font-variant-numeric:tabular-nums}
 .cell.x{background:var(--accent);color:#fff;font-weight:700}.cell.m{color:var(--bad);font-weight:700}.cell.e{opacity:.5}
 /* single target */
 .shoot{display:grid;grid-template-columns:minmax(300px,1.5fr) minmax(290px,1fr);gap:14px;align-items:start}@media (max-width:820px){.shoot{grid-template-columns:1fr}}
@@ -44,7 +44,8 @@ table.t{width:100%;border-collapse:collapse}table.t td,table.t th{padding:3px 6p
 table.t th{color:var(--mut);font-weight:500;font-size:12px}table.t td:first-child,table.t th:first-child{text-align:left}
 table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{background:var(--hi);font-weight:700}
 .xm{color:var(--accent);font-weight:800;margin-left:4px}.miss{color:var(--bad);font-weight:700}
-.lastbig{display:flex;align-items:baseline;gap:10px}.lastbig .v{font-size:60px;font-weight:800;line-height:1}.lastbig .xbig{font-size:30px;color:var(--accent);font-weight:800}
+.lastwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}.lastleft{flex:1 1 150px}.lastright{flex:2 1 240px;max-height:280px;overflow:auto}tr.tot-row td{font-weight:700;border-top:2px solid var(--line)}
+.lastbig{display:flex;align-items:baseline;gap:10px}.lastbig .v{font-size:52px;font-weight:800;line-height:1}.lastbig .xbig{font-size:30px;color:var(--accent);font-weight:800}
 .banner{background:var(--hi);border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:14px}
 /* overlay */
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
@@ -125,7 +126,7 @@ function faceSvg(shots, o) {
   });
   if (o.corner) {                                                    // practice and sighter shots are not scored
     const L = H * (mini ? 0.34 : 0.3);
-    s += '<polygon class="corner" points="' + H + ',' + (-H) + ' ' + (H - L) + ',' + (-H) + ' ' + H + ',' + (-H + L) + '" fill="#000"/>';
+    s += '<polygon class="corner" points="' + H + ',' + (-H) + ' ' + (H - L) + ',' + (-H) + ' ' + H + ',' + (-H + L) + '" fill="#dc2626"/>';
   }
   return s + '</svg>';
 }
@@ -138,12 +139,12 @@ function strip(v) {
     const s = v.bull_shots[i];
     c += s ? '<span class="cell' + (s.inner ? ' x' : '') + (s.miss ? ' m' : '') + '">' + esc(scoreText(s)) + '</span>' : '<span class="cell e"></span>';
   }
-  return '<div class="shotrow" style="grid-template-columns:repeat(' + Math.max(1, n) + ',1fr)">' + c + '</div>';
+  return '<div class="shotrow" style="grid-template-columns:repeat(' + Math.max(1, Math.min(5, n)) + ',minmax(0,1fr))">' + c + '</div>';   // stacked 5 over 5
 }
 function groupsRow(v) {
   if (!v.groups.length) return '<div class="grprow"><span class="mut">no shots yet</span></div>';
   return '<div class="grprow">' + v.groups.slice(-6).map(g => '<span class="grp' + (g.complete ? '' : ' part') + '" title="shots ' + g.first + '–' + g.last + '"><b>' +
-    dec(g.decimal) + '</b><small>' + g.integer + (g.x ? ' · X' + g.x : '') + '</small></span>').join('') + '</div>';
+    dec(g.decimal) + '</b><small>' + g.integer + '</small>' + (g.x ? '<small>X' + g.x + '</small>' : '') + '</span>').join('') + '</div>';
 }
 function coachCard(t) {
   const v = t.view, pr = t.calibre_x10 / 20, half = halfFor('auto', v.bull_shots, pr);
@@ -176,13 +177,13 @@ function aggRow(label, a) {
   return '<tr><td>' + label + '</td><td><b>' + dec(a.decimal) + '</b></td><td>' + a.integer + '</td><td>' + a.x + '</td></tr>';
 }
 function lastPanel(v) {
-  const L = v.last_shot, g = v.groups.length ? v.groups[v.groups.length - 1] : null;
+  const L = v.last_shot;
   const big = L ? (L.miss ? '<span class="v miss">M</span>' : '<span class="v">' + dec(L.decimal) + '</span>' + (L.inner ? '<span class="xbig">X</span>' : '')) : '<span class="v">–</span>';
   const sub = L ? 'Shot ' + esc(L.n) + (L.miss ? ' · miss' : ' · ring ' + L.ring) : 'No shots yet';
-  return '<div class="panel"><h3>Last shot</h3><div class="lastbig">' + big + '</div><div class="mut">' + sub + '</div>' +
-    '<table class="t" style="margin-top:8px"><tr><th></th><th>Decimal</th><th>Integer</th><th>X</th></tr>' +
-    (g ? aggRow('Group ' + (g.index + 1) + ' <span class="mut">(' + g.first + '–' + g.last + ')</span>', g) : '') +
-    aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg) + '</table></div>';
+  const groups = v.groups.map(g => aggRow('<span title="shots ' + g.first + '–' + g.last + '">Group ' + (g.index + 1) + '</span>', g)).join('');
+  return '<div class="panel"><div class="lastwrap"><div class="lastleft"><h3>Last shot</h3><div class="lastbig">' + big + '</div><div class="mut">' + sub + '</div></div>' +
+    '<div class="lastright"><table class="t"><tr><th></th><th>Decimal</th><th>Integer</th><th>X</th></tr>' + groups +
+    aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg).replace('<tr>', '<tr class="tot-row">') + '</table></div></div></div>';
 }
 function zoomBar(zoom) {
   const opts = ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto'];
