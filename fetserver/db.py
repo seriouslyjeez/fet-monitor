@@ -89,6 +89,43 @@ MIGRATIONS = [
     );
     CREATE INDEX commands_pending ON commands (device_id, status);
     """,
+    """
+    -- A segment is a stretch of time on one target in one mode (practice / sighter / record).
+    CREATE TABLE segments (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id  TEXT NOT NULL,
+        mode       TEXT NOT NULL,
+        shooter    TEXT,
+        started_ms INTEGER NOT NULL,
+        ended_ms   INTEGER
+    );
+    CREATE INDEX segments_target ON segments (device_id, started_ms);
+    ALTER TABLE shots ADD COLUMN segment_id INTEGER;
+    CREATE INDEX shots_segment ON shots (segment_id);
+    -- Who is currently allowed to change a target's mode. Expires unless renewed.
+    CREATE TABLE leases (
+        device_id   TEXT PRIMARY KEY,
+        client_id   TEXT NOT NULL,
+        holder_name TEXT NOT NULL,
+        acquired_ms INTEGER NOT NULL,
+        expires_ms  INTEGER NOT NULL
+    );
+    """,
+    """
+    -- An event whose (device, boot_count, seq) already exists but whose content differs.
+    -- That means a target reused a boot_count (for example after a factory reset). Kept, never dropped silently.
+    CREATE TABLE event_conflicts (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id  TEXT NOT NULL,
+        boot_count INTEGER NOT NULL,
+        seq        INTEGER NOT NULL,
+        type       TEXT,
+        recv_ms    INTEGER NOT NULL,
+        uptime_ms  INTEGER,
+        raw        TEXT,
+        data_json  TEXT
+    );
+    """,
 ]
 
 

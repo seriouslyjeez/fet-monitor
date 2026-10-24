@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freETarget</title>
+<style>
+:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+header{display:flex;align-items:center;gap:16px;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+header h1{font-size:17px;margin:0}header a{color:var(--fg);text-decoration:none;padding:4px 10px;border-radius:6px}header a.on{background:var(--accent);color:#fff}
+#live{margin-left:auto;font-size:13px;color:var(--mut)}main{padding:16px;max-width:1200px;margin:0 auto}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;color:inherit;text-decoration:none}
+.card:hover{border-color:var(--accent)}.card.off{opacity:.55}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.badge{font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;color:#fff}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}
+.face{display:block;width:100%;height:auto;border-radius:6px;margin:8px 0}.big{font-size:22px;font-weight:700}.mut{color:var(--mut);font-size:13px}
+.shoot{display:grid;grid-template-columns:minmax(260px,560px) 1fr;gap:16px;align-items:start}@media (max-width:760px){.shoot{grid-template-columns:1fr}}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}.panel h3{margin:0 0 8px;font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.last{font-size:56px;font-weight:800;line-height:1}button,input,select{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button.sel{outline:3px solid var(--accent)}button:disabled{opacity:.5;cursor:default}
+.modes{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.modes button{flex:1;min-width:90px;font-weight:600}
+table{width:100%;border-collapse:collapse}td,th{padding:4px 6px;text-align:right;border-bottom:1px solid var(--line)}th{color:var(--mut);font-weight:500}td:first-child,th:first-child{text-align:left}
+#toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 14px;border-radius:8px;display:none}
+</style>
+</head>
+<body>
+<header><h1>freETarget</h1><a href="#/" id="nav-coach">All targets</a><span id="live">connecting…</span></header>
+<main id="app"></main><div id="toast"></div>
+<script>
+'use strict';
+const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record'};
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const dec = v => (v == null ? '–' : v.toFixed(1));
+const ringR = k => 0.25 + 2.5 * (10 - k);                       // outer radius of ring k in mm (ISSF 10 m air rifle)
+const tenths = list => list.reduce((a, s) => a + Math.round(s.decimal * 10), 0);
+const total = list => ({dec: tenths(list) / 10, int: list.reduce((a, s) => a + s.ring, 0), misses: list.filter(s => s.miss).length});
+
+// Target face with shots. Pure function: returns an SVG string. y is up in the data, down on screen.
+function faceSvg(shots, o) {
+  o = o || {};
+  const mini = !!o.mini, pr = (o.pellet || 4.5) / 2, col = o.color || 'var(--accent)', black = ringR(4);
+  let s = '<svg class="face" viewBox="-26 -26 52 52" role="img" aria-label="Target face"><rect x="-26" y="-26" width="52" height="52" fill="#fff"/>' +
+          '<circle r="' + black + '" fill="#111"/>';
+  for (let k = 1; k <= 10; k++) {
+    s += '<circle r="' + ringR(k) + '" fill="' + (k === 10 ? '#fff' : 'none') + '" stroke="' + (ringR(k) <= black ? '#fff' : '#111') +
+         '" stroke-width="' + (mini ? 0.3 : 0.18) + '"/>';
+  }
+  if (!mini) {
+    for (let k = 1; k <= 8; k++) {
+      const m = ringR(k) - 1.25, fill = m < black ? '#fff' : '#111';
+      [[0, -m], [0, m], [-m, 0], [m, 0]].forEach(p => {
+        s += '<text x="' + p[0] + '" y="' + p[1] + '" font-size="1.7" text-anchor="middle" dominant-baseline="central" fill="' + fill + '">' + k + '</text>';
+      });
+    }
+  }
+  const pts = shots.filter(x => !x.miss && x.x_mm != null);
+  pts.forEach((x, i) => {
+    const isLast = i === pts.length - 1;
+    s += '<circle cx="' + x.x_mm + '" cy="' + (-x.y_mm) + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
+         (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) + '"/>';
+    if (!mini) {
+      s += '<text x="' + x.x_mm + '" y="' + (-x.y_mm) + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' +
+           esc(x.shot_number) + '</text>';
+    }
+  });
+  return s + '</svg>';
+}
+const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
+const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
+const clock = iso => new Date(iso).toLocaleTimeString();
+
+// ---- browser only from here ----
+const S = {targets: [], seg: null, shots: [], segments: [], viewSeg: null, busy: false, again: false};
+let CID, timer;
+function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
+function clientId() {
+  CID = store('fet_cid') || Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
+  store('fet_cid', CID);
+}
+async function get(p) { const r = await fetch(API + p); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function post(p, body) {
+  const r = await fetch(API + p, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({client_id: CID}, body))});
+  return {status: r.status, data: await r.json().catch(() => ({}))};
+}
+function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
+const route = () => { const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+
+async function refresh() {
+  if (S.busy) { S.again = true; return; }
+  S.busy = true;
+  try {
+    S.targets = (await get('/targets?client_id=' + CID)).targets;
+    const r = route(), t = r.id && S.targets.find(x => x.device_id === r.id);
+    if (t) {
+      S.segments = (await get('/targets/' + r.id + '/segments?limit=50')).segments;
+      const seg = S.viewSeg || t.segment_id;
+      S.shots = seg ? (await get('/targets/' + r.id + '/shots?limit=1000&segment_id=' + seg)).shots : t.recent_shots;
+    }
+    render();
+    document.getElementById('live').dataset.err = '';
+  } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
+  S.busy = false;
+  if (S.again) { S.again = false; refresh(); }
+}
+
+function coachView() {
+  if (!S.targets.length) return '<p class="mut">No targets have reported yet. Power one on and check its WiFi setup.</p>';
+  const on = S.targets.filter(t => t.online).length;
+  return '<p class="mut">' + on + ' of ' + S.targets.length + ' targets online</p><div class="grid">' + S.targets.map(t => {
+    const g = t.segment, who = t.lease.held_by ? ' · controlled by ' + esc(t.lease.held_by) : '';
+    return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
+      '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
+      faceSvg(t.recent_shots, {mini: true, color: modeColor(t.mode), pellet: t.calibre_x10 / 10}) +
+      '<div class="row"><span>' + esc(t.shooter || '–') + '</span><span class="big">' + dec(g.total_decimal) + '</span></div>' +
+      '<div class="mut">' + g.shots + ' shots · integer ' + g.total_integer + ' · last ' + (t.last_shot ? (t.last_shot.miss ? 'miss' : dec(t.last_shot.decimal)) : '–') + who + '</div>' +
+      (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
+      (t.queue_depth ? '<div class="mut">' + t.queue_depth + ' shots waiting on the target</div>' : '') + '</a>';
+  }).join('') + '</div>';
+}
+
+function controlPanel(t) {
+  const name = store('fet_name') || '', L = t.lease;
+  if (L.mine) {
+    return '<p>You are in control. It renews automatically while this page is open.</p><div class="modes">' +
+      Object.keys(MODES).map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '">' + MODES[m] + '</button>').join('') + '</div>' +
+      '<div class="row"><input id="shooter" value="' + esc(t.shooter || name) + '" placeholder="Shooter name" maxlength="60" style="flex:1">' +
+      '<button data-act="newseries">New series</button></div><p class="mut">Changing the shooter name: click the current mode again.</p>' +
+      '<button data-act="release">Release control</button>';
+  }
+  if (L.held_by) return '<p><b>' + esc(L.held_by) + '</b> is in control.</p><button data-act="takeover">Take over</button>';
+  return '<p class="mut">Nobody is in control. Take control to change the mode.</p><div class="row"><input id="who" value="' + esc(name) + '" placeholder="Your name" maxlength="40" style="flex:1"><button class="pri" data-act="take">Take control</button></div>';
+}
+
+function shooterView(t) {
+  const live = !S.viewSeg, shots = S.shots, tot = total(shots), last = shots.filter(s => !s.miss).slice(-1)[0] || shots.slice(-1)[0];
+  const viewing = S.segments.find(g => g.id === (S.viewSeg || t.segment_id));
+  const mode = viewing ? viewing.mode : t.mode;
+  const opts = '<option value="">Live (current)</option>' + S.segments.filter(g => !g.open).map(g =>
+    '<option value="' + g.id + '"' + (S.viewSeg === g.id ? ' selected' : '') + '>' + esc(clock(g.started)) + ' · ' + MODES[g.mode] + ' · ' + esc(g.shooter || '–') + ' · ' + g.shots + ' shots · ' + dec(g.total_decimal) + '</option>').join('');
+  const rows = (live ? shots.slice().reverse() : shots).map(s => '<tr><td>' + esc(s.shot_number) + '</td><td>' + (s.miss ? 'miss' : s.ring) + '</td><td>' + dec(s.decimal) + '</td><td>' +
+    (s.miss ? '–' : s.x_mm.toFixed(2) + ', ' + s.y_mm.toFixed(2)) + '</td></tr>').join('');
+  return '<p><a href="#/">← All targets</a></p><div class="shoot"><div>' + faceSvg(shots, {color: modeColor(mode), pellet: t.calibre_x10 / 10}) +
+    '<p class="mut">' + (tot.misses ? tot.misses + ' miss(es) have no position and are not drawn. ' : '') + 'Positions in mm from the centre.</p></div><div>' +
+    '<div class="panel"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(mode) + '</div>' +
+    '<div class="mut">' + esc((viewing && viewing.shooter) || t.shooter || 'No shooter set') + (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (live ? '' : ' · reviewing a past series') + '</div></div>' +
+    '<div class="panel"><h3>' + (live ? 'Last shot' : 'Series') + '</h3><div class="row"><span class="last">' + (last ? (last.miss ? 'miss' : dec(last.decimal)) : '–') + '</span>' +
+    '<div style="text-align:right"><div class="big">' + tot.dec.toFixed(1) + '</div><div class="mut">' + shots.length + ' shots · integer ' + tot.int + '</div></div></div></div>' +
+    '<div class="panel"><h3>Control</h3>' + controlPanel(t) + '</div>' +
+    '<div class="panel"><h3>Review</h3><select id="seg" style="width:100%">' + opts + '</select></div>' +
+    '<div class="panel"><h3>Shots</h3><table><tr><th>#</th><th>Ring</th><th>Score</th><th>x, y (mm)</th></tr>' + (rows || '<tr><td colspan="4" class="mut">No shots yet</td></tr>') + '</table></div></div></div>';
+}
+
+function render() {
+  const app = document.getElementById('app'), r = route(), keep = document.activeElement && document.activeElement.id;
+  document.getElementById('nav-coach').className = r.id ? '' : 'on';
+  document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
+  const t = r.id && S.targets.find(x => x.device_id === r.id);
+  const typing = keep === 'shooter' || keep === 'who';
+  if (typing) return;                                              // never redraw under someone's typing
+  app.innerHTML = r.id ? (t ? shooterView(t) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView();
+}
+
+async function act(el) {
+  const r = route(), id = r.id, a = el.dataset.act, val = n => (document.getElementById(n) || {}).value;
+  if (a === 'take' || a === 'takeover') {
+    const name = (val('who') || store('fet_name') || '').trim();
+    if (!name) return toast('Enter your name first');
+    store('fet_name', name);
+    let res = await post('/targets/' + id + '/control', {name: name, takeover: a === 'takeover'});
+    if (res.status === 409 && confirm(res.data.held_by + ' is in control. Take over?')) res = await post('/targets/' + id + '/control', {name: name, takeover: true});
+    if (res.status !== 200 && res.status !== 409) toast(res.data.error || 'Could not take control');
+  } else if (a === 'release') {
+    await post('/targets/' + id + '/control/release', {});
+  } else if (a === 'mode' || a === 'newseries') {
+    const t = S.targets.find(x => x.device_id === id), shooter = (val('shooter') || '').trim() || undefined;
+    const res = await post('/targets/' + id + '/mode', {mode: a === 'mode' ? el.dataset.mode : t.mode, shooter: shooter, new_segment: a === 'newseries'});
+    if (res.status === 403) toast('You no longer have control of this target'); else if (res.status !== 200) toast(res.data.error || 'Could not change mode');
+  }
+  S.viewSeg = null;
+  refresh();
+}
+
+function boot() {
+  clientId();
+  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) act(el); });
+  document.addEventListener('change', e => { if (e.target.id === 'seg') { S.viewSeg = e.target.value ? +e.target.value : null; refresh(); } });
+  window.addEventListener('hashchange', () => { S.viewSeg = null; S.shots = []; refresh(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
+  let pending;
+  try {
+    const es = new EventSource(API + '/stream');
+    es.onopen = () => { S.sse = true; };
+    es.onmessage = () => { clearTimeout(pending); pending = setTimeout(refresh, 150); };
+    es.onerror = () => { S.sse = false; };
+  } catch (e) { S.sse = false; }
+  timer = setInterval(refresh, 5000);
+  setInterval(renew, 20000);
+  refresh();
+}
+function renew() {                                               // keep the control claim alive while we hold it
+  const r = route(), t = r.id && S.targets.find(x => x.device_id === r.id);
+  if (t && t.lease.mine) post('/targets/' + r.id + '/control', {name: store('fet_name') || 'Shooter'});
+}
+if (typeof document !== 'undefined' && document.getElementById('app')) boot();
+if (typeof module !== "undefined") module.exports = {faceSvg, esc, dec, ringR, total, tenths, S, coachView, shooterView};
+</script>
+</body>
+</html>

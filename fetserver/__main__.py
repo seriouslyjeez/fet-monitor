@@ -30,7 +30,8 @@ def load_token(data_dir: Path) -> str:
 
 def cmd_serve(args, db: Database, data_dir: Path) -> int:
     core = Core(db, offline_after_ms=int(args.offline_after * 1000),
-                heartbeat_interval_ms=int(args.heartbeat_interval * 1000))
+                heartbeat_interval_ms=int(args.heartbeat_interval * 1000),
+                lease_ms=int(args.lease * 1000), shot_lag_ms=int(args.shot_lag * 1000))
     server = make_server(core, load_token(data_dir), args.host, args.port)
     stop = threading.Event()
 
@@ -88,6 +89,9 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--offline-after", type=float, default=15.0, help="seconds without contact before a target is offline")
     ap.add_argument("--heartbeat-interval", type=float, default=5.0, help="seconds, suggested to targets")
+    ap.add_argument("--lease", type=float, default=60.0, help="seconds a control claim lasts without renewal")
+    ap.add_argument("--shot-lag", type=float, default=0.0,
+                    help="seconds between a shot being detected and its line reaching the ESP (measure on the bench)")
     ap.add_argument("--to", default="./backups", help="backup destination directory")
     ap.add_argument("--keep", type=int, default=14, help="backups to keep")
     ap.add_argument("-v", "--verbose", action="store_true")

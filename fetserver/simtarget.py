@@ -133,8 +133,10 @@ def main(argv=None) -> int:
     ap.add_argument("--shots", type=int, default=20)
     ap.add_argument("--interval", type=float, default=1.0)
     ap.add_argument("--miss-rate", type=float, default=0.05)
+    ap.add_argument("--boot-count", type=int, default=None, help="default: current time, so every run is a new boot")
     args = ap.parse_args(argv)
     t = SimTarget(args.url, args.token, args.device_id, args.name)
+    t.boot_count = args.boot_count if args.boot_count is not None else int(time.time())
     t.send_config()
     for i in range(args.shots):
         t.fire_miss() if t.rng.random() < args.miss_rate else t.fire()

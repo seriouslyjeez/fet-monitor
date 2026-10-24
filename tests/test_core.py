@@ -58,6 +58,17 @@ class Ingest(CoreCase):
         self.assertEqual(self.rows("SELECT COUNT(*) FROM events")[0][0], 1)
         self.assertEqual(self.rows("SELECT COUNT(*) FROM shots")[0][0], 1)
 
+    def test_reused_identity_with_different_content_is_kept_not_dropped(self):
+        self.send([self.ev(1)])
+        other = REAL_SHOT.replace('"x":-3.61', '"x":1.00')
+        r = self.send([self.ev(1, raw=other)])                      # e.g. boot_count restarted after a factory reset
+        self.assertEqual(r["acked"], [[1, 1]])                       # acknowledged so the target does not stall...
+        self.assertEqual(self.core.conflict_count(), 1)              # ...but the content is preserved and visible
+        self.assertEqual(self.rows("SELECT raw FROM event_conflicts")[0]["raw"], other)
+        self.assertEqual(self.rows("SELECT COUNT(*) FROM shots")[0][0], 1)
+        self.send([self.ev(1)])                                      # an exact retry is not a conflict
+        self.assertEqual(self.core.conflict_count(), 1)
+
     def test_same_seq_in_different_boots_are_different_events(self):
         self.send([self.ev(1)], boot=1)
         self.send([self.ev(1)], boot=2)
