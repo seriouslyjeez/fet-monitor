@@ -1,0 +1,72 @@
+// ESP8266 implementations of the core's interfaces: LittleFS, WiFi + a hand-written HTTP client, the serial port.
+#pragma once
+#include <Arduino.h>
+#include <ESP8266WiFi.h>   // IPAddress, WiFi
+#include <string>
+#include "../core/config.h"
+#include "../core/interfaces.h"
+
+namespace fetp {
+
+uint64_t nowMs();                         // millis() extended to 64 bits (call at least every few weeks)
+
+class LfsFs : public fet::Fs {
+ public:
+  bool begin();                           // mounts; formats once if it will not mount
+  size_t totalBytes();
+  bool read(const std::string& path, std::string& out) override;
+  bool readRange(const std::string& path, size_t off, size_t len, std::string& out) override;
+  bool writeAtomic(const std::string& path, const std::string& data) override;
+  bool append(const std::string& path, const std::string& data) override;
+  bool remove(const std::string& path) override;
+  bool size(const std::string& path, size_t& out) override;
+  std::vector<std::string> list(const std::string& prefix) override;
+  size_t freeBytes() override;
+};
+
+// Bytes that arrive from the Arduino while we wait on the network are parked here, then fed to the bridge.
+struct RxHold {
+  std::string bytes;
+  static const size_t MAX = 4096;
+  void pump();                            // move whatever the UART has into 'bytes' (leaves the rest in the FIFO if full)
+};
+
+class WifiNet : public fet::Net {
+ public:
+  WifiNet(const fet::Config& cfg, RxHold& hold) : cfg_(cfg), hold_(hold) {}
+  bool ready() override;                  // WiFi up AND the server address known
+  int rssi() override;
+  bool post(const char* path, const std::string& body, int& status, std::string& resp) override;
+  void startWifi(const std::string& hostname, bool withAccessPoint);   // non-blocking; auto-reconnects; sets the radio mode once
+  void stopSta();
+  void update(uint64_t now);              // mDNS upkeep, connection bookkeeping
+  bool wifiUp() const;
+  std::string serverText() const;         // "10.0.0.5:8080" or why not
+ private:
+  bool resolveServer(uint64_t now);
+  const fet::Config& cfg_;
+  RxHold& hold_;
+  IPAddress ip_;
+  bool haveIp_ = false;
+  uint64_t nextResolve_ = 0, ipAt_ = 0;
+  int connectFails_ = 0;
+  int port_ = 8080;
+  bool mdnsUp_ = false, wasUp_ = false;
+  std::string hostname_;
+};
+
+class SerialUart : public fet::Uart {
+ public:
+  void write(const std::string& s) override;
+};
+
+struct PlatformHooks : fet::Hooks {
+  bool portalWanted = false;
+  uint64_t rebootAt = 0;                  // 0 = none
+  void reboot() override;
+  void openPortal() override { portalWanted = true; }
+};
+
+std::string deviceIdFromChip();           // fet-xxxxxx
+
+}  // namespace fetp

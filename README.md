@@ -1,4 +1,4 @@
-# freETarget club server (v0.5.2: series, zoom, scoring screens, ammo test)
+# freETarget club server (v0.6.0: series, zoom, scoring screens, ammo test; ESP-01 firmware included)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -89,6 +89,12 @@ all-or-nothing batches, outages with lost acknowledgements, 20 concurrent target
 group statistics (an exact square, a rotated rectangle, collinear and tiny groups, oval containment), ammo-test scoring and re-scoring, the v0.4 to v0.5 database upgrade, a kill -9 test (no acknowledged event may be lost), control claims and mode assignment
 (including late-delivered shots), the live stream, and the dashboard page logic.
 The last needs Node.js to run (skipped without it); Node is not needed on the Pi.
+
+## ESP-01 firmware
+
+The bridge firmware for the target's ESP-01 is in `firmware/` (its own README: build, flash, portal setup, bench tests).
+`python3 -m unittest tests.test_firmware_host` runs the real firmware logic against this server with injected power cuts
+and flash faults (needs g++; skipped without it).
 
 ## Install on a Raspberry Pi
 
