@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, S} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, S} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -135,10 +135,72 @@ const rpage = shooterView(recordT, state({review: {sid: rv.series_id, stream: 's
 assert(rpage.includes('Reviewing') && rpage.includes('Back to live') && rpage.includes('Target ' + (rv.bull_index + 1) + ' of ' + rv.bull_count));
 assert(rv.bull_count > 1 && rpage.includes('data-act="bull"'));
 assert(!/data-act="mode"/.test(rpage), 'no mode buttons while reviewing');
-console.log('OK');
 // --- v0.4 layout: red corner, 5-on-5 strip, every group beside Last shot
 assert(faceSvg([], {half: 26, corner: true}).includes('fill="#dc2626"') && !/class="corner"[^>]*fill="#000"/.test(faceSvg([], {half: 26, corner: true})), 'corner is red');
 assert(/repeat\(5,minmax\(0,1fr\)\)/.test(strip(v)), 'ten shots stack 5 over 5');
 assert(/\.grprow\{[^}]*repeat\(6,/.test(require('fs').readFileSync(__dirname + '/../fetserver/web/dashboard.html', 'utf8')), 'six group slots always reserved');
 v.groups.forEach(gr => assert(lp.includes('Group ' + (gr.index + 1) + '<'), 'every group stays listed: ' + gr.index));
 assert(lp.indexOf('Last shot') < lp.indexOf('Group 1'));
+
+// --- v0.5 ammo test
+const ammoT = T('lane-5'), av = ammoT.view, am = av.ammo;
+assert.strictEqual(av.kind, 'ammo'); assert(am.shots === 13 && av.count === 14 && am.misses === 1 && am.diameter_mm === 5.7);
+const apage = shooterView(asMine(ammoT), state());
+assert(apage.includes('class="goval"') && apage.includes('class="gcenter"'), 'oval and group centre are drawn on the target');
+assert(!apage.includes('class="corner"'), 'no unscored corner in an ammo test');
+assert(!apage.includes('<h3>Last shot') && !apage.includes('data-act="mode"') && apage.includes('class="zoombar"'), 'ammo panels replace the match panels, zoom stays');
+assert(apage.includes('<h3>Group</h3>') && apage.includes(am.size_mm.toFixed(2) + '</span><span class="unit">mm'), 'group size shown big');
+assert(apage.includes(am.ellipse.outer_major_mm.toFixed(2) + ' × ' + am.ellipse.outer_minor_mm.toFixed(2)), 'oval axes shown');
+assert(apage.includes('x ' + am.center_x_mm.toFixed(2) + ', y ' + am.center_y_mm.toFixed(2)), 'group centre shown');
+assert(apage.includes('5.70 mm projectile'), 'projectile size shown');
+assert(count(apage, /<td>first shot<\/td>/g) === 1, 'the first shot is the reference');
+assert.strictEqual(count(ammoTable(av), /<tr class="/g), av.bull_shots.length, 'every shot is listed, none dropped');
+assert(ammoTable(av).indexOf('<td>14</td>') < ammoTable(av).indexOf('<td>13</td>') && ammoTable(av).includes('class="last"'), 'newest first');
+assert(ammoTable(av).includes('class="miss">miss'), 'the miss is listed');
+assert(apage.includes('r="2.85"'), 'pellets drawn at the projectile size');
+assert(apage.includes('#c026d3') && apage.includes('stroke="#fff"'), 'marks have a halo so they show on black and white');
+assert(!/<i>Lot 7<\/i>/.test(apage + coachView(D.targets) + overlayView(asMine(ammoT), state(), '')), 'label is escaped');
+assert(apage.includes('&lt;i&gt;Lot 7&lt;/i&gt;'));
+// the oval encloses every shot and the centre mark sits at the reported mean (checked on the numbers the page draws)
+const mk = ammoMarks(av);
+assert(mk.oval && mk.center && mk.oval.a >= mk.oval.b && mk.center.x === am.center_x_mm);
+av.bull_shots.filter(s => !s.miss).forEach(s => {
+  const t = mk.oval.ang * Math.PI / 180, dx = s.x_mm - mk.oval.cx, dy = s.y_mm - mk.oval.cy;
+  const u = dx * Math.cos(t) + dy * Math.sin(t), w = -dx * Math.sin(t) + dy * Math.cos(t);
+  assert((u / mk.oval.a) ** 2 + (w / mk.oval.b) ** 2 <= 1, 'shot ' + s.n + ' is inside the drawn oval');
+});
+assert.deepStrictEqual(ammoMarks({ammo: {shots: 1, ellipse: {cx_mm: 0, cy_mm: 0, outer_major_mm: 4.5, outer_minor_mm: 4.5, angle_deg: 0}, center_x_mm: 0, center_y_mm: 0}}), {}, 'no oval for a single shot');
+assert.deepStrictEqual(ammoMarks({}), {});
+// All targets card
+const acard = coachView([ammoT]);
+assert(acard.includes('mm group') && acard.includes('class="goval"') && acard.includes(am.size_mm.toFixed(1)) && acard.includes(' shots'));
+assert(!acard.includes('class="grprow"') && !acard.includes('class="corner"'));
+// gear overlay
+const aov = overlayView(asMine(ammoT), state(), 'Alice');
+assert(aov.includes('Ammo test') && aov.includes('data-kind="ammo"') && aov.includes('class="sel">Ammo test'), 'ammo is a mode and is selected');
+assert(aov.includes('id="f_proj"') && aov.includes('value="5.7"') && aov.includes('data-mm="4.5"') && aov.includes('data-mm="5.7"'), 'projectile size can be typed or chosen');
+assert(aov.includes('class="sel">.22 LR') && !aov.includes('class="sel">4.5 mm'), 'the active projectile is highlighted');
+assert(!aov.includes('id="f_bull"') && aov.includes('New test') && aov.includes('Test label'));
+const nov = overlayView(asMine(recordT), state(), 'Alice');
+assert(!nov.includes('f_proj') && nov.includes('id="f_bull"') && nov.includes('data-kind="ammo"'), 'other modes keep their own settings and offer Ammo test');
+const revList = overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 5, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {size_mm: 7.5}}]}), '');
+assert(revList.includes('ammo test') && revList.includes('7.50 mm'), 'finished tests are reviewable by group size');
+const arev = shooterView(ammoT, state({review: {sid: av.series_id, stream: 'scored', bull: 0}, reviewView: Object.assign({}, av, {open: false, started: '2026-10-23T22:00:00Z'})}));
+assert(arev.includes('Reviewing an ammo test') && arev.includes('<h3>Group</h3>') && !arev.includes('data-act="rstream"'));
+// ammo auto zoom starts one ring tighter
+assert.strictEqual(autoRing([sh(0, 0)], 2.25, 9), 9);
+assert.strictEqual(autoRing([sh(0, 0)], 2.25), 8);
+// a tight group: ammo auto zoom may go in to the 9 ring, where a match auto zoom stops at the 8
+const tight = JSON.parse(JSON.stringify(ammoT));
+tight.view.bull_shots = [sh(0, 0, 1), sh(0.3, 0, 2)]; tight.view.count = 2; tight.view.ammo.diameter_mm = 4.5;
+assert(shooterView(asMine(tight), state()).includes('viewBox="-4.25 -4.25 8.5 8.5"'), 'ammo auto zoom reaches the 9 ring');
+const tightMatch = JSON.parse(JSON.stringify(recordT)); tightMatch.view.bull_shots = [sh(0, 0, 1)];
+assert(shooterView(asMine(tightMatch), state()).includes('viewBox="-6.75 -6.75 13.5 13.5"'), 'match auto zoom stops at the 8 ring');
+assert.deepStrictEqual(KIND_MODE, {practice: 'practice', match: 'sighter', ammo: 'ammo'}, 'the gear buttons start each kind in the right mode (match always starts in sighter)');
+const ov = faceSvg([sh(0, 0, 1)], {half: 8, oval: {cx: 1, cy: 2, a: 5, b: 2, ang: 30}, center: {x: 1, y: 2}});
+assert(ov.includes('transform="rotate(-30 1 -2)"') && ov.includes('cy="-2"') && ov.includes('rx="5" ry="2"'), 'oval is flipped to screen coordinates and rotated the right way');
+assert(ov.includes('<line x1="') && ov.includes('y1="-2"'), 'group centre cross at the reported position');
+const lab = (o) => count(faceSvg([sh(0, 0, 1), sh(1, 1, 2), sh(2, 2, 3)], Object.assign({half: 8}, o)), /dominant-baseline="central" fill="#fff" stroke="#000"/g);
+assert.strictEqual(lab({}), 3, 'normal faces number every shot');
+assert.strictEqual(lab({labelLast: true}), 1, 'an ammo test numbers only the latest shot');
+console.log('OK');

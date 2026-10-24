@@ -220,7 +220,7 @@ class Settings(SeriesCase):
             self.shoot()
         self.control()
         s = self.core.set_settings("a1", ALICE, bull_size=5, group_size=6, total_practice=15)
-        self.assertEqual(s, {"bull_size": 5, "group_size": 6, "total_practice": 15, "total_match": 60})
+        self.assertEqual(s, {"bull_size": 5, "group_size": 6, "total_practice": 15, "total_match": 60, "projectile_mm": 4.5})
         v = self.view()
         self.assertEqual((v["bull_size"], v["group_size"], v["total"], v["bull_index"], v["bull_count"]), (5, 6, 15, 2, 3))
         self.assertEqual([s["n"] for s in v["bull_shots"]], [11, 12])

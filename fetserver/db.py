@@ -152,6 +152,28 @@ MIGRATIONS = [
     ALTER TABLE shots ADD COLUMN stream TEXT;
     CREATE INDEX shots_series ON shots (series_id, stream, series_no);
     """,
+    """
+    -- Ammo test: an open-ended series scored relative to its first shot, with a projectile size.
+    -- SQLite cannot change a CHECK constraint, so the series table is rebuilt.
+    ALTER TABLE targets ADD COLUMN projectile_h INTEGER NOT NULL DEFAULT 450;
+    CREATE TABLE series_new (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id    TEXT NOT NULL,
+        kind         TEXT NOT NULL CHECK (kind IN ('practice','match','ammo')),
+        shooter      TEXT,
+        started_ms   INTEGER NOT NULL,
+        ended_ms     INTEGER,
+        bull_size    INTEGER NOT NULL,
+        group_size   INTEGER NOT NULL,
+        total        INTEGER NOT NULL,
+        projectile_h INTEGER NOT NULL DEFAULT 450
+    );
+    INSERT INTO series_new (id, device_id, kind, shooter, started_ms, ended_ms, bull_size, group_size, total)
+        SELECT id, device_id, kind, shooter, started_ms, ended_ms, bull_size, group_size, total FROM series;
+    DROP TABLE series;
+    ALTER TABLE series_new RENAME TO series;
+    CREATE INDEX series_target ON series (device_id, started_ms);
+    """,
 ]
 
 

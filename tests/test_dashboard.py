@@ -59,8 +59,17 @@ class DashboardLogic(unittest.TestCase):
             core.set_mode("lane-4", ALICE, "sighter", shooter="<u>Eve</u>")
             for x in ("1.00", "9.00", "-3.00"):
                 shoot("lane-4", x, "0.00")
+            # lane-5: an ammo test with a 5.7 mm projectile, 14 shots, one miss, hostile label
+            hb("lane-5", "Lane 5")
+            core.acquire_control("lane-5", ALICE, "Alice")
+            core.set_settings("lane-5", ALICE, projectile_mm=5.7)
+            core.set_mode("lane-5", ALICE, "ammo", shooter="<i>Lot 7</i>")
+            for dx, dy in ((0, 0), (1.1, 0.4), (-0.8, 1.2), (0.3, -1.5), (2.0, 0.9), (-1.4, -0.6), (0.7, 1.9), (-0.2, 0.1),
+                           (1.6, -1.1), (-1.9, 0.8), (0.4, 0.4), (1.0, 1.0), (-0.5, -1.0)):
+                shoot("lane-5", "%.2f" % (12.0 + dx), "%.2f" % (-8.0 + dy))
+            shoot("lane-5", raw=MISS % 98)
             now[0] += 60_000                                    # lane-3 never reported again: offline
-            for did, name in (("lane-1", "Lane 1"), ("lane-2", "<img src=x onerror=alert(1)>"), ("lane-4", "Lane 4")):
+            for did, name in (("lane-1", "Lane 1"), ("lane-2", "<img src=x onerror=alert(1)>"), ("lane-4", "Lane 4"), ("lane-5", "Lane 5")):
                 hb(did, name, **({"queue_depth": 3} if did == "lane-2" else {}))
             targets = core.list_targets(ALICE)
             series = core.list_series("lane-1")

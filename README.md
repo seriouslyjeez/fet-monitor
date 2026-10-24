@@ -1,4 +1,4 @@
-# freETarget club server (v0.4: series, zoom, scoring screens)
+# freETarget club server (v0.5: series, zoom, scoring screens, ammo test)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -29,8 +29,8 @@ minutes also starts afresh. In a match, sighters count up with no limit (the pic
 **The gear icon** holds everything that is not scoring:
 * *Control*: take, take over or release. Viewing never needs it. The claim lasts 60 s, renews itself while the
   page is open, and frees itself when the page closes.
-* *Mode*: Practice or Match. In Match the **Sighter** and **Record** buttons appear on the main screen
-  (usable only by whoever is in control). Everyone else sees the current mode.
+* *Mode*: Practice, Match or Ammo test. In Match the **Sighter** and **Record** buttons appear on the main screen
+  (usable only by whoever is in control); a match always starts in Sighter. Everyone else sees the current mode.
 * *Shooter* name, and a *New series* button. A new shooter starts a new series.
 * *Advanced*: shots per target picture, shots per aggregate group, total shots for practice and for match
   (defaults 10 / 10 / 20 / 60). Saved per target and applied to the live series and new ones.
@@ -38,6 +38,24 @@ minutes also starts afresh. In a match, sighters count up with no limit (the pic
 
 A shot takes the mode that was active when it was fired, not when it arrived, so a delayed upload still lands in
 the right series. Misses are listed as M, count as 0 and take a shot number.
+
+**Ammo test** (rifle or pistol in a vise, to compare ammunition):
+* Pick *Ammo test* under Mode, then the projectile: **4.5 mm pellet** (default), **.22 LR (5.7 mm)** or any size from
+  1 to 10 mm typed in (stored in 0.02 mm steps). .22 LR bullets are 0.222-0.2255 in (5.64-5.73 mm) depending on
+  the maker; 5.7 mm is the figure SAAMI/Wikipedia round to. Type your own if you measure yours.
+* The test takes **any number of shots** (no 10/20/60 limit, no picture reset). The **first shot is always 10.9**
+  wherever it lands, and every later shot is placed and scored **relative to it** on the normal rings using the
+  projectile's size. A miss has no position: it counts 0, is listed, and is never the reference.
+* The target shows every shot, the **oval** (smallest-area ellipse around all shot centres, widened by one
+  projectile diameter so it is the oval a pellet-sized pen would draw) and a **cross at the group centre**
+  (the mean point of impact). Only the latest shot is numbered.
+* Live figures: **group size** (extreme spread, centre to centre, plus one projectile diameter = outside edge to
+  outside edge), spread centre to centre, oval long x short and its direction, width x height, mean radius, and
+  the group centre relative to the first shot.
+* *New test* (in the gear) starts over: the next shot becomes the first shot. Finished tests are in Review with
+  their group size. Changing the projectile size re-scores the live test.
+* The raw coordinates (`x_mm`, `y_mm` in /shots) stay in the target's own frame; only the dashboard views and
+  the stored ring/decimal scores are relative to the first shot.
 
 Not built yet: relabelling or excluding shots after the fact, user accounts, OTA firmware hosting, CSV export,
 match rules (when sighters are allowed, etc.).
@@ -60,7 +78,7 @@ scatter directly; without either it is a poor shooter (8 mm). Use `--miss-rate 0
 Tests: scoring boundaries and ISSF geometry, your real captured shot/miss/ECHO lines,
 duplicate and out-of-order delivery, time reconstruction across outages and reboots,
 all-or-nothing batches, outages with lost acknowledgements, 20 concurrent targets,
-a kill -9 test (no acknowledged event may be lost), control claims and mode assignment
+group statistics (an exact square, a rotated rectangle, collinear and tiny groups, oval containment), ammo-test scoring and re-scoring, the v0.4 to v0.5 database upgrade, a kill -9 test (no acknowledged event may be lost), control claims and mode assignment
 (including late-delivered shots), the live stream, and the dashboard page logic.
 The last needs Node.js to run (skipped without it); Node is not needed on the Pi.
 
@@ -98,10 +116,10 @@ backup from /var/backups/freetarget in that case.
 | GET /targets/<id>/series | browser | Series history, newest first, with scored and sighter totals |
 | GET /series/<n>?stream=scored\|sighter&bull=<k> | browser | Full view of a series stream, with the k-th target picture (for review) |
 | GET /targets/<id>/segments | browser | Mode segments (older view of the same history) |
-| POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match}`; needs the control claim |
+| POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match, projectile_mm}`; needs the control claim. `projectile_mm` (1-10) re-scores a live ammo test |
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |
 | POST /targets/<id>/control/release | browser | Release the claim |
-| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series}`; 403 without the claim. Practice is its own series; sighter and record share a match series |
+| POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series}`; 403 without the claim. Practice is its own series; sighter and record share a match series; `mode: "ammo"` starts an open-ended ammo test (the view then carries `ammo`: group size, oval, centre) |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 | POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 

@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>freETarget</title>
 <style>
-:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa}}
+:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc}}
 *{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:#fff}
 #live{margin-left:auto;font-size:12px;color:var(--mut)}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
-.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:#fff;white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}
+.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:#fff;white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
 button,input,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
 .face{display:block;width:100%;height:auto;border-radius:6px}
@@ -47,6 +47,10 @@ table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{back
 .lastwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}.lastleft{flex:1 1 150px}.lastright{flex:2 1 240px;max-height:280px;overflow:auto}tr.tot-row td{font-weight:700;border-top:2px solid var(--line)}
 .lastbig{display:flex;align-items:baseline;gap:10px}.lastbig .v{font-size:52px;font-weight:800;line-height:1}.lastbig .xbig{font-size:30px;color:var(--accent);font-weight:800}
 .banner{background:var(--hi);border:1px solid var(--accent);border-radius:8px;padding:6px 10px;margin-bottom:10px;font-size:14px}
+/* ammo test */
+.kv{display:flex;justify-content:space-between;gap:8px;font-size:13px;font-variant-numeric:tabular-nums}.kv span:first-child{color:var(--mut)}
+.scroll{max-height:300px;overflow:auto}.unit{font-size:20px;color:var(--mut);font-weight:600}
+table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 /* overlay */
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
 #overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}
@@ -64,7 +68,7 @@ table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{back
 <div id="toast"></div>
 <script>
 'use strict';
-const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record'};
+const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record', ammo: 'Ammo test'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const dec = v => (v == null ? '–' : v.toFixed(1));
 const ringR = k => 0.25 + 2.5 * (10 - k);        // outer radius of ring k in mm (ISSF 10 m air rifle)
@@ -72,14 +76,14 @@ const FULL = 26, AUTO_START = 8;                 // full view half-width in mm; 
 const zoomHalf = k => ringR(k) + 1.5;            // view half-width when zoomed to ring k
 
 // Auto zoom: the smallest ring (8, 7 ... 1) that holds every pellet completely, else the full target.
-function autoRing(shots, pr) {
+function autoRing(shots, pr, start) {
   let ext = 0;
   shots.forEach(s => { if (!s.miss && s.x_mm != null) ext = Math.max(ext, Math.hypot(s.x_mm, s.y_mm) + pr); });
-  for (let k = AUTO_START; k >= 1; k--) if (ringR(k) >= ext) return k;
+  for (let k = start || AUTO_START; k >= 1; k--) if (ringR(k) >= ext) return k;
   return 0;
 }
-function halfFor(zoom, shots, pr) {
-  if (zoom === 'auto') { const k = autoRing(shots, pr); return k ? zoomHalf(k) : FULL; }
+function halfFor(zoom, shots, pr, start) {
+  if (zoom === 'auto') { const k = autoRing(shots, pr, start); return k ? zoomHalf(k) : FULL; }
   const k = parseInt(zoom, 10);
   return k >= 1 && k <= 9 ? zoomHalf(k) : FULL;
 }
@@ -87,7 +91,16 @@ const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
 const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
 const clock = iso => new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
 const when = iso => new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
+const KIND_MODE = {practice: 'practice', match: 'sighter', ammo: 'ammo'};   // the mode a series kind starts in
 const scoreText = s => s.miss ? 'M' : dec(s.decimal);
+const mm2 = v => (v == null ? '–' : v.toFixed(2));
+// Ammo test overlays for the face: the oval around the group and the group centre (both in mm relative to the first shot)
+function ammoMarks(v) {
+  const a = v && v.ammo;
+  if (!a || !a.ellipse || a.shots < 2) return {};
+  const e = a.ellipse;
+  return {oval: {cx: e.cx_mm, cy: e.cy_mm, a: e.outer_major_mm / 2, b: e.outer_minor_mm / 2, ang: e.angle_deg}, center: {x: a.center_x_mm, y: a.center_y_mm}};
+}
 
 // Target face. Pure function returning an SVG string. Data y is up, screen y is down.
 // o: half (view half-width, mm), pellet (mm), color, mini, corner (black top-right corner = shots are not scored)
@@ -115,7 +128,7 @@ function faceSvg(shots, o) {
     if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
       s += '<circle cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
            (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) * f + '"/>';
-      if (!mini) {
+      if (!mini && (!o.labelLast || isLast)) {                       // an ammo test can have hundreds of shots: label only the latest
         s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
       }
     } else {                                                         // outside a fixed zoom: mark where it went off
@@ -124,6 +137,19 @@ function faceSvg(shots, o) {
       if (!mini) s += '<text x="' + (sx * k) + '" y="' + (sy * k) + '" font-size="' + (r * 1.3) + '" text-anchor="middle" dominant-baseline="central" fill="#e11d48">' + esc(x.n) + '</text>';
     }
   });
+  if (o.oval) {                                                      // ammo test: oval around the group (white halo so it shows on black and white)
+    const e = o.oval, w = (mini ? 0.5 : 0.26) * Math.max(0.5, f), t = 'rotate(' + (-e.ang) + ' ' + e.cx + ' ' + (-e.cy) + ')';
+    [['#fff', w * 2.6], ['#c026d3', w]].forEach(c => {
+      s += '<ellipse class="goval" cx="' + e.cx + '" cy="' + (-e.cy) + '" rx="' + e.a + '" ry="' + e.b + '" transform="' + t + '" fill="none" stroke="' + c[0] + '" stroke-width="' + c[1] + '" stroke-dasharray="' + (w * 6) + ' ' + (w * 3) + '"/>';
+    });
+  }
+  if (o.center) {                                                    // ammo test: group centre (mean point of impact)
+    const c = o.center, cl = Math.max(0.9, H * (mini ? 0.07 : 0.05)), w = (mini ? 0.5 : 0.26) * Math.max(0.5, f);
+    [['#fff', w * 2.6], ['#c026d3', w]].forEach(k => {
+      s += '<g class="gcenter" stroke="' + k[0] + '" stroke-width="' + k[1] + '" fill="none"><line x1="' + (c.x - cl) + '" y1="' + (-c.y) + '" x2="' + (c.x + cl) + '" y2="' + (-c.y) + '"/>' +
+           '<line x1="' + c.x + '" y1="' + (-c.y - cl) + '" x2="' + c.x + '" y2="' + (-c.y + cl) + '"/><circle cx="' + c.x + '" cy="' + (-c.y) + '" r="' + (cl * 0.5) + '"/></g>';
+    });
+  }
   if (o.corner) {                                                    // practice and sighter shots are not scored
     const L = H * (mini ? 0.34 : 0.3);
     s += '<polygon class="corner" points="' + H + ',' + (-H) + ' ' + (H - L) + ',' + (-H) + ' ' + H + ',' + (-H + L) + '" fill="#dc2626"/>';
@@ -146,7 +172,20 @@ function groupsRow(v) {
   return '<div class="grprow">' + v.groups.slice(-6).map(g => '<span class="grp' + (g.complete ? '' : ' part') + '" title="shots ' + g.first + '–' + g.last + '"><b>' +
     dec(g.decimal) + '</b><small>' + g.integer + '</small>' + (g.x ? '<small>X' + g.x + '</small>' : '') + '</span>').join('') + '</div>';
 }
+function ammoCard(t) {
+  const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9), e = a.ellipse;
+  return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
+    '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
+    (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
+    faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, color: modeColor('ammo')}, ammoMarks(v))) +
+    '<div class="who">' + esc(t.shooter || 'Ammo test') + '</div>' +
+    '<div class="scorebox"><div class="tot"><div class="big num">' + (v.count ? a.size_mm.toFixed(1) : '–') + '</div><div class="sub">mm group</div><div class="sub num">' + v.count + ' shots</div></div>' +
+    '<div class="rows">' + (a.shots ? '<div class="kv"><span>Spread c-c</span><b>' + mm2(a.spread_cc_mm) + ' mm</b></div>' +
+      '<div class="kv"><span>Oval</span><b>' + mm2(e.outer_major_mm) + ' × ' + mm2(e.outer_minor_mm) + '</b></div>' +
+      '<div class="kv"><span>Mean radius</span><b>' + mm2(a.mean_radius_mm) + ' mm</b></div>' : '<span class="mut">no shots yet</span>') + '</div></div></a>';
+}
 function coachCard(t) {
+  if (t.kind === 'ammo' && t.view.ammo) return ammoCard(t);
   const v = t.view, pr = t.calibre_x10 / 20, half = halfFor('auto', v.bull_shots, pr);
   return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
     '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
@@ -185,6 +224,29 @@ function lastPanel(v) {
     '<div class="lastright"><table class="t"><tr><th></th><th>Decimal</th><th>Integer</th><th>X</th></tr>' + groups +
     aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg).replace('<tr>', '<tr class="tot-row">') + '</table></div></div></div>';
 }
+function ammoPanel(t, v) {
+  const a = v.ammo, e = a.ellipse, none = !a.shots;
+  const row = (k, val) => '<tr><td>' + k + '</td><td>' + val + '</td></tr>';
+  return '<div class="panel"><h3>Group</h3><div class="lastbig"><span class="v">' + (v.count ? a.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm</span></div>' +
+    '<div class="mut">outside edge to outside edge · ' + v.count + (v.count === 1 ? ' shot' : ' shots') + ' · ' + mm2(a.diameter_mm) + ' mm projectile</div>' +
+    '<table class="t kvt">' +
+    row('Spread, centre to centre', none ? '–' : mm2(a.spread_cc_mm) + ' mm') +
+    row('Oval (long × short)', none ? '–' : mm2(e.outer_major_mm) + ' × ' + mm2(e.outer_minor_mm) + ' mm') +
+    row('Oval direction', none || a.shots < 2 ? '–' : e.angle_deg.toFixed(0) + '°') +
+    row('Width × height', none ? '–' : mm2(a.width_mm) + ' × ' + mm2(a.height_mm) + ' mm') +
+    row('Mean radius', none ? '–' : mm2(a.mean_radius_mm) + ' mm') +
+    row('Centre vs first shot', none ? '–' : 'x ' + mm2(a.center_x_mm) + ', y ' + mm2(a.center_y_mm) + ' mm') +
+    (a.misses ? row('Misses', a.misses) : '') + '</table></div>';
+}
+function ammoTable(v) {
+  let rows = '';
+  for (let i = v.bull_shots.length - 1; i >= 0; i--) {                // newest first, so the latest shot is always in view
+    const s = v.bull_shots[i], first = i === 0;
+    rows += '<tr class="' + (i === v.bull_shots.length - 1 ? 'last' : '') + '"><td>' + esc(s.n) + '</td>' +
+      (s.miss ? '<td colspan="2"><span class="miss">miss</span></td>' : '<td>' + (first ? 'first shot' : mm2(s.x_mm) + ', ' + mm2(s.y_mm)) + '</td><td>' + dec(s.decimal) + '</td>') + '</tr>';
+  }
+  return '<div class="panel"><h3>Shots (mm from the first shot)</h3><div class="scroll"><table class="t"><tr><th>#</th><th>Position</th><th>Score</th></tr>' + rows + '</table></div></div>';
+}
 function zoomBar(zoom) {
   const opts = ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto'];
   return '<div class="zoombar"><span>Zoom</span>' + opts.map(z => '<button data-act="zoom" data-z="' + z + '" class="' + (zoom === z ? 'sel' : '') + '">' +
@@ -200,20 +262,21 @@ function infoPanel(t, v, mode, S) {
   return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
     '<div class="mut">' + esc(v.shooter || t.shooter || 'No shooter set') + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
-    (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + ' shots waiting on the target' : '') + '</div>' + ctl + '</div>';
+    (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
 }
 function shooterView(t, S) {
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
-  const mode = reviewing ? (v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
-  const pr = t.calibre_x10 / 20, half = halfFor(S.zoom, v.bull_shots, pr);
-  const banner = reviewing ? '<div class="banner">Reviewing a ' + esc(v.kind) + ' series from ' + esc(when(v.started)) +
+  const ammo = v.kind === 'ammo' && !!v.ammo;
+  const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
+  const dia = ammo ? v.ammo.diameter_mm : t.calibre_x10 / 10, pr = dia / 2, half = halfFor(S.zoom, v.bull_shots, pr, ammo ? 9 : undefined);
+  const banner = reviewing ? '<div class="banner">Reviewing ' + (ammo ? 'an ammo test' : 'a ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
     (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
     ' <button data-act="rback">Back to live</button></div>' : '';
   const pager = reviewing && v.bull_count > 1 ? '<div class="pager"><button data-act="bull" data-d="-1"' + (v.bull_index === 0 ? ' disabled' : '') + '>◀</button><span>Target ' + (v.bull_index + 1) + ' of ' + v.bull_count +
     '</span><button data-act="bull" data-d="1"' + (v.bull_index >= v.bull_count - 1 ? ' disabled' : '') + '>▶</button></div>' : '';
   return '<div class="shoot"><div class="left">' + zoomBar(S.zoom) +
-    faceSvg(v.bull_shots, {half: half, pellet: t.calibre_x10 / 10, color: modeColor(mode), corner: mode !== 'record'}) + pager + '</div>' +
-    '<div class="right">' + banner + infoPanel(t, v, mode, S) + shotsTable(v) + lastPanel(v) + '</div></div>';
+    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + pager + '</div>' +
+    '<div class="right">' + banner + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v) : shotsTable(v) + lastPanel(v)) + '</div></div>';
 }
 
 // ---- Gear overlay ----
@@ -227,19 +290,28 @@ function overlayView(t, S, name) {
   h += '</section>';
   if (L.mine) {
     h += '<section><h4>Mode</h4><div class="seg"><button data-act="kind" data-kind="practice" class="' + (t.kind === 'practice' ? 'sel' : '') + '">Practice</button>' +
-         '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button></div>' +
-         '<p class="mut">' + (t.kind === 'match' ? 'Sighter and Record buttons are on the main screen. Record shots carry on where they left off.' : 'Practice shots are not scored in a match.') + '</p></section>' +
-         '<section><h4>Shooter</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="Shooter name" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
-         '<p class="mut">A new shooter, or a new series, starts counting from shot 1.</p><button data-act="newseries">New series</button></section>' +
-         '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
+         '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button>' +
+         '<button data-act="kind" data-kind="ammo" class="' + (t.kind === 'ammo' ? 'sel' : '') + '">Ammo test</button></div>' +
+         '<p class="mut">' + (t.kind === 'match' ? 'Sighter and Record buttons are on the main screen. Record shots carry on where they left off.' :
+            t.kind === 'ammo' ? 'Ammo test: any number of shots. The first shot counts as 10.9 wherever it lands and every other shot is measured from it. Put the rifle in a vise.' :
+            'Practice shots are not scored in a match.') + '</p></section>' +
+         (t.kind === 'ammo' ? '<section><h4>Projectile</h4><div class="seg"><button data-act="proj" data-mm="4.5" class="' + (st.projectile_mm === 4.5 ? 'sel' : '') + '">4.5 mm pellet</button>' +
+            '<button data-act="proj" data-mm="5.7" class="' + (st.projectile_mm === 5.7 ? 'sel' : '') + '">.22 LR (5.7 mm)</button></div>' +
+            '<div class="fields" style="margin-top:8px"><label for="f_proj">Projectile size (mm)</label><input id="f_proj" type="number" step="0.01" min="1" max="10" value="' + esc(st.projectile_mm) + '"></div>' +
+            '<button data-act="saveproj" style="margin-top:8px">Set size</button><p class="mut">Changing the size re-scores this test and changes the group size shown.</p></section>' : '') +
+         '<section><h4>' + (t.kind === 'ammo' ? 'Test label' : 'Shooter') + '</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="' + (t.kind === 'ammo' ? 'Ammo, lot' : 'Shooter name') + '" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
+         '<p class="mut">' + (t.kind === 'ammo' ? 'A new test starts over: the next shot becomes the first shot.' : 'A new shooter, or a new series, starts counting from shot 1.') + '</p><button data-act="newseries">' + (t.kind === 'ammo' ? 'New test' : 'New series') + '</button></section>' +
+         (t.kind === 'ammo' ? '' : '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
          '<label for="f_bull">Shots per target picture</label><input id="f_bull" type="number" min="1" max="100" value="' + st.bull_size + '">' +
          '<label for="f_group">Shots per aggregate group</label><input id="f_group" type="number" min="1" max="100" value="' + st.group_size + '">' +
          '<label for="f_tp">Total shots, practice</label><input id="f_tp" type="number" min="1" max="1000" value="' + st.total_practice + '">' +
          '<label for="f_tm">Total shots, match</label><input id="f_tm" type="number" min="1" max="1000" value="' + st.total_match + '"></div>' +
-         '<p class="mut">Applies to the current series and to new ones.</p><button data-act="savesettings">Save</button></details></section>';
+         '<p class="mut">Applies to the current series and to new ones.</p><button data-act="savesettings">Save</button></details></section>');
   }
   h += '<section><h4>Review</h4>' + (S.seriesList.length ? S.seriesList.map(g => {
     const a = g.kind === 'match' ? g.scored : g.scored;
+    if (g.kind === 'ammo' && g.ammo) return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ammo test · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots' +
+      (a.shots ? ' · <b>' + g.ammo.size_mm.toFixed(2) + ' mm</b>' : '') + (g.open ? ' · live' : '') + '</button>';
     return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ' + esc(g.kind) + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots · <b>' + dec(a.decimal) + '</b>' +
       (g.kind === 'match' && g.sighter.shots ? ' <span class="mut">(+' + g.sighter.shots + ' sighters)</span>' : '') + (g.open ? ' · live' : '') + '</button>';
   }).join('') : '<p class="mut">No series yet.</p>') + '</section></div>';
@@ -323,12 +395,17 @@ async function act(el) {
   } else if (a === 'mode') {
     await setMode(el.dataset.mode);
   } else if (a === 'kind') {
-    if (el.dataset.kind !== t.kind) await setMode(el.dataset.kind === 'match' ? 'sighter' : 'practice');
+    if (el.dataset.kind !== t.kind) await setMode(KIND_MODE[el.dataset.kind]);
   } else if (a === 'setshooter') {
     const who = (val('shooter') || '').trim();
     if (who) await setMode(t.mode, {shooter: who});
   } else if (a === 'newseries') {
-    await setMode(t.kind === 'match' ? 'sighter' : 'practice', {new_series: true});
+    await setMode(KIND_MODE[t.kind] || 'practice', {new_series: true});
+  } else if (a === 'proj' || a === 'saveproj') {
+    const mm = a === 'proj' ? +el.dataset.mm : parseFloat(val('f_proj'));
+    if (!(mm >= 1 && mm <= 10)) return toast('Enter a size between 1 and 10 mm');
+    const res = await post('/targets/' + id + '/settings', {projectile_mm: mm});
+    if (res.status === 200) toast('Projectile set to ' + res.data.projectile_mm + ' mm'); else toast(res.data.error || 'Could not set the size');
   } else if (a === 'savesettings') {
     const n = k => { const v = parseInt(val(k), 10); return isNaN(v) ? undefined : v; };
     const res = await post('/targets/' + id + '/settings', {bull_size: n('f_bull'), group_size: n('f_group'), total_practice: n('f_tp'), total_match: n('f_tm')});
@@ -361,7 +438,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
+if (typeof module !== 'undefined') module.exports = {KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
 </script>
 </body>
 </html>

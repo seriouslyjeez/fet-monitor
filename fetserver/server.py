@@ -191,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"released": core.release_control(did, payload.get("client_id"))})
             if what == "settings":
                 return self._send(200, core.set_settings(did, payload.get("client_id"),
-                                                         **{k: payload.get(k) for k in core.SETTING_LIMITS}))
+                                                         **{k: payload.get(k) for k in core.SETTING_KEYS}))
             return self._send(200, core.set_mode(did, payload.get("client_id"), payload.get("mode"),
                                                  payload.get("shooter"), bool(payload.get("new_series"))))
         self._send(404, {"error": "not found"})
