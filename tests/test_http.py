@@ -186,3 +186,20 @@ class Resilience(ServerCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DroppedClients(ServerCase):
+    def test_reset_connection_is_quiet_and_server_keeps_working(self):
+        import io
+        import socket
+        import struct
+        import contextlib
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            for _ in range(3):
+                s = socket.create_connection(("127.0.0.1", self.port))
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))   # close sends RST
+                s.close()
+            time.sleep(0.5)
+        self.assertNotIn("Traceback", err.getvalue())
+        self.assertEqual(self.call("GET", "/api/v1/health", token=None)[0], 200)

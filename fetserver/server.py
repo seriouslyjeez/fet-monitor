@@ -218,6 +218,16 @@ class FetHTTPServer(ThreadingHTTPServer):
         self.stopping = True
         super().shutdown()
 
+    def handle_error(self, request, client_address):
+        """A client that disconnects mid-request is normal (closed browser tab, WiFi drop): one quiet line, no stack trace.
+        Anything else is a real bug and keeps its full traceback."""
+        import sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, TimeoutError)):
+            logging.getLogger("fetserver").debug("client %s dropped the connection: %s", client_address[0], exc)
+            return
+        super().handle_error(request, client_address)
+
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080) -> FetHTTPServer:
     return FetHTTPServer((host, port), core, token)
