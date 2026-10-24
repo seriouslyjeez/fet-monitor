@@ -35,7 +35,7 @@ button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-colo
 .zoombar{display:flex;gap:3px;align-items:center;margin-bottom:6px;flex-wrap:wrap}.zoombar span{font-size:13px;color:var(--mut);margin-right:4px}
 .zoombar button{padding:4px 9px;min-width:34px;font-size:14px}
 .left .face{width:min(100%,calc(100vh - 160px));margin:0 auto}
-.pager{display:flex;justify-content:center;align-items:center;gap:12px;margin-top:8px}
+.pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pager button{min-width:44px;font-weight:700;font-size:16px}.pager span{min-width:150px;text-align:center}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .panel h3{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
 .gear{padding:3px 9px;font-size:18px;line-height:1}.title{font-size:20px;font-weight:700}
@@ -92,6 +92,18 @@ const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' 
 const clock = iso => new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
 const when = iso => new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
 const KIND_MODE = {practice: 'practice', match: 'sighter', ammo: 'ammo'};   // the mode a series kind starts in
+// Review navigation. k = shots shown so far (1..full), ps = shots per target picture.
+// A step moves one shot. A page jump goes to the END of the current target picture, or, if already there, to the end of
+// the next one; backwards it goes to the end of the previous picture (shot 1 from the first picture).
+function reviewShot(k, ps, full, move) {
+  const clamp = n => Math.max(full ? 1 : 0, Math.min(full, n)), page = Math.ceil(k / ps);
+  if (move === 'step+') return clamp(k + 1);
+  if (move === 'step-') return clamp(k - 1);
+  if (move === 'page+') { const end = Math.min(full, page * ps); return clamp(k < end ? end : end + ps); }
+  if (move === 'page-') return clamp((page - 1) * ps);
+  return clamp(k);
+}
+const reviewPage = v => (v.kind === 'ammo' ? 10 : v.bull_size);   // shots per review jump: a target picture, or ten shots in an ammo test
 const scoreText = s => s.miss ? 'M' : dec(s.decimal);
 const mm2 = v => (v == null ? '–' : v.toFixed(2));
 // Ammo test overlays for the face: the oval around the group and the group centre (both in mm relative to the first shot)
@@ -179,7 +191,7 @@ function ammoCard(t) {
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
     faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, color: modeColor('ammo')}, ammoMarks(v))) +
     '<div class="who">' + esc(t.shooter || 'Ammo test') + '</div>' +
-    '<div class="scorebox"><div class="tot"><div class="big num">' + (v.count ? a.size_mm.toFixed(1) : '–') + '</div><div class="sub">mm group</div><div class="sub num">' + v.count + ' shots</div></div>' +
+    '<div class="scorebox"><div class="tot"><div class="big num">' + (a.shots ? a.size_mm.toFixed(1) : '–') + '</div><div class="sub">mm group</div><div class="sub num">' + v.count + ' shots</div></div>' +
     '<div class="rows">' + (a.shots ? '<div class="kv"><span>Spread c-c</span><b>' + mm2(a.spread_cc_mm) + ' mm</b></div>' +
       '<div class="kv"><span>Oval</span><b>' + mm2(e.outer_major_mm) + ' × ' + mm2(e.outer_minor_mm) + '</b></div>' +
       '<div class="kv"><span>Mean radius</span><b>' + mm2(a.mean_radius_mm) + ' mm</b></div>' : '<span class="mut">no shots yet</span>') + '</div></div></a>';
@@ -201,6 +213,15 @@ function coachView(targets) {
 }
 
 // ---- Single target ----
+function reviewPager(v, ammo) {
+  const k = v.count, full = v.full_count, ps = reviewPage(Object.assign({}, v, {kind: ammo ? 'ammo' : v.kind}));
+  if (!full) return '<div class="pager"><span class="mut">No shots in this series</span></div>';
+  const b = (move, label, title, off) => '<button data-act="rnav" data-move="' + move + '" title="' + title + '" aria-label="' + title + '"' + (off ? ' disabled' : '') + '>' + label + '</button>';
+  const targetNote = ammo ? '' : ' · target ' + (v.bull_index + 1) + ' of ' + Math.ceil(full / ps);
+  return '<div class="pager">' + b('page-', '&lt;&lt;', ammo ? 'Back ten shots' : 'Back one target', reviewShot(k, ps, full, 'page-') === k) +
+    b('step-', '&lt;', 'Back one shot', k <= 1) + '<span class="num">Shot ' + k + ' of ' + full + targetNote + '</span>' +
+    b('step+', '&gt;', 'Forward one shot', k >= full) + b('page+', '&gt;&gt;', ammo ? 'Forward ten shots' : 'Forward one target', reviewShot(k, ps, full, 'page+') === k) + '</div>';
+}
 function shotsTable(v) {
   const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length;
   let rows = '';
@@ -227,7 +248,7 @@ function lastPanel(v) {
 function ammoPanel(t, v) {
   const a = v.ammo, e = a.ellipse, none = !a.shots;
   const row = (k, val) => '<tr><td>' + k + '</td><td>' + val + '</td></tr>';
-  return '<div class="panel"><h3>Group</h3><div class="lastbig"><span class="v">' + (v.count ? a.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm</span></div>' +
+  return '<div class="panel"><h3>Group</h3><div class="lastbig"><span class="v">' + (a.shots ? a.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm</span></div>' +
     '<div class="mut">outside edge to outside edge · ' + v.count + (v.count === 1 ? ' shot' : ' shots') + ' · ' + mm2(a.diameter_mm) + ' mm projectile</div>' +
     '<table class="t kvt">' +
     row('Spread, centre to centre', none ? '–' : mm2(a.spread_cc_mm) + ' mm') +
@@ -272,8 +293,7 @@ function shooterView(t, S) {
   const banner = reviewing ? '<div class="banner">Reviewing ' + (ammo ? 'an ammo test' : 'a ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
     (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
     ' <button data-act="rback">Back to live</button></div>' : '';
-  const pager = reviewing && v.bull_count > 1 ? '<div class="pager"><button data-act="bull" data-d="-1"' + (v.bull_index === 0 ? ' disabled' : '') + '>◀</button><span>Target ' + (v.bull_index + 1) + ' of ' + v.bull_count +
-    '</span><button data-act="bull" data-d="1"' + (v.bull_index >= v.bull_count - 1 ? ' disabled' : '') + '>▶</button></div>' : '';
+  const pager = reviewing ? reviewPager(v, ammo) : '';
   return '<div class="shoot"><div class="left">' + zoomBar(S.zoom) +
     faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + pager + '</div>' +
     '<div class="right">' + banner + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v) : shotsTable(v) + lastPanel(v)) + '</div></div>';
@@ -311,7 +331,7 @@ function overlayView(t, S, name) {
   h += '<section><h4>Review</h4>' + (S.seriesList.length ? S.seriesList.map(g => {
     const a = g.kind === 'match' ? g.scored : g.scored;
     if (g.kind === 'ammo' && g.ammo) return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ammo test · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots' +
-      (a.shots ? ' · <b>' + g.ammo.size_mm.toFixed(2) + ' mm</b>' : '') + (g.open ? ' · live' : '') + '</button>';
+      (g.ammo.shots ? ' · <b>' + g.ammo.size_mm.toFixed(2) + ' mm</b>' : '') + (g.open ? ' · live' : '') + '</button>';
     return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ' + esc(g.kind) + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots · <b>' + dec(a.decimal) + '</b>' +
       (g.kind === 'match' && g.sighter.shots ? ' <span class="mut">(+' + g.sighter.shots + ' sighters)</span>' : '') + (g.open ? ' · live' : '') + '</button>';
   }).join('') : '<p class="mut">No series yet.</p>') + '</section></div>';
@@ -342,8 +362,12 @@ async function refresh() {
     S.targets = (await get('/targets?client_id=' + CID)).targets;
     const t = current();
     if (t && S.review) {
-      S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + (S.review.bull != null ? '&bull=' + S.review.bull : ''));
-      S.review.bull = S.reviewView.bull_index;
+      S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + '&upto=' + S.review.shot);
+      const full = S.reviewView.full_count;
+      if (S.review.shot > full || (S.review.shot < 1 && full)) {          // the series is shorter than expected, or empty when we started
+        S.review.shot = Math.max(full ? 1 : 0, Math.min(full, S.review.shot));
+        S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + '&upto=' + S.review.shot);
+      }
     }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
@@ -379,9 +403,9 @@ async function act(el) {
   if (a === 'gear') { S.gear = true; await refresh(); return; }
   if (a === 'gearclose') { S.gear = false; return render(); }
   if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
-  if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', bull: null}; S.gear = false; return refresh(); }
-  if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.bull = null; return refresh(); }
-  if (a === 'bull') { S.review.bull = Math.max(0, (S.review.bull || 0) + (+el.dataset.d)); return refresh(); }
+  if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
+  if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
+  if (a === 'rnav') return reviewMove(el.dataset.move);
   if (!id) return;
   if (a === 'take' || a === 'takeover') {
     const name = (val('who') || store('fet_name') || '').trim();
@@ -415,10 +439,21 @@ async function act(el) {
   refresh();
 }
 
+function reviewMove(move) {
+  const v = S.reviewView;
+  if (!S.review || !v) return;
+  S.review.shot = reviewShot(S.review.shot, reviewPage(v), v.full_count, move);
+  return refresh();
+}
 function boot() {
   clientId();
   S.zoom = store('fet_zoom') || 'auto';
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) act(el); });
+  document.addEventListener('keydown', e => {                    // review with the arrow keys: left/right = one shot, up/down or PageUp/PageDown = one target
+    if (!S.review || S.gear || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
+    const m = {ArrowLeft: 'step-', ArrowRight: 'step+', ArrowUp: 'page-', PageUp: 'page-', ArrowDown: 'page+', PageDown: 'page+'}[e.key];
+    if (m) { e.preventDefault(); reviewMove(m); }
+  });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
   window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
@@ -438,7 +473,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
+if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
 </script>
 </body>
 </html>

@@ -161,6 +161,43 @@ class AmmoSeries(SeriesCase):
         v = self.core.series_view(sid)
         self.assertEqual((v["kind"], v["count"], v["ammo"]["spread_cc_mm"], v["open"]), ("ammo", 2, 1.0, False))
 
+    def test_review_shot_by_shot_shows_the_test_as_it_stood(self):
+        self.ammo()
+        for xy in [("1.00", "1.00"), ("4.00", "5.00"), ("1.00", "5.00"), ("9.00", "9.00")]:
+            self.shoot(*xy)
+        sid = self.view()["series_id"]
+        self.control("practice")
+        sizes = []
+        for k in range(0, 7):
+            v = self.core.series_view(sid, "scored", None, k)
+            self.assertEqual(v["full_count"], 4)
+            self.assertEqual((v["count"], len(v["bull_shots"])), (min(k, 4), min(k, 4)))
+            sizes.append(v["ammo"].get("size_mm"))
+        self.assertEqual(sizes, [None, 4.5, 9.5, 9.5, 15.81, 15.81, 15.81])    # 4.5, then the 3-4-5 pair, then the far shot (8,8) joins
+        v3 = self.core.series_view(sid, "scored", None, 3)
+        self.assertEqual(v3["last_shot"]["n"], 3)
+        self.assertEqual(v3["ammo"]["shots"], 3)
+
+    def test_review_upto_on_a_match_picks_the_right_target_picture(self):
+        self.control("record")
+        for i in range(25):
+            self.shoot("0.00", "0.00")
+        sid = self.view()["series_id"]
+        for k, (idx, picture, groups, total) in {1: (0, 1, 1, 10.9), 10: (0, 10, 1, 109.0), 11: (1, 1, 2, 119.9), 20: (1, 10, 2, 218.0), 25: (2, 5, 3, 272.5)}.items():
+            v = self.core.series_view(sid, "scored", None, k)
+            self.assertEqual((v["bull_index"], len(v["bull_shots"]), len(v["groups"]), v["agg"]["decimal"], v["count"], v["full_count"]),
+                             (idx, picture, groups, total, k, 25), k)
+            self.assertEqual(v["bull_shots"][-1]["n"], k)
+        self.assertEqual(self.core.series_view(sid, "scored", None, 999)["count"], 25)
+        self.assertEqual(self.core.series_view(sid, "scored")["full_count"], 25)
+
+    def test_ammo_test_of_only_misses_does_not_break_views(self):
+        self.ammo()
+        self.shoot(raw=MISS % 1)
+        v = self.view()
+        self.assertEqual((v["count"], v["ammo"]["shots"], "size_mm" in v["ammo"]), (1, 0, False))
+        self.assertEqual(self.core.list_series("a1")[0]["ammo"]["shots"], 0)
+
     def test_empty_ammo_view(self):
         self.ammo()
         v = self.view()

@@ -1,4 +1,4 @@
-# freETarget club server (v0.5: series, zoom, scoring screens, ammo test)
+# freETarget club server (v0.5.1: series, zoom, scoring screens, ammo test)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -34,7 +34,12 @@ minutes also starts afresh. In a match, sighters count up with no limit (the pic
 * *Shooter* name, and a *New series* button. A new shooter starts a new series.
 * *Advanced*: shots per target picture, shots per aggregate group, total shots for practice and for match
   (defaults 10 / 10 / 20 / 60). Saved per target and applied to the live series and new ones.
-* *Review*: any past series; page through its target pictures; in a match, switch between record and sighters.
+* *Review*: any past series, starting at shot 1. **<<** back one target, **<** back one shot, **>** forward one shot,
+  **>>** forward one target (the arrow keys do the same: left/right = one shot, up/down or PageUp/PageDown = one
+  target). The picture, the last-shot panel, the groups and the total are exactly as they stood after the shot shown.
+  >> goes to the end of the current target picture, or of the next one if you are already there; << goes to the end of
+  the previous one (or shot 1). In an ammo test << and >> move ten shots and the group figures, oval and centre grow shot by shot.
+  In a match, switch between record and sighters.
 
 A shot takes the mode that was active when it was fired, not when it arrived, so a delayed upload still lands in
 the right series. Misses are listed as M, count as 0 and take a shot number.
@@ -114,7 +119,7 @@ backup from /var/backups/freetarget in that case.
 | GET /targets?client_id= | browser | Targets with online state, mode, shooter, settings, control claim (`mine` is relative to client_id) and `view`: the current stream's count, groups, aggregate, current target-picture shots and last shot |
 | GET /targets/<id>/shots?since_id=&limit=&segment_id= | browser | Shots with aligned x/y in mm, ring, decimal score, mode |
 | GET /targets/<id>/series | browser | Series history, newest first, with scored and sighter totals |
-| GET /series/<n>?stream=scored\|sighter&bull=<k> | browser | Full view of a series stream, with the k-th target picture (for review) |
+| GET /series/<n>?stream=scored\|sighter&upto=<k>&bull=<j> | browser | A series stream as it stood after its first k shots (shot-by-shot review; `full_count` is the real length), or its j-th target picture |
 | GET /targets/<id>/segments | browser | Mode segments (older view of the same history) |
 | POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match, projectile_mm}`; needs the control claim. `projectile_mm` (1-10) re-scores a live ammo test |
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |

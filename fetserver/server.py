@@ -147,9 +147,10 @@ class Handler(BaseHTTPRequestHandler):
         if sm:
             try:
                 bull = int(q["bull"][0]) if "bull" in q else None
+                upto = int(q["upto"][0]) if "upto" in q else None
             except ValueError:
-                raise BadRequest("bull must be an integer")
-            return self._send(200, core.series_view(int(sm.group(1)), q.get("stream", ["scored"])[0], bull))
+                raise BadRequest("bull and upto must be integers")
+            return self._send(200, core.series_view(int(sm.group(1)), q.get("stream", ["scored"])[0], bull, upto))
         if m and m.group(2) == "series":
             try:
                 limit = int(q.get("limit", ["50"])[0])
@@ -204,6 +205,7 @@ class _TooLarge(Exception):
 class FetHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
     def __init__(self, addr, core: Core, token: str):
         super().__init__(addr, Handler)

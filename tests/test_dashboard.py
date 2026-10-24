@@ -74,7 +74,7 @@ class DashboardLogic(unittest.TestCase):
             targets = core.list_targets(ALICE)
             series = core.list_series("lane-1")
             closed = next(s["id"] for s in series if not s["open"])
-            payload = {"targets": targets, "series": series, "review": core.series_view(closed, "scored", 1)}
+            payload = {"targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15)}
         proc = subprocess.run(["node", os.path.join(HERE, "dashboard_check.js")], input=json.dumps(payload),
                               capture_output=True, text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

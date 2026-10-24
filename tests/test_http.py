@@ -106,6 +106,11 @@ class Api(ServerCase):
         v = next(t for t in body["targets"] if t["device_id"] == "lane-7")["view"]
         self.assertEqual((v["kind"], v["count"], v["ammo"]["spread_cc_mm"], v["ammo"]["size_mm"], v["bull_shots"][0]["decimal"]),
                          ("ammo", 3, 5.0, 10.7, 10.9))
+        sid = v["series_id"]
+        st, v2 = self.call("GET", f"/api/v1/series/{sid}?stream=scored&upto=2", token=None)
+        self.assertEqual((st, v2["count"], v2["full_count"], v2["ammo"]["spread_cc_mm"]), (200, 2, 3, 5.0))
+        self.assertEqual(v2["ammo"]["shots"], 2)
+        self.assertEqual(self.call("GET", f"/api/v1/series/{sid}?upto=abc", token=None)[0], 400)
 
 
 class Resilience(ServerCase):

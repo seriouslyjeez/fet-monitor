@@ -531,10 +531,22 @@ class Core:
                 "x": sum(1 for r in rows if not r["is_miss"] and is_inner_ten(r["tenths"])),
                 "misses": sum(1 for r in rows if r["is_miss"]), "shots": len(rows)}
 
-    def _stream_view(self, c, ser, stream: str, bull=None) -> dict:
-        """Everything a screen needs about one stream (scored or sighter) of a series."""
+    def _stream_view(self, c, ser, stream: str, bull=None, upto=None) -> dict:
+        """Everything a screen needs about one stream (scored or sighter) of a series.
+
+        upto=k shows the series as it stood after its first k shots (shot-by-shot review): the picture, the
+        groups, the totals and the ammo-test statistics are all computed from those k shots only.
+        full_count is always the real number of shots."""
         rows = c.execute("SELECT * FROM shots WHERE series_id=? AND stream=? ORDER BY series_no, id",
                          (ser["id"], stream)).fetchall()
+        full = len(rows)
+        if upto is not None:
+            rows = rows[:max(0, upto)]
+        view = self._stream_view_rows(c, ser, stream, rows, bull)
+        view["full_count"] = full
+        return view
+
+    def _stream_view_rows(self, c, ser, stream: str, rows, bull=None) -> dict:
         if ser["kind"] == "ammo":
             return self._ammo_view(ser, rows)
         n, bs, gs = len(rows), ser["bull_size"], ser["group_size"]
@@ -571,12 +583,12 @@ class Core:
         if kind == "ammo":
             return {"series_id": None, "kind": "ammo", "stream": "scored", "shooter": None, "open": True, "count": 0,
                     "total": None, "bull_size": 1, "group_size": 1, "agg": zero, "groups": [], "bull_index": 0,
-                    "bull_count": 1, "bull_shots": [], "last_shot": None,
+                    "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
                     "ammo": group_stats([], t["projectile_h"]) | {"misses": 0}}
         return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "open": True, "count": 0,
                 "total": t["total_match"] if kind == "match" else t["total_practice"],
                 "bull_size": t["bull_size"], "group_size": t["group_size"], "agg": zero, "groups": [],
-                "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None}
+                "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0}
 
     def list_targets(self, client_id: Optional[str] = None) -> list:
         now = self.now_ms()
@@ -627,14 +639,14 @@ class Core:
             out.append(item)
         return out
 
-    def series_view(self, series_id: int, stream: str = "scored", bull=None) -> dict:
+    def series_view(self, series_id: int, stream: str = "scored", bull=None, upto=None) -> dict:
         if stream not in ("scored", "sighter"):
             raise BadRequest("stream must be scored or sighter")
         c = self.db.conn()
         ser = c.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
         if ser is None:
             raise NotFound(f"unknown series {series_id}")
-        view = self._stream_view(c, ser, stream, bull)
+        view = self._stream_view(c, ser, stream, bull, upto)
         view["started"] = iso(ser["started_ms"])
         view["ended"] = iso(ser["ended_ms"]) if ser["ended_ms"] is not None else None
         view["device_id"] = ser["device_id"]

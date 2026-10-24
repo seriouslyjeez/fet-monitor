@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, S} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -131,9 +131,16 @@ const evil = overlayView(asMine(recordT), state({seriesList: D.series.map(g => O
 assert(!/<u>Eve/.test(evil) && evil.includes('&lt;u&gt;Eve&lt;/u&gt;'), 'review list escapes shooter names');
 // --- review
 const rv = D.review;
-const rpage = shooterView(recordT, state({review: {sid: rv.series_id, stream: 'scored', bull: rv.bull_index}, reviewView: rv}));
-assert(rpage.includes('Reviewing') && rpage.includes('Back to live') && rpage.includes('Target ' + (rv.bull_index + 1) + ' of ' + rv.bull_count));
-assert(rv.bull_count > 1 && rpage.includes('data-act="bull"'));
+const rpage = shooterView(recordT, state({review: {sid: rv.series_id, stream: 'scored', shot: rv.count}, reviewView: rv}));
+assert(rv.count === 15 && rv.full_count > 15 && rv.bull_index === 1, 'the review fixture is shot 15 of a longer series');
+assert(rpage.includes('Reviewing') && rpage.includes('Back to live') && rpage.includes('Shot 15 of ' + rv.full_count + ' · target 2 of ' + Math.ceil(rv.full_count / rv.bull_size)));
+assert.strictEqual(count(rpage, /data-act="rnav"/g), 4, 'four review buttons');
+assert(/data-move="page-"[^>]*title="Back one target"/.test(rpage) && /data-move="step-"[^>]*title="Back one shot"/.test(rpage) && /data-move="step\+"[^>]*title="Forward one shot"/.test(rpage) && /data-move="page\+"[^>]*title="Forward one target"/.test(rpage));
+assert(rpage.indexOf('&lt;&lt;') < rpage.indexOf('&lt;</button>') && rpage.indexOf('&gt;</button>') < rpage.indexOf('&gt;&gt;'), 'order: << < shot > >>');
+assert(!/disabled/.test(rpage.slice(rpage.indexOf('class="pager"'), rpage.indexOf('class="pager"') + 900)), 'mid-series nothing is disabled');
+assert.strictEqual(count(rpage, /<tr class="[^"]*"?>?<td>(1[1-5])<\/td>|<tr><td>(1[1-5])<\/td>/g), 5, 'the picture shows shots 11-15 only: the shots fired so far on this target');
+assert(!rpage.includes('<td>16</td>'), 'no shot after the one being reviewed is shown');
+assert(rpage.includes('Shot 15 · ring'), 'last shot panel is the reviewed shot');
 assert(!/data-act="mode"/.test(rpage), 'no mode buttons while reviewing');
 // --- v0.4 layout: red corner, 5-on-5 strip, every group beside Last shot
 assert(faceSvg([], {half: 26, corner: true}).includes('fill="#dc2626"') && !/class="corner"[^>]*fill="#000"/.test(faceSvg([], {half: 26, corner: true})), 'corner is red');
@@ -183,9 +190,9 @@ assert(aov.includes('class="sel">.22 LR') && !aov.includes('class="sel">4.5 mm')
 assert(!aov.includes('id="f_bull"') && aov.includes('New test') && aov.includes('Test label'));
 const nov = overlayView(asMine(recordT), state(), 'Alice');
 assert(!nov.includes('f_proj') && nov.includes('id="f_bull"') && nov.includes('data-kind="ammo"'), 'other modes keep their own settings and offer Ammo test');
-const revList = overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 5, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {size_mm: 7.5}}]}), '');
+const revList = overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 5, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {size_mm: 7.5, shots: 5}}]}), '');
 assert(revList.includes('ammo test') && revList.includes('7.50 mm'), 'finished tests are reviewable by group size');
-const arev = shooterView(ammoT, state({review: {sid: av.series_id, stream: 'scored', bull: 0}, reviewView: Object.assign({}, av, {open: false, started: '2026-10-23T22:00:00Z'})}));
+const arev = shooterView(ammoT, state({review: {sid: av.series_id, stream: 'scored', shot: av.count}, reviewView: Object.assign({}, av, {open: false, started: '2026-10-23T22:00:00Z', full_count: av.count})}));
 assert(arev.includes('Reviewing an ammo test') && arev.includes('<h3>Group</h3>') && !arev.includes('data-act="rstream"'));
 // ammo auto zoom starts one ring tighter
 assert.strictEqual(autoRing([sh(0, 0)], 2.25, 9), 9);
@@ -203,4 +210,31 @@ assert(ov.includes('<line x1="') && ov.includes('y1="-2"'), 'group centre cross 
 const lab = (o) => count(faceSvg([sh(0, 0, 1), sh(1, 1, 2), sh(2, 2, 3)], Object.assign({half: 8}, o)), /dominant-baseline="central" fill="#fff" stroke="#000"/g);
 assert.strictEqual(lab({}), 3, 'normal faces number every shot');
 assert.strictEqual(lab({labelLast: true}), 1, 'an ammo test numbers only the latest shot');
+// an ammo test with only misses has no group yet and must not break any screen
+const onlyMiss = JSON.parse(JSON.stringify(ammoT));
+onlyMiss.view.bull_shots = [{n: 1, miss: true, ring: 0, decimal: 0, inner: false, x_mm: null, y_mm: null}]; onlyMiss.view.count = 1;
+onlyMiss.view.ammo = {shots: 0, diameter_mm: 4.5, misses: 1};
+assert(shooterView(asMine(onlyMiss), state()).includes('<span class="v">–</span>'));
+assert(coachView([onlyMiss]).includes('no shots yet'));
+assert(overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 1, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {shots: 0, diameter_mm: 4.5}}]}), '').includes('ammo test'));
+assert.strictEqual(reviewPage({kind: 'ammo', bull_size: 14}), 10);
+assert.strictEqual(reviewPage({kind: 'match', bull_size: 7}), 7);
+// review navigation (k = shot shown, 10 shots per target picture, 25 shots in all)
+const nav = (k, m, full) => reviewShot(k, 10, full === undefined ? 25 : full, m);
+assert.deepStrictEqual([nav(1, 'step+'), nav(25, 'step+'), nav(1, 'step-'), nav(7, 'step-')], [2, 25, 1, 6], 'steps are clamped to the series');
+assert.deepStrictEqual([nav(1, 'page+'), nav(5, 'page+'), nav(10, 'page+'), nav(11, 'page+'), nav(15, 'page+'), nav(20, 'page+'), nav(21, 'page+'), nav(25, 'page+')], [10, 10, 20, 20, 20, 25, 25, 25],
+  '>> goes to the end of this target picture, or of the next if already there; the last picture ends at the last shot');
+assert.deepStrictEqual([nav(1, 'page-'), nav(10, 'page-'), nav(11, 'page-'), nav(15, 'page-'), nav(20, 'page-'), nav(25, 'page-')], [1, 1, 10, 10, 10, 20],
+  '<< goes to the end of the previous target picture, or shot 1');
+assert.strictEqual(reviewShot(0, 10, 0, 'step+'), 0, 'an empty series stays empty');
+// edges: nothing to go back to at shot 1, nothing forward at the end
+const edge = (k, full) => reviewPager({count: k, full_count: full, bull_size: 10, bull_index: Math.ceil(k / 10) - 1}, false);
+const dis = h => [...h.matchAll(/data-move="([^"]+)"[^>]*?( disabled)?>/g)].filter(m => m[2]).map(m => m[1]);
+assert.deepStrictEqual(dis(edge(1, 25)), ['page-', 'step-'], 'at shot 1 you cannot go back');
+assert.deepStrictEqual(dis(edge(25, 25)), ['step+', 'page+'], 'at the last shot you cannot go forward');
+assert.deepStrictEqual(dis(edge(5, 5)), ['step+', 'page+'], 'a short last target: can go back, not forward');
+assert(reviewPager({count: 0, full_count: 0, bull_size: 10, bull_index: 0}, false).includes('No shots in this series'));
+// ammo review steps one shot at a time and ten at a jump, and the statistics are those of the shots so far
+const ap = reviewPager({count: 7, full_count: 14, bull_size: 14, bull_index: 0}, true);
+assert(ap.includes('Shot 7 of 14') && !ap.includes('target') && ap.includes('Forward ten shots') && ap.includes('Back ten shots'));
 console.log('OK');
