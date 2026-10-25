@@ -29,7 +29,7 @@ def main():
     dev = a.device or devs[0]
     t = c.execute("SELECT * FROM targets WHERE device_id=?", (dev,)).fetchone()
     print("targets:", ", ".join(devs), "| looking at:", dev)
-    print("last seen: %s  boot_count=%s  queue_depth=%s  overflow=%s  fw=%s" % (ts(t["last_seen_ms"]), t["boot_count"], t["queue_depth"], t["overflow_count"], t["bridge_fw"]))
+    print("last seen: %s  from IP %s  boot_count=%s  queue_depth=%s  overflow=%s  fw=%s" % (ts(t["last_seen_ms"]), t["last_ip"], t["boot_count"], t["queue_depth"], t["overflow_count"], t["bridge_fw"]))
 
     print("\nBOOTS (server's idea of when each ESP start-up happened)")
     for r in c.execute("SELECT * FROM boots WHERE device_id=? ORDER BY boot_count DESC LIMIT 6", (dev,)):

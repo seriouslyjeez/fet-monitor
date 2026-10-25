@@ -181,7 +181,7 @@ void WifiNet::update(uint64_t now) {
   if (mdnsUp_ && up) MDNS.update();
 #endif
 #if FET_STATUS_MESSAGES
-  if (up && !wasUp_) say("Connected to network: ", WiFi.SSID().c_str());
+  if (up && !wasUp_) say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")");
 #endif
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
   wasUp_ = up;

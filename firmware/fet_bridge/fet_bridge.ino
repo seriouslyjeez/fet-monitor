@@ -104,12 +104,14 @@ void loop() {
     for (size_t i = 0; i < b.size(); i++) g_bridge->onByte((uint8_t)b[i], now);
   }
 
-  // 2. bridge: sending, heartbeat, commands (may block for a few seconds on the network; serial is parked meanwhile)
+  // 2. WiFi bookkeeping first, so "Connected to network" prints before the first attempt to reach the server
+  g_net->update(nowMs());
+
+  // 3. bridge: sending, heartbeat, commands (may block for a few seconds on the network; serial is parked meanwhile)
   g_bridge->tick(nowMs());
 
-  // 3. housekeeping
+  // 4. housekeeping
   g_quick->tick(nowMs());
-  g_net->update(nowMs());
   g_portal->loop(nowMs());
   if (g_hooks.portalWanted) { g_hooks.portalWanted = false; g_portal->open(nowMs()); }
   if (g_net->wifiUp()) startOta();

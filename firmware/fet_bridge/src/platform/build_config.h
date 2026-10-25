@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.1.2"
+#define FET_FW_VERSION "0.1.3"
 
 #ifndef FET_ENABLE_OTA
 #define FET_ENABLE_OTA 1          // Arduino OTA push from the IDE / espota (needs a token; the token is the password)
@@ -24,7 +24,7 @@
 #define FET_LOG_SEGMENT_BYTES 7000   // one LittleFS block is 8 KB; keep a segment inside one block
 
 // Two plain status lines on the serial port (the port the Arduino is on; braces are never printed):
-//   Connected to network: <ssid>        each time WiFi connects
+//   Connected to network: <ssid> (<ip>) each time WiFi connects
 //   First report to FET: success|fail   the first HTTP exchange with the server after power-up
 #ifndef FET_STATUS_MESSAGES
 #define FET_STATUS_MESSAGES 1
