@@ -4,7 +4,7 @@ Replaces the stock AT firmware on the target's ESP-01. It reads the Arduino's se
 ESP's flash *first*, and then delivers it to the club server (Raspberry Pi) until the server acknowledges it.
 A WiFi drop, a server restart, or a power cut on the target loses nothing that was already written.
 
-**Status: v0.1.1. The logic is tested on a PC (dozens of tests, including power cuts, torn flash writes, lost replies and
+**Status: v0.1.2. The logic is tested on a PC (dozens of tests, including power cuts, torn flash writes, lost replies and
 outages, against the real server). The ESP8266-specific parts (flash, WiFi, web pages, OTA) could not be compiled or
 run where this was written, so the first build and the first boot on real hardware are the real test. See
 "What is not verified yet" below.**
@@ -74,6 +74,15 @@ N below about 430 KB. If it is bigger, edit `src/platform/build_config.h`: set `
 
 To change settings later: switch the target off and on **three times quickly**, or send the `wifi_portal` command from
 the server. "Forget all settings" in the portal clears WiFi and server settings but keeps stored shots.
+
+## Erasing flash and boot numbers
+
+Every start-up the ESP counts a boot number and stamps it on its events; the server uses (boot number, sequence) to
+recognise duplicates and to work out when each shot happened. A full flash erase wipes the counter. The firmware then
+starts from a random number instead of 1 so a wiped device cannot be mistaken for an earlier run of itself, and the server
+also notices a reused boot number (log line "reused a boot number") and re-times from the current run.
+Use "Erase Flash: All Flash Contents" only for the first upload to a module that carried other firmware;
+afterwards "Only Sketch" keeps the settings and the shot queue.
 
 ## Bench test without the target
 

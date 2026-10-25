@@ -157,12 +157,13 @@ class FirmwareHost(unittest.TestCase):
         self.assertEqual(self.h.flags()["queued"], 0)
 
     def test_power_cycle_with_unsent_shots(self):
+        first = self.h.flags()["boot"]
         self.h.run("net down")
         for i in range(1, 6):
             self.feed(self.shot(i))
         self.h.run("boot")                       # power cycle: RAM lost, flash kept
         self.assertEqual(self.h.flags()["queued"], 5)
-        self.assertEqual(self.h.flags()["boot"], 2)
+        self.assertEqual(self.h.flags()["boot"], first + 1)
         for i in range(6, 9):
             self.feed(self.shot(i))
         self.h.run("boot")
@@ -172,7 +173,7 @@ class FirmwareHost(unittest.TestCase):
         self.tick(60000)
         s = self.shots()
         self.assertEqual(len(s), 11)
-        self.assertEqual(sorted({e[0] for e in s}), [1, 2, 3])        # three distinct boot counts
+        self.assertEqual(sorted({e[0] for e in s}), [first, first + 1, first + 2])        # three distinct boot counts
         self.assertEqual(len({(e[0], e[1]) for e in s}), 11)
 
     def test_ack_loss_never_duplicates(self):
@@ -336,7 +337,7 @@ class FirmwareHost(unittest.TestCase):
         self.feed(self.shot(1))
         self.tick(3000)
         st = json.loads(self.h.run("status"))
-        self.assertEqual((st["device_id"], st["queued"], st["fs_ok"], st["boot_count"]), ("fet-test01", 1, True, 1))
+        self.assertEqual((st["device_id"], st["queued"], st["fs_ok"], st["boot_count"]), ("fet-test01", 1, True, self.h.flags()["boot"]))
         self.h.run("net up")
         self.tick(60000)
         st = json.loads(self.h.run("status"))
@@ -376,6 +377,34 @@ class FirmwareHost(unittest.TestCase):
     def test_esp_layer_type_checks(self):
         r = subprocess.run([os.path.join(FW, "test", "syntax_check.sh")], capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_boot_number_survives_normal_restarts_and_is_reseeded_when_lost(self):
+        first = self.h.flags()["boot"]                       # setUp booted once
+        self.assertGreaterEqual(first, 1000)                 # a fresh device starts from a random number, not 1
+        self.h.run("boot")
+        self.assertEqual(self.h.flags()["boot"], first + 1)  # normal restarts count up by one
+        self.h.run("boot")
+        self.assertEqual(self.h.flags()["boot"], first + 2)
+        self.h.run("wipe")                                   # flash erased: the counter is gone
+        self.h.run("boot")
+        after = self.h.flags()["boot"]
+        self.assertGreaterEqual(after, 1000)
+        self.assertNotEqual(after, first + 3)                # not a continuation, not 1: a new random start
+        self.assertNotEqual(after, 1)
+
+    def test_events_of_a_wiped_device_do_not_collide_with_its_earlier_run(self):
+        self.feed(self.shot(1))
+        self.tick(3000)
+        self.h.run("wipe")
+        self.h.run("boot")
+        self.feed(self.shot(2))
+        self.tick(3000)
+        s = self.shots()
+        self.assertEqual(len(s), 2)                          # both stored; the second was not taken for a duplicate of the first
+        self.assertEqual(len({e[0] for e in s}), 2)
+        with self.core.db.conn() as c:
+            n = c.execute("SELECT COUNT(*) FROM event_conflicts").fetchone()[0]
+        self.assertEqual(n, 0)
 
     def test_jparse(self):
         self.assertEqual(self.h.run('jparse {"a":1,"b":[1,2,{"c":"x"}]}'), "OK")

@@ -16,8 +16,16 @@ void Bridge::begin(uint64_t now) {
   now_ = now;
   std::string d;
   unsigned long old = 0;
-  if (fs_.read("/boot.cnt", d)) old = strtoul(d.c_str(), nullptr, 10);
-  boot_ = (uint32_t)old + 1;
+  bool have = fs_.read("/boot.cnt", d) && !d.empty();
+  if (have) old = strtoul(d.c_str(), nullptr, 10);
+  if (have && old > 0 && old < 4000000000UL) {
+    boot_ = (uint32_t)old + 1;
+  } else {
+    // The counter is gone (flash erased, filesystem rebuilt): start from a random number rather than 1, so this run
+    // cannot be mistaken for an earlier run of the same device that also began at 1, 2, 3...
+    boot_ = 1000 + hooks_.random32() % 3000000UL;
+    lastCmd_ = 0;
+  }
   fsOk = fs_.writeAtomic("/boot.cnt", u32s(boot_));
   if (fs_.read("/cmd.id", d)) lastCmd_ = atoll(d.c_str());
   log_.load();

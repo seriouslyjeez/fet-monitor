@@ -74,7 +74,8 @@ struct TcpNet : Net {
 };
 
 struct CapUart : Uart { std::string log; void write(const std::string& s) override { log += s; } };
-struct CapHooks : Hooks { int reboots = 0, portals = 0; void reboot() override { reboots++; } void openPortal() override { portals++; } };
+struct CapHooks : Hooks { int reboots = 0, portals = 0; uint32_t rnd = 12345; void reboot() override { reboots++; } void openPortal() override { portals++; }
+  uint32_t random32() override { rnd = rnd * 1664525u + 1013904223u; return rnd; } };
 
 static std::string unescape(const std::string& s) {
   std::string o;
@@ -108,6 +109,7 @@ int main() {
     else if (cmd == "boot") { br.reset(); t = 0; br.reset(new Bridge(fs, net, uart, hooks, info, cap)); br->begin(t); }
     else if (cmd == "uart") { std::string d = unescape(rest); for (unsigned char c : d) { t += 1; br->onByte(c, t); } }
     else if (cmd == "tick") { long ms = atol(rest.c_str()); for (long k = 0; k < ms; k += 50) { t += 50; br->tick(t); } }
+    else if (cmd == "wipe") { fs.files.clear(); }
     else if (cmd == "net") net.up = rest == "up";
     else if (cmd == "drop") net.dropPct = atoi(rest.c_str());
     else if (cmd == "fake") net.fakeStatus = atoi(rest.c_str());

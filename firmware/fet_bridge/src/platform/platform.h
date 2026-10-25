@@ -66,6 +66,7 @@ struct PlatformHooks : fet::Hooks {
   uint64_t rebootAt = 0;                  // 0 = none
   void reboot() override;
   void openPortal() override { portalWanted = true; }
+  uint32_t random32() override;
 };
 
 std::string deviceIdFromChip();           // fet-xxxxxx

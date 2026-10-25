@@ -21,6 +21,9 @@ class String {
   std::string s_;
 };
 unsigned long millis();
+unsigned long micros();
+extern volatile uint32_t RANDOM_REG32_STUB;
+#define RANDOM_REG32 RANDOM_REG32_STUB
 void delay(unsigned long ms);
 class HardwareSerial {
  public:

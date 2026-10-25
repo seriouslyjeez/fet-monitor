@@ -34,6 +34,7 @@ PROJECTILE_MM = (1.0, 10.0)      # accepted range for the ammo-test projectile s
 CLIENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 PENDING_STATUSES = ("queued", "sent")
 MAX_COMMANDS_PER_HEARTBEAT = 5
+BOOT_SKEW_MS = 30_000        # more than any crystal drift: the device must have restarted under the same boot number
 PARSE_ERRORS = (ParseError, KeyError, TypeError, ValueError, ArithmeticError)
 
 
@@ -93,6 +94,7 @@ class Core:
                  offline_after_ms: int = 15000, heartbeat_interval_ms: int = 5000,
                  lease_ms: int = 60000, shot_lag_ms: int = 0, hub: Optional[Hub] = None,
                  idle_new_series_ms: int = 30 * 60 * 1000):
+        self._skew_warned = set()
         self.idle_new_series_ms = idle_new_series_ms   # a practice series left idle this long starts afresh
         self.hub = hub or Hub()
         self.lease_ms = lease_ms
@@ -141,7 +143,7 @@ class Core:
             self._register_boot(c, device_id, boot_count, recv_ms - uptime_ms)
             for ev in events:
                 try:
-                    boot, seq, new_shot = self._store_event(c, device_id, boot_count, recv_ms, ev)
+                    boot, seq, new_shot = self._store_event(c, device_id, boot_count, recv_ms, ev, uptime_ms)
                     created = created or new_shot
                 except BadRequest as exc:
                     rejected.append({"boot_count": ev.get("boot_count", boot_count) if isinstance(ev, dict) else None,
@@ -152,7 +154,7 @@ class Core:
             self.hub.publish({"type": "shot", "device_id": device_id})
         return {"acked": acked, "rejected": rejected, "server_time_ms": recv_ms}
 
-    def _store_event(self, c, device_id: str, req_boot: int, recv_ms: int, ev):
+    def _store_event(self, c, device_id: str, req_boot: int, recv_ms: int, ev, req_uptime_ms: int = 0):
         if not isinstance(ev, dict):
             raise BadRequest("event must be an object")
         seq = _int(ev.get("seq"), "seq")
@@ -169,10 +171,21 @@ class Core:
             raise BadRequest("data must be an object")
 
         start = self._boot_start(c, device_id, boot)
+        quality = "ok"
+        if start is not None and boot == req_boot and abs((recv_ms - req_uptime_ms) - start) > BOOT_SKEW_MS:
+            # The stored start of this boot disagrees with what the device says right now by more than any clock
+            # drift could explain: the device restarted but reused the boot number (for example after its flash was
+            # erased). Trust this request, which is always about the current run, and say so.
+            if (device_id, boot) not in self._skew_warned:
+                self._skew_warned.add((device_id, boot))
+                log.warning("%s: boot %d was seen starting at %d but its uptime now implies %d; "
+                            "the device reused a boot number. Timing taken from the current request.",
+                            device_id, boot, start, recv_ms - req_uptime_ms)
+            start, quality = recv_ms - req_uptime_ms, "reanchored"
         if start is None:       # event from a boot we never heard from: time is a guess
             event_ms, quality = recv_ms, "unknown"
         else:
-            event_ms, quality = start + ev_uptime, "ok"
+            event_ms = start + ev_uptime
             if etype == "shot":
                 event_ms -= self.shot_lag_ms
         data_json = json.dumps(data) if data is not None else None

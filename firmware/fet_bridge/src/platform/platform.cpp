@@ -135,6 +135,8 @@ void SerialUart::write(const std::string& s) {
 
 void PlatformHooks::reboot() { rebootAt = nowMs() + 400; }
 
+uint32_t PlatformHooks::random32() { return (uint32_t)RANDOM_REG32 ^ (uint32_t)micros(); }   // hardware RNG register, plus start-up jitter
+
 // ---------------------------------------------------------------- status lines
 #if FET_STATUS_MESSAGES
 static void say(const char* label, const std::string& value) {

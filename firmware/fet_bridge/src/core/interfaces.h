@@ -37,6 +37,7 @@ struct Hooks {
   virtual ~Hooks() {}
   virtual void reboot() = 0;
   virtual void openPortal() = 0;
+  virtual uint32_t random32() = 0;        // hardware randomness (used to seed the boot number when the counter is lost)
 };
 
 }  // namespace fet
