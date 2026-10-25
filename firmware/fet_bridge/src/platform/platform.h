@@ -8,6 +8,7 @@
 
 namespace fetp {
 
+void say(const char* label, const std::string& value);   // one plain status line on the serial port (no-op if FET_STATUS_MESSAGES is 0)
 uint64_t nowMs();                         // millis() extended to 64 bits (call at least every few weeks)
 
 class LfsFs : public fet::Fs {
@@ -53,6 +54,7 @@ class WifiNet : public fet::Net {
   int connectFails_ = 0;
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
+  uint64_t nextWifiNote_ = 0;
   std::string hostname_;
 };
 

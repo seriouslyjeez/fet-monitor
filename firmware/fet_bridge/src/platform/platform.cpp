@@ -138,16 +138,18 @@ void PlatformHooks::reboot() { rebootAt = nowMs() + 400; }
 uint32_t PlatformHooks::random32() { return (uint32_t)RANDOM_REG32 ^ (uint32_t)micros(); }   // hardware RNG register, plus start-up jitter
 
 // ---------------------------------------------------------------- status lines
+void say(const char* label, const std::string& value) {
 #if FET_STATUS_MESSAGES
-static void say(const char* label, const std::string& value) {
   Serial.print(label);
   for (size_t i = 0; i < value.size(); i++) {
     unsigned char c = (unsigned char)value[i];
     Serial.write((c < 0x20 || c > 0x7e || c == '{' || c == '}') ? (uint8_t)'?' : (uint8_t)c);   // never let a name look like a command
   }
   Serial.write((uint8_t)'\n');
-}
+#else
+  (void)label; (void)value;
 #endif
+}
 
 // ---------------------------------------------------------------- WiFi + HTTP
 void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
@@ -156,7 +158,12 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   WiFi.setAutoReconnect(true);
   WiFi.mode(withAccessPoint ? WIFI_AP_STA : WIFI_STA);   // one switch, straight from "off": the well-trodden path
   WiFi.hostname(hostname.c_str());
-  if (cfg_.wifiConfigured()) WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  if (cfg_.wifiConfigured()) {
+    say("Attempting to connect to network: ", cfg_.ssid);
+    WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  } else {
+    say("No WiFi settings saved: ", "waiting for setup");
+  }
 }
 
 void WifiNet::stopSta() { WiFi.disconnect(); }
@@ -182,6 +189,17 @@ void WifiNet::update(uint64_t now) {
 #endif
 #if FET_STATUS_MESSAGES
   if (up && !wasUp_) say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")");
+#endif
+#if FET_STATUS_MESSAGES
+  if (!up && cfg_.wifiConfigured() && now >= nextWifiNote_) {          // say why, every 10 s, until it connects
+    nextWifiNote_ = now + 10000;
+    wl_status_t st = WiFi.status();
+    const char* why = st == WL_NO_SSID_AVAIL ? "network not found"
+                    : (st == WL_CONNECT_FAILED || st == WL_WRONG_PASSWORD) ? "wrong password"
+                    : st == WL_IDLE_STATUS ? "connecting"
+                    : st == WL_DISCONNECTED ? "not connected yet" : "waiting";
+    say("Not connected to ", cfg_.ssid + ": " + why);
+  }
 #endif
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
   wasUp_ = up;

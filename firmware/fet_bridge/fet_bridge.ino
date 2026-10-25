@@ -39,6 +39,7 @@ void setup() {
   Serial.setRxBufferSize(FET_RX_BUFFER);                  // before begin(); the Arduino keeps talking while we wait on WiFi
   Serial.begin(FET_SERIAL_BAUD);
   g_id = deviceIdFromChip();
+  say("\nFET bridge firmware ", std::string(FET_FW_VERSION) + " (" + g_id + ")");
 #if FET_DEBUG
   {                                                       // why did the chip last restart? (survives the crash itself)
     struct rst_info* r = ESP.getResetInfoPtr();

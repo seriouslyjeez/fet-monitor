@@ -68,12 +68,10 @@ void Portal::open(uint64_t now) {
   std::string ssid = "freETarget-" + id_.substr(id_.size() > 6 ? id_.size() - 6 : 0);
   FET_STAGE(102);
   WiFi.softAP(ssid.c_str());
+  say("Setup portal open. Join WiFi: ", ssid);
   FET_STAGE(103);                              // open: it only exists for a few minutes, after a deliberate action
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", apIp);                               // every name -> us, so phones show the setup page
-  FET_STAGE(104);
-  WiFi.scanNetworks(true);                                // async; /scan picks it up
-  FET_STAGE(105);
 #if FET_ENABLE_WEB_UPDATE
   if (!updaterReady_ && !cfg_.token.empty()) {
     updater.setup(&server, "/update", "fet", cfg_.token.c_str());
@@ -176,15 +174,19 @@ std::string Portal::form(const std::string& error) {
        "<p class=note>Firmware update: <a href=/update>/update</a> (user fet, password = server token)</p>"
 #endif
        "<script>function s(){fetch('/scan').then(x=>x.json()).then(a=>{document.getElementById('nets').innerHTML="
-       "a.map(n=>'<option value=\"'+n.replace(/\"/g,'&quot;')+'\">').join('')}).catch(()=>{})}s();setTimeout(s,4000);setTimeout(s,10000)</script>";
+       "a.map(n=>'<option value=\"'+n.replace(/\"/g,'&quot;')+'\">').join('')}).catch(()=>{})}s();setTimeout(s,3000);setTimeout(s,8000)</script>";
   return o;
 }
 
 void Portal::handleScan() {
   if (!open_) { server.send(403, "text/plain", "closed"); return; }
+  // Scanning interrupts the station's own connection attempt, so it only runs while someone has the setup page open:
+  // the first request starts a scan (and returns an empty list), the next ones pick up the result.
   std::string j = "[";
   int n = WiFi.scanComplete();
-  if (n > 0) {
+  if (n == WIFI_SCAN_FAILED) {
+    WiFi.scanNetworks(true);
+  } else if (n > 0) {
     bool first = true;
     for (int i = 0; i < n && i < 30; i++) {
       std::string s = WiFi.SSID(i).c_str(), e;
@@ -195,7 +197,6 @@ void Portal::handleScan() {
       first = false;
     }
     WiFi.scanDelete();
-    WiFi.scanNetworks(true);
   }
   j += "]";
   server.sendHeader("Cache-Control", "no-store");

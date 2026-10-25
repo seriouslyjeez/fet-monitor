@@ -2,7 +2,9 @@
 #include "Arduino.h"
 #include "IPAddress.h"
 enum WiFiMode { WIFI_OFF = 0, WIFI_STA = 1, WIFI_AP = 2, WIFI_AP_STA = 3 };
-enum wl_status_t { WL_IDLE_STATUS = 0, WL_CONNECTED = 3, WL_DISCONNECTED = 6 };
+enum wl_status_t { WL_IDLE_STATUS = 0, WL_NO_SSID_AVAIL = 1, WL_CONNECTED = 3, WL_CONNECT_FAILED = 4, WL_WRONG_PASSWORD = 6, WL_DISCONNECTED = 7 };
+#define WIFI_SCAN_RUNNING (-1)
+#define WIFI_SCAN_FAILED (-2)
 class WiFiClient {
  public:
   void setTimeout(uint32_t) {}
