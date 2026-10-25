@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -295,4 +295,14 @@ const sex = sightView(asMine(practiceT), state({sight: {sid: sid, after: 0, data
 assert(sex.includes('data-act="sightclear"') && sex.includes('data-act="sightkeep"') && sex.includes('Clear the target'));
 assert(!sightView(asMine(practiceT), state({sight: {sid: sid, after: 0, data: sg, exit: false}, cpr: '"><b>'})).includes('"><b>'), 'the typed value is escaped');
 assert(sightAllowed(asMine(practiceT), state()) && !sightAllowed(asMine(recordT), state()) && !sightAllowed(undefined, state()));
+// session name (practice and match) vs shooter (ammo test)
+[practiceT, recordT].forEach(t => { const o = overlayView(asMine(t), state(), 'Alice'); assert(o.includes('<h4>Session name</h4>') && !o.includes('<h4>Shooter</h4>'), t.mode); });
+assert(overlayView(asMine(T('lane-5')), state(), 'Alice').includes('<h4>Shooter</h4>'), 'an ammo test keeps the shooter');
+const unnamed = Object.assign(asMine(practiceT), {shooter: null});
+assert(overlayView(unnamed, state(), 'Alice').includes('value="Alice – Practice"'), 'prefilled with the default');
+// the target's status page link
+assert.deepStrictEqual(['192.168.1.20', '10.0.0.255', 'fe80::1', '::1'].map(statusUrl), ['http://192.168.1.20/', 'http://10.0.0.255/', 'http://[fe80::1]/', 'http://[::1]/']);
+assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', null, undefined, ''].map(statusUrl), Array(8).fill(null));
+[asFree, asMine, asOther].forEach(f => assert(overlayView(f(Object.assign({}, practiceT, {ip: '192.168.1.20'})), state(), '').includes('href="http://192.168.1.20/"'), 'shown to everyone'));
+assert(overlayView(Object.assign({}, practiceT, {ip: null}), state(), '').includes('No address yet'));
 console.log('OK');

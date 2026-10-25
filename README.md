@@ -1,6 +1,10 @@
-# freETarget club server (v0.6.19: series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.20: series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
-Receives shots and status from freETarget targets over the club LAN, stores them
+FeT Monitor is an independent, standalone companion project for electronic targets running the
+[freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
+endorsed by the freETarget project; "freETarget" is used here only to say what it works with.
+
+Receives shots and status from freETarget-compatible targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
 and a web dashboard. Standard library only: Python 3.9 or newer, nothing to install.
 
@@ -108,16 +112,22 @@ and flash faults (needs g++; skipped without it).
 
 ## Install on a Raspberry Pi
 
-    sudo useradd --system --home /var/lib/freetarget --shell /usr/sbin/nologin freetarget
-    sudo mkdir -p /opt/freetarget-server /var/lib/freetarget /var/backups/freetarget
-    sudo cp -r fetserver /opt/freetarget-server/
-    sudo chown -R freetarget:freetarget /var/lib/freetarget /var/backups/freetarget
-    sudo cp deploy/freetarget-server.service deploy/freetarget-backup.service deploy/freetarget-backup.timer /etc/systemd/system/
-    sudo cp deploy/freetarget.avahi.service /etc/avahi/services/freetarget.service
+    sudo useradd --system --home /var/lib/fet-monitor --shell /usr/sbin/nologin fet-monitor
+    sudo mkdir -p /opt/fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor
+    sudo cp -r fetserver /opt/fet-monitor/
+    sudo chown -R fet-monitor:fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor
+    sudo cp deploy/fet-monitor.service deploy/fet-monitor-backup.service deploy/fet-monitor-backup.timer /etc/systemd/system/
+    sudo cp deploy/fet-monitor.avahi.service /etc/avahi/services/fet-monitor.service
     sudo systemctl daemon-reload
-    sudo systemctl enable --now freetarget-server freetarget-backup.timer
-    sudo cat /var/lib/freetarget/device_token      # enter this in each target's setup portal
-    journalctl -u freetarget-server -f
+    sudo systemctl enable --now fet-monitor fet-monitor-backup.timer
+    sudo cat /var/lib/fet-monitor/device_token      # enter this in each target's setup portal
+    journalctl -u fet-monitor -f
+
+**Upgrading an older install** (named `freetarget-server`, data in /var/lib/freetarget): from the repository folder
+on the Pi run `sudo sh deploy/migrate-from-freetarget.sh`. It stops the old service, archives the old data, copies it
+to the new paths (the device token comes along, so targets keep working), installs and starts `fet-monitor`, and
+checks it answers. The old folders and unit files are left in place (disabled) for rollback; the script prints how
+to roll back or remove them.
 
 Options: `--lease SECONDS` (control claim length, default 60), `--shot-lag SECONDS` (how long after
 a shot is detected its line reaches the ESP-01; default 0, to be measured on the bench; it only matters
@@ -126,7 +136,7 @@ for shots fired within a few seconds of a mode change), `--offline-after`, `--he
 Other commands: `python3 -m fetserver check` (integrity check), `backup` (consistent snapshot,
 keeps the newest 14), `rescore` (recompute scores from stored coordinates; raw events are never touched).
 The server refuses to start if the database fails its integrity check; restore the newest
-backup from /var/backups/freetarget in that case.
+backup from /var/backups/fet-monitor in that case.
 
 ## API (JSON, base path /api/v1)
 
@@ -158,7 +168,13 @@ backup from /var/backups/freetarget in that case.
   a factory reset), the event is acknowledged but kept in `event_conflicts` and counted in `/api/v1/health`,
   never discarded silently. The firmware must restart its boot counter from a random value, not from 1.
 * Tested: the process being killed mid-write. Not testable here: sudden power loss. `synchronous=FULL` is
-  the protection for that, but an SD card can still fail, so prefer a USB SSD for /var/lib/freetarget
+  the protection for that, but an SD card can still fail, so prefer a USB SSD for /var/lib/fet-monitor
   and keep the nightly backups on a different device.
 * There are no logins yet. Browser endpoints are open to the LAN; device endpoints need the token.
   The control claim stops accidental clashes, it is not security.
+
+## License
+
+Copyright 2026 Jake Miller. Licensed under the Apache License, Version 2.0 (see `LICENSE` and `NOTICE`).
+Redistributions, including modified versions, must keep the `NOTICE` file and its credit. Provided "as is",
+without warranty of any kind; see the license for the limitation of liability.

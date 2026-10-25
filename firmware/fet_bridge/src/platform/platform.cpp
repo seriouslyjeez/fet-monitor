@@ -319,7 +319,7 @@ bool WifiNet::resolveServer(uint64_t now) {
   }
 #if FET_ENABLE_MDNS
   else if (mdnsUp_) {
-    int n = MDNS.queryService("freetarget", "tcp");
+    int n = MDNS.queryService("fetmonitor", "tcp");
     if (n > 0) { ip = MDNS.IP(0); port = MDNS.port(0); ok = true; }
   }
 #endif

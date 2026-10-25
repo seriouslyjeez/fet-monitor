@@ -71,3 +71,9 @@ after N s, re-joining, first report, setup portal) stay; `FET_STATUS_MESSAGES 0`
 themselves are unchanged (802.11g, sleep off, 15 s re-join). The DHCP-restart experiment (`FET_DHCP_RESTART_MS`,
 off since 0.1.12 because it switched lwIP's DHCP client off) is removed from the code. For a slow-connect investigation, set `FET_DHCP_DIAG 1`
 and `FET_DEBUG 1` again.
+
+### Firmware 0.1.16: FeT Monitor name
+
+The setup WiFi is now `FeTMonitor-<last6>` (was `freETarget-<last6>`), the setup and status pages say FeT Monitor, and
+mDNS looks for `_fetmonitor._tcp` (install `deploy/fet-monitor.avahi.service` on the Pi). Nothing else changed; saved
+settings, queued shots and the boot counter are kept across the update.

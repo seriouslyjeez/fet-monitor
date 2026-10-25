@@ -1,0 +1,14 @@
+[Unit]
+Description=FeT Monitor database backup
+
+[Service]
+Type=oneshot
+User=fet-monitor
+Group=fet-monitor
+WorkingDirectory=/opt/fet-monitor
+ExecStart=/usr/bin/python3 -m fetserver backup --data-dir /var/lib/fet-monitor --to /var/backups/fet-monitor --keep 14
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fet-monitor /var/backups/fet-monitor

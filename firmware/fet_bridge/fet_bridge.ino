@@ -1,4 +1,4 @@
-// freETarget WiFi bridge for the ESP-01 / ESP-01S (ESP8266).
+// FeT Monitor WiFi bridge for the ESP-01 / ESP-01S (ESP8266); talks to targets running the freETarget Arduino firmware.
 // Reads the Arduino's shot lines on the serial port, stores them durably in flash, and delivers each one to the
 // Raspberry Pi server exactly once (retrying until acknowledged). See README.md in this folder.
 #include <ESP8266WiFi.h>

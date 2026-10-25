@@ -1,13 +1,13 @@
 [Unit]
-Description=freETarget club server
+Description=FeT Monitor server
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=freetarget
-Group=freetarget
-WorkingDirectory=/opt/freetarget-server
-ExecStart=/usr/bin/python3 -m fetserver serve --data-dir /var/lib/freetarget --port 8080
+User=fet-monitor
+Group=fet-monitor
+WorkingDirectory=/opt/fet-monitor
+ExecStart=/usr/bin/python3 -m fetserver serve --data-dir /var/lib/fet-monitor --port 8080
 Restart=always
 RestartSec=2
 TimeoutStopSec=15
@@ -15,7 +15,7 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/freetarget
+ReadWritePaths=/var/lib/fet-monitor
 
 [Install]
 WantedBy=multi-user.target

@@ -109,7 +109,7 @@ class Modes(CtlCase):
     def test_defaults_idempotence_and_new_series(self):
         self.core.acquire_control("a1", ALICE, "Alice")
         a = self.core.set_mode("a1", ALICE, "sighter")
-        self.assertEqual((a["shooter"], a["kind"]), ("Alice", "match"))               # defaults to the person in control
+        self.assertEqual((a["shooter"], a["kind"]), ("Alice \u2013 Match", "match"))   # session: who is in control + kind
         self.assertEqual(self.core.set_mode("a1", ALICE, "sighter")["segment_id"], a["segment_id"])
         r = self.core.set_mode("a1", ALICE, "record")                                  # same match, new segment
         self.assertEqual(r["series_id"], a["series_id"])
@@ -301,3 +301,54 @@ class Http(HttpCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SessionNames(CtlCase):
+    """The session name defaults to who took control and the kind; a new holder never shoots into another's practice."""
+    D = "–"
+
+    def series(self):
+        return [(g["kind"], g["shooter"], g["open"]) for g in self.core.list_series("a1")]
+
+    def test_defaults_follow_the_kind_and_custom_names_carry(self):
+        self.core.acquire_control("a1", ALICE, "Alice")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "practice")["shooter"], f"Alice {self.D} Practice")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "sighter")["shooter"], f"Alice {self.D} Match")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "practice", new_series=True)["shooter"], f"Alice {self.D} Practice")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "practice", shooter="Morning drills")["shooter"], "Morning drills")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "sighter")["shooter"], "Morning drills")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "ammo")["shooter"], "Alice", "an ammo test keeps the real shooter")
+        self.assertEqual(self.core.set_mode("a1", ALICE, "practice")["shooter"], f"Alice {self.D} Practice")
+
+    def test_new_holder_gets_a_fresh_practice_series(self):
+        self.core.acquire_control("a1", ALICE, "Alice")
+        first = self.core.set_mode("a1", ALICE, "practice")["series_id"]
+        self.at(5_000)
+        self.shoot(5_000)
+        self.core.acquire_control("a1", BOB, "Bob", takeover=True)
+        self.assertEqual(self.series(), [("practice", f"Bob {self.D} Practice", True), ("practice", f"Alice {self.D} Practice", False)])
+        self.assertNotEqual(self.target(BOB)["series_id"], first)
+        for _ in range(3):                                   # renewals do nothing
+            self.core.acquire_control("a1", BOB, "Bob")
+        self.assertEqual(len(self.series()), 2)
+        self.core.acquire_control("a1", ALICE, "Alice", takeover=True)    # Bob's series is empty: renamed, not replaced
+        self.assertEqual(self.series(), [("practice", f"Alice {self.D} Practice", True), ("practice", f"Alice {self.D} Practice", False)])
+        self.core.release_control("a1", ALICE)
+        self.core.acquire_control("a1", ALICE, "Alice")                 # her own default name: kept
+        self.assertEqual(len(self.series()), 2)
+
+    def test_custom_names_matches_and_ammo_are_left_alone(self):
+        self.core.acquire_control("a1", ALICE, "Alice")
+        self.core.set_mode("a1", ALICE, "practice", shooter="Club night")
+        self.at(5_000)
+        self.shoot(5_000)
+        self.core.acquire_control("a1", BOB, "Bob", takeover=True)
+        self.assertEqual(self.series(), [("practice", "Club night", True)])
+        self.core.set_mode("a1", BOB, "sighter")
+        self.at(6_000)
+        self.shoot(6_000)
+        self.core.acquire_control("a1", ALICE, "Alice", takeover=True)
+        self.assertEqual(self.series()[0], ("match", "Club night", True))
+        self.core.set_mode("a1", ALICE, "sighter", shooter=f"Alice {self.D} Match")
+        self.core.acquire_control("a1", BOB, "Bob", takeover=True)
+        self.assertEqual(self.series()[0], ("match", f"Alice {self.D} Match", True), "a match is never split")

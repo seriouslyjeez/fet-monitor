@@ -8,7 +8,7 @@ namespace fet {
 
 struct Config {
   std::string ssid, pass;      // WiFi
-  std::string host;            // server name or IP; empty = discover it with mDNS (_freetarget._tcp)
+  std::string host;            // server name or IP; empty = discover it with mDNS (_fetmonitor._tcp)
   int port = 8080;
   std::string token;           // the server's device token
   std::string name;            // shown on the dashboard; also the network host name

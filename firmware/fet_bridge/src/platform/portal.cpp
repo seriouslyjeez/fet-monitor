@@ -65,7 +65,7 @@ void Portal::open(uint64_t now) {
   if (!(WiFi.getMode() & WIFI_AP)) WiFi.mode(WIFI_AP_STA);   // keep the station side up so shots keep flowing
   FET_STAGE(101);
   WiFi.softAPConfig(apIp, apIp, IPAddress(255, 255, 255, 0));
-  std::string ssid = "freETarget-" + id_.substr(id_.size() > 6 ? id_.size() - 6 : 0);
+  std::string ssid = "FeTMonitor-" + id_.substr(id_.size() > 6 ? id_.size() - 6 : 0);
   FET_STAGE(102);
   WiFi.softAP(ssid.c_str());
   say("Setup portal open. Join WiFi: ", ssid);
@@ -104,7 +104,7 @@ bool Portal::portalOnly(bool) {
 
 void Portal::sendPage(int code, const std::string& body) {
   server.sendHeader("Cache-Control", "no-store");
-  server.send(code, "text/html; charset=utf-8", (std::string("<!doctype html><html><head><title>freETarget</title>") + STYLE +
+  server.send(code, "text/html; charset=utf-8", (std::string("<!doctype html><html><head><title>FeT Monitor</title>") + STYLE +
                                                   "</head><body>" + body + "</body></html>").c_str());
 }
 
@@ -141,16 +141,16 @@ void Portal::handleStatus() {
 }
 
 std::string Portal::statusPage() {
-  return "<h1>freETarget bridge</h1><table id=t></table>"
+  return "<h1>FeT Monitor bridge</h1><table id=t></table>"
          "<p class=note>Updates every 3 s. To change WiFi or server settings, switch the target off and on three times "
-         "within a few seconds, then join the 'freETarget-…' WiFi network.</p>"
+         "within a few seconds, then join the 'FeTMonitor-…' WiFi network.</p>"
          "<script>function r(){fetch('/status').then(x=>x.json()).then(j=>{var h='';for(var k in j)h+='<tr><td>'+k+'</td><td>'+"
          "String(j[k]).replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</td></tr>';document.getElementById('t').innerHTML=h})"
          ".catch(()=>{})}r();setInterval(r,3000)</script>";
 }
 
 std::string Portal::form(const std::string& error) {
-  std::string o = "<h1>freETarget setup</h1>";
+  std::string o = "<h1>FeT Monitor setup</h1>";
   if (!error.empty()) o += "<p class=err>" + html(error) + "</p>";
   o += "<form method=post action=/save>"
        "<label>WiFi network</label><input name=ssid id=ssid list=nets value=\"" + html(cfg_.ssid) + "\" maxlength=32 required autocapitalize=off>"
@@ -236,7 +236,7 @@ void Portal::handleSave() {
 void Portal::handleFactoryReset() {
   if (!portalOnly(true)) return;
   fs_.remove("/config.json");                             // the shot queue is deliberately left alone
-  sendPage(200, "<h1>Settings forgotten</h1><p>Restarting. Join the 'freETarget-…' network again to set it up.</p>");
+  sendPage(200, "<h1>Settings forgotten</h1><p>Restarting. Join the 'FeTMonitor-…' network again to set it up.</p>");
   hooks_.rebootAt = now_ + 1500;
 }
 

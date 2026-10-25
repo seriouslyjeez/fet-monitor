@@ -1,0 +1,10 @@
+<?xml version="1.0" standalone='no'?>
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+<!-- Lets targets find the server by name: copy to /etc/avahi/services/fet-monitor.service -->
+<service-group>
+  <name replace-wildcards="yes">FeT Monitor on %h</name>
+  <service>
+    <type>_fetmonitor._tcp</type>
+    <port>8080</port>
+  </service>
+</service-group>

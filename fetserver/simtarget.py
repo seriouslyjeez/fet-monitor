@@ -127,7 +127,7 @@ class SimTarget:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="simulated freETarget")
+    ap = argparse.ArgumentParser(description="simulated target (freETarget-compatible serial output)")
     ap.add_argument("--url", default="http://127.0.0.1:8080")
     ap.add_argument("--token", required=True)
     ap.add_argument("--device-id", default="sim-01")

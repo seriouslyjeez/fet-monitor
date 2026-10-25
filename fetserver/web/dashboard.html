@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>freETarget</title>
+<title>FeT Monitor</title>
 <style>
 :root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc}}
@@ -65,7 +65,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 </style>
 </head>
 <body>
-<header><h1>freETarget</h1><a href="#/" id="nav-coach">All targets</a><span id="live">connecting…</span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><span id="live">connecting…</span></header>
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
@@ -289,7 +289,7 @@ function infoPanel(t, v, mode, S) {
   if (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN) ctl += '<div class="modes"><button class="pri" data-act="sight">Adjust sights</button></div>';
   return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
-    '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No shooter set')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
+    '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
 }
 function shooterView(t, S) {
@@ -307,6 +307,13 @@ function shooterView(t, S) {
 }
 
 // ---- Gear overlay ----
+// The target's own status page (served by its WiFi bridge), at the address its last report came from.
+function statusUrl(ip) {
+  if (typeof ip !== 'string') return null;
+  if (/^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(ip)) return 'http://' + ip + '/';
+  if (/^[0-9a-fA-F:]{2,39}$/.test(ip) && ip.includes(':')) return 'http://[' + ip + ']/';
+  return null;
+}
 function overlayView(t, S, name) {
   const L = t.lease, st = t.settings, who = esc(name || '');
   let h = '<div class="sheet"><div class="row"><h2>' + esc(t.name) + ' settings</h2><button data-act="gearclose">Close</button></div>';
@@ -315,6 +322,9 @@ function overlayView(t, S, name) {
   else if (L.held_by) h += '<p><b>' + esc(L.held_by) + '</b> is in control.</p><button data-act="takeover">Take over</button>';
   else h += '<p class="mut">Nobody is in control.</p><div class="row"><input id="who" value="' + who + '" placeholder="Your name" maxlength="40" style="flex:1"> <button class="pri" data-act="take">Take control</button></div>';
   h += '</section>';
+  const su = statusUrl(t.ip);
+  h += '<section><h4>Target</h4>' + (su ? '<p><a href="' + su + '" target="_blank" rel="noopener">Status page (' + esc(t.ip) + ')</a></p><p class="mut">The target\'s own page: WiFi, signal, server, shots waiting. Works from the same network.</p>'
+                                       : '<p class="mut">No address yet: the target has not reported.</p>') + '</section>';
   if (L.mine) {
     h += '<section><h4>Mode</h4><div class="seg"><button data-act="kind" data-kind="practice" class="' + (t.kind === 'practice' ? 'sel' : '') + '">Practice</button>' +
          '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button>' +
@@ -330,8 +340,8 @@ function overlayView(t, S, name) {
            '<section><h4>Shooter</h4><p><b>' + esc(t.shooter || name || '–') + '</b></p><p class="mut">Fixed for this test: whoever was in control when it started. A new test takes whoever is in control then.</p></section>' +
            '<section><h4>Test label</h4><div class="row"><input id="label" value="' + esc(t.label || '') + '" placeholder="Ammo, lot" maxlength="60" style="flex:1"> <button data-act="setlabel">Set</button></div>' +
            '<p class="mut">Can be changed at any time without starting over.</p><button data-act="newseries">New test</button><p class="mut">A new test starts over: the next shot becomes the first shot.</p></section>' :
-           '<section><h4>Shooter</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || name || '') + '" placeholder="Shooter name" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
-           '<p class="mut">A new shooter, or a new series, starts counting from shot 1.</p><button data-act="newseries">New series</button></section>') +
+           '<section><h4>Session name</h4><div class="row"><input id="shooter" value="' + esc(t.shooter || (name ? name + ' \u2013 ' + (t.kind === 'match' ? 'Match' : 'Practice') : '')) + '" placeholder="Session name" maxlength="60" style="flex:1"> <button data-act="setshooter">Set</button></div>' +
+           '<p class="mut">A new session name, or a new series, starts counting from shot 1.</p><button data-act="newseries">New series</button></section>') +
          (t.kind === 'ammo' ? '' : '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
          '<label for="f_bull">Shots per target picture</label><input id="f_bull" type="number" min="1" max="100" value="' + st.bull_size + '">' +
          '<label for="f_group">Shots per aggregate group</label><input id="f_group" type="number" min="1" max="100" value="' + st.group_size + '">' +
@@ -569,7 +579,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

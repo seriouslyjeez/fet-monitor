@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.1.15"
+#define FET_FW_VERSION "0.1.16"
 
 #ifndef FET_ENABLE_OTA
 #define FET_ENABLE_OTA 1          // Arduino OTA push from the IDE / espota (needs a token; the token is the password)
@@ -12,7 +12,7 @@
 #define FET_ENABLE_WEB_UPDATE 1   // /update page while the setup portal is open (browser upload of a .bin)
 #endif
 #ifndef FET_ENABLE_MDNS
-#define FET_ENABLE_MDNS 1         // find the server via _freetarget._tcp when no server address is configured
+#define FET_ENABLE_MDNS 1         // find the server via _fetmonitor._tcp when no server address is configured
 #endif
 
 #define FET_SERIAL_BAUD 115200

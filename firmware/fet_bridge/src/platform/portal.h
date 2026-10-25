@@ -1,7 +1,7 @@
 // The target's own little web server (port 80).
 //   normal:  GET /          a read-only status page      GET /status   the same as JSON
 //   portal:  GET /          the WiFi + server setup form  POST /save, POST /factory-reset, GET /scan, /update
-// The portal is an open access point "freETarget-xxxxxx" with a catch-all DNS so phones pop up the form.
+// The portal is an open access point "FeTMonitor-xxxxxx" with a catch-all DNS so phones pop up the form.
 // It opens after 3 quick power cycles, or when the server sends a wifi_portal command, and closes after
 // FET_PORTAL_MINUTES without use (unless the unit has no WiFi settings at all).
 #pragma once

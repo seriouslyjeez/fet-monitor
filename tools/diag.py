@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Read-only look inside the freETarget database: where did each shot go, and does its time make sense?
-    sudo python3 diag.py /var/lib/freetarget/fetserver.db [device_id] [--n 15]
+"""Read-only look inside the FeT Monitor database: where did each shot go, and does its time make sense?
+    sudo python3 diag.py /var/lib/fet-monitor/fetserver.db [device_id] [--n 15]
 Opens the database read-only; it cannot change anything and is safe while the server runs."""
 import argparse
 import sqlite3

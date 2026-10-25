@@ -22,7 +22,7 @@ WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "freETarget/" + __version__
+    server_version = "FeTMonitor/" + __version__
     protocol_version = "HTTP/1.1"
     timeout = 30
 

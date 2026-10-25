@@ -1,6 +1,6 @@
 # Flashing the ready-made firmware (no compiling)
 
-Download `freetarget-bridge-<version>-1MB.bin` from the GitHub Releases page. The same file works on the original
+Download `fet-monitor-bridge-<version>-1MB.bin` (0.1.15: `freetarget-bridge-0.1.15-1MB.bin`) from the GitHub Releases page. The same file works on the original
 ESP-01 (1 MB) and the ESP-01S (1 MB or 4 MB): it is built with the 1 MB layout (128 KB for queued shots, about 438 KB
 for over-the-air updates). On a 4 MB chip it uses the first 1 MB only.
 
@@ -40,14 +40,14 @@ password, so do not share it.
 ## Updating later (keeps settings and queued shots)
 
 - Browser: open the setup portal (3 quick power cycles of the target, then join the open WiFi
-  `freETarget-<last6>`), go to `/update` (user `fet`, password = the server token from the setup page) and upload
+  `FeTMonitor-<last6>`; firmware 0.1.15 and older: `freETarget-<last6>`), go to `/update` (user `fet`, password = the server token from the setup page) and upload
   the new `.bin`.
 - Or with esptool as above, without `erase_flash`.
 
 ## After flashing
 
 Put the ESP back in the target **with the target powered off**. The ESP is not hot-pluggable: power the target up
-with the ESP already in place. On first start it opens the setup portal on the open WiFi `freETarget-<last6>`.
+with the ESP already in place. On first start it opens the setup portal on the open WiFi `FeTMonitor-<last6>` (0.1.15 and older: `freETarget-<last6>`).
 Enter the club WiFi (2.4 GHz, WPA2), the server's IP address (`.local` names are not reliable) and the server
 token. Then fire a shot
 and check that it appears on the dashboard.

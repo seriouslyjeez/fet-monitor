@@ -1,0 +1,9 @@
+FeT Monitor
+Copyright 2026 Jake Miller
+
+This product includes software developed by Jake Miller
+(https://github.com/seriouslyjeez/fet-monitor).
+
+FeT Monitor is an independent project that works with targets running the
+freETarget Arduino firmware (https://github.com/ten-point-nine/freETarget).
+It is not part of, affiliated with or endorsed by the freETarget project.

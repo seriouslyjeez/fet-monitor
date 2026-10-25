@@ -64,6 +64,15 @@ def _device_id(payload) -> str:
     return did
 
 
+SESSION_KIND = {"practice": "Practice", "match": "Match"}
+DEFAULT_SESSION_RE = re.compile(r"^(.+) \u2013 (Practice|Match)$")
+
+
+def session_name(holder: str, kind: str) -> str:
+    """Default session name: who took control and the kind, e.g. "Alice \u2013 Practice"."""
+    return f"{holder} \u2013 {SESSION_KIND.get(kind, kind.title())}"
+
+
 def iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
@@ -416,9 +425,35 @@ class Core:
                 c.execute("INSERT OR REPLACE INTO leases (device_id, client_id, holder_name, acquired_ms, expires_ms) "
                           "VALUES (?,?,?,?,?)", (device_id, client_id, name, now, now + self.lease_ms))
             row = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
+            moved = (free or not mine) and self._practice_to_holder(c, device_id, name, now)
         if changed:
             self.hub.publish({"type": "lease", "device_id": device_id})
+        if moved:
+            self.hub.publish({"type": "mode", "device_id": device_id})
         return {"granted": True, **self._lease_view(row, now, client_id)}
+
+    def _practice_to_holder(self, c, device_id: str, name: str, now: int) -> bool:
+        """A new holder takes over a live practice series that carries someone else's DEFAULT session name: an empty
+        series is renamed, one with shots is closed and a fresh one starts, so nobody's shots land in another's
+        session. Custom names, matches and ammo tests are left alone."""
+        seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
+                        (device_id,)).fetchone()
+        ser = self._series_of(c, seg) if seg else None
+        if ser is None or ser["ended_ms"] is not None or ser["kind"] != "practice":
+            return False
+        m = DEFAULT_SESSION_RE.match(ser["shooter"] or "")
+        if not m or m.group(2) != "Practice" or m.group(1) == name:
+            return False
+        new = session_name(name, "practice")
+        if c.execute("SELECT 1 FROM shots WHERE series_id=? LIMIT 1", (ser["id"],)).fetchone() is None:
+            c.execute("UPDATE series SET shooter=? WHERE id=?", (new, ser["id"]))
+            c.execute("UPDATE segments SET shooter=? WHERE id=?", (new, seg["id"]))
+        else:
+            c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+            c.execute("UPDATE series SET ended_ms=? WHERE id=?", (now, ser["id"]))
+            sid = self._new_series(c, device_id, "practice", new, now)
+            self._new_segment(c, device_id, seg["mode"], new, sid, now)
+        return True
 
     def release_control(self, device_id: str, client_id: str) -> bool:
         self._check_client(client_id)
@@ -469,8 +504,9 @@ class Core:
             live_ammo = kind == "ammo" and ser is not None and ser["ended_ms"] is None and ser["kind"] == "ammo" and not new_series
             if kind == "ammo":
                 shooter = ser["shooter"] if live_ammo else lease["holder_name"]   # fixed for the test; takes whoever holds control
-            elif shooter is None:
-                shooter = (ser["shooter"] if ser else None) or lease["holder_name"]
+            elif shooter is None:                       # a custom session name carries over; a default one follows the kind
+                prev = ser["shooter"] if ser is not None and ser["kind"] != "ammo" else None
+                shooter = prev if prev and not DEFAULT_SESSION_RE.match(prev) else session_name(lease["holder_name"], kind)
             if live_ammo or (ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and kind != "ammo"
                              and ser["shooter"] == shooter and not new_series):
                 series_id = ser["id"]
