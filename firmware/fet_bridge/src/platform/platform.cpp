@@ -9,6 +9,11 @@
 #include <ESP8266mDNS.h>
 #endif
 
+#if FET_DHCP_DIAG
+#include <lwip/netif.h>
+#include <lwip/dhcp.h>
+#endif
+
 namespace fetp {
 
 // ---------------------------------------------------------------- clock
@@ -168,7 +173,7 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   if (!handlerSet_) {
     handlerSet_ = true;
     onDisc = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected& e) { assoc_ = false; lastReason_ = (int)e.reason; });
-    onConn = WiFi.onStationModeConnected([this](const WiFiEventStationModeConnected& e) { assoc_ = true; assocChannel_ = (int)e.channel; });
+    onConn = WiFi.onStationModeConnected([this](const WiFiEventStationModeConnected& e) { assoc_ = true; assocChannel_ = (int)e.channel; assocAt_ = nowMs(); });
   }
   if (cfg_.wifiConfigured()) {
 #if FET_STATUS_MESSAGES
@@ -264,8 +269,22 @@ void WifiNet::update(uint64_t now) {
                     : st == WL_DISCONNECTED ? "not connected yet" : "waiting";
     std::string line = cfg_.ssid + ": " + why;
     if (lastReason_) line += std::string(" [reason ") + std::to_string(lastReason_) + ": " + reasonText(lastReason_) + "]";
+#if FET_DHCP_DIAG
+    if (assoc_ && netif_default && netif_dhcp_data(netif_default))
+      line += std::string(" [DHCP state ") + std::to_string((int)netif_dhcp_data(netif_default)->state) + ", tries " + std::to_string((int)netif_dhcp_data(netif_default)->tries) + "]";
+#endif
     line += std::string(" (status ") + std::to_string((int)st) + (assoc_ ? ", associated on channel " + std::to_string(assocChannel_) + ": waiting for an IP address" : ", not associated") + ")";
     say("Not connected to ", line);
+  }
+#endif
+#if FET_DHCP_RESTART_MS
+  if (!up && assoc_ && !cfg_.fixedIp() && now - assocAt_ > FET_DHCP_RESTART_MS && now - lastDhcpKick_ > FET_DHCP_RESTART_MS) {
+    lastDhcpKick_ = now;                         // start a fresh DISCOVER: the client's own back-off grows 4, 8, 16 s
+    wifi_station_dhcpc_stop();
+    wifi_station_dhcpc_start();
+#if FET_STATUS_MESSAGES
+    say("Restarting DHCP request on ", cfg_.ssid);
+#endif
   }
 #endif
   if (!up && cfg_.wifiConfigured() && lastBegin_ && now - lastBegin_ > (assoc_ ? 180000UL : 45000UL)) {   // a stuck attempt: start it afresh (a slow DHCP wait gets longer: a restart only delays it)

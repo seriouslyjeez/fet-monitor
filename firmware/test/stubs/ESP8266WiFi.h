@@ -53,3 +53,5 @@ class ESP8266WiFiClass {
   void scanDelete() {}
 };
 extern ESP8266WiFiClass WiFi;
+inline bool wifi_station_dhcpc_stop() { return true; }
+inline bool wifi_station_dhcpc_start() { return true; }

@@ -22,3 +22,14 @@ connection. Switches in `src/platform/build_config.h`; change ONE per test and c
 
 Router side: DHCP reservation for the ESP's MAC; a separate 2.4 GHz SSID with WPA2 only, protected management frames
 off, fixed channel, 20 MHz; roaming assistant / Smart Connect off. A fixed IP (setup page) skips DHCP entirely.
+
+### Firmware 0.1.10: DHCP state and fast DHCP restart
+
+- `FET_DHCP_DIAG 1`: the "Not connected" line adds `[DHCP state S, tries T]` while associated. lwIP states:
+  1 requesting (an offer was received, waiting for the ACK), 2 init, 6 selecting (discover sent, no offer yet),
+  8 checking, 10 bound (has an address), 12 backing off. "Stays 6" = no offer reaches the ESP; "reaches 1 and stays" =
+  the offer arrived but the final ACK did not.
+- `FET_DHCP_RESTART_MS 6000`: while associated without an IP, the DHCP request is restarted every 6 s (the WiFi
+  association is not dropped), because lwIP's own retry back-off grows 4, 8, 16 s. Prints `Restarting DHCP request on X`.
+  Set to 0 to get the old behaviour back. Compare "Connected ... after N s" with it on and off.
+- If the build fails on `lwip/netif.h` or `netif_dhcp_data`, set `FET_DHCP_DIAG 0` and tell me the error.
