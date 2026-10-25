@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>   // IPAddress, WiFi
 #include <string>
+#include <vector>
 #include "../core/config.h"
 #include "../core/interfaces.h"
 
@@ -55,7 +56,10 @@ class WifiNet : public fet::Net {
   int connectFails_ = 0;
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
-  uint64_t nextWifiNote_ = 0, nextScanNote_ = 25000;
+  uint64_t nextWifiNote_ = 0, lastBegin_ = 0;
+  bool assoc_ = false;                    // associated with an access point (before DHCP gives an address)
+  int assocChannel_ = 0;
+  std::vector<std::string> notes_;        // one-time findings from before the first connection attempt
   int lastReason_ = 0;                    // why the station last lost or failed to get a connection (SDK code)
   bool handlerSet_ = false;
   std::string hostname_;

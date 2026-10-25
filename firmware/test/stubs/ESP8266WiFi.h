@@ -18,10 +18,12 @@ class WiFiClient {
   void stop() {}
 };
 struct WiFiEventStationModeDisconnected { String ssid; uint8_t bssid[6]; int reason; };
+struct WiFiEventStationModeConnected { String ssid; uint8_t bssid[6]; uint8_t channel; };
 typedef std::shared_ptr<std::function<void(const WiFiEventStationModeDisconnected&)>> WiFiEventHandler;
 class ESP8266WiFiClass {
  public:
   void persistent(bool) {}
+  WiFiEventHandler onStationModeConnected(std::function<void(const WiFiEventStationModeConnected&)>) { return WiFiEventHandler(); }
   WiFiEventHandler onStationModeDisconnected(std::function<void(const WiFiEventStationModeDisconnected&)>) { return WiFiEventHandler(); }
   void setAutoReconnect(bool) {}
   bool hostname(const char*) { return true; }

@@ -158,17 +158,39 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   WiFi.setAutoReconnect(true);
   WiFi.mode(withAccessPoint ? WIFI_AP_STA : WIFI_STA);   // one switch, straight from "off": the well-trodden path
   WiFi.hostname(hostname.c_str());
-  static WiFiEventHandler onDisc;                 // must stay alive for the handler to keep working
+  static WiFiEventHandler onDisc, onConn;           // must stay alive for the handlers to keep working
   if (!handlerSet_) {
     handlerSet_ = true;
-    onDisc = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected& e) { lastReason_ = (int)e.reason; });
+    onDisc = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected& e) { assoc_ = false; lastReason_ = (int)e.reason; });
+    onConn = WiFi.onStationModeConnected([this](const WiFiEventStationModeConnected& e) { assoc_ = true; assocChannel_ = (int)e.channel; });
   }
-  if (cfg_.wifiConfigured()) WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  if (cfg_.wifiConfigured()) {
+#if FET_STATUS_MESSAGES
+    // One look at the air BEFORE connecting (a scan while connecting aborts the attempt): what does the ESP see?
+    int n = WiFi.scanNetworks(false, true);
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+      if (WiFi.SSID(i) == cfg_.ssid.c_str()) {
+        found++;
+        uint8_t enc = WiFi.encryptionType(i);
+        const char* e = enc == 4 ? "WPA2" : enc == 2 ? "WPA/TKIP" : enc == 7 ? "open" : enc == 8 ? "WPA/WPA2" : enc == 5 ? "WEP" : "other";
+        notes_.push_back("Scan: found " + cfg_.ssid + " channel " + std::to_string((int)WiFi.channel(i)) + ", signal " +
+                         std::to_string((int)WiFi.RSSI(i)) + " dBm, security " + e);
+      }
+    }
+    if (n < 0) notes_.push_back("Scan: failed");
+    else if (!found) notes_.push_back("Scan: " + cfg_.ssid + " not visible. Networks seen: " + std::to_string(n));
+    WiFi.scanDelete();
+#endif
+    lastBegin_ = nowMs();
+    WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  }
 }
 
 void WifiNet::announce() {
   if (cfg_.wifiConfigured()) say("Attempting to connect to network: ", cfg_.ssid);
   else say("No WiFi settings saved: ", "waiting for setup");
+  for (size_t i = 0; i < notes_.size(); i++) say("", notes_[i]);
 }
 
 static const char* reasonText(int r) {
@@ -221,27 +243,16 @@ void WifiNet::update(uint64_t now) {
                     : st == WL_DISCONNECTED ? "not connected yet" : "waiting";
     std::string line = cfg_.ssid + ": " + why;
     if (lastReason_) line += std::string(" [reason ") + std::to_string(lastReason_) + ": " + reasonText(lastReason_) + "]";
-    line += std::string(" (status ") + std::to_string((int)st) + ")";
+    line += std::string(" (status ") + std::to_string((int)st) + (assoc_ ? ", associated on channel " + std::to_string(assocChannel_) + ": waiting for an IP address" : ", not associated") + ")";
     say("Not connected to ", line);
   }
-  if (!up && cfg_.wifiConfigured() && now >= nextScanNote_) {          // once, then every 5 min: what can the ESP actually see?
-    nextScanNote_ = now + 300000;
-    int n = WiFi.scanNetworks(false, true);                           // blocking, a couple of seconds
-    int found = 0;
-    for (int i = 0; i < n; i++) {
-      if (WiFi.SSID(i) == cfg_.ssid.c_str()) {
-        found++;
-        uint8_t enc = WiFi.encryptionType(i);
-        const char* e = enc == 4 ? "WPA2" : enc == 2 ? "WPA/TKIP" : enc == 7 ? "open" : enc == 8 ? "WPA/WPA2" : enc == 5 ? "WEP" : "other";
-        say("Scan: found network ", cfg_.ssid + " channel " + std::to_string((int)WiFi.channel(i)) + ", signal " +
-            std::to_string((int)WiFi.RSSI(i)) + " dBm, security " + e);
-      }
-    }
-    if (n < 0) say("Scan: ", "failed");
-    else if (!found) say("Scan: network not visible. Networks seen: ", std::to_string(n));
-    WiFi.scanDelete();
-  }
 #endif
+  if (!up && cfg_.wifiConfigured() && lastBegin_ && now - lastBegin_ > 45000) {   // a stuck attempt: start it afresh
+    lastBegin_ = now;
+    say("Retrying connection to ", cfg_.ssid);
+    WiFi.disconnect();
+    WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  }
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
   wasUp_ = up;
   (void)now;
