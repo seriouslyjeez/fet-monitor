@@ -46,6 +46,24 @@ class BootReuse(unittest.TestCase):
         row = self.core.db.conn().execute("SELECT stream, series_id FROM shots").fetchone()
         self.assertEqual(row["stream"], "sighter")                           # filed under the mode in force
 
+    def test_late_delivery_from_the_reused_boot_is_timed_from_the_new_run(self):
+        self.hb(2, 1000)                                      # old run of "boot 2"
+        self.t = BASE + 2_530_000
+        self.hb(2, 2000)                                      # device wiped; "boot 2" again, restarted 42 minutes later
+        self.core.acquire_control(DEV, ME, "Jake")
+        self.core.set_mode(DEV, ME, "sighter")
+        self.t += 5000
+        self.shot(2, 1, 7000)                                 # re-anchors boot 2 to the new run
+        # a shot is fired in this run but cannot be delivered; the device loses power and comes back as boot 7
+        shot_uptime = 60_000                                  # 60 s into the run
+        fired_at = (BASE + 2_530_000 - 2000) + shot_uptime
+        self.t = fired_at + 120_000                           # two minutes later, after a power cut
+        self.hb(7, 1000)
+        self.core.handle_events({"device_id": DEV, "boot_count": 7, "uptime_ms": 2000, "events": [
+            {"seq": 9, "boot_count": 2, "type": "shot", "uptime_ms": shot_uptime, "raw": SHOT % 9}]})
+        r = self.core.db.conn().execute("SELECT event_ms FROM events WHERE seq=9").fetchone()
+        self.assertAlmostEqual(r["event_ms"], fired_at, delta=100)
+
     def test_honest_drift_is_not_reanchored(self):
         self.hb(1, 1000)
         self.t += 3_600_000 * 20                                              # 20 hours up, crystal drifted a few seconds

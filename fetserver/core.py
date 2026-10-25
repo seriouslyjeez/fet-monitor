@@ -182,6 +182,9 @@ class Core:
                             "the device reused a boot number. Timing taken from the current request.",
                             device_id, boot, start, recv_ms - req_uptime_ms)
             start, quality = recv_ms - req_uptime_ms, "reanchored"
+            # Remember the corrected start, so events of this boot that arrive later (in a request from a newer boot)
+            # are timed from the right run as well. The old run's own events are long delivered, or lost to the clash.
+            c.execute("UPDATE boots SET boot_start_ms=? WHERE device_id=? AND boot_count=?", (start, device_id, boot))
         if start is None:       # event from a boot we never heard from: time is a guess
             event_ms, quality = recv_ms, "unknown"
         else:
