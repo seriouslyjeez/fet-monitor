@@ -4,7 +4,7 @@ Replaces the stock AT firmware on the target's ESP-01. It reads the Arduino's se
 ESP's flash *first*, and then delivers it to the club server (Raspberry Pi) until the server acknowledges it.
 A WiFi drop, a server restart, or a power cut on the target loses nothing that was already written.
 
-**Status: v0.1.0. The logic is tested on a PC (dozens of tests, including power cuts, torn flash writes, lost replies and
+**Status: v0.1.1. The logic is tested on a PC (dozens of tests, including power cuts, torn flash writes, lost replies and
 outages, against the real server). The ESP8266-specific parts (flash, WiFi, web pages, OTA) could not be compiled or
 run where this was written, so the first build and the first boot on real hardware are the real test. See
 "What is not verified yet" below.**

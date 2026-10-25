@@ -33,6 +33,7 @@ class ESP8266WiFiClass {
   int8_t scanNetworks(bool = false) { return 0; }
   int8_t scanComplete() { return 0; }
   String SSID(uint8_t) { return String(); }
+  String SSID() const { return String(); }
   void scanDelete() {}
 };
 extern ESP8266WiFiClass WiFi;

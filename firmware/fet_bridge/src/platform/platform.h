@@ -43,6 +43,7 @@ class WifiNet : public fet::Net {
   bool wifiUp() const;
   std::string serverText() const;         // "10.0.0.5:8080" or why not
  private:
+  bool postOnce(const char* path, const std::string& body, int& status, std::string& resp);
   bool resolveServer(uint64_t now);
   const fet::Config& cfg_;
   RxHold& hold_;
@@ -51,7 +52,7 @@ class WifiNet : public fet::Net {
   uint64_t nextResolve_ = 0, ipAt_ = 0;
   int connectFails_ = 0;
   int port_ = 8080;
-  bool mdnsUp_ = false, wasUp_ = false;
+  bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
   std::string hostname_;
 };
 

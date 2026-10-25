@@ -135,6 +135,18 @@ void SerialUart::write(const std::string& s) {
 
 void PlatformHooks::reboot() { rebootAt = nowMs() + 400; }
 
+// ---------------------------------------------------------------- status lines
+#if FET_STATUS_MESSAGES
+static void say(const char* label, const std::string& value) {
+  Serial.print(label);
+  for (size_t i = 0; i < value.size(); i++) {
+    unsigned char c = (unsigned char)value[i];
+    Serial.write((c < 0x20 || c > 0x7e || c == '{' || c == '}') ? (uint8_t)'?' : (uint8_t)c);   // never let a name look like a command
+  }
+  Serial.write((uint8_t)'\n');
+}
+#endif
+
 // ---------------------------------------------------------------- WiFi + HTTP
 void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   hostname_ = hostname;
@@ -166,6 +178,9 @@ void WifiNet::update(uint64_t now) {
   }
   if (mdnsUp_ && up) MDNS.update();
 #endif
+#if FET_STATUS_MESSAGES
+  if (up && !wasUp_) say("Connected to network: ", WiFi.SSID().c_str());
+#endif
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
   wasUp_ = up;
   (void)now;
@@ -195,7 +210,7 @@ bool WifiNet::resolveServer(uint64_t now) {
 
 bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 
-bool WifiNet::post(const char* path, const std::string& body, int& status, std::string& resp) {
+bool WifiNet::postOnce(const char* path, const std::string& body, int& status, std::string& resp) {
   WiFiClient c;
   c.setTimeout(FET_CONNECT_TIMEOUT_MS);
   if (!c.connect(ip_, (uint16_t)port_)) {
@@ -236,6 +251,17 @@ bool WifiNet::post(const char* path, const std::string& body, int& status, std::
   c.stop();
   if (!complete) return false;
   return fet::parseHttpResponse(raw, status, resp);
+}
+
+bool WifiNet::post(const char* path, const std::string& body, int& status, std::string& resp) {
+  bool got = postOnce(path, body, status, resp);
+#if FET_STATUS_MESSAGES
+  if (!reportedFirst_) {
+    reportedFirst_ = true;
+    say("First report to FET: ", (got && status == 200) ? "success" : "fail");
+  }
+#endif
+  return got;
 }
 
 }  // namespace fetp

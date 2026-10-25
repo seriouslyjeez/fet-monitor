@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.1.0"
+#define FET_FW_VERSION "0.1.1"
 
 #ifndef FET_ENABLE_OTA
 #define FET_ENABLE_OTA 1          // Arduino OTA push from the IDE / espota (needs a token; the token is the password)
@@ -23,10 +23,17 @@
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000   // one LittleFS block is 8 KB; keep a segment inside one block
 
+// Two plain status lines on the serial port (the port the Arduino is on; braces are never printed):
+//   Connected to network: <ssid>        each time WiFi connects
+//   First report to FET: success|fail   the first HTTP exchange with the server after power-up
+#ifndef FET_STATUS_MESSAGES
+#define FET_STATUS_MESSAGES 1
+#endif
+
 // Set to 1 to print numbered start-up markers (and the stage of any crash) on the serial port at 115200.
 // Leave at 0 for normal use: the serial port belongs to the Arduino.
 #ifndef FET_DEBUG
-#define FET_DEBUG 1   // TEMPORARY while bringing up the hardware: set back to 0 for normal use
+#define FET_DEBUG 0
 #endif
 #if FET_DEBUG
 #define FET_STAGE(n) do { Serial.print("[fet] stage "); Serial.print(n); Serial.print(" heap "); Serial.println((unsigned)ESP.getFreeHeap()); Serial.flush(); } while (0)

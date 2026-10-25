@@ -31,6 +31,7 @@ class HardwareSerial {
   size_t write(const uint8_t*, size_t) { return 0; }
   void flush() {}
   size_t print(const char*) { return 0; }
+  size_t write(uint8_t) { return 1; }
   size_t print(unsigned) { return 0; }
   size_t printf(const char*, ...) __attribute__((format(printf, 2, 3))) { return 0; }
   size_t println(int) { return 0; }
