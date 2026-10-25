@@ -1,3 +1,4 @@
+Ready-made firmware, no compiling: see [FLASHING.md](FLASHING.md).
 
 ## Fixed IP address (skip DHCP)
 
