@@ -1,4 +1,4 @@
-# freETarget club server (v0.6.13: series, zoom, scoring screens, ammo test; ESP-01 firmware included)
+# freETarget club server (v0.6.14: series, zoom, scoring screens, ammo test; ESP-01 firmware included)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API

@@ -40,3 +40,9 @@ off, fixed channel, 20 MHz; roaming assistant / Smart Connect off. A fixed IP (s
   interface (0.1.10 looked at only one and printed nothing). States: 1 requesting, 2 init, 6 selecting, 10 bound, 12 backing off.
 - `FET_REASSOC_MS` (default 0 = off): set to 20000 to drop and re-join the WiFi when associated for 20 s without an IP
   (prints `Re-joining X`). Test it on its own, with `FET_DHCP_RESTART_MS` left at 6000, then again with it at 0.
+
+### Firmware 0.1.12
+
+0.1.11 hardware log: with `FET_DHCP_RESTART_MS 6000` every status line showed `st0 up dhcp 0/0` (lwIP DHCP client OFF, no
+tries), so the restart through `wifi_station_dhcpc_stop/start` appears to leave the client off. It is now off by default (0).
+Next: read the natural DHCP state with the restart off.
