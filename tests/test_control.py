@@ -7,7 +7,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-from fetserver.core import BadRequest, Core, Forbidden, NotFound
+from fetserver.core import BadRequest, Banned, Core, Forbidden, NotFound
 from fetserver.db import Database
 from fetserver.server import make_server
 
@@ -352,3 +352,46 @@ class SessionNames(CtlCase):
         self.core.set_mode("a1", ALICE, "sighter", shooter=f"Alice {self.D} Match")
         self.core.acquire_control("a1", BOB, "Bob", takeover=True)
         self.assertEqual(self.series()[0], ("match", f"Alice {self.D} Match", True), "a match is never split")
+
+
+class RangeControlCore(CtlCase):
+    def test_remove_hides_until_the_target_reports_again(self):
+        self.core.acquire_control("a1", ALICE, "Alice")
+        self.shoot(1_000)
+        self.core.remove_target("a1")
+        self.assertEqual(self.core.list_targets(), [])
+        self.assertEqual(self.core.admin_view()["targets"], [])
+        self.assertEqual(len(self.core.list_shots("a1", 0, 10)), 1, "its history stays")
+        self.core.handle_heartbeat({"device_id": "a1", "boot_count": 1, "uptime_ms": 2_000})
+        t = self.target(ALICE)
+        self.assertEqual((t["device_id"], t["lease"]["held_by"]), ("a1", None), "back, history kept, control was released")
+        self.assertEqual(t["shot_count"], 1)
+        with self.assertRaises(NotFound):
+            self.core.remove_target("nope")
+
+    def test_ban_refuses_reports_and_stores_nothing(self):
+        self.core.set_banned("a1", True)
+        self.assertEqual(self.core.list_targets(), [])
+        self.assertEqual([b["device_id"] for b in self.core.admin_view()["banned"]], ["a1"])
+        with self.assertRaises(Banned):
+            self.shoot(1_000)
+        with self.assertRaises(Banned):
+            self.core.handle_heartbeat({"device_id": "a1", "boot_count": 1, "uptime_ms": 2_000})
+        self.assertEqual(self.core.db.conn().execute("SELECT COUNT(*) FROM events").fetchone()[0], 0)
+        self.core.set_banned("a1", False)
+        self.shoot(3_000)
+        self.assertEqual(self.target()["shot_count"], 1)
+        self.assertEqual(self.core.admin_view()["banned"], [])
+
+    def test_range_control_sets_any_mode_without_the_claim(self):
+        r = self.core.set_mode("a1", None, "sighter", admin=True)
+        self.assertEqual((r["kind"], r["shooter"]), ("match", "Range – Match"))
+        self.core.acquire_control("a1", ALICE, "Alice")
+        r = self.core.set_mode("a1", None, "practice", admin=True)
+        self.assertEqual(r["shooter"], "Alice – Practice", "credited to whoever holds control")
+        t = self.target(ALICE)
+        self.assertEqual((t["mode"], t["lease"]["mine"]), ("practice", True), "the holder keeps control")
+        with self.assertRaises(Forbidden):
+            self.core.set_mode("a1", BOB, "record")                 # an ordinary client still needs the claim
+        with self.assertRaises(NotFound):
+            self.core.set_mode("nope", None, "practice", admin=True)

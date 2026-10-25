@@ -51,6 +51,10 @@ class Forbidden(PermissionError):
     pass
 
 
+class Banned(Forbidden):
+    """A target banned in Range Control: its reports are refused and nothing is stored."""
+
+
 def _int(value, name: str, lo: int = 0, hi: int = 2**53) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
         raise BadRequest(f"{name} must be an integer in {lo}..{hi}")
@@ -65,6 +69,7 @@ def _device_id(payload) -> str:
 
 
 SESSION_KIND = {"practice": "Practice", "match": "Match"}
+RANGE_NAME = "Range"          # who a Range Control change is credited to when nobody holds control
 DEFAULT_SESSION_RE = re.compile(r"^(.+) \u2013 (Practice|Match)$")
 
 
@@ -116,10 +121,14 @@ class Core:
 
     # ---- target bookkeeping -------------------------------------------------
     def _touch(self, c, device_id: str, recv_ms: int, **fields) -> None:
+        row = c.execute("SELECT banned FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if row is not None and row["banned"]:
+            raise Banned(f"target {device_id} is banned")
         c.execute("INSERT OR IGNORE INTO targets (device_id, first_seen_ms, last_seen_ms) VALUES (?,?,?)",
                   (device_id, recv_ms, recv_ms))
         fields = {k: v for k, v in fields.items() if v is not None}
         fields["last_seen_ms"] = recv_ms
+        fields["removed"] = 0                       # a removed target that reports again is back
         cols = ", ".join(f"{k}=?" for k in fields)
         c.execute(f"UPDATE targets SET {cols} WHERE device_id=?", (*fields.values(), device_id))
 
@@ -472,7 +481,8 @@ class Core:
         c.execute("UPDATE leases SET expires_ms=? WHERE device_id=?", (now + self.lease_ms, device_id))
         return lease
 
-    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_series: bool = False, label=None) -> dict:
+    def set_mode(self, device_id: str, client_id: str, mode, shooter=None, new_series: bool = False, label=None,
+                 admin: bool = False) -> dict:
         """Switch practice / sighter / record / ammo test. Only the current holder of the control claim may do this.
 
         Practice is its own series. Sighter and record belong to a match series: moving between them
@@ -482,8 +492,12 @@ class Core:
 
         An ammo test has two names. The *shooter* is whoever was in control when the test started and does not
         change for the life of the test (a `shooter` argument is ignored). The *label* (ammo, lot) is free text
-        that can be changed at any time without starting over; an empty label clears it."""
-        self._check_client(client_id)
+        that can be changed at any time without starting over; an empty label clears it.
+
+        admin=True is Range Control: no control claim is needed (whoever holds one keeps it); default names use the
+        holder's name if there is one, else RANGE_NAME."""
+        if not admin:
+            self._check_client(client_id)
         if mode not in MODES:
             raise BadRequest(f"mode must be one of {list(MODES)}")
         if shooter is not None:
@@ -497,16 +511,21 @@ class Core:
         now = self.now_ms()
         kind = KIND_OF_MODE.get(mode, "match")
         with self.db.write() as c:
-            lease = self._require_lease(c, device_id, client_id, now)
+            if admin:
+                self._require_target(c, device_id)
+                lease = c.execute("SELECT * FROM leases WHERE device_id=? AND expires_ms>?", (device_id, now)).fetchone()
+                holder = lease["holder_name"] if lease else RANGE_NAME
+            else:
+                holder = self._require_lease(c, device_id, client_id, now)["holder_name"]
             seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
                             (device_id,)).fetchone()
             ser = self._series_of(c, seg) if seg else None
             live_ammo = kind == "ammo" and ser is not None and ser["ended_ms"] is None and ser["kind"] == "ammo" and not new_series
             if kind == "ammo":
-                shooter = ser["shooter"] if live_ammo else lease["holder_name"]   # fixed for the test; takes whoever holds control
+                shooter = ser["shooter"] if live_ammo else holder   # fixed for the test; takes whoever holds control
             elif shooter is None:                       # a custom session name carries over; a default one follows the kind
                 prev = ser["shooter"] if ser is not None and ser["kind"] != "ammo" else None
-                shooter = prev if prev and not DEFAULT_SESSION_RE.match(prev) else session_name(lease["holder_name"], kind)
+                shooter = prev if prev and not DEFAULT_SESSION_RE.match(prev) else session_name(holder, kind)
             if live_ammo or (ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and kind != "ammo"
                              and ser["shooter"] == shooter and not new_series):
                 series_id = ser["id"]
@@ -666,7 +685,7 @@ class Core:
         c = self.db.conn()
         rows = c.execute(
             """SELECT t.*, (SELECT COUNT(*) FROM shots s WHERE s.device_id=t.device_id) AS shot_count
-               FROM targets t ORDER BY COALESCE(t.name, t.device_id), t.device_id""").fetchall()
+               FROM targets t WHERE t.removed=0 AND t.banned=0 ORDER BY COALESCE(t.name, t.device_id), t.device_id""").fetchall()
         out = []
         for r in rows:
             did = r["device_id"]
@@ -692,6 +711,31 @@ class Core:
                 "lease": self._lease_view(lease, now, client_id), "view": view,
             })
         return out
+
+    # ---- Range Control (the HTTP layer checks the admin session) ------------
+    def admin_view(self) -> dict:
+        """Every target for Range Control, plus the banned ones (which no other screen shows)."""
+        banned = [{"device_id": r["device_id"], "name": r["name"] or r["device_id"], "ip": r["last_ip"],
+                   "last_seen": iso(r["last_seen_ms"]), "bridge_fw": r["bridge_fw"]}
+                  for r in self.db.conn().execute("SELECT * FROM targets WHERE banned=1 ORDER BY COALESCE(name, device_id)")]
+        return {"targets": self.list_targets(None), "banned": banned}
+
+    def remove_target(self, device_id: str) -> None:
+        """Hide a dead target. Its history stays; if it ever reports again it is back automatically."""
+        with self.db.write() as c:
+            self._require_target(c, device_id)
+            c.execute("UPDATE targets SET removed=1 WHERE device_id=?", (device_id,))
+            c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
+        self.hub.publish({"type": "targets", "device_id": device_id})
+
+    def set_banned(self, device_id: str, banned: bool) -> None:
+        """A banned target's reports are refused (403) and nothing it sends is stored; unbanning lets it back."""
+        with self.db.write() as c:
+            self._require_target(c, device_id)
+            c.execute("UPDATE targets SET banned=?, removed=0 WHERE device_id=?", (int(bool(banned)), device_id))
+            if banned:
+                c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
+        self.hub.publish({"type": "targets", "device_id": device_id})
 
     def list_series(self, device_id: str, limit: int = 50) -> list:
         limit = max(1, min(int(limit), 500))

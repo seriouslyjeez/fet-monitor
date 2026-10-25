@@ -178,6 +178,11 @@ MIGRATIONS = [
     -- An ammo test has a shooter (fixed once the test starts) and a free-text label (ammo, lot) that can change.
     ALTER TABLE series ADD COLUMN label TEXT;
     """,
+    """
+    -- Range Control: a removed target is hidden until it reports again (its history stays); a banned one is refused.
+    ALTER TABLE targets ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE targets ADD COLUMN banned INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
