@@ -54,3 +54,10 @@ Hardware logs (0.1.9: 1267 s, 0.1.11: 1625 s to get an IP) both ended with succe
 BQ16 Pro either gets DHCP answers or never does. So `FET_REASSOC_MS 15000` re-joins the WiFi after 15 s associated without
 an IP (every 4th attempt waits `FET_REASSOC_LONG_MS 45000`). The restart of the DHCP request stays off
 (`FET_DHCP_RESTART_MS 0`). Output: `Re-joining X (attempt N)`, then `Connected ... after N s`. Workaround, not a root-cause fix.
+
+### Firmware 0.1.14: 802.11g by default
+
+esp8266/Arduino issue #8299 (core > 2.5.2, ASUS routers incl. XT8 mesh: associates, no DHCP answer; the router replied
+only when the ESP used 802.11g). `FET_WIFI_PHY_G` is now 1. The PHY mode can persist in the chip's flash, so after
+removing it again, power-cycle and check the "WiFi options" line. Router-side alternatives from the thread: turn off
+"Wi-Fi Agile Multiband" on 2.4 GHz, or disable 802.11n/"legacy" mode. The 15 s re-join (0.1.13) stays as a safety net.
