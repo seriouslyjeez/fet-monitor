@@ -46,3 +46,11 @@ off, fixed channel, 20 MHz; roaming assistant / Smart Connect off. A fixed IP (s
 0.1.11 hardware log: with `FET_DHCP_RESTART_MS 6000` every status line showed `st0 up dhcp 0/0` (lwIP DHCP client OFF, no
 tries), so the restart through `wifi_station_dhcpc_stop/start` appears to leave the client off. It is now off by default (0).
 Next: read the natural DHCP state with the restart off.
+
+### Firmware 0.1.13
+
+Hardware logs (0.1.9: 1267 s, 0.1.11: 1625 s to get an IP) both ended with success on the first status after a
+"Retrying connection" (a fresh association), after many failed attempts. Hypothesis: each association to the ASUS
+BQ16 Pro either gets DHCP answers or never does. So `FET_REASSOC_MS 15000` re-joins the WiFi after 15 s associated without
+an IP (every 4th attempt waits `FET_REASSOC_LONG_MS 45000`). The restart of the DHCP request stays off
+(`FET_DHCP_RESTART_MS 0`). Output: `Re-joining X (attempt N)`, then `Connected ... after N s`. Workaround, not a root-cause fix.

@@ -285,9 +285,12 @@ void WifiNet::update(uint64_t now) {
   }
 #endif
 #if FET_REASSOC_MS
-  if (!up && assoc_ && !cfg_.fixedIp() && now - assocAt_ > FET_REASSOC_MS && now - lastReassoc_ > FET_REASSOC_MS) {
-    lastReassoc_ = now;                          // no address after N ms: leave and join again from scratch
-    say("Re-joining ", cfg_.ssid);
+  if (up) reassocCount_ = 0;
+  uint64_t reassocWait = (reassocCount_ % 4 == 3) ? (uint64_t)FET_REASSOC_LONG_MS : (uint64_t)FET_REASSOC_MS;
+  if (!up && assoc_ && !cfg_.fixedIp() && now - assocAt_ > reassocWait && now - lastReassoc_ > reassocWait) {
+    lastReassoc_ = now;                          // no address yet: leave and join again from scratch
+    reassocCount_++;
+    say("Re-joining ", cfg_.ssid + " (attempt " + std::to_string(reassocCount_) + ")");
     WiFi.disconnect();
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
