@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.1.10"
+#define FET_FW_VERSION "0.1.11"
 
 #ifndef FET_ENABLE_OTA
 #define FET_ENABLE_OTA 1          // Arduino OTA push from the IDE / espota (needs a token; the token is the password)
@@ -43,6 +43,10 @@
 #endif
 #ifndef FET_DHCP_RESTART_MS
 #define FET_DHCP_RESTART_MS 6000 // associated but no IP: restart the DHCP request this often (0 = never). Keeps retries fast.
+#endif
+
+#ifndef FET_REASSOC_MS
+#define FET_REASSOC_MS 0         // >0: associated but no IP after this many ms: drop and re-join the WiFi (try 20000)
 #endif
 
 #ifndef FET_STATUS_MESSAGES

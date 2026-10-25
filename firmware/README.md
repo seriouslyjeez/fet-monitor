@@ -33,3 +33,10 @@ off, fixed channel, 20 MHz; roaming assistant / Smart Connect off. A fixed IP (s
   association is not dropped), because lwIP's own retry back-off grows 4, 8, 16 s. Prints `Restarting DHCP request on X`.
   Set to 0 to get the old behaviour back. Compare "Connected ... after N s" with it on and off.
 - If the build fails on `lwip/netif.h` or `netif_dhcp_data`, set `FET_DHCP_DIAG 0` and tell me the error.
+
+### Firmware 0.1.11
+
+- The "Not connected" line now ends with `[netif <name><num> up|down dhcp STATE/TRIES; ... default=N]` for EVERY network
+  interface (0.1.10 looked at only one and printed nothing). States: 1 requesting, 2 init, 6 selecting, 10 bound, 12 backing off.
+- `FET_REASSOC_MS` (default 0 = off): set to 20000 to drop and re-join the WiFi when associated for 20 s without an IP
+  (prints `Re-joining X`). Test it on its own, with `FET_DHCP_RESTART_MS` left at 6000, then again with it at 0.

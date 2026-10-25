@@ -270,11 +270,26 @@ void WifiNet::update(uint64_t now) {
     std::string line = cfg_.ssid + ": " + why;
     if (lastReason_) line += std::string(" [reason ") + std::to_string(lastReason_) + ": " + reasonText(lastReason_) + "]";
 #if FET_DHCP_DIAG
-    if (assoc_ && netif_default && netif_dhcp_data(netif_default))
-      line += std::string(" [DHCP state ") + std::to_string((int)netif_dhcp_data(netif_default)->state) + ", tries " + std::to_string((int)netif_dhcp_data(netif_default)->tries) + "]";
+    {                                                  // every network interface: name, up?, address, DHCP state/tries
+      std::string n;
+      for (struct netif* i = netif_list; i; i = i->next) {
+        struct dhcp* d = netif_dhcp_data(i);
+        n += std::string(" ") + i->name[0] + i->name[1] + std::to_string((int)i->num) + (netif_is_up(i) ? " up" : " down") +
+             (d ? " dhcp " + std::to_string((int)d->state) + "/" + std::to_string((int)d->tries) : std::string(" nodhcp")) + ";";
+      }
+      line += " [netif" + n + (netif_default ? " default=" + std::to_string((int)netif_default->num) : "") + "]";
+    }
 #endif
     line += std::string(" (status ") + std::to_string((int)st) + (assoc_ ? ", associated on channel " + std::to_string(assocChannel_) + ": waiting for an IP address" : ", not associated") + ")";
     say("Not connected to ", line);
+  }
+#endif
+#if FET_REASSOC_MS
+  if (!up && assoc_ && !cfg_.fixedIp() && now - assocAt_ > FET_REASSOC_MS && now - lastReassoc_ > FET_REASSOC_MS) {
+    lastReassoc_ = now;                          // no address after N ms: leave and join again from scratch
+    say("Re-joining ", cfg_.ssid);
+    WiFi.disconnect();
+    WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
 #endif
 #if FET_DHCP_RESTART_MS
