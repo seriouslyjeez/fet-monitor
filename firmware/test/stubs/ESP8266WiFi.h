@@ -1,6 +1,7 @@
 #pragma once
 #include "Arduino.h"
 #include "IPAddress.h"
+#include <memory>
 enum WiFiMode { WIFI_OFF = 0, WIFI_STA = 1, WIFI_AP = 2, WIFI_AP_STA = 3 };
 enum wl_status_t { WL_IDLE_STATUS = 0, WL_NO_SSID_AVAIL = 1, WL_CONNECTED = 3, WL_CONNECT_FAILED = 4, WL_WRONG_PASSWORD = 6, WL_DISCONNECTED = 7 };
 #define WIFI_SCAN_RUNNING (-1)
@@ -16,9 +17,12 @@ class WiFiClient {
   uint8_t connected() { return 0; }
   void stop() {}
 };
+struct WiFiEventStationModeDisconnected { String ssid; uint8_t bssid[6]; int reason; };
+typedef std::shared_ptr<std::function<void(const WiFiEventStationModeDisconnected&)>> WiFiEventHandler;
 class ESP8266WiFiClass {
  public:
   void persistent(bool) {}
+  WiFiEventHandler onStationModeDisconnected(std::function<void(const WiFiEventStationModeDisconnected&)>) { return WiFiEventHandler(); }
   void setAutoReconnect(bool) {}
   bool hostname(const char*) { return true; }
   bool mode(WiFiMode) { return true; }

@@ -158,11 +158,31 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   WiFi.setAutoReconnect(true);
   WiFi.mode(withAccessPoint ? WIFI_AP_STA : WIFI_STA);   // one switch, straight from "off": the well-trodden path
   WiFi.hostname(hostname.c_str());
-  if (cfg_.wifiConfigured()) {
-    say("Attempting to connect to network: ", cfg_.ssid);
-    WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
-  } else {
-    say("No WiFi settings saved: ", "waiting for setup");
+  static WiFiEventHandler onDisc;                 // must stay alive for the handler to keep working
+  if (!handlerSet_) {
+    handlerSet_ = true;
+    onDisc = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected& e) { lastReason_ = (int)e.reason; });
+  }
+  if (cfg_.wifiConfigured()) WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+}
+
+void WifiNet::announce() {
+  if (cfg_.wifiConfigured()) say("Attempting to connect to network: ", cfg_.ssid);
+  else say("No WiFi settings saved: ", "waiting for setup");
+}
+
+static const char* reasonText(int r) {
+  switch (r) {
+    case 0: return "";
+    case 2: return "authentication expired";
+    case 5: return "access point is full";
+    case 15: return "wrong password?";
+    case 200: return "lost the beacon (signal too weak?)";
+    case 201: return "network not found";
+    case 202: return "authentication failed (wrong password?)";
+    case 203: return "access point refused the association";
+    case 204: return "handshake timed out (wrong password?)";
+    default: return "see SDK reason code";
   }
 }
 
@@ -187,6 +207,7 @@ void WifiNet::update(uint64_t now) {
   }
   if (mdnsUp_ && up) MDNS.update();
 #endif
+  if (up) lastReason_ = 0;                                              // a stale failure reason must not outlive the failure
 #if FET_STATUS_MESSAGES
   if (up && !wasUp_) say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")");
 #endif
@@ -198,7 +219,9 @@ void WifiNet::update(uint64_t now) {
                     : (st == WL_CONNECT_FAILED || st == WL_WRONG_PASSWORD) ? "wrong password"
                     : st == WL_IDLE_STATUS ? "connecting"
                     : st == WL_DISCONNECTED ? "not connected yet" : "waiting";
-    say("Not connected to ", cfg_.ssid + ": " + why);
+    std::string line = cfg_.ssid + ": " + why;
+    if (lastReason_) line += std::string(" [reason ") + std::to_string(lastReason_) + ": " + reasonText(lastReason_) + "]";
+    say("Not connected to ", line);
   }
 #endif
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }

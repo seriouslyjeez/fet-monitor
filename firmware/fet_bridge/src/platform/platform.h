@@ -38,7 +38,8 @@ class WifiNet : public fet::Net {
   bool ready() override;                  // WiFi up AND the server address known
   int rssi() override;
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override;
-  void startWifi(const std::string& hostname, bool withAccessPoint);   // non-blocking; auto-reconnects; sets the radio mode once
+  void startWifi(const std::string& hostname, bool withAccessPoint);
+  void announce();                        // the start-up lines, printed a few seconds after boot so a monitor that reattaches slowly sees them   // non-blocking; auto-reconnects; sets the radio mode once
   void stopSta();
   void update(uint64_t now);              // mDNS upkeep, connection bookkeeping
   bool wifiUp() const;
@@ -55,6 +56,8 @@ class WifiNet : public fet::Net {
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
   uint64_t nextWifiNote_ = 0;
+  int lastReason_ = 0;                    // why the station last lost or failed to get a connection (SDK code)
+  bool handlerSet_ = false;
   std::string hostname_;
 };
 

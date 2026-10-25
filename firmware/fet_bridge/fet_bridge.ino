@@ -39,7 +39,6 @@ void setup() {
   Serial.setRxBufferSize(FET_RX_BUFFER);                  // before begin(); the Arduino keeps talking while we wait on WiFi
   Serial.begin(FET_SERIAL_BAUD);
   g_id = deviceIdFromChip();
-  say("\nFET bridge firmware ", std::string(FET_FW_VERSION) + " (" + g_id + ")");
 #if FET_DEBUG
   {                                                       // why did the chip last restart? (survives the crash itself)
     struct rst_info* r = ESP.getResetInfoPtr();
@@ -103,6 +102,13 @@ void loop() {
     std::string b;
     b.swap(g_hold.bytes);
     for (size_t i = 0; i < b.size(); i++) g_bridge->onByte((uint8_t)b[i], now);
+  }
+
+  static bool announced = false;
+  if (!announced && now >= 4000) {                        // late enough for a monitor that reattached after a replug
+    announced = true;
+    say("\nFET bridge firmware ", std::string(FET_FW_VERSION) + " (" + g_id + ")");
+    g_net->announce();
   }
 
   // 2. WiFi bookkeeping first, so "Connected to network" prints before the first attempt to reach the server
