@@ -221,7 +221,25 @@ void WifiNet::update(uint64_t now) {
                     : st == WL_DISCONNECTED ? "not connected yet" : "waiting";
     std::string line = cfg_.ssid + ": " + why;
     if (lastReason_) line += std::string(" [reason ") + std::to_string(lastReason_) + ": " + reasonText(lastReason_) + "]";
+    line += std::string(" (status ") + std::to_string((int)st) + ")";
     say("Not connected to ", line);
+  }
+  if (!up && cfg_.wifiConfigured() && now >= nextScanNote_) {          // once, then every 5 min: what can the ESP actually see?
+    nextScanNote_ = now + 300000;
+    int n = WiFi.scanNetworks(false, true);                           // blocking, a couple of seconds
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+      if (WiFi.SSID(i) == cfg_.ssid.c_str()) {
+        found++;
+        uint8_t enc = WiFi.encryptionType(i);
+        const char* e = enc == 4 ? "WPA2" : enc == 2 ? "WPA/TKIP" : enc == 7 ? "open" : enc == 8 ? "WPA/WPA2" : enc == 5 ? "WEP" : "other";
+        say("Scan: found network ", cfg_.ssid + " channel " + std::to_string((int)WiFi.channel(i)) + ", signal " +
+            std::to_string((int)WiFi.RSSI(i)) + " dBm, security " + e);
+      }
+    }
+    if (n < 0) say("Scan: ", "failed");
+    else if (!found) say("Scan: network not visible. Networks seen: ", std::to_string(n));
+    WiFi.scanDelete();
   }
 #endif
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }

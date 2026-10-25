@@ -36,7 +36,10 @@ class ESP8266WiFiClass {
   bool softAPConfig(IPAddress, IPAddress, IPAddress) { return true; }
   bool softAP(const char*) { return true; }
   bool softAPdisconnect(bool = false) { return true; }
-  int8_t scanNetworks(bool = false) { return 0; }
+  int8_t scanNetworks(bool = false, bool = false) { return 0; }
+  uint8_t encryptionType(uint8_t) { return 0; }
+  int32_t RSSI(uint8_t) { return 0; }
+  int32_t channel(uint8_t) { return 0; }
   int8_t scanComplete() { return 0; }
   String SSID(uint8_t) { return String(); }
   String SSID() const { return String(); }

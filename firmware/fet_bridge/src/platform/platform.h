@@ -55,7 +55,7 @@ class WifiNet : public fet::Net {
   int connectFails_ = 0;
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
-  uint64_t nextWifiNote_ = 0;
+  uint64_t nextWifiNote_ = 0, nextScanNote_ = 25000;
   int lastReason_ = 0;                    // why the station last lost or failed to get a connection (SDK code)
   bool handlerSet_ = false;
   std::string hostname_;
