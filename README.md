@@ -1,4 +1,4 @@
-# freETarget club server (v0.6.18: series, zoom, scoring screens, ammo test; ESP-01 firmware included)
+# freETarget club server (v0.6.19: series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 Receives shots and status from freETarget targets over the club LAN, stores them
 durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
@@ -25,6 +25,16 @@ shot 11 arrives (not before, so you can study shot 10) while the number keeps co
 A practice series is 20 shots; the 21st shot starts a new series at 1. A practice series left idle for 30
 minutes also starts afresh. In a match, sighters count up with no limit (the picture still resets every
 10) and record shots count to 60, picking up where they left off if you go back to sighters and return.
+
+**Adjust sights** (practice only, for whoever is in control): the button appears once 3 shots have been fired since
+the last adjustment. The overlay says which way and how many whole clicks to turn the sight (Up/Down, Left/Right =
+the way the shots will move). It aims the group's best-scoring centre (the geometric median: decimal scores fall
+by 0.1 for every 0.25 mm, so the point with the least total distance gives the highest total) at the bullseye and
+ignores flyers: shots more than 3x the group's median distance from its centre (never closer than 1.5 mm), always
+keeping at least 3 shots; flyers are drawn dashed and misses are left out. *Clicks per ring* (default 4.0, decimals
+such as 3.5 or 3,5 accepted; one ring = 2.5 mm) is remembered by that browser. On **Done** it offers to **clear the
+target** (a new practice series) or **keep the shots**, after which only newer shots count; a new series (including the
+automatic one after 20 shots) starts the count afresh.
 
 **The gear icon** holds everything that is not scoring:
 * *Control*: take, take over or release. Viewing never needs it. The claim lasts 60 s, renews itself while the
@@ -129,6 +139,7 @@ backup from /var/backups/freetarget in that case.
 | GET /targets/<id>/shots?since_id=&limit=&segment_id= | browser | Shots with aligned x/y in mm, ring, decimal score, mode |
 | GET /targets/<id>/series | browser | Series history, newest first, with scored and sighter totals |
 | GET /series/<n>?stream=scored\|sighter&upto=<k>&bull=<j> | browser | A series stream as it stood after its first k shots (shot-by-shot review; `full_count` is the real length), or its j-th target picture |
+| GET /series/<n>/sight?after=<k> | browser | Sight adjustment for a practice series from its shots numbered above k: `ready` (3+ shots on paper), `kept`, `flyers`, `points`, aim point `center_*_mm`, and `move_x_mm`/`move_y_mm` (how far the impact must move, +x right, +y up). 400 for match and ammo series |
 | GET /targets/<id>/segments | browser | Mode segments (older view of the same history) |
 | POST /targets/<id>/settings | browser | `{client_id, bull_size, group_size, total_practice, total_match, projectile_mm}`; needs the control claim. `projectile_mm` (1-10) re-scores a live ammo test |
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |

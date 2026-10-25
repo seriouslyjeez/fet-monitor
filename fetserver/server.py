@@ -17,7 +17,7 @@ from .core import BadRequest, Core, Forbidden, NotFound, iso
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|commands|control|control/release|mode|settings)$")
-SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})$")
+SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
@@ -144,6 +144,12 @@ class Handler(BaseHTTPRequestHandler):
                 raise BadRequest("since_id, limit and segment_id must be integers")
             return self._send(200, {"shots": core.list_shots(m.group(1), since, limit, seg)})
         sm = SERIES_RE.match(url.path)
+        if sm and sm.group(2):
+            try:
+                after = int(q.get("after", ["0"])[0])
+            except ValueError:
+                raise BadRequest("after must be an integer")
+            return self._send(200, core.sight_suggestion(int(sm.group(1)), after))
         if sm:
             try:
                 bull = int(q["bull"][0]) if "bull" in q else None

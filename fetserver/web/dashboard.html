@@ -55,6 +55,9 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
 #overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}
 .sheet h2{margin:0 0 4px;font-size:18px}.sheet section{border-top:1px solid var(--line);padding:10px 0}.sheet section:first-of-type{border-top:0}
+/* sight adjustment */
+.sightface{max-width:300px;margin:0 auto}.advice{font-size:24px;font-weight:800;margin:4px 0}.advice div{margin:2px 0}
+.cprrow{display:flex;gap:8px;align-items:center}.cprrow input{width:80px}.bad{color:var(--bad)}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -140,7 +143,8 @@ function faceSvg(shots, o) {
   pts.forEach((x, i) => {
     const isLast = i === pts.length - 1, sx = x.x_mm, sy = -x.y_mm;
     if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
-      s += '<circle cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
+      if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="none" stroke="#e11d48" stroke-width="' + 0.35 * f + '" stroke-dasharray="' + 0.7 * f + '"/>';   // sight adjustment: ignored shot
+      else s += '<circle cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
            (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) * f + '"/>';
       if (!mini && (!o.labelLast || isLast)) {                       // an ammo test can have hundreds of shots: label only the latest
         s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
@@ -282,6 +286,7 @@ function infoPanel(t, v, mode, S) {
     ctl = '<div class="modes">' + ['sighter', 'record'].map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '"' + (L.mine ? '' : ' disabled') + '>' + MODES[m] + '</button>').join('') + '</div>' +
           (L.mine ? '' : '<div class="mut">Open the gear and take control to switch.</div>');
   }
+  if (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN) ctl += '<div class="modes"><button class="pri" data-act="sight">Adjust sights</button></div>';
   return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
     '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No shooter set')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
@@ -344,8 +349,56 @@ function overlayView(t, S, name) {
   return h;
 }
 
+// ---- Sight adjustment (practice only, for whoever is in control) ----
+// The server finds the flyers and the aim point (the centre that gives the best total) and says how far the impact
+// must move in mm; the page turns that into whole clicks with this browser's "clicks per ring".
+const SIGHT_MIN = 3, RING_MM = 2.5, CPR_DEFAULT = '4.0';
+function parseCpr(v) {                                             // "4", "4.0", "3.5", ".5" or "3,5" -> number; anything else -> null
+  const s = String(v == null ? '' : v).trim().replace(',', '.');
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(s)) return null;
+  const n = parseFloat(s);
+  return n > 0 && n <= 100 ? n : null;
+}
+function clicksFor(moveMm, cpr) {                                  // whole clicks, nearest; a half click rounds away from zero
+  const c = Math.round(Math.abs(moveMm * cpr / RING_MM));
+  return c && moveMm < 0 ? -c : c;
+}
+const sightAllowed = (t, S) => !!(t && !S.review && t.kind === 'practice' && t.mode === 'practice' && t.lease && t.lease.mine && t.view && t.view.series_id != null);
+const sightMark = (S, sid) => (S.marks && S.marks[sid]) || 0;      // last shot number before the last adjustment (this browser)
+const sightSince = (v, S) => Math.max(0, (v.last_shot ? v.last_shot.n : 0) - sightMark(S, v.series_id));
+function sightResult(d, cprText, pellet) {
+  if (!d) return '<p class="mut">Loading…</p>';
+  const range = d.after ? ' since the last adjustment' : '';
+  if (!d.ready) return '<p>Fire at least ' + d.min_shots + ' shots on paper' + range + ' for a suggestion (' + d.on_paper + ' so far' + (d.misses ? ', ' + d.misses + ' missed' : '') + ').</p>';
+  const cpr = parseCpr(cprText), pts = d.points, half = halfFor('auto', pts.filter(p => !p.flyer), pellet / 2);   // zoom on the group; a flyer out of view is marked at the edge
+  let h = '<div class="sightface">' + faceSvg(pts, {half: half, pellet: pellet, color: modeColor('practice'), center: {x: d.center_x_mm, y: d.center_y_mm}}) + '</div>';
+  if (cpr == null) h += '<p class="bad">Enter clicks per ring as a number, e.g. 4.0</p>';
+  else {
+    const x = clicksFor(d.move_x_mm, cpr), y = clicksFor(d.move_y_mm, cpr), word = n => Math.abs(n) + (Math.abs(n) === 1 ? ' click' : ' clicks');
+    h += '<div class="advice">' + (x || y ? (y ? '<div>' + (y > 0 ? 'Up ' : 'Down ') + word(y) + '</div>' : '') + (x ? '<div>' + (x > 0 ? 'Right ' : 'Left ') + word(x) + '</div>' : '')
+                                  : '<div>No adjustment</div>') + '</div>' +
+         (x || y ? '' : '<p class="mut">The group centre is within half a click of the middle.</p>');
+  }
+  const off = (v, pos, neg) => mm2(Math.abs(v)) + ' mm ' + (v > 0 ? pos : neg);
+  h += '<p class="mut">Group centre: ' + off(d.center_y_mm, 'high', 'low') + ', ' + off(d.center_x_mm, 'right', 'left') + '. Using ' + d.kept.length + ' shots' + range +
+       (d.flyers.length ? '; ignored as flyers (dashed): ' + d.flyers.map(n => '#' + esc(n)).join(', ') : '') + (d.misses ? '; ' + d.misses + ' missed' : '') + '.</p>';
+  return h;
+}
+function sightView(t, S) {
+  const g = S.sight;
+  let h = '<div class="sheet"><div class="row"><h2>Adjust sights</h2>' + (g.exit ? '' : '<button data-act="sightdone">Done</button>') + '</div>';
+  if (g.exit) return h + '<section><p>Clear the target so the next shots start on an empty face?</p>' +
+    '<div class="seg"><button class="pri" data-act="sightclear">Clear target</button><button data-act="sightkeep">Keep shots</button></div>' +
+    '<p class="mut">Clear target starts a new practice series. Keep shots leaves them on the face; the next suggestion uses only shots fired from now on.</p>' +
+    '<div class="seg"><button data-act="sightnoadj">I did not adjust</button><button data-act="sightback">Back</button></div></section></div>';
+  return h + '<section><div id="sightres">' + sightResult(g.data, S.cpr, t.calibre_x10 / 10) + '</div></section>' +
+    '<section><div class="cprrow"><label for="cpr">Clicks per ring</label><input id="cpr" type="text" inputmode="decimal" maxlength="6" value="' + esc(S.cpr) + '"></div>' +
+    '<p class="mut">Directions move the shots: Up raises the group. One ring is 2.5 mm. Remembered on this device.</p></section></div>';
+}
+
 // ---- browser only from here ----
-const S = {targets: [], review: null, reviewView: null, seriesList: [], gear: false, adv: false, zoom: 'auto', sse: false, busy: false, again: false};
+const S = {targets: [], review: null, reviewView: null, seriesList: [], gear: false, adv: false, zoom: 'auto', sse: false, busy: false, again: false,
+           sight: null, cpr: CPR_DEFAULT, marks: {}};
 let CID;
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 function clientId() {
@@ -375,6 +428,8 @@ async function refresh() {
         S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + '&upto=' + S.review.shot);
       }
     }
+    if (S.sight && (!sightAllowed(t, S) || t.view.series_id !== S.sight.sid)) S.sight = null;   // never outside live practice in control
+    if (S.sight && !S.sight.exit) S.sight.data = await get('/series/' + S.sight.sid + '/sight?after=' + S.sight.after);
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
@@ -391,11 +446,15 @@ function render() {
 }
 function renderOverlay(t) {
   const o = document.getElementById('overlay');
-  o.className = S.gear && t ? 'open' : '';
-  if (!S.gear || !t) { o.innerHTML = ''; return; }
+  o.className = (S.gear || S.sight) && t ? 'open' : '';
+  if (!(S.gear || S.sight) || !t) { o.innerHTML = ''; return; }
   const ae = document.activeElement;
-  if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)) return;      // never redraw under someone's typing
-  o.innerHTML = overlayView(t, S, store('fet_name') || '');
+  if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)) { sightRedraw(t); return; }   // never redraw under someone's typing
+  o.innerHTML = S.sight ? sightView(t, S) : overlayView(t, S, store('fet_name') || '');
+}
+function sightRedraw(t) {
+  const r = document.getElementById('sightres');
+  if (S.sight && r && t) r.innerHTML = sightResult(S.sight.data, S.cpr, t.calibre_x10 / 10);
 }
 
 async function act(el) {
@@ -406,7 +465,24 @@ async function act(el) {
     return res;
   };
   if (a === 'zoom') { S.zoom = el.dataset.z; store('fet_zoom', S.zoom); return render(); }
-  if (a === 'gear') { S.gear = true; await refresh(); return; }
+  if (a === 'gear') { S.gear = true; S.sight = null; await refresh(); return; }
+  if (a === 'sight') {
+    if (!sightAllowed(t, S)) return;
+    S.sight = {sid: t.view.series_id, after: sightMark(S, t.view.series_id), data: null, exit: false};
+    return refresh();
+  }
+  if (/^sight(done|back|noadj|keep)$/.test(a) && !S.sight) return render();   // closed meanwhile (mode or control changed)
+  if (a === 'sightdone') { S.sight.exit = true; return render(); }
+  if (a === 'sightback') { S.sight.exit = false; return refresh(); }
+  if (a === 'sightnoadj') { S.sight = null; return render(); }
+  if (a === 'sightkeep') {
+    const sid = S.sight.sid, last = t && t.view.series_id === sid && t.view.last_shot ? t.view.last_shot.n : 0;
+    S.marks[sid] = last;
+    const keep = Object.keys(S.marks).map(Number).sort((p, q) => q - p).slice(0, 20), m = {};   // the 20 newest series are plenty
+    keep.forEach(k => { m[k] = S.marks[k]; });
+    S.marks = m; store('fet_sight_marks', JSON.stringify(m));
+    S.sight = null; return render();
+  }
   if (a === 'gearclose') { S.gear = false; return render(); }
   if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
@@ -431,6 +507,9 @@ async function act(el) {
   } else if (a === 'setshooter') {
     const who = (val('shooter') || '').trim();
     if (who) await setMode(t.mode, {shooter: who});
+  } else if (a === 'sightclear') {
+    S.sight = null;
+    await setMode('practice', {new_series: true});
   } else if (a === 'newseries') {
     await setMode(KIND_MODE[t.kind] || 'practice', {new_series: true});
   } else if (a === 'proj' || a === 'saveproj') {
@@ -456,14 +535,22 @@ function reviewMove(move) {
 function boot() {
   clientId();
   S.zoom = store('fet_zoom') || 'auto';
+  S.cpr = store('fet_cpr') || CPR_DEFAULT;
+  try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
+  document.addEventListener('input', e => {
+    if (e.target.id !== 'cpr') return;
+    S.cpr = e.target.value;
+    if (parseCpr(S.cpr) != null) store('fet_cpr', S.cpr);
+    sightRedraw(current());
+  });
   document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) act(el); });
   document.addEventListener('keydown', e => {                    // review with the arrow keys: left/right = one shot, up/down or PageUp/PageDown = one target
-    if (!S.review || S.gear || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
+    if (!S.review || S.gear || S.sight || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
     const m = {ArrowLeft: 'step-', ArrowRight: 'step+', ArrowUp: 'page-', PageUp: 'page-', ArrowDown: 'page+', PageDown: 'page+'}[e.key];
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   let pending;
   try {
@@ -481,7 +568,8 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, S};
+if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+  parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

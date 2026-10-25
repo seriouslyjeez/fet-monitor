@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -246,4 +246,53 @@ assert(reviewPager({count: 0, full_count: 0, bull_size: 10, bull_index: 0}, fals
 // ammo review steps one shot at a time and ten at a jump, and the statistics are those of the shots so far
 const ap = reviewPager({count: 7, full_count: 14, bull_size: 14, bull_index: 0}, true);
 assert(ap.includes('Shot 7 of 14') && !ap.includes('target') && ap.includes('Forward ten shots') && ap.includes('Back ten shots'));
+// --- sight adjustment: practice only, only for whoever is in control, only after 3 shots since the last adjustment
+assert.deepStrictEqual(['4', '4.0', '3.5', '.5', '3,5', ' 2.25 ', '100'].map(parseCpr), [4, 4, 3.5, 0.5, 3.5, 2.25, 100]);
+assert.deepStrictEqual(['', '0', '0.0', '-1', 'abc', '4.0.1', '1e2', '101', null, '4 clicks'].map(parseCpr), Array(10).fill(null));
+// 4 clicks per ring: one click = 0.625 mm; whole clicks only, nearest, never "-0"
+assert.deepStrictEqual([2.5, -2.5, 0.625, 0.31, 0.3125, -0.3125, 0.3, 0, -0.1, 1.0].map(m => clicksFor(m, 4)), [4, -4, 1, 0, 1, -1, 0, 0, 0, 2]);
+assert(Object.is(clicksFor(-0.1, 4), 0), 'no negative zero');
+assert.strictEqual(clicksFor(2.5, 3.5), 4, '3.5 clicks per ring: 2.5 mm = 3.5 clicks -> 4 (half rounds up)');
+assert.strictEqual(clicksFor(-5.0, 2.25), -5, '2 rings at 2.25 clicks per ring = 4.5 -> 5 (away from zero)');
+const btn = (t, st) => count(infoPanel(t, t.view, t.mode, st || state()), /data-act="sight"/g);
+assert.strictEqual(practiceT.view.last_shot.n, 12);
+assert.strictEqual(btn(asMine(practiceT)), 1, 'practice, in control, 12 shots: the button shows');
+assert.strictEqual(btn(practiceT), 0, 'not without control');
+assert.strictEqual(btn(asOther(practiceT)), 0, 'not when someone else is in control');
+[recordT, sighterT, T('lane-5')].forEach(t => assert.strictEqual(btn(asMine(t)), 0, 'never in ' + t.mode));
+const asMode = (t, mode, kind) => Object.assign(asMine(t), {mode: mode, kind: kind || t.kind});
+assert.strictEqual(btn(asMode(practiceT, 'sighter', 'match')), 0);
+assert.strictEqual(btn(asMode(practiceT, 'record', 'match')), 0);
+assert.strictEqual(btn(asMode(practiceT, 'ammo', 'ammo')), 0);
+assert.strictEqual(btn(asMode(practiceT, 'practice', 'match')), 0, 'not in a match, even in its practice mode');
+assert.strictEqual(btn(asMode(practiceT, 'sighter', 'practice')), 0, 'not unless the mode is practice');
+assert.strictEqual(btn(asMine(practiceT), state({review: {sid: 1}})), 0, 'not while reviewing');
+const fewer = n => { const t = asMine(practiceT); t.view = Object.assign({}, t.view, {last_shot: Object.assign({}, t.view.last_shot, {n: n})}); return t; };
+assert.deepStrictEqual([0, 1, 2, 3].map(n => btn(fewer(n))), [0, 0, 0, 1], 'shown from the third shot');
+const sid = practiceT.view.series_id, marked = m => state({marks: {[sid]: m}});
+assert.deepStrictEqual([9, 10, 12].map(m => btn(asMine(practiceT), marked(m))), [1, 0, 0], 'counts only shots since the last adjustment');
+assert.strictEqual(btn(asMine(practiceT), state({marks: {[sid + 1]: 12}})), 1, 'a mark for another series does not count');
+assert.strictEqual(sightSince(practiceT.view, marked(20)), 0);
+// the overlay with the server's suggestion: 12 shots at x 2.50, y -1.00 -> left and up
+const sg = D.sight;
+assert(sg.ready && sg.kept.length === 12 && !sg.flyers.length);
+assert(Math.abs(sg.move_x_mm + 2.5) < 0.01 && Math.abs(sg.move_y_mm - 1.0) < 0.01, JSON.stringify(sg));
+const res = sightResult(sg, '4.0', 4.5);
+assert(res.includes('Up 2 clicks') && res.includes('Left 4 clicks') && !res.includes('Down') && !res.includes('Right '), res);
+assert(sightResult(sg, '2', 4.5).includes('Up 1 click<') && sightResult(sg, '2', 4.5).includes('Left 2 clicks'));
+assert(sightResult(sg, 'x', 4.5).includes('Enter clicks per ring') && !sightResult(sg, 'x', 4.5).includes('Up '));
+assert(sightResult(Object.assign({}, sg, {move_x_mm: 0.2, move_y_mm: -0.3}), '4', 4.5).includes('No adjustment'));
+assert(sightResult(Object.assign({}, sg, {move_x_mm: 0.0, move_y_mm: -0.4}), '4', 4.5).includes('Down 1 click<'));
+const fl = JSON.parse(JSON.stringify(sg)); fl.points[0].flyer = true; fl.flyers = [1];
+assert.strictEqual(count(sightResult(fl, '4', 4.5), /class="flyer"/g), 1, 'a flyer is drawn hollow');
+assert(sightResult(fl, '4', 4.5).includes('ignored as flyers (dashed): #1'));
+const far = JSON.parse(JSON.stringify(sg)); far.points.push({n: 13, x_mm: -15, y_mm: 15, flyer: true}); far.flyers = [13];
+assert.strictEqual(sightResult(far, '4', 4.5).match(/viewBox="([^"]+)"/)[1], sightResult(sg, '4', 4.5).match(/viewBox="([^"]+)"/)[1], 'zoom follows the group, not the flyer');
+assert(sightResult({ready: false, min_shots: 3, on_paper: 2, misses: 1, after: 0}, '4', 4.5).includes('2 so far, 1 missed'));
+const sov = sightView(asMine(practiceT), state({sight: {sid: sid, after: 0, data: sg, exit: false}, cpr: '4.0'}));
+assert(sov.includes('id="cpr"') && sov.includes('inputmode="decimal"') && sov.includes('value="4.0"') && sov.includes('data-act="sightdone"'));
+const sex = sightView(asMine(practiceT), state({sight: {sid: sid, after: 0, data: sg, exit: true}, cpr: '4.0'}));
+assert(sex.includes('data-act="sightclear"') && sex.includes('data-act="sightkeep"') && sex.includes('Clear the target'));
+assert(!sightView(asMine(practiceT), state({sight: {sid: sid, after: 0, data: sg, exit: false}, cpr: '"><b>'})).includes('"><b>'), 'the typed value is escaped');
+assert(sightAllowed(asMine(practiceT), state()) && !sightAllowed(asMine(recordT), state()) && !sightAllowed(undefined, state()));
 console.log('OK');

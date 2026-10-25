@@ -14,6 +14,7 @@ from .groupstats import group_stats
 from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
+from .sightadj import suggest
 
 log = logging.getLogger("fetserver.core")
 
@@ -685,6 +686,20 @@ class Core:
         view["ended"] = iso(ser["ended_ms"]) if ser["ended_ms"] is not None else None
         view["device_id"] = ser["device_id"]
         return view
+
+    def sight_suggestion(self, series_id: int, after: int = 0) -> dict:
+        """Sight adjustment for a practice series, from its shots numbered above `after` (the last adjustment)."""
+        c = self.db.conn()
+        ser = c.execute("SELECT * FROM series WHERE id=?", (series_id,)).fetchone()
+        if ser is None:
+            raise NotFound(f"unknown series {series_id}")
+        if ser["kind"] != "practice":
+            raise BadRequest("sight adjustment is only for practice series")
+        rows = c.execute("SELECT series_no, is_miss, ax_h, ay_h FROM shots WHERE series_id=? AND stream='scored' AND series_no>? "
+                         "ORDER BY series_no, id", (series_id, int(after))).fetchall()
+        out = suggest([{"n": r["series_no"], "miss": bool(r["is_miss"]), "x_h": r["ax_h"], "y_h": r["ay_h"]} for r in rows])
+        out.update({"series_id": series_id, "after": int(after)})
+        return out
 
     @staticmethod
     def _segment_stats(c, seg_id: int) -> dict:
