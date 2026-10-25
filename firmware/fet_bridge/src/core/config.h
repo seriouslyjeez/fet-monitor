@@ -12,6 +12,8 @@ struct Config {
   int port = 8080;
   std::string token;           // the server's device token
   std::string name;            // shown on the dashboard; also the network host name
+  std::string ip, gateway, mask;   // fixed address; all empty = ask the router (DHCP). mask empty with ip set = 255.255.255.0
+  bool fixedIp() const { return !ip.empty(); }
   bool wifiConfigured() const { return !ssid.empty(); }
 };
 
@@ -22,6 +24,7 @@ bool configFromJson(const std::string& json, Config& out);        // false if it
 bool loadConfig(Fs& fs, Config& out);                             // false if missing or invalid (out is then defaults)
 bool saveConfig(Fs& fs, const Config& c);                         // validates, then writes atomically
 bool validName(const std::string& n);
+bool parseIpv4(const std::string& s, uint8_t out[4]);              // strict dotted quad, no leading zeros / spaces
 
 // Three power cycles in quick succession reopen the setup portal, with no extra hardware.
 // Call onBoot() once at start-up (it records this boot); tick() clears the record once the unit has stayed up.

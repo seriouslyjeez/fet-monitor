@@ -14,6 +14,23 @@ bool validName(const std::string& n) {
   return true;
 }
 
+bool parseIpv4(const std::string& s, uint8_t out[4]) {
+  int part = 0, digits = 0, val = 0;
+  for (size_t k = 0; k <= s.size(); k++) {
+    char c = k < s.size() ? s[k] : '.';
+    if (c >= '0' && c <= '9') {
+      if (digits == 1 && val == 0) return false;              // leading zero
+      val = val * 10 + (c - '0'); digits++;
+      if (digits > 3 || val > 255) return false;
+    } else if (c == '.') {
+      if (!digits || part > 3) return false;
+      out[part++] = (uint8_t)val; val = 0; digits = 0;
+      if (k == s.size()) break;
+    } else return false;
+  }
+  return part == 4;
+}
+
 static bool printable(const std::string& s, bool allowSpace) {
   for (size_t k = 0; k < s.size(); k++) {
     unsigned char c = (unsigned char)s[k];
@@ -33,6 +50,15 @@ std::string validateConfig(const Config& c) {
     if (c.host[k] == '/' || c.host[k] == '"' || c.host[k] == '\\' || c.host[k] == ':') return "Server address must be a name or IP address only (no http:// and no port)";
   if (c.port < 1 || c.port > 65535) return "Server port must be 1 to 65535";
   if (c.token.size() > 64 || !printable(c.token, false)) return "Token must be at most 64 characters without spaces";
+  if (c.fixedIp()) {
+    uint8_t a[4], g[4], m[4] = {255, 255, 255, 0};
+    if (!parseIpv4(c.ip, a)) return "Fixed IP address is not valid (example 192.168.1.60)";
+    if (!parseIpv4(c.gateway, g)) return "A fixed IP also needs the router's address (gateway), e.g. 192.168.1.1";
+    if (!c.mask.empty() && !parseIpv4(c.mask, m)) return "Subnet mask is not valid (example 255.255.255.0)";
+    uint32_t mk = ((uint32_t)m[0] << 24) | (m[1] << 16) | (m[2] << 8) | m[3];
+    if (!mk || (~mk & (~mk + 1))) return "Subnet mask is not valid (example 255.255.255.0)";
+    for (int i = 0; i < 4; i++) if ((a[i] & m[i]) != (g[i] & m[i])) return "The router address is not on the same network as the fixed IP";
+  } else if (!c.gateway.empty() || !c.mask.empty()) return "Gateway/mask given without a fixed IP address";
   if (!validName(c.name)) return "Target name must be 1 to 32 letters, digits, - or _";
   return "";
 }
@@ -43,7 +69,10 @@ std::string configToJson(const Config& c) {
   jescape(o, c.pass); o += "\",\"host\":\"";
   jescape(o, c.host); o += "\",\"port\":" + i32s(c.port) + ",\"token\":\"";
   jescape(o, c.token); o += "\",\"name\":\"";
-  jescape(o, c.name); o += "\"}";
+  jescape(o, c.name); o += "\",\"ip\":\"";
+  jescape(o, c.ip); o += "\",\"gw\":\"";
+  jescape(o, c.gateway); o += "\",\"mask\":\"";
+  jescape(o, c.mask); o += "\"}";
   return o;
 }
 
@@ -59,6 +88,9 @@ bool configFromJson(const std::string& json, Config& out) {
   if ((x = v.get("port")) && x->asInt(n)) c.port = (int)n;
   if ((x = v.get("token")) && x->type == JVal::Str) c.token = x->s;
   if ((x = v.get("name")) && x->type == JVal::Str) c.name = x->s;
+  if ((x = v.get("ip")) && x->type == JVal::Str) c.ip = x->s;
+  if ((x = v.get("gw")) && x->type == JVal::Str) c.gateway = x->s;
+  if ((x = v.get("mask")) && x->type == JVal::Str) c.mask = x->s;
   out = c;
   return true;
 }

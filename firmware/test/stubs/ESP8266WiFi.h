@@ -34,6 +34,7 @@ class ESP8266WiFiClass {
   wl_status_t status() { return WL_IDLE_STATUS; }
   int32_t RSSI() { return 0; }
   IPAddress localIP() { return IPAddress(); }
+  bool config(IPAddress, IPAddress, IPAddress, IPAddress = IPAddress()) { return true; }
   int hostByName(const char*, IPAddress&, uint32_t = 5000) { return 1; }
   bool softAPConfig(IPAddress, IPAddress, IPAddress) { return true; }
   bool softAP(const char*) { return true; }

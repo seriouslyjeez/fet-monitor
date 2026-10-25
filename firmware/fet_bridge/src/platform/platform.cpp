@@ -182,6 +182,13 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
     else if (!found) notes_.push_back("Scan: " + cfg_.ssid + " not visible. Networks seen: " + std::to_string(n));
     WiFi.scanDelete();
 #endif
+    if (cfg_.fixedIp()) {                                       // skip DHCP entirely
+      uint8_t a[4], g[4], m[4] = {255, 255, 255, 0};
+      fet::parseIpv4(cfg_.ip, a); fet::parseIpv4(cfg_.gateway, g);
+      if (!cfg_.mask.empty()) fet::parseIpv4(cfg_.mask, m);
+      WiFi.config(IPAddress(a[0], a[1], a[2], a[3]), IPAddress(g[0], g[1], g[2], g[3]), IPAddress(m[0], m[1], m[2], m[3]), IPAddress(g[0], g[1], g[2], g[3]));
+      notes_.push_back("Using fixed IP address " + cfg_.ip);
+    }
     lastBegin_ = nowMs();
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
@@ -247,7 +254,7 @@ void WifiNet::update(uint64_t now) {
     say("Not connected to ", line);
   }
 #endif
-  if (!up && cfg_.wifiConfigured() && lastBegin_ && now - lastBegin_ > 45000) {   // a stuck attempt: start it afresh
+  if (!up && cfg_.wifiConfigured() && lastBegin_ && now - lastBegin_ > (assoc_ ? 180000UL : 45000UL)) {   // a stuck attempt: start it afresh (a slow DHCP wait gets longer: a restart only delays it)
     lastBegin_ = now;
     say("Retrying connection to ", cfg_.ssid);
     WiFi.disconnect();

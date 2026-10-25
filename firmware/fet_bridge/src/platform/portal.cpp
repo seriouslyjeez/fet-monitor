@@ -163,6 +163,9 @@ std::string Portal::form(const std::string& error) {
        "<label>Server port</label><input name=port type=number min=1 max=65535 value=\"" + std::to_string(cfg_.port) + "\">"
        "<label>Server token</label><input name=token maxlength=64 autocapitalize=off placeholder=\"" +
        std::string(cfg_.token.empty() ? "" : "leave empty to keep the saved one") + "\">"
+       "<label>Fixed IP address (optional, empty = automatic)</label><input name=ip value=\"" + html(cfg_.ip) + "\" maxlength=15 placeholder='e.g. 192.168.1.60' autocapitalize=off>"
+       "<label>Router address (needed with a fixed IP)</label><input name=gw value=\"" + html(cfg_.gateway) + "\" maxlength=15 placeholder='e.g. 192.168.1.1' autocapitalize=off>"
+       "<label>Subnet mask (empty = 255.255.255.0)</label><input name=mask value=\"" + html(cfg_.mask) + "\" maxlength=15 autocapitalize=off>"
        "<label>Name of this target</label><input name=name value=\"" + html(cfg_.name) + "\" maxlength=32 "
        "pattern='[A-Za-z0-9_-]+' placeholder='Lane-1' required>"
        "<p class=note>Letters, digits, - and _ only.</p>"
@@ -218,6 +221,9 @@ void Portal::handleSave() {
   std::string tok = server.arg("token").c_str();
   if (!tok.empty()) c.token = tok;
   c.name = server.arg("name").c_str();
+  c.ip = server.arg("ip").c_str();
+  c.gateway = server.arg("gw").c_str();
+  c.mask = server.arg("mask").c_str();
   std::string err = fet::validateConfig(c);
   if (err.empty() && c.token.empty()) err = "The server token is required";
   if (!err.empty()) { sendPage(400, form(err)); return; }

@@ -421,6 +421,25 @@ class FirmwareHost(unittest.TestCase):
                     {"port": 70000}, {"token": "has space"}, {"name": "bad name"}, {"name": ""}):
             self.assertNotEqual(check(**bad), "VALID", bad)
 
+    def test_config_fixed_ip(self):
+        base = {"ssid": "club", "pass": "password1", "host": "10.0.0.5", "port": 8080, "token": "abc", "name": "Lane-1"}
+        def check(**kw):
+            d = dict(base); d.update(kw)
+            return self.h.run("cfgcheck " + esc(json.dumps(d)))
+        self.assertEqual(check(ip="192.168.1.60", gw="192.168.1.1"), "VALID")
+        self.assertEqual(check(ip="192.168.1.60", gw="192.168.1.1", mask="255.255.255.0"), "VALID")
+        self.assertEqual(check(ip="10.1.2.3", gw="10.1.0.1", mask="255.255.0.0"), "VALID")
+        for bad in ({"ip": "192.168.1.60"},                                   # no gateway
+                    {"ip": "192.168.1.60", "gw": "192.168.2.1"},              # different network (/24)
+                    {"ip": "192.168.1.256", "gw": "192.168.1.1"},
+                    {"ip": "192.168.001.60", "gw": "192.168.1.1"},             # leading zero
+                    {"ip": "192.168.1", "gw": "192.168.1.1"},
+                    {"ip": "192.168.1.60.1", "gw": "192.168.1.1"},
+                    {"ip": "192.168.1.60", "gw": "192.168.1.1", "mask": "255.0.255.0"},   # not contiguous
+                    {"ip": "192.168.1.60", "gw": "192.168.1.1", "mask": "0.0.0.0"},
+                    {"gw": "192.168.1.1"}):                                    # gateway without ip
+            self.assertNotEqual(check(**bad), "VALID", bad)
+
     def test_quick_boot_three_power_cycles(self):
         self.assertTrue(self.h.run("qboot").startswith("normal 1"))
         self.assertTrue(self.h.run("qboot").startswith("normal 2"))
