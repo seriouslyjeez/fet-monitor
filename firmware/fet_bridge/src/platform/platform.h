@@ -56,7 +56,8 @@ class WifiNet : public fet::Net {
   int connectFails_ = 0;
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
-  uint64_t nextWifiNote_ = 0, lastBegin_ = 0;
+  uint64_t nextWifiNote_ = 0, lastBegin_ = 0, firstBegin_ = 0;
+  bool timedFirst_ = false;
   bool assoc_ = false;                    // associated with an access point (before DHCP gives an address)
   int assocChannel_ = 0;
   std::vector<std::string> notes_;        // one-time findings from before the first connection attempt

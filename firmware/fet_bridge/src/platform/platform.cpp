@@ -158,6 +158,12 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   WiFi.setAutoReconnect(true);
   WiFi.mode(withAccessPoint ? WIFI_AP_STA : WIFI_STA);   // one switch, straight from "off": the well-trodden path
   WiFi.hostname(hostname.c_str());
+#if FET_WIFI_NO_SLEEP
+  WiFi.setSleepMode(WIFI_NONE_SLEEP);              // stay awake: a reply sent while the radio dozes is lost
+#endif
+#if FET_WIFI_PHY_G
+  WiFi.setPhyMode(WIFI_PHY_MODE_11G);
+#endif
   static WiFiEventHandler onDisc, onConn;           // must stay alive for the handlers to keep working
   if (!handlerSet_) {
     handlerSet_ = true;
@@ -190,6 +196,7 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
       notes_.push_back("Using fixed IP address " + cfg_.ip);
     }
     lastBegin_ = nowMs();
+    firstBegin_ = lastBegin_;
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
 }
@@ -197,6 +204,9 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
 void WifiNet::announce() {
   if (cfg_.wifiConfigured()) say("Attempting to connect to network: ", cfg_.ssid);
   else say("No WiFi settings saved: ", "waiting for setup");
+#if FET_STATUS_MESSAGES
+  say("WiFi options: ", std::string("sleep ") + (FET_WIFI_NO_SLEEP ? "off" : "default") + ", mode " + (FET_WIFI_PHY_G ? "802.11g" : "default"));
+#endif
   for (size_t i = 0; i < notes_.size(); i++) say("", notes_[i]);
 }
 
@@ -238,7 +248,11 @@ void WifiNet::update(uint64_t now) {
 #endif
   if (up) lastReason_ = 0;                                              // a stale failure reason must not outlive the failure
 #if FET_STATUS_MESSAGES
-  if (up && !wasUp_) say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")");
+  if (up && !wasUp_) {
+    std::string t;
+    if (!timedFirst_ && firstBegin_) { timedFirst_ = true; t = ", after " + std::to_string((unsigned long)((now - firstBegin_ + 500) / 1000)) + " s"; }
+    say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")" + t);
+  }
 #endif
 #if FET_STATUS_MESSAGES
   if (!up && cfg_.wifiConfigured() && now >= nextWifiNote_) {          // say why, every 10 s, until it connects
