@@ -209,7 +209,7 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
 void WifiNet::announce() {
   if (cfg_.wifiConfigured()) say("Attempting to connect to network: ", cfg_.ssid);
   else say("No WiFi settings saved: ", "waiting for setup");
-#if FET_STATUS_MESSAGES
+#if FET_STATUS_MESSAGES && FET_DEBUG
   say("WiFi options: ", std::string("sleep ") + (FET_WIFI_NO_SLEEP ? "off" : "default") + ", mode " + (FET_WIFI_PHY_G ? "802.11g" : "default"));
 #endif
   for (size_t i = 0; i < notes_.size(); i++) say("", notes_[i]);
@@ -293,16 +293,6 @@ void WifiNet::update(uint64_t now) {
     say("Re-joining ", cfg_.ssid + " (attempt " + std::to_string(reassocCount_) + ")");
     WiFi.disconnect();
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
-  }
-#endif
-#if FET_DHCP_RESTART_MS
-  if (!up && assoc_ && !cfg_.fixedIp() && now - assocAt_ > FET_DHCP_RESTART_MS && now - lastDhcpKick_ > FET_DHCP_RESTART_MS) {
-    lastDhcpKick_ = now;                         // start a fresh DISCOVER: the client's own back-off grows 4, 8, 16 s
-    wifi_station_dhcpc_stop();
-    wifi_station_dhcpc_start();
-#if FET_STATUS_MESSAGES
-    say("Restarting DHCP request on ", cfg_.ssid);
-#endif
   }
 #endif
   if (!up && cfg_.wifiConfigured() && lastBegin_ && now - lastBegin_ > (assoc_ ? 180000UL : 45000UL)) {   // a stuck attempt: start it afresh (a slow DHCP wait gets longer: a restart only delays it)

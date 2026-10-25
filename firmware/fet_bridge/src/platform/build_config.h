@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.1.14"
+#define FET_FW_VERSION "0.1.15"
 
 #ifndef FET_ENABLE_OTA
 #define FET_ENABLE_OTA 1          // Arduino OTA push from the IDE / espota (needs a token; the token is the password)
@@ -30,7 +30,7 @@
 //   Setup portal open. Join WiFi: <name>
 //   Connected to network: <ssid> (<ip>) each time WiFi connects
 //   First report to FET: success|fail   the first HTTP exchange with the server after power-up
-// WiFi/DHCP experiments (see README "Slow IP address"). Change ONE at a time and compare "Connected ... after N s".
+// WiFi/DHCP settings from the "Slow IP address" experiments (see README). The 0.1.14 values are the fix; leave them.
 #ifndef FET_WIFI_NO_SLEEP
 #define FET_WIFI_NO_SLEEP 1      // 1 = modem sleep off: the radio stays awake so a DHCP reply is not missed
 #endif
@@ -39,10 +39,7 @@
 #endif
 
 #ifndef FET_DHCP_DIAG
-#define FET_DHCP_DIAG 1          // 1 = show the DHCP client's state/tries in the status line (needs lwip headers)
-#endif
-#ifndef FET_DHCP_RESTART_MS
-#define FET_DHCP_RESTART_MS 0    // >0: associated but no IP: restart the DHCP request this often. OFF: 0.1.11 showed it leaves the client in state 0 (off)
+#define FET_DHCP_DIAG 0          // 1 = show the DHCP client's state/tries in the status line (needs lwip headers)
 #endif
 
 #ifndef FET_REASSOC_MS

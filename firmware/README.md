@@ -61,3 +61,12 @@ esp8266/Arduino issue #8299 (core > 2.5.2, ASUS routers incl. XT8 mesh: associat
 only when the ESP used 802.11g). `FET_WIFI_PHY_G` is now 1. The PHY mode can persist in the chip's flash, so after
 removing it again, power-cycle and check the "WiFi options" line. Router-side alternatives from the thread: turn off
 "Wi-Fi Agile Multiband" on 2.4 GHz, or disable 802.11n/"legacy" mode. The 15 s re-join (0.1.13) stays as a safety net.
+
+### Firmware 0.1.15: diagnostics off
+
+The 802.11g fix holds, so the experiment output is off: `FET_DHCP_DIAG 0` (no `[netif ...]` on the "Not connected"
+line) and the `WiFi options: ...` line only prints with `FET_DEBUG 1`. The ordinary status lines (connecting, connected
+after N s, re-joining, first report, setup portal) stay; `FET_STATUS_MESSAGES 0` removes them all. The WiFi settings
+themselves are unchanged (802.11g, sleep off, 15 s re-join). The DHCP-restart experiment (`FET_DHCP_RESTART_MS`,
+off since 0.1.12 because it switched lwIP's DHCP client off) is removed from the code. For a slow-connect investigation, set `FET_DHCP_DIAG 1`
+and `FET_DEBUG 1` again.

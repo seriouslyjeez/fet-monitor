@@ -56,7 +56,7 @@ class WifiNet : public fet::Net {
   int connectFails_ = 0;
   int port_ = 8080;
   bool mdnsUp_ = false, wasUp_ = false, reportedFirst_ = false;
-  uint64_t assocAt_ = 0, lastDhcpKick_ = 0, lastReassoc_ = 0, nextWifiNote_ = 0, lastBegin_ = 0, firstBegin_ = 0;
+  uint64_t assocAt_ = 0, lastReassoc_ = 0, nextWifiNote_ = 0, lastBegin_ = 0, firstBegin_ = 0;
   bool timedFirst_ = false;
   unsigned reassocCount_ = 0;
   bool assoc_ = false;                    // associated with an access point (before DHCP gives an address)
