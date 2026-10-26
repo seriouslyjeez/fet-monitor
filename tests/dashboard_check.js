@@ -336,7 +336,10 @@ const fwPanel = s => rcIn(Object.assign({sel: {'lane-1': true}, images: [IMG]}, 
 assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1) on 1 selected'));
 assert(/data-act="rcflash"[^>]*disabled/.test(rcIn({sel: {}, images: [IMG]})), 'nothing selected: disabled');
 assert(rcIn({sel: {}, images: []}).includes('No images uploaded.'));
-assert(/data-act="rcupload" disabled/.test(fwPanel()) && fwPanel({file: {name: '<x>.bin'}}).includes('Upload &lt;x&gt;.bin'));
+assert(fwPanel().includes('data-act="rcpickfiles">Upload firmware files') && !fwPanel().includes('type="file"'), 'the file input is not part of the redrawn screen');
+assert(/data-act="rcpickfiles" disabled>Uploading/.test(fwPanel({uploading: true})));
+const res2 = fwPanel({fwResults: [{name: '<a>.bin', ok: true, text: 'stored 0.2.1'}, {name: 'b.bin', ok: false, text: 'not accepted: <x>'}]});
+assert(res2.includes('<li class="mut"><b>&lt;a&gt;.bin</b>: stored 0.2.1') && res2.includes('<li class="bad"><b>b.bin</b>: not accepted: &lt;x&gt;'));
 assert(fwPanel({fwMsg: '<i>no</i>', fwMsgBad: true}).includes('class="bad">&lt;i&gt;no'));
 // best image hint, restart / setup portal
 assert(fwJobText(Object.assign(fwT(null), {fw_best: {version: '0.2.4'}}), [IMG]).includes('0.2.4 available'));

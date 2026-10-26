@@ -64,7 +64,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
 .notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
-#ver:hover{opacity:1;color:var(--fg)}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
+#ver:hover{opacity:1;color:var(--fg)}.fwres{margin:6px 0;padding-left:18px;font-size:13px}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -76,6 +76,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
+<input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
 <script>
 'use strict';
@@ -495,8 +496,9 @@ function rangeView(S) {
     'targets that are up to date or have no suitable image are skipped with the reason. Targets on older firmware need one update by USB first.</p>' +
     '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' selected to best</button>' +
     '<button data-act="rcfwgh">Check GitHub for FeT Bridge firmware</button></div>' +
-    '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input type="file" id="rcfile" accept=".bin,application/octet-stream">' +
-    '<button data-act="rcupload"' + (rc.file ? '' : ' disabled') + '>Upload' + (rc.file ? ' ' + esc(rc.file.name) : '') + '</button></div>' +
+    '<div class="bulk"><button data-act="rcpickfiles"' + (rc.uploading ? ' disabled' : '') + '>' + (rc.uploading ? 'Uploading…' : 'Upload firmware files…') + '</button>' +
+    '<span class="mut">pick one or more .bin files; they upload straight away</span></div>' +
+    (rc.fwResults && rc.fwResults.length ? '<ul class="fwres">' + rc.fwResults.map(r => '<li class="' + (r.ok ? 'mut' : 'bad') + '"><b>' + esc(r.name) + '</b>: ' + esc(r.text) + '</li>').join('') + '</ul>' : '') +
     (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
     (imgs.length ? '<table class="t"><tr><th></th><th>Version</th><th>Flash</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr>' + imgs.map(m =>
       '<tr><td><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Use ' + esc(m.version) + '"></td>' +
@@ -702,16 +704,7 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rcpick') { rc.fwPick = el.dataset.sha; return render(); }
-  if (a === 'rcupload') {
-    if (!rc.file) return;
-    rc.fwMsg = 'Uploading ' + rc.file.name + '…'; rc.fwMsgBad = false; render();
-    const r = await fetch(API + '/admin/firmware', {method: 'POST', credentials: 'same-origin', body: rc.file,
-      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
-    const d = r ? await r.json().catch(() => ({})) : {};
-    if (r && r.status === 200) { rc.fwMsg = 'Uploaded ' + d.version + ' (' + d.sha256.slice(0, 12) + '…).'; rc.fwPick = d.sha256; rc.file = null; }
-    else { rc.fwMsg = 'Not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed')); rc.fwMsgBad = true; }
-    return refresh();
-  }
+  if (a === 'rcpickfiles') { const f = document.getElementById('rcfile'); if (f && !rc.uploading) f.click(); return; }
   if (a === 'rcfwdel') {
     if (!confirm('Delete this firmware image from the Pi?')) return;
     await adminCall('/firmware/' + el.dataset.sha + '/delete', {});
@@ -774,6 +767,25 @@ async function rangeAct(el, a) {
   return refresh();
 }
 
+async function uploadFirmware(files) {
+  const rc = S.rc = S.rc || {sel: {}};
+  rc.uploading = true; rc.fwMsg = ''; rc.fwResults = files.map(f => ({name: f.name, ok: true, text: 'waiting'}));
+  render();
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i], out = rc.fwResults[i];
+    if (f.size > 1048576) { out.ok = false; out.text = 'too big for a FeT Bridge image (1 MB at most)'; render(); continue; }
+    out.text = 'uploading…'; render();
+    const r = await fetch(API + '/admin/firmware', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (r && r.status === 200) { out.text = 'stored ' + d.version + ' for ' + Math.round(d.flash_size / 1048576) + ' MB flash'; rc.fwPick = d.sha256; }
+    else { out.ok = false; out.text = 'not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed')); if (r && r.status === 401) { toast('Logged out: log in again'); break; } }
+    render();
+  }
+  rc.uploading = false;
+  return refresh();
+}
+
 function reviewMove(move) {
   const v = S.reviewView;
   if (!S.review || !v) return;
@@ -786,9 +798,10 @@ function boot() {
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
-  document.addEventListener('change', e => {            // keep the chosen file: the screen is redrawn every few seconds
-    if (e.target && e.target.id === 'rcfile') { S.rc = S.rc || {sel: {}}; S.rc.file = e.target.files[0] || null; S.rc.fwMsg = ''; render(); }
-  });
+  // The file input lives outside the redrawn screen (index.html), so a redraw while the file dialog is open cannot
+  // swallow the choice. Whatever is chosen uploads at once, one file after another.
+  const picker = document.getElementById('rcfile');
+  if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
   document.addEventListener('input', e => {
     if (e.target.id !== 'cpr') return;

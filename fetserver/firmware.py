@@ -33,7 +33,7 @@ class BadImage(ValueError):
 def inspect(data: bytes) -> dict:
     """Check an upload; returns its description or raises BadImage with a reason a person can act on."""
     if not MIN_IMAGE <= len(data) <= MAX_IMAGE:
-        raise BadImage(f"size {len(data)} bytes: a bridge firmware image is {MIN_IMAGE // 1024} KB to {MAX_IMAGE // 1024} KB")
+        raise BadImage(f"size {len(data)} bytes: a FeT Bridge firmware image is {MIN_IMAGE // 1024} KB to {MAX_IMAGE // 1024} KB")
     if data[0] != 0xE9:
         raise BadImage("not an ESP8266 firmware image (use the .bin from Sketch > Export Compiled Binary)")
     if not 1 <= data[1] <= 16:
