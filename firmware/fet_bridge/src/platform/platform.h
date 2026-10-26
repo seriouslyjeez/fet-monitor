@@ -78,7 +78,9 @@ class SerialUart : public fet::Uart {
 struct PlatformHooks : fet::Hooks {
   bool portalWanted = false;
   uint64_t rebootAt = 0;                  // 0 = none
+  uint64_t eraseAt = 0;                   // factory reset due (0 = none)
   void reboot() override;
+  void factoryReset() override { eraseAt = nowMs() + 400; }
   void openPortal() override { portalWanted = true; }
   uint32_t random32() override;
 };

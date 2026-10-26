@@ -344,4 +344,7 @@ assert(!fwJobText(Object.assign(fwT({status: 'sent', sha256: IMG.sha256}), {fw_b
 assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 selected to best') && fwPanel().includes('FeT Bridge firmware'));
 assert(/data-act="rcbest"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}, images: []})), 'no images: disabled');
 assert(fwPanel().includes('data-act="rccmd" data-type="reboot"') && fwPanel().includes('data-type="wifi_portal"'));
+// factory reset: exactly one target
+assert(/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {}})) && /data-act="rcreset"[^>]*disabled/.test(rcIn({sel: every})));
+assert(!/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}})));
 console.log('OK');

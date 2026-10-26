@@ -449,7 +449,8 @@ function rangeView(S) {
     '<button data-act="rccmd" data-type="reboot"' + (nsel ? '' : ' disabled') + '>Restart</button>' +
     '<button data-act="rccmd" data-type="wifi_portal"' + (nsel ? '' : ' disabled') + '>Setup portal</button>' +
     '<button class="danger" data-act="rcremove"' + (nsel ? '' : ' disabled') + '>Remove</button>' +
-    '<button class="danger" data-act="rcban"' + (nsel ? '' : ' disabled') + '>Ban</button></div>' +
+    '<button class="danger" data-act="rcban"' + (nsel ? '' : ' disabled') + '>Ban</button>' +
+    '<button class="danger" data-act="rcreset"' + (nsel === 1 ? '' : ' disabled') + ' title="One target at a time">Factory reset</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
     '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
@@ -679,6 +680,24 @@ async function rangeAct(el, a) {
     }
     rc.fwMsg = (sent ? 'Update sent to ' + sent + ' target(s). ' : '') + (errs.length ? 'Not sent to ' + errs.length + ' target(s): ' + errs.join(' · ') : '');
     rc.fwMsgBad = errs.length > 0;
+    return refresh();
+  }
+  if (a === 'rcreset') {                      // for selling or disposing of a target: one at a time, with the name typed in
+    const ids = chosen(), t = ((rc.data || {}).targets || []).find(x => x.device_id === ids[0]);
+    if (ids.length !== 1 || !t) return toast('Select exactly one target');
+    const q = t.queue_depth || 0;
+    if (!confirm('FACTORY RESET ' + t.name + ' (' + t.device_id + ')?\n\n' +
+        'Its FeT Bridge erases everything it stored: club WiFi name and password, server address and token, its name' +
+        (q ? ', and ' + q + ' shot' + (q === 1 ? '' : 's') + ' NOT YET DELIVERED, which will be lost' : '') + '.\n' +
+        'It then restarts as a new unit with an open setup WiFi and drops off this list. Shots already received stay in the history.\n\n' +
+        'This cannot be undone. Use it before selling or disposing of a target.')) return;
+    const typed = prompt('Type the target\'s name to confirm: ' + t.name);
+    if (typed === null) return;
+    if (typed.trim() !== t.name) return toast('The name did not match: nothing was reset');
+    const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/command', {type: 'factory_reset'});
+    if (res.status === 200) toast(t.name + ': factory reset sent; it erases itself at its next report');
+    else toast(res.data.error || 'Factory reset not sent');
+    delete sel[t.device_id];
     return refresh();
   }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }

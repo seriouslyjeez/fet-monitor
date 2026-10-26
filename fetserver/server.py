@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
 from .core import BadRequest, Core, Forbidden, NotFound, iso
-from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for
+from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -24,6 +24,7 @@ SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
 ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command)$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
+FACTORY_RESET_MIN = (0, 2, 2)
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
@@ -182,6 +183,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
             if what == "command":                     # restart, setup portal, allowlisted serial lines: Range Control only
+                if payload.get("type") == "factory_reset":
+                    fw = core.firmware_info(did)["bridge_fw"]
+                    if (version_tuple(fw) or (0, 0, 0)) < FACTORY_RESET_MIN:
+                        raise BadRequest(f"{did} runs FeT Bridge {fw or '?'}; factory reset needs 0.2.2 or newer "
+                                         "(or use its setup portal: Forget settings)")
+                    log.warning("Range Control from %s: FACTORY RESET of %s", self.client_address[0], did)
                 return self._send(200, {"id": core.enqueue_command(did, payload.get("type"), payload.get("line"))})
             if what == "firmware":
                 if payload.get("sha256") == "best":       # the newest image built for this target's flash size that fits

@@ -2,6 +2,7 @@
 // Reads the Arduino's shot lines on the serial port, stores them durably in flash, and delivers each one to the
 // Raspberry Pi server exactly once (retrying until acknowledged). See README.md in this folder.
 #include <ESP8266WiFi.h>
+#include <LittleFS.h>
 #include "src/core/bridge.h"
 #include "src/core/config.h"
 #include "src/platform/build_config.h"
@@ -125,6 +126,12 @@ void loop() {
 #if FET_ENABLE_OTA
   if (g_otaStarted) ArduinoOTA.handle();
 #endif
+  if (g_hooks.eraseAt && nowMs() >= g_hooks.eraseAt) {   // factory reset: wipe our files and the SDK's WiFi area, restart blank
+    say("Factory reset: erasing everything", "");
+    LittleFS.format();
+    ESP.eraseConfig();
+    ESP.restart();
+  }
   if (g_hooks.rebootAt && nowMs() >= g_hooks.rebootAt) ESP.restart();
   delay(1);                                               // lets the WiFi stack run; the UART has a 2 KB FIFO behind this
 }

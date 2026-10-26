@@ -22,7 +22,7 @@ EVENT_TYPES = {"shot", "config", "arduino_boot", "log"}
 MAX_EVENTS_PER_BATCH = 50
 MAX_RAW_CHARS = 16384
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-COMMAND_TYPES = {"serial", "wifi_portal", "reboot"}
+COMMAND_TYPES = {"serial", "wifi_portal", "reboot", "factory_reset"}    # queued from Range Control only
 # Only harmless Arduino commands may be queued. INIT, BYE, CAL, TEST, ... are deliberately absent.
 ALLOWED_SERIAL = [
     re.compile(r'^\{"ECHO":0\}$'),
@@ -375,9 +375,14 @@ class Core:
             for r in results:
                 if isinstance(r, dict) and isinstance(r.get("id"), int):
                     status = "done" if r.get("status") == "done" else "failed"
-                    c.execute("""UPDATE commands SET status=?, acked_ms=?, result=?
-                                 WHERE id=? AND device_id=? AND status IN ('queued','sent')""",
-                              (status, recv_ms, _str(r.get("reply"), 500), r["id"], device_id))
+                    cur = c.execute("""UPDATE commands SET status=?, acked_ms=?, result=?
+                                       WHERE id=? AND device_id=? AND status IN ('queued','sent')""",
+                                    (status, recv_ms, _str(r.get("reply"), 500), r["id"], device_id))
+                    if cur.rowcount and status == "done" and c.execute(
+                            "SELECT type FROM commands WHERE id=?", (r["id"],)).fetchone()[0] == "factory_reset":
+                        # the unit is erasing itself and will not report again: take it off the lists (history stays)
+                        c.execute("UPDATE targets SET removed=1 WHERE device_id=?", (device_id,))
+                        c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
             rows = c.execute("""SELECT id, type, line FROM commands WHERE device_id=? AND status IN ('queued','sent')
                                 ORDER BY id LIMIT ?""", (device_id, MAX_COMMANDS_PER_HEARTBEAT)).fetchall()
             changed = bool(results)
@@ -399,6 +404,8 @@ class Core:
         if ctype == "serial":
             if not isinstance(line, str) or not any(p.match(line) for p in ALLOWED_SERIAL):
                 raise BadRequest("serial line is not on the allowlist")
+        elif ctype == "factory_reset":
+            line = "erase"                    # the bridge refuses a factory reset without this word
         else:
             line = None
         with self.db.write() as c:

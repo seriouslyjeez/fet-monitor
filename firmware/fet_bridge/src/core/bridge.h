@@ -52,7 +52,7 @@ class Bridge : public RecordSink {
   size_t batchMax_ = 10;
   long long lastCmd_ = 0;
   std::vector<Result> results_;
-  bool rebootPending_ = false;
+  bool rebootPending_ = false, erasePending_ = false;
   std::string arduinoVersion_, lastError_;
 };
 

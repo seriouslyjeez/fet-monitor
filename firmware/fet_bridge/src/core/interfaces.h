@@ -46,6 +46,9 @@ struct Hooks {
   virtual void reboot() = 0;
   virtual void openPortal() = 0;
   virtual uint32_t random32() = 0;        // hardware randomness (used to seed the boot number when the counter is lost)
+  // Factory reset: erase everything this unit stored (settings, token, queued shots, boot counter, the SDK's WiFi
+  // area), then restart unconfigured, i.e. into the open setup portal.
+  virtual void factoryReset() = 0;
 };
 
 }  // namespace fet

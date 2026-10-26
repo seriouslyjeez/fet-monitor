@@ -122,7 +122,8 @@ struct TcpNet : Net {
 };
 
 struct CapUart : Uart { std::string log; void write(const std::string& s) override { log += s; } };
-struct CapHooks : Hooks { int reboots = 0, portals = 0; uint32_t rnd = 12345; void reboot() override { reboots++; } void openPortal() override { portals++; }
+struct CapHooks : Hooks { int reboots = 0, portals = 0, erases = 0; uint32_t rnd = 12345; void reboot() override { reboots++; } void openPortal() override { portals++; }
+  void factoryReset() override { erases++; }
   uint32_t random32() override { rnd = rnd * 1664525u + 1013904223u; return rnd; } };
 
 static std::string unescape(const std::string& s) {
@@ -156,7 +157,7 @@ int main() {
     else if (cmd == "cap") cap = (size_t)atol(rest.c_str());
     else if (cmd == "boot") { br.reset(); t = 0; br.reset(new Bridge(fs, net, uart, hooks, info, cap)); br->begin(t); }
     else if (cmd == "uart") { std::string d = unescape(rest); for (unsigned char c : d) { t += 1; br->onByte(c, t); } }
-    else if (cmd == "tick") { long ms = atol(rest.c_str()); for (long k = 0; k < ms; k += 50) { t += 50; br->tick(t); } }
+    else if (cmd == "tick") { long ms = atol(rest.c_str()); for (long k = 0; k < ms; k += 50) { t += 50; br->tick(t); if (hooks.erases) net.up = false; } }   // an erased unit no longer reports
     else if (cmd == "wipe") { fs.files.clear(); }
     else if (cmd == "net") net.up = rest == "up";
     else if (cmd == "drop") net.dropPct = atoi(rest.c_str());
@@ -168,6 +169,7 @@ int main() {
     else if (cmd == "status") std::cout << br->statusJson(t) << "\n";
     else if (cmd == "uartlog") std::cout << escape(uart.log) << "\n";
     else if (cmd == "flags") std::cout << hooks.reboots << " " << hooks.portals << " " << net.requests << " " << br->bootCount() << " " << br->queued() << "\n";
+    else if (cmd == "erases") std::cout << hooks.erases << "\n";
     else if (cmd == "files") { for (auto& kv : fs.files) if (kv.first.compare(0, 2, "/q") == 0) std::cout << kv.first << " "; std::cout << "\n"; }
     else if (cmd == "jparse") { JVal v; std::cout << (jparse(unescape(rest), v) ? "OK" : "ERR") << "\n"; }
     else if (cmd == "cfgcheck") { Config c; if (!configFromJson(unescape(rest), c)) std::cout << "BADJSON\n"; else { std::string e = validateConfig(c); std::cout << (e.empty() ? "VALID" : e) << "\n"; } }

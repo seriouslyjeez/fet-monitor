@@ -259,6 +259,20 @@ class FirmwareHttp(ServerCase):
         self.assertEqual(self.req("POST", f"/api/v1/admin/firmware/{meta['sha256']}/delete", {})[0], 200)
         self.assertEqual(self.req("POST", f"/api/v1/admin/firmware/{meta['sha256']}/delete", {})[0], 404)
 
+    def test_factory_reset_over_http(self):
+        self.login()
+        self.core.handle_heartbeat({"device_id": "old", "boot_count": 1, "uptime_ms": 1, "bridge_fw": "0.2.1", "ota_space": 1, "flash_size": MB})
+        self.core.handle_heartbeat({"device_id": "new", "boot_count": 1, "uptime_ms": 1, "bridge_fw": "0.2.2", "ota_space": 1, "flash_size": MB})
+        st, payload, _ = self.req("POST", "/api/v1/admin/targets/old/command", {"type": "factory_reset"})
+        self.assertEqual(st, 400)
+        self.assertIn("needs 0.2.2", json.loads(payload)["error"])
+        st, payload, _ = self.req("POST", "/api/v1/admin/targets/new/command", {"type": "factory_reset"})
+        self.assertEqual(st, 200, payload)
+        line = self.core.db.conn().execute("SELECT line FROM commands WHERE device_id='new'").fetchone()[0]
+        self.assertEqual(line, "erase")
+        self.cookie = None
+        self.assertEqual(self.req("POST", "/api/v1/admin/targets/new/command", {"type": "factory_reset"})[0], 401)
+
     def test_too_big_is_refused_before_reading(self):
         self.login()
         st, _, _ = self.req("POST", "/api/v1/admin/firmware", raw=b"\xe9" * (MB + 1), ctype="application/octet-stream")
@@ -327,6 +341,25 @@ class UpdateRun(ServerCase):
             self.h.run("tick 6000")
             self.assertEqual(tuple(self.status(cid)), ("failed", "refused: bad firmware command"), line)
         self.assertEqual(self.h.run("fwstate").split()[0], "none")
+
+    def test_factory_reset_erases_after_reporting_and_leaves_the_list(self):
+        self.h.run("tick 6000")
+        self.assertEqual([t["device_id"] for t in self.core.list_targets()], ["fet-test01"])
+        cid = self.core.enqueue_command("fet-test01", "factory_reset")
+        self.h.run("tick 12000")
+        st, result = self.status(cid)
+        self.assertEqual(st, "done")
+        self.assertIn("erasing all settings", result)
+        self.assertEqual(self.h.run("erases"), "1", "erased only after the server had the result")
+        self.assertEqual(self.core.list_targets(), [], "taken off the lists; history stays")
+
+    def test_factory_reset_needs_the_word(self):
+        with self.core.db.write() as c:
+            cid = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                            ("fet-test01", "factory_reset", None, 1)).lastrowid
+        self.h.run("tick 8000")
+        self.assertEqual(tuple(self.status(cid)), ("failed", 'refused: factory reset needs "erase"'))
+        self.assertEqual(self.h.run("erases"), "0")
 
     def test_fwcheck_holds_back_the_last_byte_and_refuses_extra(self):
         self.assertEqual(self.h.run("fwcheck"), "6 0 3 1 1 10", "6 taken, 6 more refused (too many), 4 -> 3 + held byte")

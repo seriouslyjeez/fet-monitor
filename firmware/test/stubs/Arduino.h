@@ -51,6 +51,7 @@ struct EspClass {
   uint32_t getChipId();
   uint32_t getFreeHeap();
   uint32_t getFreeSketchSpace();
+  bool eraseConfig();
   void restart();
 };
 extern EspClass ESP;

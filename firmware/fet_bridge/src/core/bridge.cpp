@@ -188,6 +188,7 @@ void Bridge::sendHeartbeat(uint64_t now) {
     }
   }
   if (ran) nextHb_ = now;                                  // report the results at once
+  if (erasePending_ && results_.empty()) { erasePending_ = false; hooks_.factoryReset(); return; }   // the server has the result
   if (rebootPending_ && results_.empty()) { rebootPending_ = false; hooks_.reboot(); }
 }
 
@@ -214,6 +215,11 @@ void Bridge::runCommand(long long id, const std::string& type, const std::string
   } else if (type == "reboot") {
     results_.push_back(Result{id, true, "rebooting"});
     rebootPending_ = true;
+  } else if (type == "factory_reset") {
+    // For selling or disposing of a target. The word "erase" must be in the command, so nothing else triggers it.
+    if (line != "erase") { results_.push_back(Result{id, false, "refused: factory reset needs \"erase\""}); return; }
+    results_.push_back(Result{id, true, "erasing all settings and " + u32s((uint32_t)log_.pending()) + " queued events, restarting"});
+    erasePending_ = true;
   } else if (type == "fw_update") {
     // line = "<sha256 hex> <size>". The image comes from the server we already report to (same token).
     size_t sp = line.find(' ');
