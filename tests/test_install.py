@@ -130,8 +130,8 @@ def free_port():
         return s.getsockname()[1]
 
 
-@unittest.skipUnless(BASH, "bash 4 or newer not found")
-class Installer(unittest.TestCase):
+class InstallerBase(unittest.TestCase):
+    """Fake root, stand-ins and helpers; no tests of its own (test_update_helper.py builds on it)."""
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -189,7 +189,10 @@ class Installer(unittest.TestCase):
         with urllib.request.urlopen(req, timeout=3) as r:
             return json.load(r)
 
-    # ------------------------------------------------------------------ tests
+
+
+@unittest.skipUnless(BASH, "bash 4 or newer not found")
+class Installer(InstallerBase):
     def test_fresh_install_then_rerun_upgrade(self):
         r = self.run_install(stdin="club range pw\nclub range pw\n")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
@@ -201,10 +204,12 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.mode("var/lib/fet-monitor/admin_password"), 0o600)
         self.assertEqual(self.mode("var/lib/fet-monitor"), 0o750)
         self.assertEqual(self.mode("var/backups/fet-monitor"), 0o750)
-        for u in ("fet-monitor.service", "fet-monitor-backup.service", "fet-monitor-backup.timer"):
+        for u in ("fet-monitor.service", "fet-monitor-backup.service", "fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor-update.service"):
             self.assertTrue((self.root / "etc/systemd/system" / u).exists(), u)
         state = json.loads((self.root / ".systemd.json").read_text())
-        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor.service"])
+        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor.service"])
+        self.assertEqual(self.mode("opt/fet-monitor/bin/fet-monitor-update"), 0o755)
+        self.assertEqual(self.mode("var/lib/fet-monitor/update"), 0o750)
         self.assertTrue(self.get("/api/v1/health")["ok"])
         self.assertIn("useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin fet-monitor", self.calls())
         self.assertIn("runuser -u fet-monitor -- python3 -m fetserver set-password", self.calls())
@@ -221,7 +226,7 @@ class Installer(unittest.TestCase):
         self.assertEqual((self.root / "var/lib/fet-monitor/device_token").read_text().strip(), tok)
         self.assertEqual((self.root / "var/lib/fet-monitor/admin_password").read_text(), pw_before)
         self.assertFalse((self.root / "opt/fet-monitor/fetserver/stale_module.py").exists(), "code replaced, not merged")
-        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "fetserver"],
+        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "bin", "fetserver"],
                          "no fetserver.old / fetserver.new left behind")
         self.assertIn("stopping the running server for the upgrade", r.stdout)
         self.assertEqual(self.get("/api/v1/targets")["targets"][0]["shot_count"], 1, "data untouched")

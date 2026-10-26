@@ -1,0 +1,9 @@
+[Unit]
+Description=FeT Monitor: watch for an update request from Range Control
+
+[Path]
+PathExists=/var/lib/fet-monitor/update/request.json
+Unit=fet-monitor-update.service
+
+[Install]
+WantedBy=multi-user.target

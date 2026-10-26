@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -347,4 +347,16 @@ assert(fwPanel().includes('data-act="rccmd" data-type="reboot"') && fwPanel().in
 // factory reset: exactly one target
 assert(/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {}})) && /data-act="rcreset"[^>]*disabled/.test(rcIn({sel: every})));
 assert(!/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}})));
+// server updates panel
+const U = (o) => Object.assign({current: '0.6.24', helper_installed: true, pending: false, status: null, last_check: null}, o || {});
+assert.strictEqual(updatesPanel(null), '');
+assert(updatesPanel(U()).includes('Running <b>v0.6.24</b>') && updatesPanel(U()).includes('data-act="rcupcheck"') && !updatesPanel(U()).includes('rcupinstall'));
+const avail = U({last_check: {available: true, latest: {version: '0.6.25', notes: '<script>x</script>\nline 2', published: '2026-10-26T10:00:00Z'}}});
+assert(updatesPanel(avail).includes('data-act="rcupinstall" data-v="0.6.25">Install v0.6.25'));
+assert(updatesPanel(avail).includes('&lt;script&gt;x&lt;/script&gt;') && !updatesPanel(avail).includes('<script>x'), 'release notes are escaped');
+assert(/rcupinstall[^>]*disabled/.test(updatesPanel(Object.assign({}, avail, {helper_installed: false}))) && updatesPanel(Object.assign({}, avail, {helper_installed: false})).includes('not installed'));
+assert(/rcupinstall[^>]*disabled/.test(updatesPanel(Object.assign({}, avail, {pending: true}))));
+assert(updatesPanel(U({last_check: {available: false, latest: {version: '0.6.24'}}})).includes('This is the newest release'));
+assert(updatesPanel(U({status: {state: 'rolled_back', version: '0.6.25', message: 'did not start', time: 1793000000000}})).includes('class="bad">Update rolled back (v0.6.25): did not start'));
+assert(fwPanel().includes('data-act="rcfwgh"'));
 console.log('OK');

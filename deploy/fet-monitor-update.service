@@ -1,0 +1,11 @@
+[Unit]
+Description=FeT Monitor: install a signed update requested from Range Control
+# The helper checks the release again itself (signature with the installed key, checksum, layout), backs up the
+# database, runs the release's install.sh and rolls back if the new version does not start.
+
+[Service]
+Type=oneshot
+ExecStart=/opt/fet-monitor/bin/fet-monitor-update
+TimeoutStartSec=600
+PrivateTmp=true
+NoNewPrivileges=true

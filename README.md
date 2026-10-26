@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.23: firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.24: signed updates from GitHub; firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -55,6 +55,15 @@ room and runs a build for the same flash size (a 1 MB image on a 4 MB-layout ESP
 queued shots). The target downloads it from the Pi with its device token, checks the SHA-256 before the last byte
 reaches the updater (a damaged download is abandoned, the running firmware stays), reports, and restarts.
 Each row shows the update's progress. Targets on 0.1.x need one update to 0.2.0 by USB or their `/update` page first.
+
+**FeT Monitor updates** (Range Control): *Check for updates* asks GitHub for the newest release, shows its notes and
+offers *Install*. Only releases signed with the FeT Monitor release key (pinned in `fetserver/release_signers`) are
+accepted: the server checks the signature, the checksum and the archive, then a small root service
+(`fet-monitor-update.path` / `.service`, installed by `install.sh`) checks everything again itself, backs up the
+database, runs the release's `install.sh`, and if the new version does not start puts back the previous code and
+database. *Check GitHub for FeT Bridge firmware* downloads the newest signed `fw-` release's images the same way.
+*Factory reset* (one target, FeT Bridge 0.2.2+) erases a target's settings and queue before it is sold or disposed of.
+Releasing: [docs/RELEASING.md](docs/RELEASING.md). The repository must be public for the Pi to see releases.
 
 The login lasts 2 hours idle, 12 hours at most, and ends when the password changes or the server restarts; five wrong
 passwords from one address lock it for 10 minutes. The LAN is plain HTTP, so the password can be overheard there:
@@ -184,6 +193,8 @@ backup from /var/backups/fet-monitor in that case.
 | GET /admin/firmware; POST /admin/firmware/<sha256>/delete | Range Control | Stored images (version, size, flash size, SHA-256) |
 | GET /firmware/<sha256> | target (X-FET-Token) | The image a target was told to install |
 | POST /admin/targets/<id>/mode\|remove\|ban\|unban\|firmware\|command | Range Control | `command`: `{type: reboot\|wifi_portal\|serial, line}` (serial lines allowlisted). `firmware`: `{sha256}` or `{sha256: "best"}` queues an update (refused with the reason if the target cannot take it). `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
+| GET /admin/updates; POST /admin/updates/check, /admin/updates/install | Range Control | Update status (GET never contacts GitHub); check GitHub; `{version}` stages a signed release for the root update service (202) |
+| POST /admin/firmware/github | Range Control | Download the newest signed FeT Bridge release's images |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 
 ## Durability notes

@@ -16,6 +16,7 @@ from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
+from .releases import ReleaseError, Updates, fetch_firmware
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -169,6 +170,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, view)
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
+        if path == "/api/v1/admin/updates" and method == "GET":
+            return self._send(200, {"current": __version__, **self.server.updates.status()})
+        if path == "/api/v1/admin/updates/check" and method == "POST":
+            try:
+                return self._send(200, {"current": __version__, **self.server.updates.check(__version__)})
+            except ReleaseError as exc:
+                return self._send(502, {"error": str(exc)})
+        if path == "/api/v1/admin/updates/install" and method == "POST":
+            try:
+                meta = self.server.updates.install(str(payload.get("version", "")))
+            except ReleaseError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: server update to %s requested", self.client_address[0], meta["version"])
+            return self._send(202, meta)
+        if path == "/api/v1/admin/firmware/github" and method == "POST":
+            store = self.server.firmware
+            try:
+                res = fetch_firmware(self.server.updates.gh, lambda sha: store.get(sha) is not None,
+                                     lambda data: store.add(data, uploaded_by="GitHub"), self.server.updates.signers)
+            except (ReleaseError, BadImage) as exc:
+                return self._send(502, {"error": str(exc)})
+            log.info("Range Control from %s: FeT Bridge firmware from GitHub: %s", self.client_address[0], res["message"])
+            return self._send(200, res)
         fd = ADMIN_FW_DELETE_RE.match(path)
         if fd and method == "POST":
             if not self.server.firmware.delete(fd.group(1)):
@@ -369,11 +393,12 @@ class FetHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
-    def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None):
+    def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None):
         super().__init__(addr, Handler)
         self.core = core
         self.token = token
         self.firmware = firmware if firmware is not None else FirmwareStore(None)
+        self.updates = updates if updates is not None else Updates(None)
         self.admin = admin if admin is not None else Admin(None)     # no data dir: no password, Range Control refuses
         self.stopping = False
         self.stream_keepalive_s = 15
@@ -394,5 +419,5 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
-                firmware: FirmwareStore = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware)
+                firmware: FirmwareStore = None, updates: Updates = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates)

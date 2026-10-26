@@ -17,7 +17,7 @@ AVAHI_DIR="$R/etc/avahi/services"
 OS_RELEASE="$R/etc/os-release"
 SYSTEMD_RUN="$R/run/systemd/system"
 OLD_DATA="$R/var/lib/freetarget"
-UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer)
+UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service)
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RESET_PASSWORD=0
@@ -144,12 +144,15 @@ preflight() {
   command -v systemctl >/dev/null 2>&1 && [ -d "$SYSTEMD_RUN" ] || die "systemd is not running on this system"
   command -v runuser >/dev/null 2>&1 || die "runuser (util-linux) is missing"
   info "systemd: ok"
+  if ! command -v ssh-keygen >/dev/null 2>&1; then
+    warn "ssh-keygen is missing: updates from Range Control cannot check release signatures (sudo apt install openssh-client)"
+  fi
 }
 
 # ---------------------------------------------------------------------------------------------- uninstall
 uninstall() {
   step "Stopping and removing the service"
-  systemctl disable --now fet-monitor.service fet-monitor-backup.timer >/dev/null 2>&1 || true
+  systemctl disable --now fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path >/dev/null 2>&1 || true
   local u
   for u in "${UNITS[@]}"; do rm -f "$UNIT_DIR/$u"; done
   rm -f "$AVAHI_DIR/fet-monitor.service"
@@ -206,11 +209,11 @@ create_user_and_dirs() {
     useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin "$SVC_USER"
     info "created system user $SVC_USER (no login)"
   fi
-  mkdir -p "$CODE_DIR" "$DATA_DIR" "$BACKUP_DIR"
+  mkdir -p "$CODE_DIR" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
   chown root:root "$CODE_DIR"
   chmod 0755 "$CODE_DIR"
-  chown "$SVC_USER:$SVC_USER" "$DATA_DIR" "$BACKUP_DIR"
-  chmod 0750 "$DATA_DIR" "$BACKUP_DIR"
+  chown "$SVC_USER:$SVC_USER" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
+  chmod 0750 "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
   info "$CODE_DIR (root, 755)  $DATA_DIR and $BACKUP_DIR ($SVC_USER, 750)"
 }
 
@@ -230,6 +233,9 @@ install_code() {
   if [ -d "$CODE_DIR/fetserver" ]; then mv "$CODE_DIR/fetserver" "$CODE_DIR/fetserver.old"; fi
   mv "$CODE_DIR/fetserver.new" "$CODE_DIR/fetserver"
   rm -rf "$CODE_DIR/fetserver.old"
+  mkdir -p "$CODE_DIR/bin"                     # the root update helper: root-owned, outside anything the server can write
+  install -m 0755 "$HERE/deploy/fet-monitor-update.sh" "$CODE_DIR/bin/fet-monitor-update"
+  chown root:root "$CODE_DIR/bin" "$CODE_DIR/bin/fet-monitor-update"
   local f
   for f in LICENSE NOTICE; do
     if [ -f "$HERE/$f" ]; then install -m 0644 "$HERE/$f" "$CODE_DIR/$f"; fi
@@ -245,8 +251,9 @@ install_units() {
   for u in "${UNITS[@]}"; do install -m 0644 "$HERE/deploy/$u" "$UNIT_DIR/$u"; done
   if [ -d "$AVAHI_DIR" ]; then install -m 0644 "$HERE/deploy/fet-monitor.avahi.service" "$AVAHI_DIR/fet-monitor.service"; fi
   systemctl daemon-reload
-  systemctl enable fet-monitor.service fet-monitor-backup.timer >/dev/null 2>&1
-  info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup)"
+  systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path >/dev/null 2>&1
+  info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup),"
+  info "fet-monitor-update.path (installs signed updates requested from Range Control)"
 }
 
 device_token() {
@@ -289,13 +296,14 @@ range_password() {
 start_and_check() {
   step "Starting the server"
   systemctl restart fet-monitor.service
-  systemctl start fet-monitor-backup.timer
-  if wait_healthy 45; then
+  systemctl start fet-monitor-backup.timer fet-monitor-update.path
+  local wait_s="${FETM_HEALTH_WAIT:-45}"         # FETM_HEALTH_WAIT: tests only
+  if wait_healthy "$wait_s"; then
     info "running and answering on port $PORT"
   else
     printf '\n' >&2
     journalctl -u fet-monitor.service -n 30 --no-pager >&2 || true
-    die "the server did not answer on port $PORT within 45 s (log above). Check: systemctl status fet-monitor"
+    die "the server did not answer on port $PORT within $wait_s s (log above). Check: systemctl status fet-monitor"
   fi
 }
 

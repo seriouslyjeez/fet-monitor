@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 FILES = ["install.sh", "LICENSE", "NOTICE", "README.md", "docs/INSTALL.md"]
 TREES = ["fetserver", "deploy"]
-EXECUTABLE = {"install.sh", "deploy/migrate-from-freetarget.sh"}
+EXECUTABLE = {"install.sh", "deploy/migrate-from-freetarget.sh", "deploy/fet-monitor-update.sh"}
 
 
 def git(*args) -> str:

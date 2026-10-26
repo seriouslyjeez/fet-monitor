@@ -1,0 +1,3 @@
+# FeT Monitor release signing key (ssh-keygen -Y). Releases are trusted only if signed by a key listed here.
+# Changing this file needs a release signed by a key that is ALREADY listed (or a manual install).
+release@fet-monitor namespaces="fet-monitor-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZo2o3OYW8M4gMSQXrY0/dBfgHDD5kQykvSefZcm5te

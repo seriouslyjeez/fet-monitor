@@ -63,6 +63,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .rc .scroll{max-height:none;overflow-x:auto}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
 .rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
+.notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
 #ver:hover{opacity:1;color:var(--fg)}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
@@ -415,6 +416,27 @@ function sightView(t, S) {
 
 // ---- Range Control ----
 // Logged-in range officers can change any target's mode (no control claim needed), remove dead targets and ban rogue ones.
+// Server updates: check GitHub, read the notes, install; the root helper reports its progress in status.
+const UPDATE_STATE = {running: 'Updating', done: 'Updated', failed: 'Update failed', rolled_back: 'Update rolled back'};
+function updatesPanel(u) {
+  if (!u) return '';
+  const lc = u.last_check, st = u.status, L = lc && lc.latest;
+  let h = '<div class="panel"><h3>FeT Monitor updates</h3><p>Running <b>v' + esc(u.current) + '</b>.' +
+    (lc ? (lc.available ? '' : L ? ' This is the newest release (v' + esc(L.version) + ').' : ' No releases found.') : '') + '</p>';
+  if (st) h += '<p class="' + (st.state === 'failed' || st.state === 'rolled_back' ? 'bad' : 'mut') + '">' + esc(UPDATE_STATE[st.state] || st.state) +
+    (st.version ? ' (v' + esc(st.version) + ')' : '') + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>';
+  if (u.pending) h += '<p class="mut">Update requested; waiting for the update service…</p>';
+  if (!u.helper_installed) h += '<p class="bad">The update service is not installed on this Pi: re-run install.sh from a newer release once.</p>';
+  if (lc && lc.available && L) {
+    h += '<p><b>v' + esc(L.version) + '</b> is available' + (L.published ? ' (published ' + esc(when(L.published)) + ')' : '') + '. Release notes:</p>' +
+      '<div class="notes">' + esc(L.notes || '(no notes)') + '</div>' +
+      '<div class="bulk"><button class="pri" data-act="rcupinstall" data-v="' + esc(L.version) + '"' + (u.helper_installed && !u.pending ? '' : ' disabled') +
+      '>Install v' + esc(L.version) + '</button></div>';
+  }
+  return h + '<div class="bulk"><button data-act="rcupcheck">Check for updates</button>' + (u.msg ? '<span class="bad">' + esc(u.msg) + '</span>' : '') +
+    '</div><p class="mut">Only releases signed with the FeT Monitor release key are installed. The database is backed up first; ' +
+    'if the new version does not start, the previous version and its database come back by themselves.</p></div>';
+}
 function fwJobText(t, images) {      // the latest firmware update of a target, in words
   const j = t.fw_job;
   const best = t.fw_best ? '<div class="fwjob">' + esc(t.fw_best.version) + ' available</div>' : '';   // not shown while waiting or updating
@@ -471,7 +493,8 @@ function rangeView(S) {
     '<p class="mut">Upload the .bin files from Arduino (Sketch &gt; Export Compiled Binary, Flash Mode DOUT), one per flash size. Only FeT Bridge ' +
     'firmware 0.2.0 or newer is accepted. <b>Update to best</b> gives each selected target the newest image built for its flash size that fits it; ' +
     'targets that are up to date or have no suitable image are skipped with the reason. Targets on older firmware need one update by USB first.</p>' +
-    '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' selected to best</button></div>' +
+    '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' selected to best</button>' +
+    '<button data-act="rcfwgh">Check GitHub for FeT Bridge firmware</button></div>' +
     '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input type="file" id="rcfile" accept=".bin,application/octet-stream">' +
     '<button data-act="rcupload"' + (rc.file ? '' : ' disabled') + '>Upload' + (rc.file ? ' ' + esc(rc.file.name) : '') + '</button></div>' +
     (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
@@ -483,7 +506,7 @@ function rangeView(S) {
       '<div class="bulk"><button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' +
       esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + ') on ' + nsel + ' selected</button><span class="mut">e.g. to go back to an older version</span></div>' :
       '<p class="mut">No images uploaded.</p>') + '</div>';
-  return h + '</div>';
+  return h + updatesPanel(rc.updates) + '</div>';
 }
 
 // ---- browser only from here ----
@@ -533,6 +556,12 @@ async function refresh() {
         if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
         const fw = await adminCall('/firmware');
         if (fw.status === 200) S.rc.images = fw.data.images;
+        const up = await adminCall('/updates');
+        if (up.status === 200) {
+          const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
+          S.rc.updates = Object.assign(up.data, {msg: msg, last_check: up.data.last_check || check});
+          if (S.version && up.data.current !== S.version) location.reload();    // the server was updated: load the new page
+        }
       }
     }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
@@ -649,6 +678,29 @@ async function rangeAct(el, a) {
     document.activeElement && document.activeElement.blur();
     return refresh();
   }
+  if (a === 'rcupcheck') {
+    rc.updates = Object.assign(rc.updates || {}, {msg: 'Asking GitHub…'}); render();
+    const res = await adminCall('/updates/check', {});
+    rc.updates = res.status === 200 ? Object.assign(res.data, {msg: ''}) : Object.assign(rc.updates, {msg: res.data.error || 'Check failed'});
+    return render();
+  }
+  if (a === 'rcupinstall') {
+    const v = el.dataset.v;
+    if (!confirm('Install FeT Monitor v' + v + ' now?\n\nThe server restarts (about a minute; shots keep queueing on the targets). The database is backed up first, ' +
+        'and if the new version does not start, the previous one comes back by itself.')) return;
+    rc.updates.msg = 'Downloading and checking v' + v + '…'; render();
+    const res = await adminCall('/updates/install', {version: v});
+    rc.updates.msg = res.status === 202 ? '' : (res.data.error || 'Not installed');
+    if (res.status === 202) toast('Update to v' + v + ' started');
+    return refresh();
+  }
+  if (a === 'rcfwgh') {
+    rc.fwMsg = 'Asking GitHub…'; rc.fwMsgBad = false; render();
+    const res = await adminCall('/firmware/github', {});
+    rc.fwMsg = res.status === 200 ? 'GitHub: ' + res.data.message + '.' : 'GitHub: ' + (res.data.error || 'check failed');
+    rc.fwMsgBad = res.status !== 200;
+    return refresh();
+  }
   if (a === 'rcpick') { rc.fwPick = el.dataset.sha; return render(); }
   if (a === 'rcupload') {
     if (!rc.file) return;
@@ -737,7 +789,7 @@ function boot() {
   document.addEventListener('change', e => {            // keep the chosen file: the screen is redrawn every few seconds
     if (e.target && e.target.id === 'rcfile') { S.rc = S.rc || {sel: {}}; S.rc.file = e.target.files[0] || null; S.rc.fwMsg = ''; render(); }
   });
-  get('/health').then(h => { const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
+  get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
   document.addEventListener('input', e => {
     if (e.target.id !== 'cpr') return;
     S.cpr = e.target.value;
@@ -770,7 +822,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, fwJobText, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

@@ -73,27 +73,35 @@ Wait a minute, then log in again as in step 5.
 ## 7. Download and check FeT Monitor
 
 On the [releases page](https://github.com/seriouslyjeez/fet-monitor/releases) find the newest **server** release
-(named `v<version>`, for example `v0.6.20`; releases named `fw-...` are target firmware). Download its archive and
-checksum file on the Pi, replacing `0.6.20` with that version:
+(named `v<version>`, for example `v0.6.24`; releases named `fw-...` are FeT Bridge firmware). Download its three
+files on the Pi, replacing `0.6.24` with that version:
 
     cd ~
-    V=0.6.20
+    V=0.6.24
     wget https://github.com/seriouslyjeez/fet-monitor/releases/download/v$V/fet-monitor-$V.tar.gz
     wget https://github.com/seriouslyjeez/fet-monitor/releases/download/v$V/SHA256SUMS
+    wget https://github.com/seriouslyjeez/fet-monitor/releases/download/v$V/SHA256SUMS.sig
 
-Check that the download is complete and unchanged:
+**Check that the release really comes from the FeT Monitor author** (the signature), then that the download is
+complete (the checksum). First save the author's public key in a file named `signers` (one line; copy it exactly):
 
+    echo 'release@fet-monitor namespaces="fet-monitor-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZo2o3OYW8M4gMSQXrY0/dBfgHDD5kQykvSefZcm5te' > signers
+
+Then:
+
+    ssh-keygen -Y verify -f signers -I release@fet-monitor -n fet-monitor-release -s SHA256SUMS.sig < SHA256SUMS
     sha256sum -c SHA256SUMS
 
-It must print `fet-monitor-0.6.20.tar.gz: OK`. **If it prints anything else, stop**: delete the files and download
-them again.
+The first command must print `Good "fet-monitor-release" signature for release@fet-monitor with ED25519 key
+SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`; the second `fet-monitor-0.6.24.tar.gz: OK` (with your version). **If either prints anything else,
+stop** and do not install: delete the files and ask for help.
 
-> **PLACEHOLDER: signature check (not built yet).** Signed releases are planned. Once they exist, a second
-> command here will check that the release was made by the FeT Monitor author and not only that it downloaded
-> correctly. Until then, the checksum protects against a broken download, not against a tampered release.
+Where the key comes from matters: it is printed here, in the repository's `fetserver/release_signers`, and every
+installed FeT Monitor shows the same file. If you can, compare the fingerprint above with one from a second source
+(for example a printout from the club or the author).
 
-> **While the repository is private** the download links above only work for its owner. Copy the archive and
-> `SHA256SUMS` from your computer instead: `scp fet-monitor-0.6.20.tar.gz SHA256SUMS <your username>@<Pi IP>:`
+> **While the repository is private** the download links above only work for its owner. Copy the three files
+> from your computer instead: `scp fet-monitor-$V.tar.gz SHA256SUMS SHA256SUMS.sig <your username>@<Pi IP>:`
 
 Do **not** install from a command that pipes a download straight into `sudo bash`. Always download, check, then run.
 
@@ -140,9 +148,11 @@ For each target (its WiFi bridge must already have FeT Monitor firmware; see `fi
 
     sudo apt install -y unattended-upgrades
 
-This keeps the Pi's own software patched. FeT Monitor itself is updated separately:
+This keeps the Pi's own software patched (`openssh-client`, which checks release signatures, is part of it).
+FeT Monitor itself is updated separately:
 
-- **From Range Control** (planned): *Check for updates* shows the release notes, then installs the new version.
+- **From Range Control**: *Check for updates* shows the newest signed release and its notes; *Install* backs up the
+  database, installs it and restarts. If the new version does not start, the previous one comes back by itself.
 - **By hand:** download, check and unpack a newer release as in steps 7 and 8, and run its `sudo ./install.sh`.
   Re-running the installer is the upgrade: it keeps the database, the device token and the password.
 
