@@ -39,6 +39,9 @@ class WifiNet : public fet::Net {
   bool ready() override;                  // WiFi up AND the server address known
   int rssi() override;
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override;
+  bool updateFirmware(const std::string& sha256hex, uint32_t size, std::string& err) override;
+  uint32_t otaSpace() override;
+  uint32_t flashSize() override;
   void startWifi(const std::string& hostname, bool withAccessPoint);
   void announce();                        // the start-up lines, printed a few seconds after boot so a monitor that reattaches slowly sees them   // non-blocking; auto-reconnects; sets the radio mode once
   void stopSta();

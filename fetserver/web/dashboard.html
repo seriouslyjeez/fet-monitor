@@ -62,6 +62,8 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .rc table.t td,.rc table.t th{text-align:left;vertical-align:middle}.rc .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
 .rc .scroll{max-height:none;overflow-x:auto}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
 .rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
+#ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
+#ver:hover{opacity:1;color:var(--fg)}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -73,6 +75,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
+<a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
 <script>
 'use strict';
 const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record', ammo: 'Ammo test'};
@@ -412,6 +415,16 @@ function sightView(t, S) {
 
 // ---- Range Control ----
 // Logged-in range officers can change any target's mode (no control claim needed), remove dead targets and ban rogue ones.
+function fwJobText(t, images) {      // the latest firmware update of a target, in words
+  const j = t.fw_job;
+  if (!j) return '';
+  const img = (images || []).find(m => m.sha256 === j.sha256), v = img ? img.version : j.sha256.slice(0, 8);
+  if (j.status === 'queued') return '<div class="fwjob">update to ' + esc(v) + ' waiting for the target</div>';
+  if (j.status === 'sent') return '<div class="fwjob">updating to ' + esc(v) + '…</div>';
+  if (j.status === 'failed') return '<div class="fwjob bad">update to ' + esc(v) + ' failed: ' + esc(j.result || '') + '</div>';
+  if (img && t.bridge_fw === img.version) return '<div class="fwjob ok">updated to ' + esc(v) + '</div>';
+  return '<div class="fwjob">update to ' + esc(v) + ' installed, restarting…</div>';
+}
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
 function rangeView(S) {
@@ -442,13 +455,27 @@ function rangeView(S) {
         '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
         '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
-        '<td>' + esc(t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
+        '<td>' + esc(t.bridge_fw || '–') + fwJobText(t, rc.images) + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
     }).join('') : '<tr><td colspan="8" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
   h += '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
     '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
     '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
+  const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
+  h += '<div class="panel"><h3>Bridge firmware</h3>' +
+    '<p class="mut">Upload the .bin from Arduino (Sketch &gt; Export Compiled Binary, Flash Mode DOUT). Only FeT Monitor bridge firmware 0.2.0 or newer ' +
+    'is accepted, and a target only takes an image built for its own flash size. Targets on older firmware need one update by USB first.</p>' +
+    '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input type="file" id="rcfile" accept=".bin,application/octet-stream">' +
+    '<button data-act="rcupload"' + (rc.file ? '' : ' disabled') + '>Upload' + (rc.file ? ' ' + esc(rc.file.name) : '') + '</button></div>' +
+    (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
+    (imgs.length ? '<table class="t"><tr><th></th><th>Version</th><th>Flash</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr>' + imgs.map(m =>
+      '<tr><td><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Use ' + esc(m.version) + '"></td>' +
+      '<td><b>' + esc(m.version) + '</b></td><td>' + esc(Math.round(m.flash_size / 1048576) + ' MB') + '</td><td>' + esc(Math.round(m.size / 1024) + ' KB') + '</td>' +
+      '<td><code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code></td><td>' + esc(when(new Date(m.uploaded).toISOString())) + '</td>' +
+      '<td><button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></td></tr>').join('') + '</table>' +
+      '<div class="bulk"><button class="pri" data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Update ' + nsel + ' selected to ' +
+      esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + '</button></div>' : '<p class="mut">No images uploaded.</p>') + '</div>';
   return h + '</div>';
 }
 
@@ -497,6 +524,8 @@ async function refresh() {
       if (S.rc.status.logged_in) {
         const res = await adminCall('/targets');
         if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
+        const fw = await adminCall('/firmware');
+        if (fw.status === 200) S.rc.images = fw.data.images;
       }
     }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
@@ -613,6 +642,36 @@ async function rangeAct(el, a) {
     document.activeElement && document.activeElement.blur();
     return refresh();
   }
+  if (a === 'rcpick') { rc.fwPick = el.dataset.sha; return render(); }
+  if (a === 'rcupload') {
+    if (!rc.file) return;
+    rc.fwMsg = 'Uploading ' + rc.file.name + '…'; rc.fwMsgBad = false; render();
+    const r = await fetch(API + '/admin/firmware', {method: 'POST', credentials: 'same-origin', body: rc.file,
+      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (r && r.status === 200) { rc.fwMsg = 'Uploaded ' + d.version + ' (' + d.sha256.slice(0, 12) + '…).'; rc.fwPick = d.sha256; rc.file = null; }
+    else { rc.fwMsg = 'Not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed')); rc.fwMsgBad = true; }
+    return refresh();
+  }
+  if (a === 'rcfwdel') {
+    if (!confirm('Delete this firmware image from the Pi?')) return;
+    await adminCall('/firmware/' + el.dataset.sha + '/delete', {});
+    return refresh();
+  }
+  if (a === 'rcflash') {
+    const ids = chosen(), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
+    if (!ids.length || !img) return;
+    if (!confirm('Update ' + ids.length + ' target(s) to bridge firmware ' + img.version + '?\nEach one downloads it, checks it and restarts (about a minute).')) return;
+    const errs = [];
+    for (const id of ids) {
+      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/firmware', {sha256: img.sha256});
+      if (res.status === 401) { toast('Logged out: log in again'); break; }
+      if (res.status !== 200) errs.push(res.data.error || ('error ' + res.status));
+    }
+    rc.fwMsg = errs.length ? 'Not sent to ' + errs.length + ' target(s): ' + errs.join(' · ') : 'Update sent to ' + ids.length + ' target(s).';
+    rc.fwMsgBad = errs.length > 0;
+    return refresh();
+  }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
   const ids = a === 'rcunban' ? [el.dataset.id] : chosen();
   if (!ids.length) return;
@@ -645,6 +704,10 @@ function boot() {
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
+  document.addEventListener('change', e => {            // keep the chosen file: the screen is redrawn every few seconds
+    if (e.target && e.target.id === 'rcfile') { S.rc = S.rc || {sel: {}}; S.rc.file = e.target.files[0] || null; S.rc.fwMsg = ''; render(); }
+  });
+  get('/health').then(h => { const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
   document.addEventListener('input', e => {
     if (e.target.id !== 'cpr') return;
     S.cpr = e.target.value;
@@ -677,7 +740,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, fwJobText, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

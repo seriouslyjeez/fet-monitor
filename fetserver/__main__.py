@@ -16,6 +16,7 @@ from pathlib import Path
 from .admin import MIN_PASSWORD, Admin, write_password
 from .core import Core
 from .db import Database
+from .firmware import FirmwareStore
 from .server import make_server
 
 log = logging.getLogger("fetserver")
@@ -34,7 +35,8 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     core = Core(db, offline_after_ms=int(args.offline_after * 1000),
                 heartbeat_interval_ms=int(args.heartbeat_interval * 1000),
                 lease_ms=int(args.lease * 1000), shot_lag_ms=int(args.shot_lag * 1000))
-    server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir))
+    server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
+                         firmware=FirmwareStore(data_dir))
     stop = threading.Event()
 
     def on_signal(signum, _frame):

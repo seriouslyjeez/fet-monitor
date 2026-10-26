@@ -68,6 +68,10 @@ def _device_id(payload) -> str:
     return did
 
 
+def _flash(n: int) -> str:
+    return f"{n >> 20} MB" if n >= 1 << 20 else f"{n >> 10} KB"
+
+
 SESSION_KIND = {"practice": "Practice", "match": "Match"}
 RANGE_NAME = "Range"          # who a Range Control change is credited to when nobody holds control
 DEFAULT_SESSION_RE = re.compile(r"^(.+) \u2013 (Practice|Match)$")
@@ -76,6 +80,11 @@ DEFAULT_SESSION_RE = re.compile(r"^(.+) \u2013 (Practice|Match)$")
 def session_name(holder: str, kind: str) -> str:
     """Default session name: who took control and the kind, e.g. "Alice \u2013 Practice"."""
     return f"{holder} \u2013 {SESSION_KIND.get(kind, kind.title())}"
+
+
+def _nonneg(v) -> int:
+    """A count the target may or may not send: missing or nonsense -> 0 (so an older firmware reads as 'cannot')."""
+    return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < 1 << 31 else 0
 
 
 def iso(ms: int) -> str:
@@ -360,7 +369,8 @@ class Core:
                         bridge_fw=_str(payload.get("bridge_fw")), arduino_version=_str(payload.get("arduino_version")),
                         rssi=payload.get("rssi") if isinstance(payload.get("rssi"), int) else None,
                         queue_depth=payload.get("queue_depth") if isinstance(payload.get("queue_depth"), int) else None,
-                        overflow_count=payload.get("overflow_count") if isinstance(payload.get("overflow_count"), int) else None)
+                        overflow_count=payload.get("overflow_count") if isinstance(payload.get("overflow_count"), int) else None,
+                        ota_space=_nonneg(payload.get("ota_space")), flash_size=_nonneg(payload.get("flash_size")))
             self._register_boot(c, device_id, boot_count, recv_ms - uptime_ms)
             for r in results:
                 if isinstance(r, dict) and isinstance(r.get("id"), int):
@@ -370,8 +380,13 @@ class Core:
                               (status, recv_ms, _str(r.get("reply"), 500), r["id"], device_id))
             rows = c.execute("""SELECT id, type, line FROM commands WHERE device_id=? AND status IN ('queued','sent')
                                 ORDER BY id LIMIT ?""", (device_id, MAX_COMMANDS_PER_HEARTBEAT)).fetchall()
+            changed = bool(results)
             for r in rows:
-                c.execute("UPDATE commands SET status='sent', sent_ms=COALESCE(sent_ms, ?) WHERE id=?", (recv_ms, r["id"]))
+                cur = c.execute("UPDATE commands SET status='sent', sent_ms=COALESCE(sent_ms, ?) WHERE id=? AND status='queued'",
+                                (recv_ms, r["id"]))
+                changed = changed or cur.rowcount > 0
+        if changed:                                   # command progress (e.g. a firmware update) shows up live
+            self.hub.publish({"type": "commands", "device_id": device_id})
         return {"server_time_ms": recv_ms, "server_time": iso(recv_ms),
                 "heartbeat_interval_ms": self.heartbeat_interval_ms,
                 "commands": [{"id": r["id"], "type": r["type"], **({"line": r["line"]} if r["line"] else {})}
@@ -392,6 +407,43 @@ class Core:
             cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
                             (device_id, ctype, line, self.now_ms()))
             return cur.lastrowid
+
+    def queue_firmware(self, device_id: str, image: dict) -> int:
+        """Range Control: tell one target to fetch and install `image` (a FirmwareStore entry). Refused unless the target
+        reported it can update itself (firmware 0.2.0+), the image fits and was built for the same flash size (a
+        different layout would move the target's settings and queued shots out from under it)."""
+        with self.db.write() as c:
+            t = c.execute("SELECT * FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone()
+            if t is None:
+                raise NotFound(f"unknown target {device_id}")
+            if not t["ota_space"]:
+                raise BadRequest(f"{device_id} runs bridge firmware {t['bridge_fw'] or '?'}, which cannot update from the Pi: "
+                                 "install 0.2.0 or newer by USB (or its /update page) once")
+            if image["size"] > t["ota_space"]:
+                raise BadRequest(f"{device_id} has room for {t['ota_space']} bytes; this image is {image['size']}")
+            if t["flash_size"] and t["flash_size"] != image["flash_size"]:
+                raise BadRequest(f"{device_id} runs a {_flash(t['flash_size'])} build; this image is a {_flash(image['flash_size'])} "
+                                 "build. Installing it would lose the target's settings and queued shots: export the "
+                                 "firmware with the matching Flash Size")
+            busy = c.execute("SELECT 1 FROM commands WHERE device_id=? AND type='fw_update' AND status IN ('queued','sent')",
+                             (device_id,)).fetchone()
+            if busy:
+                raise BadRequest(f"{device_id} already has a firmware update waiting")
+            cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                            (device_id, "fw_update", f"{image['sha256']} {image['size']}", self.now_ms()))
+        self.hub.publish({"type": "targets", "device_id": device_id})
+        return cur.lastrowid
+
+    def firmware_jobs(self) -> dict:
+        """The latest firmware update per target: {device_id: {status, result, sha256, created, ...}}."""
+        out = {}
+        for r in self.db.conn().execute(
+                """SELECT * FROM commands WHERE id IN (SELECT MAX(id) FROM commands WHERE type='fw_update' GROUP BY device_id)"""):
+            sha, _, size = (r["line"] or "").partition(" ")
+            out[r["device_id"]] = {"id": r["id"], "status": r["status"], "result": r["result"], "sha256": sha,
+                                   "size": int(size) if size.isdigit() else None, "created": iso(r["created_ms"]),
+                                   "sent": iso(r["sent_ms"]) if r["sent_ms"] else None}
+        return out
 
     # ---- control claim and modes -------------------------------------------
     @staticmethod
@@ -718,7 +770,13 @@ class Core:
         banned = [{"device_id": r["device_id"], "name": r["name"] or r["device_id"], "ip": r["last_ip"],
                    "last_seen": iso(r["last_seen_ms"]), "bridge_fw": r["bridge_fw"]}
                   for r in self.db.conn().execute("SELECT * FROM targets WHERE banned=1 ORDER BY COALESCE(name, device_id)")]
-        return {"targets": self.list_targets(None), "banned": banned}
+        targets = self.list_targets(None)
+        jobs = self.firmware_jobs()
+        for t in targets:
+            r = self.db.conn().execute("SELECT ota_space, flash_size FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
+            t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
+            t["fw_job"] = jobs.get(t["device_id"])
+        return {"targets": targets, "banned": banned}
 
     def remove_target(self, device_id: str) -> None:
         """Hide a dead target. Its history stays; if it ever reports again it is back automatically."""

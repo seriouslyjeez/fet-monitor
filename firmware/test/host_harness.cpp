@@ -16,6 +16,7 @@
 #include "../fet_bridge/src/core/config.h"
 #include "../fet_bridge/src/core/jmini.h"
 #include "../fet_bridge/src/core/httpparse.h"
+#include "../fet_bridge/src/core/sha256.h"
 
 using namespace fet;
 
@@ -48,6 +49,53 @@ struct TcpNet : Net {
   int fakeStatus = 0;         // if set, answer this status without talking to the server
   unsigned requests = 0;
   unsigned rng = 12345;
+  uint32_t space = 0;          // otaSpace(); 0 = this "chip" cannot update (like firmware before 0.2.0)
+  int corruptAt = -1;          // flip the byte at this offset while downloading (a damaged transfer)
+  std::vector<uint8_t> flash;  // what reached the updater
+  bool staged = false;         // the updater finished: the image would boot next time
+  uint32_t otaSpace() override { return space; }
+  uint32_t flashSz = 1048576;
+  uint32_t flashSize() override { return flashSz; }
+  // Same steps as WifiNet::updateFirmware on the ESP: headers checked, every byte through FwCheck, the last byte only
+  // after the image verified; otherwise the updater is abandoned with nothing staged.
+  bool updateFirmware(const std::string& sha, uint32_t size, std::string& err) override {
+    FwCheck chk;
+    flash.clear(); staged = false;
+    if (!chk.begin(sha, size)) { err = "bad checksum"; return false; }
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{}; a.sin_family = AF_INET; a.sin_port = htons(port); inet_pton(AF_INET, host.c_str(), &a.sin_addr);
+    if (connect(fd, (sockaddr*)&a, sizeof a) != 0) { close(fd); err = "could not connect to the server"; return false; }
+    std::string req = "GET /api/v1/firmware/" + sha + " HTTP/1.1\r\nHost: " + host + "\r\nX-FET-Token: " + token + "\r\nConnection: close\r\n\r\n";
+    if (write(fd, req.data(), req.size()) != (ssize_t)req.size()) { close(fd); err = "request not sent"; return false; }
+    std::string all; char buf[4096];
+    for (;;) { pollfd p{fd, POLLIN, 0}; if (poll(&p, 1, 5000) <= 0) break; ssize_t n = read(fd, buf, sizeof buf); if (n <= 0) break; all.append(buf, (size_t)n); }
+    close(fd);
+    size_t he = all.find("\r\n\r\n");
+    if (he == std::string::npos) { err = "no answer from the server"; return false; }
+    int status = atoi(all.c_str() + 9);
+    std::string lower = all.substr(0, he + 2);
+    for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+    size_t cl = lower.find("\r\ncontent-length:");
+    long len = cl == std::string::npos ? -1 : atol(lower.c_str() + cl + 17);
+    if (status != 200) { err = "server answered " + std::to_string(status); return false; }
+    if (len != (long)size) { err = "wrong length from the server"; return false; }
+    std::string body = all.substr(he + 4);
+    if (corruptAt >= 0 && (size_t)corruptAt < body.size()) body[(size_t)corruptAt] ^= 0x01;
+    uint8_t lastByte = 0;
+    for (size_t off = 0; off < body.size() && !chk.complete(); off += 700) {      // odd chunk size on purpose
+      size_t n = body.size() - off < 700 ? body.size() - off : 700;
+      const uint8_t* p = (const uint8_t*)body.data() + off;
+      if (chk.overflow(n)) { err = "more data than expected"; return false; }
+      size_t w = chk.take(p, n);
+      flash.insert(flash.end(), p, p + w);
+      if (chk.complete()) lastByte = p[n - 1];
+    }
+    if (!chk.complete()) { err = "download cut off"; return false; }
+    if (!chk.verified()) { err = "checksum mismatch"; return false; }
+    flash.push_back(lastByte);
+    staged = true;
+    return true;
+  }
   bool ready() override { return up; }
   int rssi() override { return -57; }
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override {
@@ -126,6 +174,18 @@ int main() {
     else if (cmd == "qboot") { QuickBoot q(fs); bool r = q.onBoot(); std::string v; fs.read("/qb.cnt", v); std::cout << (r ? "PORTAL" : "normal") << " " << v << "\n"; }
     else if (cmd == "qtick") { QuickBoot q(fs); q.onBoot(); q.tick((uint64_t)atol(rest.c_str())); std::string v; fs.read("/qb.cnt", v); std::cout << v << "\n"; }
     else if (cmd == "httpparse") { int st = 0; std::string b; bool ok = parseHttpResponse(unescape(rest), st, b); std::cout << (ok ? "OK " + std::to_string(st) + " [" + escape(b) + "]" : std::string("BAD")) << "\n"; }
+    else if (cmd == "otaspace") net.space = (uint32_t)atol(rest.c_str());
+    else if (cmd == "flashsize") net.flashSz = (uint32_t)atol(rest.c_str());
+    else if (cmd == "fwcorrupt") net.corruptAt = atoi(rest.c_str());
+    else if (cmd == "fwstate") { Sha256 h; if (!net.flash.empty()) h.update(net.flash.data(), net.flash.size());
+      std::cout << (net.staged ? "staged " : "none ") << net.flash.size() << " " << h.hexdigest() << "\n"; }
+    else if (cmd == "sha256") { std::string d = unescape(rest); Sha256 h; h.update((const uint8_t*)d.data(), d.size()); std::cout << h.hexdigest() << "\n"; }
+    else if (cmd == "fwcheck") {   // FwCheck on 10 zero bytes, fed 6 + 6 (too many) + 4: prints each take() and the end state
+      std::string z(10, '\0'); Sha256 h; h.update((const uint8_t*)z.data(), z.size());
+      FwCheck c; c.begin(rest.empty() ? h.hexdigest() : rest, 10);
+      const uint8_t* p = (const uint8_t*)z.data();
+      size_t a = c.take(p, 6), b = c.take(p, 6), d = c.take(p, 4);
+      std::cout << a << " " << b << " " << d << " " << c.complete() << " " << c.verified() << " " << c.received() << "\n"; }
     else if (cmd == "quit") break;
     std::cout << "." << std::endl;
   }

@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include "numfmt.h"
 #include "jmini.h"
+#include "sha256.h"
 
 namespace fet {
 
@@ -141,6 +142,8 @@ void Bridge::sendHeartbeat(uint64_t now) {
                      ",\"uptime_ms\":" + u64s(now) + ",\"name\":\"" + name + "\",\"bridge_fw\":\"" +
                      info_.fwVersion + "\"";
   if (!arduinoVersion_.empty()) { std::string av; jescape(av, arduinoVersion_); body += ",\"arduino_version\":\"" + av + "\""; }
+  uint32_t space = net_.otaSpace();
+  if (space) body += ",\"ota_space\":" + u32s(space) + ",\"flash_size\":" + u32s(net_.flashSize());
   body += ",\"rssi\":" + i32s(net_.rssi()) + ",\"queue_depth\":" + u32s((uint32_t)log_.pending()) +
           ",\"overflow_count\":" + u32s((uint32_t)log_.overflow()) + ",\"cmd_results\":[";
   size_t sentResults = results_.size();
@@ -211,6 +214,28 @@ void Bridge::runCommand(long long id, const std::string& type, const std::string
   } else if (type == "reboot") {
     results_.push_back(Result{id, true, "rebooting"});
     rebootPending_ = true;
+  } else if (type == "fw_update") {
+    // line = "<sha256 hex> <size>". The image comes from the server we already report to (same token).
+    size_t sp = line.find(' ');
+    std::string sha = sp == std::string::npos ? "" : line.substr(0, sp);
+    long long size = 0;
+    bool ok = sp == 64 && line.size() > 65 && line.size() <= 65 + 8;
+    for (size_t k = 65; ok && k < line.size(); k++) if (line[k] < '0' || line[k] > '9') ok = false;
+    if (ok) size = atoll(line.c_str() + 65);
+    FwCheck probe;
+    if (!ok || size <= 0 || !probe.begin(sha, (uint32_t)size)) { results_.push_back(Result{id, false, "refused: bad firmware command"}); return; }
+    uint32_t space = net_.otaSpace();
+    if (!space || (uint32_t)size > space) {
+      results_.push_back(Result{id, false, "refused: image of " + u32s((uint32_t)size) + " bytes does not fit (" + u32s(space) + " free)"});
+      return;
+    }
+    std::string err;
+    if (net_.updateFirmware(sha, (uint32_t)size, err)) {
+      results_.push_back(Result{id, true, "updated (" + sha.substr(0, 12) + "), restarting"});
+      rebootPending_ = true;                               // after the server has this result
+    } else {
+      results_.push_back(Result{id, false, "update failed: " + err});
+    }
   } else {
     results_.push_back(Result{id, false, "unknown command"});
   }

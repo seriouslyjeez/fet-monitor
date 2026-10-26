@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -322,4 +322,20 @@ assert(one.includes('1 selected') && count(one, /data-act="rc(mode|new|remove|ba
 const every = {}; D.targets.forEach(t => { every[t.device_id] = true; });
 assert(/data-act="rcall" checked/.test(rcIn({sel: every})), 'select-all shows checked when all are selected');
 assert(rcIn({sel: {}, data: {targets: [], banned: []}}).includes('No targets.'));
+// firmware updates in Range Control
+const IMG = {sha256: 'ab'.repeat(32), version: '0.2.1', size: 430000, flash_size: 1048576, uploaded: 1793000000000};
+const fwT = (job, fw) => ({bridge_fw: fw || '0.2.0', fw_job: job});
+assert.strictEqual(fwJobText(fwT(null), [IMG]), '');
+assert(fwJobText(fwT({status: 'queued', sha256: IMG.sha256}), [IMG]).includes('update to 0.2.1 waiting'));
+assert(fwJobText(fwT({status: 'sent', sha256: IMG.sha256}), [IMG]).includes('updating to 0.2.1'));
+assert(fwJobText(fwT({status: 'failed', sha256: IMG.sha256, result: '<b>checksum</b>'}), [IMG]).includes('failed: &lt;b&gt;checksum'));
+assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}), [IMG]).includes('installed, restarting'), 'done but still the old version');
+assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}, '0.2.1'), [IMG]).includes('updated to 0.2.1'));
+assert(fwJobText(fwT({status: 'sent', sha256: IMG.sha256}), []).includes('abababab'), 'image deleted meanwhile: short SHA');
+const fwPanel = s => rcIn(Object.assign({sel: {'lane-1': true}, images: [IMG]}, s || {}));
+assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Update 1 selected to 0.2.1'));
+assert(/data-act="rcflash"[^>]*disabled/.test(rcIn({sel: {}, images: [IMG]})), 'nothing selected: disabled');
+assert(rcIn({sel: {}, images: []}).includes('No images uploaded.'));
+assert(/data-act="rcupload" disabled/.test(fwPanel()) && fwPanel({file: {name: '<x>.bin'}}).includes('Upload &lt;x&gt;.bin'));
+assert(fwPanel({fwMsg: '<i>no</i>', fwMsgBad: true}).includes('class="bad">&lt;i&gt;no'));
 console.log('OK');

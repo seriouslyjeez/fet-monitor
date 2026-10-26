@@ -63,6 +63,11 @@ class Harness:
         except Exception:
             pass
         self.p.wait(timeout=5)
+        for f in (self.p.stdin, self.p.stdout):
+            try:
+                f.close()
+            except Exception:
+                pass
 
     def flags(self):
         r, p, req, boot, q = map(int, self.run("flags").split())

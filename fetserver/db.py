@@ -183,6 +183,11 @@ MIGRATIONS = [
     ALTER TABLE targets ADD COLUMN removed INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE targets ADD COLUMN banned INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- Firmware updates from the Pi (bridge firmware 0.2.0+ reports these; 0 = it cannot update that way).
+    ALTER TABLE targets ADD COLUMN ota_space INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE targets ADD COLUMN flash_size INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

@@ -1,5 +1,7 @@
 #include "platform.h"
 #include "../core/httpparse.h"
+#include "../core/sha256.h"
+#include <Updater.h>
 #include <ESP8266WiFi.h>
 #include <LittleFS.h>
 #include <WiFiClient.h>
@@ -340,7 +342,7 @@ bool WifiNet::postOnce(const char* path, const std::string& body, int& status, s
   connectFails_ = 0;
   c.setNoDelay(true);
   std::string req = std::string("POST ") + path + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() +
-                    "\r\nX-FET-Token: " + cfg_.token + "\r\nContent-Type: application/json\r\nContent-Length: " +
+                    "\r\nUser-Agent: " FET_FW_ID "\r\nX-FET-Token: " + cfg_.token + "\r\nContent-Type: application/json\r\nContent-Length: " +
                     std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
   size_t sent = 0;
   uint64_t t0 = nowMs();
@@ -371,6 +373,82 @@ bool WifiNet::postOnce(const char* path, const std::string& body, int& status, s
   c.stop();
   if (!complete) return false;
   return fet::parseHttpResponse(raw, status, resp);
+}
+
+uint32_t WifiNet::otaSpace() { return ESP.getFreeSketchSpace(); }
+uint32_t WifiNet::flashSize() { return ESP.getFlashChipSize(); }    // from the running image's header
+
+bool WifiNet::updateFirmware(const std::string& sha, uint32_t size, std::string& err) {
+  fet::FwCheck chk;
+  if (!chk.begin(sha, size)) { err = "bad checksum"; return false; }
+  if (size > ESP.getFreeSketchSpace()) { err = "image too big for this chip"; return false; }
+  if (!ready()) { err = "server not reachable"; return false; }
+  WiFiClient c;
+  c.setTimeout(FET_CONNECT_TIMEOUT_MS);
+  if (!c.connect(ip_, (uint16_t)port_)) { err = "could not connect to the server"; return false; }
+  std::string req = "GET /api/v1/firmware/" + sha + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() +
+                    "\r\nUser-Agent: " FET_FW_ID "\r\nX-FET-Token: " + cfg_.token + "\r\nConnection: close\r\n\r\n";
+  if (c.write((const uint8_t*)req.data(), req.size()) != req.size()) { c.stop(); err = "request not sent"; return false; }
+  say("Firmware update: downloading ", std::to_string(size) + " bytes");
+  // Headers: status 200 and Content-Length equal to the expected size, or nothing is written at all.
+  std::string head;
+  uint64_t t0 = nowMs(), last = t0;
+  size_t he = std::string::npos;
+  while (he == std::string::npos) {
+    hold_.pump();
+    int avail = c.available();
+    if (avail > 0) {
+      char ch;
+      if (c.read((uint8_t*)&ch, 1) == 1) { head += ch; last = nowMs(); }
+      if (head.size() > 2048) { c.stop(); err = "response header too long"; return false; }
+      he = head.find("\r\n\r\n");
+      continue;
+    }
+    if (!c.connected() || nowMs() - last > FET_FW_IDLE_MS) { c.stop(); err = "no answer from the server"; return false; }
+    delay(1);
+  }
+  int status = head.compare(0, 9, "HTTP/1.1 ") == 0 || head.compare(0, 9, "HTTP/1.0 ") == 0 ? atoi(head.c_str() + 9) : 0;
+  std::string lower = head;
+  for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+  size_t cl = lower.find("\r\ncontent-length:");
+  long len = cl == std::string::npos ? -1 : atol(lower.c_str() + cl + 17);
+  if (status != 200) { c.stop(); err = "server answered " + std::to_string(status); return false; }
+  if (len != (long)size) { c.stop(); err = "wrong length from the server"; return false; }
+  if (!Update.begin(size, U_FLASH)) { c.stop(); err = std::string("updater: ") + Update.getErrorString().c_str(); return false; }
+  uint8_t buf[512];
+  uint8_t lastByte = 0;
+  bool failed = false;
+  while (!chk.complete()) {
+    hold_.pump();
+    int avail = c.available();
+    if (avail <= 0) {
+      if (!c.connected() && c.available() <= 0) { err = "download cut off"; failed = true; break; }
+      if (nowMs() - last > FET_FW_IDLE_MS || nowMs() - t0 > FET_FW_TOTAL_MS) { err = "download too slow"; failed = true; break; }
+      delay(1);
+      continue;
+    }
+    int n = c.read(buf, avail > (int)sizeof buf ? (int)sizeof buf : avail);
+    if (n <= 0) continue;
+    last = nowMs();
+    if (chk.overflow((size_t)n)) { err = "more data than expected"; failed = true; break; }
+    size_t w = chk.take(buf, (size_t)n);
+    if (w && Update.write(buf, w) != w) { err = std::string("flash write: ") + Update.getErrorString().c_str(); failed = true; break; }
+    if (chk.complete()) lastByte = buf[n - 1];             // held back until the image is verified
+  }
+  c.stop();
+  if (!failed && !chk.verified()) { err = "checksum mismatch"; failed = true; }
+  if (failed) {
+    Update.end(false);                                     // not finished (the last byte is missing): abandoned, nothing staged
+    say("Firmware update failed: ", err);
+    return false;
+  }
+  if (Update.write(&lastByte, 1) != 1 || !Update.end(false)) {
+    err = std::string("updater: ") + Update.getErrorString().c_str();
+    say("Firmware update failed: ", err);
+    return false;
+  }
+  say("Firmware update: verified and staged, restarting soon", "");
+  return true;
 }
 
 bool WifiNet::post(const char* path, const std::string& body, int& status, std::string& resp) {

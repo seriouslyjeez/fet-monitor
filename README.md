@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.21: Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.22: firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -45,6 +45,14 @@ automatic one after 20 shots) starts the count afresh.
 select targets and set their mode (Practice / Match / Ammo test) or start a new series without taking control
 (whoever holds control keeps it); **Remove** a dead target (hidden, history kept, back automatically when it reports
 again); **Ban** a rogue one (everything it sends is refused with 403 and not stored; it keeps its queue) and unban it.
+**Bridge firmware updates** (Range Control, bridge firmware 0.2.0 or newer): upload the `.bin` exported from Arduino,
+pick it, select targets and press *Update*. The Pi accepts only FeT Monitor bridge images (ESP8266 image, flash mode
+DOUT, carrying `fet-monitor-bridge/<version>`), at most 1 MB, and queues one only for a target that reported it has
+room and runs a build for the same flash size (a 1 MB image on a 4 MB-layout ESP-01S would lose its settings and
+queued shots). The target downloads it from the Pi with its device token, checks the SHA-256 before the last byte
+reaches the updater (a damaged download is abandoned, the running firmware stays), reports, and restarts.
+Each row shows the update's progress. Targets on 0.1.x need one update to 0.2.0 by USB or their `/update` page first.
+
 The login lasts 2 hours idle, 12 hours at most, and ends when the password changes or the server restarts; five wrong
 passwords from one address lock it for 10 minutes. The LAN is plain HTTP, so the password can be overheard there:
 use one that is not used anywhere else.
@@ -169,7 +177,10 @@ backup from /var/backups/fet-monitor in that case.
 | GET /admin/status | Range Control | `{password_set, logged_in}` |
 | POST /admin/login, /admin/logout | Range Control | `{password}` → session cookie (HttpOnly, SameSite=Strict, Path=/api/v1/admin); 401 wrong, 429 locked (`retry_after`), 409 no password set |
 | GET /admin/targets | Range Control | All targets plus `banned` |
-| POST /admin/targets/<id>/mode\|remove\|ban\|unban | Range Control | `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
+| POST /admin/firmware | Range Control | Raw `.bin` upload (`Content-Type: application/octet-stream`, ≤ 1 MB); 400 with the reason if it is not a FeT Monitor bridge image |
+| GET /admin/firmware; POST /admin/firmware/<sha256>/delete | Range Control | Stored images (version, size, flash size, SHA-256) |
+| GET /firmware/<sha256> | target (X-FET-Token) | The image a target was told to install |
+| POST /admin/targets/<id>/mode\|remove\|ban\|unban\|firmware | Range Control | `firmware`: `{sha256}` queues an update (refused with the reason if the target cannot take it). `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 | POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 

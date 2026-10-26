@@ -15,12 +15,15 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
 from .core import BadRequest, Core, Forbidden, NotFound, iso
+from .firmware import MAX_IMAGE, BadImage, FirmwareStore
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|commands|control|control/release|mode|settings)$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware)$")
+ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
+DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
@@ -72,6 +75,49 @@ class Handler(BaseHTTPRequestHandler):
             return urlparse(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
         return True
 
+    def _firmware_upload(self) -> None:
+        """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big."""
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            self.close_connection = True
+            raise BadRequest("Content-Length required")
+        if not self.server.admin.check(self._admin_token()):
+            self.close_connection = True
+            return self._send(401, {"error": "log in to Range Control"})
+        if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/octet-stream":
+            self.close_connection = True
+            return self._send(415, {"error": "upload the .bin file itself (application/octet-stream)"})
+        if length <= 0 or length > MAX_IMAGE:
+            self.close_connection = True
+            return self._send(413, {"error": f"a firmware image is at most {MAX_IMAGE // 1024} KB"})
+        data = self.rfile.read(length)
+        if len(data) != length:
+            self.close_connection = True
+            raise BadRequest("upload cut off")
+        try:
+            meta = self.server.firmware.add(data, uploaded_by=self.client_address[0])
+        except BadImage as exc:
+            return self._send(400, {"error": str(exc)})
+        log.info("Range Control from %s: firmware %s (%s, %d bytes) uploaded", self.client_address[0], meta["version"],
+                 meta["sha256"][:12], meta["size"])
+        return self._send(200, meta)
+
+    def _device_firmware(self, sha: str) -> None:
+        """A target fetching an image it was told to install. Device token required; only stored images by SHA-256."""
+        if not self._device_auth():
+            return self._send(401, {"error": "bad token"})
+        path = self.server.firmware.path(sha)
+        if path is None:
+            return self._send(404, {"error": "no such firmware image"})
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _admin_token(self):
         try:
             c = SimpleCookie(self.headers.get("Cookie", ""))
@@ -88,6 +134,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {"error": "admin requests must come from the FeT Monitor page"})
         if path == "/api/v1/admin/status" and method == "GET":
             return self._send(200, {"password_set": admin.password_set(), "logged_in": admin.check(self._admin_token())})
+        if path == "/api/v1/admin/firmware" and method == "POST":
+            return self._firmware_upload()
         if method == "POST":
             payload = self._read_json()
             if not isinstance(payload, dict):
@@ -112,6 +160,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "log in to Range Control"})
         if path == "/api/v1/admin/targets" and method == "GET":
             return self._send(200, core.admin_view())
+        if path == "/api/v1/admin/firmware" and method == "GET":
+            return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
+        fd = ADMIN_FW_DELETE_RE.match(path)
+        if fd and method == "POST":
+            if not self.server.firmware.delete(fd.group(1)):
+                raise NotFound("no such firmware image")
+            log.info("Range Control from %s: deleted firmware %s", self.client_address[0], fd.group(1)[:12])
+            return self._send(200, {"ok": True})
         m = ADMIN_TARGET_RE.match(path)
         if m and method == "POST":
             did, what = m.groups()
@@ -119,6 +175,11 @@ class Handler(BaseHTTPRequestHandler):
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
+            if what == "firmware":
+                image = self.server.firmware.get(payload.get("sha256"))
+                if image is None:
+                    raise NotFound("no such firmware image")
+                return self._send(200, {"command_id": core.queue_firmware(did, image)})
             if what == "remove":
                 core.remove_target(did)
             else:
@@ -199,6 +260,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._page()
         if url.path.startswith("/api/v1/admin/"):
             return self._admin(url.path, "GET")
+        dm = DEVICE_FW_RE.match(url.path)
+        if dm:
+            return self._device_firmware(dm.group(1))
         if url.path == "/api/v1/stream":
             return self._stream()
         if url.path == "/api/v1/health":
@@ -287,10 +351,11 @@ class FetHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
-    def __init__(self, addr, core: Core, token: str, admin: Admin = None):
+    def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None):
         super().__init__(addr, Handler)
         self.core = core
         self.token = token
+        self.firmware = firmware if firmware is not None else FirmwareStore(None)
         self.admin = admin if admin is not None else Admin(None)     # no data dir: no password, Range Control refuses
         self.stopping = False
         self.stream_keepalive_s = 15
@@ -310,5 +375,6 @@ class FetHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin)
+def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
+                firmware: FirmwareStore = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware)

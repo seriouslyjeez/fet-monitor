@@ -26,6 +26,14 @@ struct Net {
   // POST a JSON body. True only if an HTTP response was received (any status). Must keep the serial port serviced
   // while it waits (the platform does that), and must cap the response at a few KB.
   virtual bool post(const char* path, const std::string& body, int& status, std::string& resp) = 0;
+  // Firmware update from the server: GET /api/v1/firmware/<sha256>, checked with FwCheck while it streams into the
+  // updater, staged for the next start only if the whole image matched. False (with a reason in err) leaves the
+  // running firmware as it is. Keeps the serial port serviced, like post().
+  virtual bool updateFirmware(const std::string& sha256hex, uint32_t size, std::string& err) {
+    (void)sha256hex; (void)size; err = "not supported here"; return false;
+  }
+  virtual uint32_t otaSpace() { return 0; }    // bytes free for a new firmware image; 0 = cannot update
+  virtual uint32_t flashSize() { return 0; }   // the flash size this firmware was built for (an image must match it)
 };
 
 struct Uart {

@@ -50,6 +50,7 @@ struct EspClass {
   String getCoreVersion();
   uint32_t getChipId();
   uint32_t getFreeHeap();
+  uint32_t getFreeSketchSpace();
   void restart();
 };
 extern EspClass ESP;

@@ -43,6 +43,8 @@ password, so do not share it.
   `FeTMonitor-<last6>`; firmware 0.1.15 and older: `freETarget-<last6>`), go to `/update` (user `fet`, password = the server token from the setup page) and upload
   the new `.bin`.
 - Or with esptool as above, without `erase_flash`.
+- Firmware 0.2.0 and newer: from Range Control on the FeT Monitor page (upload the `.bin`, select targets, Update).
+  The image must be built for the target's flash size.
 
 ## After flashing
 

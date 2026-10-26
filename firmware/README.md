@@ -77,3 +77,19 @@ and `FET_DEBUG 1` again.
 The setup WiFi is now `FeTMonitor-<last6>` (was `freETarget-<last6>`), the setup and status pages say FeT Monitor, and
 mDNS looks for `_fetmonitor._tcp` (install `deploy/fet-monitor.avahi.service` on the Pi). Nothing else changed; saved
 settings, queued shots and the boot counter are kept across the update.
+
+### Firmware 0.2.0: updates from the Pi
+
+- New server command `fw_update` (line `<sha256> <size>`): the bridge downloads `GET /api/v1/firmware/<sha256>` from the
+  server it reports to (device token), feeds every byte through `FwCheck` (SHA-256, `src/core/sha256.h`) into the
+  ESP8266 updater, and writes the image's last byte only after the whole image matched, so a damaged or wrong image never
+  completes and the running firmware stays. On success it reports the result, then restarts into the new image.
+- The heartbeat now reports `ota_space` (free room for a new image) and `flash_size` (the layout this build uses); the
+  server refuses images that do not fit or were built for another flash size.
+- HTTP requests carry `User-Agent: fet-monitor-bridge/<version>`; the server finds the same text inside uploaded images
+  to recognise our firmware and its version.
+- One-time step: a target on 0.1.x must get 0.2.0 by USB (esptool) or its `/update` page; after that, Range Control.
+- Export one image per flash layout and update each target with the image matching its layout (ESP-01S boards here use
+  4 MB, the original ESP-01 1 MB). Unverified on hardware: the download/flash path in `platform.cpp` (the host harness
+  runs the same core logic against the real server, with memory standing in for flash).
+
