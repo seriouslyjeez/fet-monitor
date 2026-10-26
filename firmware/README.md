@@ -1,3 +1,29 @@
+# FeT Bridge firmware (ESP-01 / ESP-01S): build and flash
+
+## Arduino IDE settings (ESP8266 core 3.1.2)
+
+| Setting (Tools menu) | 4 MB ESP-01S | Original 1 MB ESP-01 |
+|---|---|---|
+| Board | Generic ESP8266 Module | Generic ESP8266 Module |
+| Flash Size | `4MB (FS:2MB OTA:~1019KB)` | `1MB (FS:128KB OTA:~438KB)` |
+| Flash Mode | DOUT | DOUT |
+| CPU Frequency | 80 MHz | 80 MHz |
+| Upload Speed | 115200 | 115200 |
+| Erase Flash | All Flash Contents on the FIRST upload only | same |
+| lwIP Variant, Debug Port, others | leave at default | leave at default |
+
+After the first upload, set Erase Flash back to "Only Sketch" so the saved settings and queued shots survive updates.
+The first upload on a chip needs the full erase; without it the radio can crash at start-up (exccause 29).
+To program: hold the programmer's button while plugging in (GPIO0 low), upload, then replug without the button.
+Serial Monitor: 115200 baud. Open it before replugging to see the start-up messages.
+
+With arduino-cli (the `eesz` value may need adjusting; `arduino-cli board details -b esp8266:esp8266:generic` lists it):
+
+    arduino-cli compile -b esp8266:esp8266:generic:FlashMode=dout,eesz=4M2M,baud=115200 firmware/fet_bridge
+
+Before overwriting a chip that is in service, back it up with esptool (`esptool.py read_flash 0 0x400000 backup.bin`
+for 4 MB). The 1 MB original also needs a full erase the first time it gets this firmware.
+
 Ready-made firmware, no compiling: see [FLASHING.md](FLASHING.md).
 
 ## Fixed IP address (skip DHCP)
@@ -99,4 +125,11 @@ The bridge firmware is now called FeT Bridge (its setup and status pages say so)
 0.2.0 -> 0.2.1 update from Range Control. After each Arduino export run `python3 tools/collect_firmware.py`: it checks the
 export with the Pi's upload rules and keeps it as `dist/firmware/fet-bridge-<version>-<flash>.bin` (exports overwrite
 each other otherwise).
+
+### FeT Bridge firmware 0.2.2: factory reset
+
+New server command `factory_reset` (Range Control, one target at a time; the command line must be `erase`). The
+bridge reports the result first, then formats LittleFS (settings, server token, queued shots, boot counter), erases
+the SDK's WiFi area (`ESP.eraseConfig()`) and restarts unconfigured, i.e. into the open setup portal. The server
+refuses it for targets older than 0.2.2. Unverified on hardware (the host harness runs the same core logic).
 

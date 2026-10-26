@@ -22,7 +22,7 @@ Fresh SD card, Raspberry Pi OS (Legacy, 32-bit) Lite, Bookworm, set up as in `do
 - [ ] `sudo ls -l /var/lib/fet-monitor`: `device_token` and `admin_password` are `-rw-------` owned by `fet-monitor`; `fetserver.db` exists (made by the service).
 - [ ] `ls -ld /opt/fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor`: root 755, fet-monitor 750, fet-monitor 750.
 - [ ] `http://<Pi IP>:8080/` opens from a phone on the same network.
-- [ ] A target with firmware 0.1.16 set up with that IP and token reports and a shot appears.
+- [ ] A target with FeT Bridge firmware 0.1.16 or newer, set up with that IP and token, reports and a shot appears.
 - [ ] `sudo reboot`; after it, the page works again without doing anything (service enabled at boot).
 - [ ] `sudo systemctl start fet-monitor-backup.service` then `ls /var/backups/fet-monitor` shows a new `fet-*.db`.
 
