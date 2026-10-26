@@ -17,8 +17,9 @@ Fingerprint: `SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`.
 ## FeT Bridge firmware release (tag `fw-<version>`)
 
 1. Bump `FET_FW_VERSION` in `firmware/fet_bridge/src/platform/build_config.h`, commit.
-2. In Arduino: Flash Size 1MB (FS:128KB OTA:~438KB), DOUT, Export Compiled Binary, then
-   `python3 tools/collect_firmware.py`. Repeat with Flash Size 4MB (FS:2MB OTA:~1019KB).
+2. `python3 tools/build_firmware.py` builds the 1 MB and 4 MB images with arduino-cli and collects them (same bytes as
+   the IDE). With the IDE instead: Flash Size 1MB (FS:128KB OTA:~438KB), DOUT, Export Compiled Binary, then
+   `python3 tools/collect_firmware.py`; repeat with Flash Size 4MB (FS:2MB OTA:~1019KB).
 3. `python3 tools/release.py firmware <version> --notes notes.md [--publish]`.
 
 Range Control's *Check GitHub for FeT Bridge firmware* downloads the newest `fw-` release's images (after the same

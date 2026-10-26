@@ -17,9 +17,12 @@ The first upload on a chip needs the full erase; without it the radio can crash 
 To program: hold the programmer's button while plugging in (GPIO0 low), upload, then replug without the button.
 Serial Monitor: 115200 baud. Open it before replugging to see the start-up messages.
 
-With arduino-cli (the `eesz` value may need adjusting; `arduino-cli board details -b esp8266:esp8266:generic` lists it):
+Without the IDE: `python3 tools/build_firmware.py` builds both layouts with arduino-cli (`brew install arduino-cli`;
+it uses the ESP8266 core 3.1.2 the IDE installed) and keeps them as `dist/firmware/fet-bridge-<version>-<1MB|4MB>.bin`.
+Its settings are the ones above (1 MB: `eesz=1M128`, 4 MB: `eesz=4M2M`); for the 0.2.1 source its output was
+byte-for-byte identical to the IDE's Export Compiled Binary. By hand:
 
-    arduino-cli compile -b esp8266:esp8266:generic:FlashMode=dout,eesz=4M2M,baud=115200 firmware/fet_bridge
+    arduino-cli compile -b esp8266:esp8266:generic:FlashMode=dout,eesz=4M2M,xtal=80,baud=115200 firmware/fet_bridge
 
 Before overwriting a chip that is in service, back it up with esptool (`esptool.py read_flash 0 0x400000 backup.bin`
 for 4 MB). The 1 MB original also needs a full erase the first time it gets this firmware.
