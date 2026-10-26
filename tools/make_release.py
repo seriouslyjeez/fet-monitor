@@ -46,8 +46,11 @@ def collect() -> list:
 
 
 def build(dirty: bool, out: Path) -> Path:
-    if git("status", "--porcelain") and not dirty:
-        sys.exit("uncommitted changes: commit first (or pass --dirty for a test build)")
+    # Only what goes into the archive matters: changed or untracked files under FILES/TREES. Anything else in the
+    # working folder (a stray download, notes) is not packed, so it does not block a release.
+    changed = git("status", "--porcelain", "--untracked-files=all", "--", *FILES, *TREES)
+    if changed and not dirty:
+        sys.exit("uncommitted changes in release files (commit them first, or pass --dirty for a test build):\n" + changed)
     version = re.search(r'__version__ = "([^"]+)"', (ROOT / "fetserver/__init__.py").read_text()).group(1)
     mtime = int(git("log", "-1", "--format=%ct"))
     top = f"fet-monitor-{version}"
