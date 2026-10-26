@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.20: series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.21: Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -39,6 +39,15 @@ keeping at least 3 shots; flyers are drawn dashed and misses are left out. *Clic
 such as 3.5 or 3,5 accepted; one ring = 2.5 mm) is remembered by that browser. On **Done** it offers to **clear the
 target** (a new practice series) or **keep the shots**, after which only newer shots count; a new series (including the
 automatic one after 20 shots) starts the count afresh.
+
+**Range Control** (header link; needs the Range Control password, set on the Pi by the installer or with
+`cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor`):
+select targets and set their mode (Practice / Match / Ammo test) or start a new series without taking control
+(whoever holds control keeps it); **Remove** a dead target (hidden, history kept, back automatically when it reports
+again); **Ban** a rogue one (everything it sends is refused with 403 and not stored; it keeps its queue) and unban it.
+The login lasts 2 hours idle, 12 hours at most, and ends when the password changes or the server restarts; five wrong
+passwords from one address lock it for 10 minutes. The LAN is plain HTTP, so the password can be overheard there:
+use one that is not used anywhere else.
 
 **The gear icon** holds everything that is not scoring:
 * *Control*: take, take over or release. Viewing never needs it. The claim lasts 60 s, renews itself while the
@@ -157,6 +166,10 @@ backup from /var/backups/fet-monitor in that case.
 | POST /targets/<id>/control | browser | `{client_id, name, takeover}`: claim or renew; 409 if someone else holds it |
 | POST /targets/<id>/control/release | browser | Release the claim |
 | POST /targets/<id>/mode | browser | `{client_id, mode, shooter, new_series, label}`; 403 without the claim. Practice is its own series; sighter and record share a match series; `mode: "ammo"` starts an open-ended ammo test (the view then carries `ammo`: group size, oval, centre) |
+| GET /admin/status | Range Control | `{password_set, logged_in}` |
+| POST /admin/login, /admin/logout | Range Control | `{password}` → session cookie (HttpOnly, SameSite=Strict, Path=/api/v1/admin); 401 wrong, 429 locked (`retry_after`), 409 no password set |
+| GET /admin/targets | Range Control | All targets plus `banned` |
+| POST /admin/targets/<id>/mode\|remove\|ban\|unban | Range Control | `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 | POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 
@@ -172,8 +185,8 @@ backup from /var/backups/fet-monitor in that case.
 * Tested: the process being killed mid-write. Not testable here: sudden power loss. `synchronous=FULL` is
   the protection for that, but an SD card can still fail, so prefer a USB SSD for /var/lib/fet-monitor
   and keep the nightly backups on a different device.
-* There are no logins yet. Browser endpoints are open to the LAN; device endpoints need the token.
-  The control claim stops accidental clashes, it is not security.
+* Viewing and shooting need no login: browser endpoints are open to the LAN; device endpoints need the token.
+  The control claim stops accidental clashes, it is not security. Range Control (/api/v1/admin) needs its password.
 
 ## License
 

@@ -8,16 +8,19 @@ import os
 import queue
 import re
 import sqlite3
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
+from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|commands|control|control/release|mode|settings)$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban)$")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
 
@@ -30,9 +33,11 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         log.debug("%s %s", self.address_string(), fmt % args)
 
-    def _send(self, status: int, obj) -> None:
+    def _send(self, status: int, obj, headers=()) -> None:
         body = json.dumps(obj).encode()
         self.send_response(status)
+        for k, v in headers:
+            self.send_header(k, v)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -55,6 +60,71 @@ class Handler(BaseHTTPRequestHandler):
     def _device_auth(self) -> bool:
         given = self.headers.get("X-FET-Token", "")
         return hmac.compare_digest(given.encode(), self.server.token.encode())
+
+    # -- Range Control --
+    def _admin_request_ok(self) -> bool:
+        """Only our own page may call the admin API: a custom header (a cross-site page cannot send one without a
+        CORS preflight, which we never answer) and, when the browser sends one, an Origin naming this server."""
+        if self.headers.get("X-FET-Admin") != "1":
+            return False
+        origin = self.headers.get("Origin")
+        if origin:
+            return urlparse(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
+        return True
+
+    def _admin_token(self):
+        try:
+            c = SimpleCookie(self.headers.get("Cookie", ""))
+        except CookieError:
+            return None
+        return c[COOKIE].value if COOKIE in c else None
+
+    def _admin(self, path: str, method: str) -> None:
+        admin: Admin = self.server.admin
+        core: Core = self.server.core
+        if not self._admin_request_ok():
+            if method == "POST":
+                self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
+            return self._send(403, {"error": "admin requests must come from the FeT Monitor page"})
+        if path == "/api/v1/admin/status" and method == "GET":
+            return self._send(200, {"password_set": admin.password_set(), "logged_in": admin.check(self._admin_token())})
+        if method == "POST":
+            payload = self._read_json()
+            if not isinstance(payload, dict):
+                raise BadRequest("body must be an object")
+        if path == "/api/v1/admin/login" and method == "POST":
+            status, value = admin.login(payload.get("password"), self.client_address[0])
+            if status == "ok":
+                cookie = f"{COOKIE}={value}; Path={COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age={ADMIN_MAX_S}"
+                return self._send(200, {"logged_in": True}, headers=[("Set-Cookie", cookie)])
+            if status == "locked":
+                return self._send(429, {"error": "too many wrong passwords", "retry_after": value},
+                                  headers=[("Retry-After", str(value))])
+            if status == "unset":
+                return self._send(409, {"error": "no Range Control password is set; set it on the Pi"})
+            log.warning("Range Control: wrong password from %s", self.client_address[0])
+            return self._send(401, {"error": "wrong password"})
+        if path == "/api/v1/admin/logout" and method == "POST":
+            admin.logout(self._admin_token())
+            return self._send(200, {"logged_in": False},
+                              headers=[("Set-Cookie", f"{COOKIE}=; Path={COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0")])
+        if not admin.check(self._admin_token()):
+            return self._send(401, {"error": "log in to Range Control"})
+        if path == "/api/v1/admin/targets" and method == "GET":
+            return self._send(200, core.admin_view())
+        m = ADMIN_TARGET_RE.match(path)
+        if m and method == "POST":
+            did, what = m.groups()
+            log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what == "mode" else "")
+            if what == "mode":
+                return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
+                                                     bool(payload.get("new_series")), payload.get("label"), admin=True))
+            if what == "remove":
+                core.remove_target(did)
+            else:
+                core.set_banned(did, what == "ban")
+            return self._send(200, {"ok": True})
+        self._send(404, {"error": "not found"})
 
     def _dispatch(self, fn):
         try:
@@ -127,6 +197,8 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(url.query)
         if url.path in ("/", "/index.html"):
             return self._page()
+        if url.path.startswith("/api/v1/admin/"):
+            return self._admin(url.path, "GET")
         if url.path == "/api/v1/stream":
             return self._stream()
         if url.path == "/api/v1/health":
@@ -175,6 +247,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         core: Core = self.server.core
         ip = self.client_address[0]
+        if url.path.startswith("/api/v1/admin/"):
+            return self._admin(url.path, "POST")
         if url.path in ("/api/v1/events", "/api/v1/heartbeat"):
             if not self._device_auth():
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
@@ -213,10 +287,11 @@ class FetHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
-    def __init__(self, addr, core: Core, token: str):
+    def __init__(self, addr, core: Core, token: str, admin: Admin = None):
         super().__init__(addr, Handler)
         self.core = core
         self.token = token
+        self.admin = admin if admin is not None else Admin(None)     # no data dir: no password, Range Control refuses
         self.stopping = False
         self.stream_keepalive_s = 15
 
@@ -235,5 +310,5 @@ class FetHTTPServer(ThreadingHTTPServer):
         super().handle_error(request, client_address)
 
 
-def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token)
+def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin)

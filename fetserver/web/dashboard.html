@@ -58,6 +58,10 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 /* sight adjustment */
 .sightface{max-width:300px;margin:0 auto}.advice{font-size:24px;font-weight:800;margin:4px 0}.advice div{margin:2px 0}
 .cprrow{display:flex;gap:8px;align-items:center}.cprrow input{width:80px}.bad{color:var(--bad)}
+/* range control */
+.rc table.t td,.rc table.t th{text-align:left;vertical-align:middle}.rc .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
+.rc .scroll{max-height:none;overflow-x:auto}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
+.rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -65,7 +69,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><span id="live">connecting…</span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
@@ -406,6 +410,48 @@ function sightView(t, S) {
     '<p class="mut">Directions move the shots: Up raises the group. One ring is 2.5 mm. Remembered on this device.</p></section></div>';
 }
 
+// ---- Range Control ----
+// Logged-in range officers can change any target's mode (no control claim needed), remove dead targets and ban rogue ones.
+const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
+const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
+function rangeView(S) {
+  const rc = S.rc || {}, st = rc.status;
+  let h = '<div class="rc"><div class="panel"><div class="row"><span class="title">Range Control</span>' +
+          (st && st.logged_in ? '<button data-act="rclogout">Log out</button>' : '') + '</div>';
+  if (!st) return h + '<p class="mut">Loading…</p></div></div>';
+  if (!st.password_set) return h + '<p>Range Control has no password yet. Set one on the Pi:</p>' +
+    '<p><code>cd /opt/fet-monitor &amp;&amp; sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor</code></p>' +
+    '<p class="mut">or re-run the installer with <code>--reset-password</code>.</p></div></div>';
+  if (!st.logged_in) return h + '<p>Log in to change any target, remove or ban targets.</p>' +
+    '<div class="row" style="justify-content:flex-start;gap:8px"><input id="rcpw" type="password" autocomplete="current-password" placeholder="Range Control password">' +
+    '<button class="pri" data-act="rclogin">Log in</button></div>' + (rc.msg ? '<p class="bad">' + esc(rc.msg) + '</p>' : '') +
+    '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div></div>';
+  const d = rc.data || {targets: [], banned: []}, sel = rc.sel || {}, ids = d.targets.map(t => t.device_id);
+  const nsel = ids.filter(i => sel[i]).length, all = ids.length > 0 && nsel === ids.length;
+  h += '<p class="mut">Changes here apply to the selected targets at once and do not need control of them; whoever is in control keeps it.</p>' +
+    '<div class="bulk"><span>' + nsel + ' selected</span>' +
+    RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + (nsel ? '' : ' disabled') + '>' + m[1] + '</button>').join('') +
+    '<button data-act="rcnew"' + (nsel ? '' : ' disabled') + '>New series</button>' +
+    '<button class="danger" data-act="rcremove"' + (nsel ? '' : ' disabled') + '>Remove</button>' +
+    '<button class="danger" data-act="rcban"' + (nsel ? '' : ' disabled') + '>Ban</button></div>' +
+    '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
+    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
+    (d.targets.length ? d.targets.map(t => {
+      const su = statusUrl(t.ip);
+      return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
+        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
+        '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
+        '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
+        '<td>' + esc(t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
+    }).join('') : '<tr><td colspan="8" class="mut">No targets.</td></tr>') + '</table></div>' +
+    '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
+    'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
+  h += '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
+    '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
+    '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
+  return h + '</div>';
+}
+
 // ---- browser only from here ----
 const S = {targets: [], review: null, reviewView: null, seriesList: [], gear: false, adv: false, zoom: 'auto', sse: false, busy: false, again: false,
            sight: null, cpr: CPR_DEFAULT, marks: {}};
@@ -416,12 +462,17 @@ function clientId() {
   store('fet_cid', CID);
 }
 async function get(p) { const r = await fetch(API + p); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function adminCall(p, body) {        // the custom header keeps other web sites from making these requests
+  const r = await fetch(API + '/admin' + p, body === undefined ? {headers: {'X-FET-Admin': '1'}, credentials: 'same-origin'}
+    : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-FET-Admin': '1'}, credentials: 'same-origin', body: JSON.stringify(body)});
+  return {status: r.status, data: await r.json().catch(() => ({}))};
+}
 async function post(p, body) {
   const r = await fetch(API + p, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.assign({client_id: CID}, body))});
   return {status: r.status, data: await r.json().catch(() => ({}))};
 }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
-const route = () => { const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+const route = () => { if (/^#\/range\b/.test(location.hash)) return {range: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
@@ -440,6 +491,14 @@ async function refresh() {
     }
     if (S.sight && (!sightAllowed(t, S) || t.view.series_id !== S.sight.sid)) S.sight = null;   // never outside live practice in control
     if (S.sight && !S.sight.exit) S.sight.data = await get('/series/' + S.sight.sid + '/sight?after=' + S.sight.after);
+    if (route().range) {
+      S.rc = S.rc || {sel: {}};
+      S.rc.status = (await adminCall('/status')).data;
+      if (S.rc.status.logged_in) {
+        const res = await adminCall('/targets');
+        if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
+      }
+    }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
@@ -449,9 +508,12 @@ async function refresh() {
 
 function render() {
   const app = document.getElementById('app'), t = current(), r = route();
-  document.getElementById('nav-coach').className = r.id ? '' : 'on';
+  document.getElementById('nav-coach').className = r.id || r.range ? '' : 'on';
+  document.getElementById('nav-range').className = r.range ? 'on' : '';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
-  app.innerHTML = r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets);
+  const ae = document.activeElement;
+  if (r.range && app.contains(ae) && ae.tagName === 'INPUT' && ae.type === 'password') return;   // never redraw under typing
+  app.innerHTML = r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets);
   renderOverlay(t);
 }
 function renderOverlay(t) {
@@ -498,6 +560,7 @@ async function act(el) {
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
   if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
   if (a === 'rnav') return reviewMove(el.dataset.move);
+  if (/^rc/.test(a)) return rangeAct(el, a);
   if (!id) return;
   if (a === 'take' || a === 'takeover') {
     const name = (val('who') || store('fet_name') || '').trim();
@@ -536,6 +599,40 @@ async function act(el) {
   refresh();
 }
 
+async function rangeAct(el, a) {
+  const rc = S.rc = S.rc || {sel: {}}, sel = rc.sel = rc.sel || {};
+  const chosen = () => ((rc.data || {}).targets || []).map(t => t.device_id).filter(i => sel[i]);
+  if (a === 'rcsel') { sel[el.dataset.id] = el.checked; return render(); }
+  if (a === 'rcall') { ((rc.data || {}).targets || []).forEach(t => { sel[t.device_id] = el.checked; }); return render(); }
+  if (a === 'rclogin') {
+    const pw = (document.getElementById('rcpw') || {}).value || '';
+    if (!pw) return;
+    const res = await adminCall('/login', {password: pw});
+    rc.msg = res.status === 200 ? '' : res.status === 429 ? 'Too many wrong passwords from this device. Try again in ' + Math.ceil((res.data.retry_after || 600) / 60) + ' min.'
+           : res.status === 401 ? 'Wrong password.' : (res.data.error || 'Could not log in');
+    document.activeElement && document.activeElement.blur();
+    return refresh();
+  }
+  if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
+  const ids = a === 'rcunban' ? [el.dataset.id] : chosen();
+  if (!ids.length) return;
+  const names = ids.map(i => { const t = ((rc.data || {}).targets || []).find(x => x.device_id === i); return t ? t.name : i; }).join(', ');
+  if (a === 'rcremove' && !confirm('Remove ' + names + '?\nIts history is kept. It comes back by itself if it reports again.')) return;
+  if (a === 'rcban' && !confirm('Ban ' + names + '?\nEverything it sends is refused until you unban it.')) return;
+  const path = {rcmode: 'mode', rcnew: 'mode', rcremove: 'remove', rcban: 'ban', rcunban: 'unban'}[a];
+  let failed = 0;
+  for (const id of ids) {
+    const t = ((rc.data || {}).targets || []).find(x => x.device_id === id);
+    const body = a === 'rcmode' ? {mode: el.dataset.mode} : a === 'rcnew' ? {mode: t ? (t.mode === 'record' ? 'sighter' : t.mode) : 'practice', new_series: true} : {};
+    const res = await adminCall('/targets/' + encodeURIComponent(id) + '/' + path, body);
+    if (res.status === 401) { toast('Logged out: log in again'); break; }
+    if (res.status !== 200) failed++;
+  }
+  if (failed) toast(failed + ' of ' + ids.length + ' changes failed');
+  if (a === 'rcremove' || a === 'rcban') ids.forEach(i => { delete sel[i]; });
+  return refresh();
+}
+
 function reviewMove(move) {
   const v = S.reviewView;
   if (!S.review || !v) return;
@@ -547,6 +644,7 @@ function boot() {
   S.zoom = store('fet_zoom') || 'auto';
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
   document.addEventListener('input', e => {
     if (e.target.id !== 'cpr') return;
     S.cpr = e.target.value;
@@ -579,7 +677,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

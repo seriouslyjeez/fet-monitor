@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -305,4 +305,21 @@ assert.deepStrictEqual(['192.168.1.20', '10.0.0.255', 'fe80::1', '::1'].map(stat
 assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', null, undefined, ''].map(statusUrl), Array(8).fill(null));
 [asFree, asMine, asOther].forEach(f => assert(overlayView(f(Object.assign({}, practiceT, {ip: '192.168.1.20'})), state(), '').includes('href="http://192.168.1.20/"'), 'shown to everyone'));
 assert(overlayView(Object.assign({}, practiceT, {ip: null}), state(), '').includes('No address yet'));
+// Range Control screen
+assert(rangeView(state({rc: null})).includes('Loading'));
+assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));
+const rcLogin = rangeView(state({rc: {status: {password_set: true, logged_in: false}, msg: '<b>x</b>'}}));
+assert(rcLogin.includes('type="password"') && rcLogin.includes('data-act="rclogin"') && !rcLogin.includes('<b>x</b>') && rcLogin.includes('&lt;b&gt;x'));
+const rcData = {targets: D.targets.map(asOther), banned: [{device_id: 'bad-1', name: '<i>Rogue</i>', ip: '10.0.0.9', last_seen: '2026-10-25T10:00:00Z'}]};
+const rcIn = s => rangeView(state({rc: Object.assign({status: {password_set: true, logged_in: true}, data: rcData}, s || {})}));
+const none = rcIn({sel: {}});
+assert.strictEqual(count(none, /data-act="rcsel"/g), D.targets.length, 'one checkbox per target');
+assert.strictEqual(count(none, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g), 6, 'bulk buttons disabled with nothing selected');
+assert(none.includes('data-act="rcunban" data-id="bad-1"') && none.includes('&lt;i&gt;Rogue') && !none.includes('<i>Rogue'));
+assert(!none.includes(D.targets.find(t => t.device_id === 'lane-2').name), 'hostile target names are escaped');
+const one = rcIn({sel: {'lane-1': true}});
+assert(one.includes('1 selected') && count(one, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g) === 0);
+const every = {}; D.targets.forEach(t => { every[t.device_id] = true; });
+assert(/data-act="rcall" checked/.test(rcIn({sel: every})), 'select-all shows checked when all are selected');
+assert(rcIn({sel: {}, data: {targets: [], banned: []}}).includes('No targets.'));
 console.log('OK');
