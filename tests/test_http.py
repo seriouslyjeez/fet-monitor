@@ -4,9 +4,11 @@ import tempfile
 import threading
 import time
 import unittest
+from pathlib import Path
 import urllib.error
 import urllib.request
 
+from fetserver.admin import Admin, write_password
 from fetserver.core import Core
 from fetserver.db import Database
 from fetserver.server import make_server
@@ -21,7 +23,8 @@ class ServerCase(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.db = Database(os.path.join(self.tmp.name, "t.db"))
         self.core = Core(self.db)
-        self.server = make_server(self.core, TOKEN, "127.0.0.1", 0)
+        self.server = make_server(self.core, TOKEN, "127.0.0.1", 0, admin=Admin(Path(self.tmp.name)))
+        self.admin_cookie = None
         self.port = self.server.server_address[1]
         self.url = f"http://127.0.0.1:{self.port}"
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -38,6 +41,22 @@ class ServerCase(unittest.TestCase):
             req.add_header("X-FET-Token", token)
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+
+    def admin(self, method, path, body=None):
+        """A Range Control call (custom header + session cookie, kept from the login answer)."""
+        req = urllib.request.Request(self.url + path, data=json.dumps(body).encode() if body is not None else None, method=method)
+        req.add_header("X-FET-Admin", "1")
+        req.add_header("Content-Type", "application/json")
+        if self.admin_cookie:
+            req.add_header("Cookie", self.admin_cookie)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                if r.headers.get("Set-Cookie"):
+                    self.admin_cookie = r.headers["Set-Cookie"].split(";")[0]
                 return r.status, json.loads(r.read())
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
@@ -78,14 +97,19 @@ class Api(ServerCase):
         self.assertEqual((body["targets"][0]["name"], body["targets"][0]["online"], body["targets"][0]["shot_count"]),
                          ("Lane 1", True, 2))
         self.assertEqual(self.call("GET", f"/api/v1/targets/lane-1/shots?since_id={shots[0]['id']}", token=None)[1]["shots"][0]["miss"], True)
-        status, body = self.call("POST", "/api/v1/targets/lane-1/commands", {"type": "serial", "line": '{"NEW":1}'}, token=None)
+        # target commands are Range Control only now: the old open endpoint is gone
+        self.assertEqual(self.call("POST", "/api/v1/targets/lane-1/commands", {"type": "reboot"}, token=None)[0], 404)
+        self.assertEqual(self.admin("POST", "/api/v1/admin/targets/lane-1/command", {"type": "reboot"})[0], 401)
+        write_password(Path(self.tmp.name), "range-pass")
+        self.assertEqual(self.admin("POST", "/api/v1/admin/login", {"password": "range-pass"})[0], 200)
+        status, body = self.admin("POST", "/api/v1/admin/targets/lane-1/command", {"type": "serial", "line": '{"NEW":1}'})
         self.assertEqual(status, 200)
         sim.heartbeat()
         self.assertEqual([c["line"] for c in sim.executed], ['{"NEW":1}'])
         sim.heartbeat()                                      # result acknowledged, nothing more to run
         self.assertEqual(len(sim.executed), 1)
-        self.assertEqual(self.call("POST", "/api/v1/targets/lane-1/commands", {"type": "serial", "line": '{"INIT":0}'}, token=None)[0], 400)
-        self.assertEqual(self.call("POST", "/api/v1/targets/ghost/commands", {"type": "reboot"}, token=None)[0], 404)
+        self.assertEqual(self.admin("POST", "/api/v1/admin/targets/lane-1/command", {"type": "serial", "line": '{"INIT":0}'})[0], 400)
+        self.assertEqual(self.admin("POST", "/api/v1/admin/targets/ghost/command", {"type": "reboot"})[0], 404)
 
     def test_ammo_test_over_http(self):
         sim = SimTarget(self.url, TOKEN, "lane-7", "Lane 7")

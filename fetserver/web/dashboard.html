@@ -417,12 +417,13 @@ function sightView(t, S) {
 // Logged-in range officers can change any target's mode (no control claim needed), remove dead targets and ban rogue ones.
 function fwJobText(t, images) {      // the latest firmware update of a target, in words
   const j = t.fw_job;
-  if (!j) return '';
+  const best = t.fw_best ? '<div class="fwjob">' + esc(t.fw_best.version) + ' available</div>' : '';   // not shown while waiting or updating
+  if (!j) return best;
   const img = (images || []).find(m => m.sha256 === j.sha256), v = img ? img.version : j.sha256.slice(0, 8);
   if (j.status === 'queued') return '<div class="fwjob">update to ' + esc(v) + ' waiting for the target</div>';
   if (j.status === 'sent') return '<div class="fwjob">updating to ' + esc(v) + '…</div>';
-  if (j.status === 'failed') return '<div class="fwjob bad">update to ' + esc(v) + ' failed: ' + esc(j.result || '') + '</div>';
-  if (img && t.bridge_fw === img.version) return '<div class="fwjob ok">updated to ' + esc(v) + '</div>';
+  if (j.status === 'failed') return '<div class="fwjob bad">update to ' + esc(v) + ' failed: ' + esc(j.result || '') + '</div>' + best;
+  if (img && t.bridge_fw === img.version) return '<div class="fwjob ok">updated to ' + esc(v) + '</div>' + best;
   return '<div class="fwjob">update to ' + esc(v) + ' installed, restarting…</div>';
 }
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
@@ -445,6 +446,8 @@ function rangeView(S) {
     '<div class="bulk"><span>' + nsel + ' selected</span>' +
     RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + (nsel ? '' : ' disabled') + '>' + m[1] + '</button>').join('') +
     '<button data-act="rcnew"' + (nsel ? '' : ' disabled') + '>New series</button>' +
+    '<button data-act="rccmd" data-type="reboot"' + (nsel ? '' : ' disabled') + '>Restart</button>' +
+    '<button data-act="rccmd" data-type="wifi_portal"' + (nsel ? '' : ' disabled') + '>Setup portal</button>' +
     '<button class="danger" data-act="rcremove"' + (nsel ? '' : ' disabled') + '>Remove</button>' +
     '<button class="danger" data-act="rcban"' + (nsel ? '' : ' disabled') + '>Ban</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
@@ -463,9 +466,11 @@ function rangeView(S) {
     '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
     '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
   const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
-  h += '<div class="panel"><h3>Bridge firmware</h3>' +
-    '<p class="mut">Upload the .bin from Arduino (Sketch &gt; Export Compiled Binary, Flash Mode DOUT). Only FeT Monitor bridge firmware 0.2.0 or newer ' +
-    'is accepted, and a target only takes an image built for its own flash size. Targets on older firmware need one update by USB first.</p>' +
+  h += '<div class="panel"><h3>FeT Bridge firmware</h3>' +
+    '<p class="mut">Upload the .bin files from Arduino (Sketch &gt; Export Compiled Binary, Flash Mode DOUT), one per flash size. Only FeT Bridge ' +
+    'firmware 0.2.0 or newer is accepted. <b>Update to best</b> gives each selected target the newest image built for its flash size that fits it; ' +
+    'targets that are up to date or have no suitable image are skipped with the reason. Targets on older firmware need one update by USB first.</p>' +
+    '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' selected to best</button></div>' +
     '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input type="file" id="rcfile" accept=".bin,application/octet-stream">' +
     '<button data-act="rcupload"' + (rc.file ? '' : ' disabled') + '>Upload' + (rc.file ? ' ' + esc(rc.file.name) : '') + '</button></div>' +
     (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
@@ -474,8 +479,9 @@ function rangeView(S) {
       '<td><b>' + esc(m.version) + '</b></td><td>' + esc(Math.round(m.flash_size / 1048576) + ' MB') + '</td><td>' + esc(Math.round(m.size / 1024) + ' KB') + '</td>' +
       '<td><code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code></td><td>' + esc(when(new Date(m.uploaded).toISOString())) + '</td>' +
       '<td><button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></td></tr>').join('') + '</table>' +
-      '<div class="bulk"><button class="pri" data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Update ' + nsel + ' selected to ' +
-      esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + '</button></div>' : '<p class="mut">No images uploaded.</p>') + '</div>';
+      '<div class="bulk"><button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' +
+      esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + ') on ' + nsel + ' selected</button><span class="mut">e.g. to go back to an older version</span></div>' :
+      '<p class="mut">No images uploaded.</p>') + '</div>';
   return h + '</div>';
 }
 
@@ -658,17 +664,20 @@ async function rangeAct(el, a) {
     await adminCall('/firmware/' + el.dataset.sha + '/delete', {});
     return refresh();
   }
-  if (a === 'rcflash') {
+  if (a === 'rcflash' || a === 'rcbest') {
     const ids = chosen(), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
-    if (!ids.length || !img) return;
-    if (!confirm('Update ' + ids.length + ' target(s) to bridge firmware ' + img.version + '?\nEach one downloads it, checks it and restarts (about a minute).')) return;
+    if (!ids.length || (a === 'rcflash' && !img)) return;
+    if (!confirm(a === 'rcbest' ? 'Update ' + ids.length + ' target(s) to the best FeT Bridge firmware for each?\nEach one downloads it, checks it and restarts (about a minute).'
+                                : 'Install FeT Bridge firmware ' + img.version + ' on ' + ids.length + ' target(s)?\nEach one downloads it, checks it and restarts (about a minute).')) return;
     const errs = [];
+    let sent = 0;
     for (const id of ids) {
-      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/firmware', {sha256: img.sha256});
+      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/firmware', {sha256: a === 'rcbest' ? 'best' : img.sha256});
+      if (res.status === 200) sent++;
       if (res.status === 401) { toast('Logged out: log in again'); break; }
       if (res.status !== 200) errs.push(res.data.error || ('error ' + res.status));
     }
-    rc.fwMsg = errs.length ? 'Not sent to ' + errs.length + ' target(s): ' + errs.join(' · ') : 'Update sent to ' + ids.length + ' target(s).';
+    rc.fwMsg = (sent ? 'Update sent to ' + sent + ' target(s). ' : '') + (errs.length ? 'Not sent to ' + errs.length + ' target(s): ' + errs.join(' · ') : '');
     rc.fwMsgBad = errs.length > 0;
     return refresh();
   }
@@ -677,12 +686,14 @@ async function rangeAct(el, a) {
   if (!ids.length) return;
   const names = ids.map(i => { const t = ((rc.data || {}).targets || []).find(x => x.device_id === i); return t ? t.name : i; }).join(', ');
   if (a === 'rcremove' && !confirm('Remove ' + names + '?\nIts history is kept. It comes back by itself if it reports again.')) return;
+  if (a === 'rccmd' && !confirm((el.dataset.type === 'reboot' ? 'Restart ' : 'Open the setup portal on ') + names + '?' +
+      (el.dataset.type === 'reboot' ? '' : '\nIt opens the open WiFi network FeTMonitor-xxxxxx for 15 minutes; shots keep flowing.'))) return;
   if (a === 'rcban' && !confirm('Ban ' + names + '?\nEverything it sends is refused until you unban it.')) return;
-  const path = {rcmode: 'mode', rcnew: 'mode', rcremove: 'remove', rcban: 'ban', rcunban: 'unban'}[a];
+  const path = {rcmode: 'mode', rcnew: 'mode', rcremove: 'remove', rcban: 'ban', rcunban: 'unban', rccmd: 'command'}[a];
   let failed = 0;
   for (const id of ids) {
     const t = ((rc.data || {}).targets || []).find(x => x.device_id === id);
-    const body = a === 'rcmode' ? {mode: el.dataset.mode} : a === 'rcnew' ? {mode: t ? (t.mode === 'record' ? 'sighter' : t.mode) : 'practice', new_series: true} : {};
+    const body = a === 'rccmd' ? {type: el.dataset.type} : a === 'rcmode' ? {mode: el.dataset.mode} : a === 'rcnew' ? {mode: t ? (t.mode === 'record' ? 'sighter' : t.mode) : 'practice', new_series: true} : {};
     const res = await adminCall('/targets/' + encodeURIComponent(id) + '/' + path, body);
     if (res.status === 401) { toast('Logged out: log in again'); break; }
     if (res.status !== 200) failed++;

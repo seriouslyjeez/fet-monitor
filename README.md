@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.22: firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.23: firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -45,8 +45,11 @@ automatic one after 20 shots) starts the count afresh.
 select targets and set their mode (Practice / Match / Ammo test) or start a new series without taking control
 (whoever holds control keeps it); **Remove** a dead target (hidden, history kept, back automatically when it reports
 again); **Ban** a rogue one (everything it sends is refused with 403 and not stored; it keeps its queue) and unban it.
-**Bridge firmware updates** (Range Control, bridge firmware 0.2.0 or newer): upload the `.bin` exported from Arduino,
-pick it, select targets and press *Update*. The Pi accepts only FeT Monitor bridge images (ESP8266 image, flash mode
+**FeT Bridge firmware updates** (Range Control; FeT Bridge firmware 0.2.0 or newer on the target): upload the `.bin`
+files exported from Arduino (one per flash size), select targets and press *Update to best*: each target gets the newest
+image built for its flash size that fits its free space; a target that is up to date or has no suitable image is
+skipped with the reason, on the Pi, before anything reaches it. *Install the chosen image* forces one image (e.g. to
+go back). *Restart* and *Setup portal* are here too (they are Range Control only). The Pi accepts only FeT Bridge images (ESP8266 image, flash mode
 DOUT, carrying `fet-monitor-bridge/<version>`), at most 1 MB, and queues one only for a target that reported it has
 room and runs a build for the same flash size (a 1 MB image on a 4 MB-layout ESP-01S would lose its settings and
 queued shots). The target downloads it from the Pi with its device token, checks the SHA-256 before the last byte
@@ -180,9 +183,8 @@ backup from /var/backups/fet-monitor in that case.
 | POST /admin/firmware | Range Control | Raw `.bin` upload (`Content-Type: application/octet-stream`, ≤ 1 MB); 400 with the reason if it is not a FeT Monitor bridge image |
 | GET /admin/firmware; POST /admin/firmware/<sha256>/delete | Range Control | Stored images (version, size, flash size, SHA-256) |
 | GET /firmware/<sha256> | target (X-FET-Token) | The image a target was told to install |
-| POST /admin/targets/<id>/mode\|remove\|ban\|unban\|firmware | Range Control | `firmware`: `{sha256}` queues an update (refused with the reason if the target cannot take it). `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
+| POST /admin/targets/<id>/mode\|remove\|ban\|unban\|firmware\|command | Range Control | `command`: `{type: reboot\|wifi_portal\|serial, line}` (serial lines allowlisted). `firmware`: `{sha256}` or `{sha256: "best"}` queues an update (refused with the reason if the target cannot take it). `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
-| POST /targets/<id>/commands | browser | Queue `{"type":"serial","line":"{\"NEW\":1}"}`, `wifi_portal` or `reboot` (serial lines are allowlisted: ECHO, VERSION, NEW) |
 
 ## Durability notes
 

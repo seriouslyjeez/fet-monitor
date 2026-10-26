@@ -14,7 +14,7 @@ from pathlib import Path
 from fetserver.admin import Admin, write_password
 from fetserver.core import BadRequest, Core, NotFound
 from fetserver.db import Database
-from fetserver.firmware import BadImage, FirmwareStore, inspect
+from fetserver.firmware import BadImage, FirmwareStore, best_for, inspect
 from fetserver.server import make_server
 
 from tests.test_firmware_host import Harness, build
@@ -44,7 +44,7 @@ class Inspect(unittest.TestCase):
             (image(size=10_000), "size"), (b"\xe9" + bytes(MB + 10), "size"),
             (image(magic=0x7F), "not an ESP8266"), (image(segs=0), "damaged"), (image(segs=40), "damaged"),
             (image(mode=2), "DOUT"), (image(flash=0x70), "unknown flash size"),
-            (image().replace(b"fet-monitor-bridge/", b"something-else-xx/"), "not a FeT Monitor"),
+            (image().replace(b"fet-monitor-bridge/", b"something-else-xx/"), "not FeT Bridge firmware"),
             (image(extra=b"fet-monitor-bridge/0.1.9 "), "more than one"),
         ]
         for data, why in cases:
@@ -60,7 +60,8 @@ class Inspect(unittest.TestCase):
         except BadImage as exc:                    # 0.1.x builds do not carry the identification
             self.assertIn("0.2.0 or newer", str(exc))
             return
-        self.assertEqual((m["flash_mode"], m["flash_size"]), ("DOUT", MB))
+        self.assertEqual(m["flash_mode"], "DOUT")
+        self.assertIn(m["flash_size"], (MB, 4 * MB))
 
 
 class Store(unittest.TestCase):
@@ -84,6 +85,34 @@ class Store(unittest.TestCase):
                 st.add(image(mode=0))
             self.assertEqual(len(st.list()), 1, "a refused image leaves nothing behind")
         self.assertEqual(FirmwareStore(None).list(), [])
+
+
+class Best(unittest.TestCase):
+    def setUp(self):
+        mk = lambda v, flash, size, up: dict(inspect(image(version=v, flash=flash, size=size, seed=hash(v + str(flash)) % 1000)), uploaded=up)
+        self.imgs = [mk("0.2.0", 0x20, 300_000, 1), mk("0.2.3", 0x20, 300_000, 2), mk("0.2.10", 0x20, 300_000, 3),
+                     mk("0.3.0", 0x20, 470_000, 4), mk("0.2.5", 0x40, 300_000, 5)]
+
+    def pick(self, **t):
+        img, why = best_for(t, self.imgs)
+        return (img["version"] if img else None), why
+
+    def test_newest_that_fits_the_same_flash_size(self):
+        self.assertEqual(self.pick(ota_space=460_000, flash_size=MB, bridge_fw="0.2.0")[0], "0.2.10",
+                         "0.2.10 > 0.2.3 (numeric, not text); 0.3.0 is too big; the 4 MB image is not for this chip")
+        self.assertEqual(self.pick(ota_space=900_000, flash_size=MB, bridge_fw="0.2.0")[0], "0.3.0")
+        self.assertEqual(self.pick(ota_space=900_000, flash_size=4 * MB, bridge_fw="0.2.0")[0], "0.2.5")
+
+    def test_reasons(self):
+        self.assertIn("cannot update from the Pi", self.pick(ota_space=0, bridge_fw="0.1.16")[1])
+        self.assertIn("no image for a 2 MB build", self.pick(ota_space=900_000, flash_size=2 * MB, bridge_fw="0.2.0")[1])
+        self.assertIn("larger than its 200000 bytes", self.pick(ota_space=200_000, flash_size=MB, bridge_fw="0.2.0")[1])
+        v, why = self.pick(ota_space=460_000, flash_size=MB, bridge_fw="0.2.10")
+        self.assertEqual(v, None)
+        self.assertIn("already up to date", why)
+        self.assertEqual(self.pick(ota_space=460_000, flash_size=MB, bridge_fw="0.9.0")[0], None, "never a downgrade")
+        self.assertEqual(self.pick(ota_space=460_000, flash_size=MB, bridge_fw="garbage")[0], "0.2.10")
+        self.assertIn("no image", best_for({"ota_space": 1, "flash_size": MB}, [])[1])
 
 
 class Queue(unittest.TestCase):
@@ -212,6 +241,21 @@ class FirmwareHttp(ServerCase):
         self.assertEqual(self.req("POST", "/api/v1/admin/targets/t1/firmware", {"sha256": "f" * 64})[0], 404)
         view = json.loads(self.req("GET", "/api/v1/admin/targets")[1])
         self.assertEqual(view["targets"][0]["fw_job"]["status"], "queued")
+        # "best": refused while one is waiting; the targets view names each target's best image (or why none)
+        self.assertEqual(self.req("POST", "/api/v1/admin/targets/t1/firmware", {"sha256": "best"})[0], 400)
+        self.core.handle_heartbeat({"device_id": "t2", "boot_count": 1, "uptime_ms": 1, "bridge_fw": "0.1.9", "ota_space": 460000, "flash_size": MB})
+        self.core.handle_heartbeat({"device_id": "t3", "boot_count": 1, "uptime_ms": 1, "bridge_fw": "0.2.0", "ota_space": 900000, "flash_size": 4 * MB})
+        rows = {t["device_id"]: t for t in json.loads(self.req("GET", "/api/v1/admin/targets")[1])["targets"]}
+        self.assertEqual(rows["t2"]["fw_best"]["version"], "0.2.0")
+        self.assertIsNone(rows["t3"]["fw_best"])
+        self.assertIn("no image for a 4 MB build", rows["t3"]["fw_best_reason"])
+        st, payload, _ = self.req("POST", "/api/v1/admin/targets/t3/firmware", {"sha256": "best"})
+        self.assertEqual(st, 400)
+        self.assertIn("no image for a 4 MB build", json.loads(payload)["error"], "refused on the Pi, never sent to the ESP")
+        st, payload, _ = self.req("POST", "/api/v1/admin/targets/t2/firmware", {"sha256": "best"})
+        self.assertEqual(st, 200, payload)
+        self.assertEqual(self.core.firmware_jobs()["t2"]["sha256"], meta["sha256"])
+        self.assertEqual(self.req("POST", "/api/v1/admin/targets/ghost/firmware", {"sha256": "best"})[0], 404)
         self.assertEqual(self.req("POST", f"/api/v1/admin/firmware/{meta['sha256']}/delete", {})[0], 200)
         self.assertEqual(self.req("POST", f"/api/v1/admin/firmware/{meta['sha256']}/delete", {})[0], 404)
 

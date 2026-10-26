@@ -93,3 +93,10 @@ settings, queued shots and the boot counter are kept across the update.
   4 MB, the original ESP-01 1 MB). Unverified on hardware: the download/flash path in `platform.cpp` (the host harness
   runs the same core logic against the real server, with memory standing in for flash).
 
+### FeT Bridge firmware 0.2.1
+
+The bridge firmware is now called FeT Bridge (its setup and status pages say so). No other change: a first real
+0.2.0 -> 0.2.1 update from Range Control. After each Arduino export run `python3 tools/collect_firmware.py`: it checks the
+export with the Pi's upload rules and keeps it as `dist/firmware/fet-bridge-<version>-<flash>.bin` (exports overwrite
+each other otherwise).
+

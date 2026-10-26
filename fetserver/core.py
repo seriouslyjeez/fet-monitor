@@ -417,7 +417,7 @@ class Core:
             if t is None:
                 raise NotFound(f"unknown target {device_id}")
             if not t["ota_space"]:
-                raise BadRequest(f"{device_id} runs bridge firmware {t['bridge_fw'] or '?'}, which cannot update from the Pi: "
+                raise BadRequest(f"{device_id} runs FeT Bridge firmware {t['bridge_fw'] or '?'}, which cannot update from the Pi: "
                                  "install 0.2.0 or newer by USB (or its /update page) once")
             if image["size"] > t["ota_space"]:
                 raise BadRequest(f"{device_id} has room for {t['ota_space']} bytes; this image is {image['size']}")
@@ -433,6 +433,14 @@ class Core:
                             (device_id, "fw_update", f"{image['sha256']} {image['size']}", self.now_ms()))
         self.hub.publish({"type": "targets", "device_id": device_id})
         return cur.lastrowid
+
+    def firmware_info(self, device_id: str) -> dict:
+        """What a target reported about updating itself (for choosing its best image)."""
+        r = self.db.conn().execute("SELECT bridge_fw, ota_space, flash_size FROM targets WHERE device_id=? AND removed=0 AND banned=0",
+                                   (device_id,)).fetchone()
+        if r is None:
+            raise NotFound(f"unknown target {device_id}")
+        return {"bridge_fw": r["bridge_fw"], "ota_space": r["ota_space"], "flash_size": r["flash_size"]}
 
     def firmware_jobs(self) -> dict:
         """The latest firmware update per target: {device_id: {status, result, sha256, created, ...}}."""

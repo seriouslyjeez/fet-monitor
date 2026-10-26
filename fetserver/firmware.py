@@ -1,4 +1,4 @@
-"""Firmware images for the targets' WiFi bridges, uploaded in Range Control and fetched by the targets themselves.
+"""FeT Bridge firmware images (the targets' WiFi bridges), uploaded in Range Control and fetched by the targets.
 
 An upload is accepted only if it looks exactly like one of ours:
 * size between MIN_IMAGE and MAX_IMAGE bytes;
@@ -46,7 +46,7 @@ def inspect(data: bytes) -> dict:
         raise BadImage("unknown flash size in the image header")
     versions = sorted(set(m.group(1).decode() for m in ID_RE.finditer(data)))
     if not versions:
-        raise BadImage("not a FeT Monitor bridge firmware (0.2.0 or newer)")
+        raise BadImage("not FeT Bridge firmware (0.2.0 or newer)")
     if len(versions) > 1:
         raise BadImage("more than one firmware version inside the image: " + ", ".join(versions))
     return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "version": versions[0],
@@ -110,3 +110,28 @@ class FirmwareStore:
             except FileNotFoundError:
                 pass
         return True
+
+
+def version_tuple(v) -> Optional[tuple]:
+    m = re.fullmatch(r"(\d{1,3})\.(\d{1,3})\.(\d{1,3})", v or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def best_for(target: dict, images: List[dict]):
+    """The best image for one target: the newest version built for its flash size that fits its free space.
+    Returns (image, "") or (None, reason). target: {"ota_space", "flash_size", "bridge_fw"} as the target reported them."""
+    if not target.get("ota_space"):
+        return None, (f"runs FeT Bridge firmware {target.get('bridge_fw') or '?'}, which cannot update from the Pi: "
+                      "install 0.2.0 or newer by USB once")
+    flash = target.get("flash_size") or 0
+    same = [m for m in images if not flash or m["flash_size"] == flash]
+    if not same:
+        return None, f"no image for a {flash_label(flash)} build has been uploaded"
+    fits = [m for m in same if m["size"] <= target["ota_space"]]
+    if not fits:
+        return None, f"every {flash_label(flash)} image is larger than its {target['ota_space']} bytes of free space"
+    best = max(fits, key=lambda m: (version_tuple(m["version"]) or (0, 0, 0), m.get("uploaded", 0)))
+    running = version_tuple(target.get("bridge_fw"))
+    if running and version_tuple(best["version"]) <= running:
+        return None, f"already up to date ({target.get('bridge_fw')}; newest {flash_label(flash)} image is {best['version']})"
+    return best, ""

@@ -104,7 +104,7 @@ bool Portal::portalOnly(bool) {
 
 void Portal::sendPage(int code, const std::string& body) {
   server.sendHeader("Cache-Control", "no-store");
-  server.send(code, "text/html; charset=utf-8", (std::string("<!doctype html><html><head><title>FeT Monitor</title>") + STYLE +
+  server.send(code, "text/html; charset=utf-8", (std::string("<!doctype html><html><head><title>FeT Bridge</title>") + STYLE +
                                                   "</head><body>" + body + "</body></html>").c_str());
 }
 
@@ -141,7 +141,7 @@ void Portal::handleStatus() {
 }
 
 std::string Portal::statusPage() {
-  return "<h1>FeT Monitor bridge</h1><table id=t></table>"
+  return "<h1>FeT Bridge</h1><table id=t></table>"
          "<p class=note>Updates every 3 s. To change WiFi or server settings, switch the target off and on three times "
          "within a few seconds, then join the 'FeTMonitor-…' WiFi network.</p>"
          "<script>function r(){fetch('/status').then(x=>x.json()).then(j=>{var h='';for(var k in j)h+='<tr><td>'+k+'</td><td>'+"
@@ -150,7 +150,7 @@ std::string Portal::statusPage() {
 }
 
 std::string Portal::form(const std::string& error) {
-  std::string o = "<h1>FeT Monitor setup</h1>";
+  std::string o = "<h1>FeT Bridge setup</h1>";
   if (!error.empty()) o += "<p class=err>" + html(error) + "</p>";
   o += "<form method=post action=/save>"
        "<label>WiFi network</label><input name=ssid id=ssid list=nets value=\"" + html(cfg_.ssid) + "\" maxlength=32 required autocapitalize=off>"

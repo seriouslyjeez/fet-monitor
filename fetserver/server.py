@@ -15,13 +15,13 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
 from .core import BadRequest, Core, Forbidden, NotFound, iso
-from .firmware import MAX_IMAGE, BadImage, FirmwareStore
+from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|commands|control|control/release|mode|settings)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings)$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command)$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -159,7 +159,13 @@ class Handler(BaseHTTPRequestHandler):
         if not admin.check(self._admin_token()):
             return self._send(401, {"error": "log in to Range Control"})
         if path == "/api/v1/admin/targets" and method == "GET":
-            return self._send(200, core.admin_view())
+            view = core.admin_view()
+            images = self.server.firmware.list()
+            for t in view["targets"]:
+                best, why = best_for(t, images)
+                t["fw_best"] = {"sha256": best["sha256"], "version": best["version"]} if best else None
+                t["fw_best_reason"] = why
+            return self._send(200, view)
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
         fd = ADMIN_FW_DELETE_RE.match(path)
@@ -175,8 +181,15 @@ class Handler(BaseHTTPRequestHandler):
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
+            if what == "command":                     # restart, setup portal, allowlisted serial lines: Range Control only
+                return self._send(200, {"id": core.enqueue_command(did, payload.get("type"), payload.get("line"))})
             if what == "firmware":
-                image = self.server.firmware.get(payload.get("sha256"))
+                if payload.get("sha256") == "best":       # the newest image built for this target's flash size that fits
+                    image, why = best_for(core.firmware_info(did), self.server.firmware.list())
+                    if image is None:
+                        raise BadRequest(f"{did}: {why}")
+                else:
+                    image = self.server.firmware.get(payload.get("sha256"))
                 if image is None:
                     raise NotFound("no such firmware image")
                 return self._send(200, {"command_id": core.queue_firmware(did, image)})
@@ -322,13 +335,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
-        if m and m.group(2) in ("commands", "control", "control/release", "mode", "settings"):
+        if m and m.group(2) in ("control", "control/release", "mode", "settings"):
             payload = self._read_json()
             if not isinstance(payload, dict):
                 raise BadRequest("body must be an object")
             did, what = m.group(1), m.group(2)
-            if what == "commands":
-                return self._send(200, {"id": core.enqueue_command(did, payload.get("type"), payload.get("line"))})
             if what == "control":
                 res = core.acquire_control(did, payload.get("client_id"), payload.get("name"), bool(payload.get("takeover")))
                 return self._send(200 if res["granted"] else 409, res)

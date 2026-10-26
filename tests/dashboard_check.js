@@ -333,9 +333,15 @@ assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}), [IMG]).includes('ins
 assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}, '0.2.1'), [IMG]).includes('updated to 0.2.1'));
 assert(fwJobText(fwT({status: 'sent', sha256: IMG.sha256}), []).includes('abababab'), 'image deleted meanwhile: short SHA');
 const fwPanel = s => rcIn(Object.assign({sel: {'lane-1': true}, images: [IMG]}, s || {}));
-assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Update 1 selected to 0.2.1'));
+assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1) on 1 selected'));
 assert(/data-act="rcflash"[^>]*disabled/.test(rcIn({sel: {}, images: [IMG]})), 'nothing selected: disabled');
 assert(rcIn({sel: {}, images: []}).includes('No images uploaded.'));
 assert(/data-act="rcupload" disabled/.test(fwPanel()) && fwPanel({file: {name: '<x>.bin'}}).includes('Upload &lt;x&gt;.bin'));
 assert(fwPanel({fwMsg: '<i>no</i>', fwMsgBad: true}).includes('class="bad">&lt;i&gt;no'));
+// best image hint, restart / setup portal
+assert(fwJobText(Object.assign(fwT(null), {fw_best: {version: '0.2.4'}}), [IMG]).includes('0.2.4 available'));
+assert(!fwJobText(Object.assign(fwT({status: 'sent', sha256: IMG.sha256}), {fw_best: {version: '0.2.4'}}), [IMG]).includes('available'), 'not while updating');
+assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 selected to best') && fwPanel().includes('FeT Bridge firmware'));
+assert(/data-act="rcbest"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}, images: []})), 'no images: disabled');
+assert(fwPanel().includes('data-act="rccmd" data-type="reboot"') && fwPanel().includes('data-type="wifi_portal"'));
 console.log('OK');

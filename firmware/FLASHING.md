@@ -1,6 +1,6 @@
-# Flashing the ready-made firmware (no compiling)
+# Flashing the ready-made FeT Bridge firmware (no compiling)
 
-Download `fet-monitor-bridge-<version>-1MB.bin` (0.1.15: `freetarget-bridge-0.1.15-1MB.bin`) from the GitHub Releases page. The same file works on the original
+Download the FeT Bridge firmware `fet-bridge-<version>-<1MB|4MB>.bin` (0.1.15: `freetarget-bridge-0.1.15-1MB.bin`) from the GitHub Releases page. The same file works on the original
 ESP-01 (1 MB) and the ESP-01S (1 MB or 4 MB): it is built with the 1 MB layout (128 KB for queued shots, about 438 KB
 for over-the-air updates). On a 4 MB chip it uses the first 1 MB only.
 
