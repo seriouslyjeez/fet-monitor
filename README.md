@@ -112,19 +112,21 @@ and flash faults (needs g++; skipped without it).
 
 ## Install on a Raspberry Pi
 
-    sudo useradd --system --home /var/lib/fet-monitor --shell /usr/sbin/nologin fet-monitor
-    sudo mkdir -p /opt/fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor
-    sudo cp -r fetserver /opt/fet-monitor/
-    sudo chown -R fet-monitor:fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor
-    sudo cp deploy/fet-monitor.service deploy/fet-monitor-backup.service deploy/fet-monitor-backup.timer /etc/systemd/system/
-    sudo cp deploy/fet-monitor.avahi.service /etc/avahi/services/fet-monitor.service
-    sudo systemctl daemon-reload
-    sudo systemctl enable --now fet-monitor fet-monitor-backup.timer
-    sudo cat /var/lib/fet-monitor/device_token      # enter this in each target's setup portal
-    journalctl -u fet-monitor -f
+Step-by-step guide (SD card to first shot): **[docs/INSTALL.md](docs/INSTALL.md)**. In short, from an unpacked,
+checksum-verified release archive on Raspberry Pi OS Bookworm:
 
-**Upgrading an older install** (named `freetarget-server`, data in /var/lib/freetarget): from the repository folder
-on the Pi run `sudo sh deploy/migrate-from-freetarget.sh`. It stops the old service, archives the old data, copies it
+    sudo ./install.sh                  # install, or upgrade when re-run (keeps data, token and password)
+    sudo ./install.sh --help           # --reset-password, --no-password, --uninstall [--purge]
+
+It installs the code in /opt/fet-monitor, the database in /var/lib/fet-monitor (backups nightly to
+/var/backups/fet-monitor), the systemd units `fet-monitor` and `fet-monitor-backup.timer` and the system user
+`fet-monitor`; it creates the device token and asks for the Range Control password. `python3 tools/make_release.py`
+builds the archive (`dist/fet-monitor-<version>.tar.gz` and `dist/SHA256SUMS`). Hardware test list:
+[docs/PI-TEST-CHECKLIST.md](docs/PI-TEST-CHECKLIST.md).
+
+**Upgrading an older install** (named `freetarget-server`, data in /var/lib/freetarget): `install.sh` detects it, backs
+it up and moves it with `deploy/migrate-from-freetarget.sh` (which can also be run on its own: `sudo sh
+deploy/migrate-from-freetarget.sh` from the release folder). The migration stops the old service, archives the old data, copies it
 to the new paths (the device token comes along, so targets keep working), installs and starts `fet-monitor`, and
 checks it answers. The old folders and unit files are left in place (disabled) for rollback; the script prints how
 to roll back or remove them.

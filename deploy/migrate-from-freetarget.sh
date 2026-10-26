@@ -5,14 +5,18 @@
 # The old folders and unit files are left in place, disabled, so the move can be rolled back.
 set -eu
 
+# FETM_ROOT and FETM_PORT exist only for the installer's tests (a fake root folder); leave them unset.
+R="${FETM_ROOT:-}"
 OLD_SVC=freetarget-server
-OLD_DATA=/var/lib/freetarget
-OLD_BACKUPS=/var/backups/freetarget
+OLD_DATA="$R/var/lib/freetarget"
+OLD_BACKUPS="$R/var/backups/freetarget"
 NEW_USER=fet-monitor
-NEW_CODE=/opt/fet-monitor
-NEW_DATA=/var/lib/fet-monitor
-NEW_BACKUPS=/var/backups/fet-monitor
-PORT=8080
+NEW_CODE="$R/opt/fet-monitor"
+NEW_DATA="$R/var/lib/fet-monitor"
+NEW_BACKUPS="$R/var/backups/fet-monitor"
+UNIT_DIR="$R/etc/systemd/system"
+AVAHI_DIR="$R/etc/avahi/services"
+PORT="${FETM_PORT:-8080}"
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -29,12 +33,13 @@ systemctl stop "$OLD_SVC" 2>/dev/null || true
 systemctl stop freetarget-backup.timer freetarget-backup.service 2>/dev/null || true
 
 say "2/7 archiving the old data (server stopped, so the copy is consistent)"
-ARCHIVE="/var/backups/freetarget-before-migration-$(date +%Y%m%d-%H%M%S).tar.gz"
-tar -czf "$ARCHIVE" -C / "${OLD_DATA#/}"
+mkdir -p "$R/var/backups"
+ARCHIVE="$R/var/backups/freetarget-before-migration-$(date +%Y%m%d-%H%M%S).tar.gz"
+tar -czf "$ARCHIVE" -C "$R/var/lib" freetarget
 say "    $ARCHIVE"
 
 say "3/7 user and folders"
-id -u "$NEW_USER" >/dev/null 2>&1 || useradd --system --home "$NEW_DATA" --shell /usr/sbin/nologin "$NEW_USER"
+id -u "$NEW_USER" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin "$NEW_USER"
 mkdir -p "$NEW_CODE" "$NEW_DATA" "$NEW_BACKUPS"
 
 say "4/7 copying data, backups and code"
@@ -45,11 +50,12 @@ cp -r fetserver "$NEW_CODE/"
 chown -R "$NEW_USER:$NEW_USER" "$NEW_DATA" "$NEW_BACKUPS"
 
 say "5/7 installing services"
-cp deploy/fet-monitor.service deploy/fet-monitor-backup.service deploy/fet-monitor-backup.timer /etc/systemd/system/
-if [ -d /etc/avahi/services ]; then
-  cp deploy/fet-monitor.avahi.service /etc/avahi/services/fet-monitor.service
-  if [ -f /etc/avahi/services/freetarget.service ]; then
-    mv /etc/avahi/services/freetarget.service /etc/avahi/services/freetarget.service.disabled
+mkdir -p "$UNIT_DIR"
+cp deploy/fet-monitor.service deploy/fet-monitor-backup.service deploy/fet-monitor-backup.timer "$UNIT_DIR/"
+if [ -d "$AVAHI_DIR" ]; then
+  cp deploy/fet-monitor.avahi.service "$AVAHI_DIR/fet-monitor.service"
+  if [ -f "$AVAHI_DIR/freetarget.service" ]; then
+    mv "$AVAHI_DIR/freetarget.service" "$AVAHI_DIR/freetarget.service.disabled"
   fi
 fi
 systemctl disable "$OLD_SVC" freetarget-backup.timer 2>/dev/null || true
@@ -58,7 +64,7 @@ systemctl enable --now fet-monitor fet-monitor-backup.timer
 
 say "6/7 checking the new server answers"
 ok=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
+for _ in 1 2 3 4 5 6 7 8 9 10; do
   if python3 -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:$PORT/api/v1/health', timeout=2).status == 200 else 1)" 2>/dev/null; then
     ok=1; break
   fi
