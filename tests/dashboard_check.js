@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel, matchView, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, commandsPanel, correctionsPanel, tvBoard, tvTargets, tvUrl} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel, matchView, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, commandsPanel, correctionsPanel, tvBoard, tvTargets, tvUrl, resultsPage, scoreCards, printResults, tvCompBoard, mcCompPage} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -45,7 +45,7 @@ assert.strictEqual(count(svg, /class="pellet"/g), 1, 'only the shot inside the v
 // the outline's outer edge is the pellet's edge (a stroke is centred on the circle), for the latest shot and the others
 for (const o of [{half: 26}, {half: zoomHalf(8)}, {half: 26, mini: true}, {half: 26, pellet: 5.7}]) {
   const g = faceSvg([sh(0, 0, 1), sh(3, 3, 2), Object.assign(sh(-3, 3, 3), {flyer: true}), sh(1, -2, 4)], o);
-  const circles = [...g.matchAll(/<circle class="(?:pellet|flyer)"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)];
+  const circles = [...g.matchAll(/<circle class="(?:pellet(?: latest)?|flyer)"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)];
   assert.strictEqual(circles.length, 4, 'every shot drawn');
   circles.forEach(m => assert(Math.abs(+m[1] + m[2] / 2 - (o.pellet || 4.5) / 2) < 1e-3, 'outline outer edge is the pellet edge: ' + m[0]));
 }
@@ -172,7 +172,7 @@ assert(count(apage, /<td>first shot<\/td>/g) === 1, 'the first shot is the refer
 assert.strictEqual(count(ammoTable(av), /<tr class="/g), av.bull_shots.length, 'every shot is listed, none dropped');
 assert(ammoTable(av).indexOf('<td>14</td>') < ammoTable(av).indexOf('<td>13</td>') && ammoTable(av).includes('class="last"'), 'newest first');
 assert(ammoTable(av).includes('class="miss">miss'), 'the miss is listed');
-assert([...apage.matchAll(/<circle class="pellet"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)].some(m => Math.abs(+m[1] + m[2] / 2 - 2.85) < 1e-3), 'pellets drawn at the projectile size');
+assert([...apage.matchAll(/<circle class="pellet(?: latest)?"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)].some(m => Math.abs(+m[1] + m[2] / 2 - 2.85) < 1e-3), 'pellets drawn at the projectile size');
 assert(apage.includes('#c026d3') && apage.includes('stroke="#fff"'), 'marks have a halo so they show on black and white');
 assert(!/<i>Lot 7<\/i>/.test(apage + coachView(D.targets) + overlayView(asMine(ammoT), state(), '')), 'label is escaped');
 assert(apage.includes('&lt;i&gt;Lot 7&lt;/i&gt;'));
@@ -452,4 +452,131 @@ assert(autoc.includes('Commands: Automatic (no commands)') && autoc.includes('no
 const nm = X.mcNew({draft: {lanes: {}}, formats: [], targets: []});
 assert(nm.indexOf('data-v="spoken"') < nm.indexOf('data-v="officer"') && nm.indexOf('data-v="officer"') < nm.indexOf('data-v="auto"'));
 assert(/data-v="spoken" class="sel"/.test(nm) && !/data-v="auto" class="sel"/.test(nm), 'spoken commands is the default');
+// competitions: results, print, score cards, TV board (real server output)
+const C = D.comp;
+assert.deepStrictEqual(C.classes.map(c => c.name), ['Junior', 'Open']);
+const rp = resultsPage(C);
+assert(rp.includes('&lt;b&gt;League') && !rp.includes('<b>League') && rp.includes('&lt;i&gt;Al') && !rp.includes('<i>Al'), 'escaped');
+assert(rp.indexOf('AMES') < rp.indexOf('BROWN'), 'Open: Ames (0.3 mm) ahead of Brown (1.5 mm)');
+assert(rp.includes('<th>1–10</th><th>11–20</th>') && rp.includes('Ties broken by the ISSF rules'));
+assert(rp.includes('href="/api/v1/results/c' + C.id + '.csv"') && rp.includes('#/print/cards/c' + C.id));
+assert(rp.includes('Blue') && rp.includes('1 of 2 members'), 'an incomplete team is listed with the reason');
+assert(/Red<\/td><td>AMES &lt;i&gt;Al&lt;\/i&gt;, BROWN Bo/.test(rp), 'the counting members of a ranked team');
+const cards = scoreCards(C, null);
+assert.strictEqual(count(cards, /class="scard"/g), 3, 'one card per competitor');
+assert.strictEqual(count(scoreCards(C, String(C.classes[1].individuals[0].id)), /class="scard"/g), 1, 'a single competitor\'s card');
+const amesCard = scoreCards(C, String(C.classes[1].individuals.find(e => e.family === 'Ames').id));
+assert(amesCard.includes('<td>1–10</td>') && amesCard.includes('<td>11–12</td>') && count(amesCard, /class="face"/g) === 2 && amesCard.includes('Scorer / match director'));
+assert(printResults(C).includes('window.print()') && printResults(C).includes('&lt;b&gt;League'));
+const tb2 = tvCompBoard(C);
+assert(tb2.includes('data-clock="tv-c' + C.id + '-') && tb2.includes('<h2>Junior</h2>') && tb2.includes('<h2>Open</h2>'));
+assert(tvBoard([], [C]).includes('Junior'), 'the TV board shows competitions');
+assert.strictEqual(tvUrl({kind: 'board', comps: [C.id], matches: []}), '#/tv/board?c=' + C.id);
+const det = {id: 1, name: 'L', format: {name: 'F'}, record_shots: 12, tie_rules: 'ISSF', team_size: 2, best_count: false, paced: 'spoken',
+  competitors: [{id: 5, family: 'Ames', given: 'Al', class: 'Open', team: 'Red', name: 'AMES Al', relay: null, lane: null}], relays: []};
+const cpD = mcCompPage({comp: det, status: {role: 'director'}, targets: [{device_id: 'lane-9', name: 'Lane 9', online: true, in_match: false}]});
+assert(cpD.includes('data-act="mcpedit" data-id="5"') && !cpD.includes('data-pe=') && cpD.includes('data-act="mcrcreate"') && cpD.includes('data-rl="lane-9"') &&
+       cpD.includes('data-act="mcpimport"') && cpD.includes('Or paste a list'), 'names are edited in a window, not in the list');
+const cpO = mcCompPage({comp: det, status: {role: 'officer'}, targets: []});
+assert(!cpO.includes('mcpedit') && !cpO.includes('mcrcreate') && !cpO.includes('mcpimport'), 'officers see, directors change');
+const kept = mcCompPage({comp: det, status: {role: 'director'}, targets: [], np: {family: 'Zed'}, npOpen: true});
+assert(kept.includes('value="Zed"') && kept.includes('id="np_details" open'), 'unsaved input and the open paste section survive a redraw');
+const sheet = X.competitorSheet({comp: det, editp: {id: 5, given: 'Alan'}});
+assert(sheet.includes('data-pe="family"') && sheet.includes('value="Ames"') && sheet.includes('value="Alan"') && sheet.includes('data-act="mcpesave"') && sheet.includes('data-act="mcpdel"'));
+const onRelay = X.competitorSheet({comp: Object.assign({}, det, {competitors: [Object.assign({}, det.competitors[0], {relay: 2, lane: 4})]}), editp: {id: 5}});
+assert(onRelay.includes('On relay 2, firing point 4') && !onRelay.includes('mcpdel'), 'a competitor on a relay cannot be removed');
+assert.strictEqual(X.competitorSheet({comp: det, editp: {id: 99}}), '');
+// a competitor chosen for one target is not offered for another
+const det2 = Object.assign({}, det, {competitors: [det.competitors[0], {id: 6, family: 'Brown', name: 'BROWN', relay: null}]});
+const two = mcCompPage({comp: det2, status: {role: 'director'}, rdraft: {'lane-9': '5'}, targets: [{device_id: 'lane-9', name: 'Lane 9', in_match: false}, {device_id: 'lane-8', name: 'Lane 8', in_match: false}]});
+const sel8 = two.slice(two.indexOf('data-rl="lane-8"'), two.indexOf('</select>', two.indexOf('data-rl="lane-8"')));
+assert(!sel8.includes('value="5"') && sel8.includes('value="6"'));
 console.log('OK');
+
+// the latest shot has its own colour, on the big face and on the small cards; a printed score card has none
+{
+  const two = [{n: 1, x_mm: 1, y_mm: 1}, {n: 2, x_mm: -1, y_mm: 0}];
+  for (const o of [{half: 26}, {half: 26, mini: true}]) {
+    const g = faceSvg(two, o);
+    assert.strictEqual(count(g, /class="pellet latest"/g), 1, 'one latest shot ' + JSON.stringify(o));
+    assert(/class="pellet latest" cx="-1"[^>]*fill="var\(--last\)"/.test(g), 'the latest is the last fired, in its colour');
+    assert(!/class="pellet" cx="-1"/.test(g) && /class="pellet" cx="1"[^>]*fill="var\(--m-record\)|class="pellet" cx="1"/.test(g), 'the earlier shot keeps the mode colour');
+  }
+  assert.strictEqual(count(faceSvg(two, {half: 26, noLast: true}), /latest/g), 0, 'score card: no latest colour');
+  assert.strictEqual(count(faceSvg([{n: 1, x_mm: 0, y_mm: 0, flyer: true}], {half: 26}), /latest/g), 0, 'an ignored shot is drawn as ignored');
+}
+
+// moving a shooter (real server output): the console, the move window, the shooter's own screen
+{
+  const {lanesPanel, moveSheet, placeSection, mcList, competitorSheet} = X;
+  const lane = (d, id) => d.lanes.find(l => l.device_id === id);
+  const mv = D.moving, lm = lane(mv, 'comp-4');
+  assert.strictEqual(lm.own, 'moving');
+  assert.deepStrictEqual(lm.moved_from, ['comp-1']);
+  const p1 = lanesPanel(mv, {}, true);
+  assert(p1.includes('data-act="mclready" data-id="comp-4"') && p1.includes('value="5"'), 'Ready with the ISSF 5 minutes, editable');
+  assert(p1.includes('moved from comp-1') && p1.includes('<b>Moving</b>'), 'the console says who moved and that their time stands still');
+  assert.strictEqual(count(p1, /data-act="mclready"/g), 1, 'only the moving shooter can be made ready');
+  const rd = D.ready, lr = lane(rd, 'comp-4');
+  assert.strictEqual(lr.own, 'extra'); assert(lr.sighting);
+  const p2 = lanesPanel(rd, {}, false);
+  assert(p2.includes('data-act="mclrecord" data-id="comp-4"') && /data-lends="\d+"/.test(p2), 'sighting, then Start record; their own clock ticks');
+  assert(p2.includes('data-act="mcmove"'), 'a range officer can move a shooter during the match');
+  assert(!lanesPanel(Object.assign({}, rd, {state: 'ready'}), {}, false).includes('mcmove'), 'before the start only the director moves');
+  // the move window lists the free targets only, with the rulebook text; names are escaped
+  const sheet = moveSheet({detail: rd, movep: {from: 'comp-2'}, targets: D.mtargets});
+  assert(!sheet.includes('value="comp-3"') && !sheet.includes('value="comp-4"'), 'targets in a match are not offered');
+  assert(sheet.includes('ISSF 6.10.9.2') && sheet.includes('stop their time'));
+  assert(p1.includes('Spare &lt;4&gt;') && !p1.includes('Spare <4>'), 'target names are escaped');
+  assert(moveSheet({detail: rd, movep: {from: 'nope'}, targets: D.mtargets}) === '', 'an unknown lane: no window');
+  // the shooter's own screen: their own time and Start record after sighters
+  const info = D.movedTarget.match;
+  assert(info.sighting && info.label.includes('your own time'));
+  const ban = matchBanner(info, Object.assign({}, D.movedTarget, {lease: {mine: true}}), {});
+  assert(ban.includes('data-act="mcmyrecord"') && ban.includes('Sighting after the move'), 'the shooter can start record after sighters');
+  assert(ban.includes('(moved here from comp-1)'), 'the banner says where they came from');
+  // the competitor window: before the start a place can be changed; once the relay runs, the console does it
+  const cd = D.cdetail, ames = cd.competitors.find(p => p.family === 'Ames');
+  const before = placeSection({comp: cd, targets: D.mtargets, editp: {id: ames.id}}, ames);
+  assert(before.includes('Open the console of relay 1'), 'the relay has started: moving is on its console');
+  const ready = JSON.parse(JSON.stringify(cd)); ready.relays[0].state = 'ready';
+  const pl = placeSection({comp: ready, targets: D.mtargets, editp: {id: ames.id}}, ames);
+  assert(pl.includes('data-pm="mrel"') && pl.includes('here now') && pl.includes('(swap)'), 'relay and target choice, swap shown');
+  // Match Control home: relays are listed with their competition, not as single matches
+  const home = mcList({status: {user: 'md', role: 'director'}, comps: [{id: 1, name: 'L', format_name: 'F', competitors: 3, active: true, relays: [{id: 7, relay: 1, state: 'running'}]}],
+    matches: [{id: 7, name: 'L - relay 1', format_name: 'F', state: 'running', competition_id: 1, relay: 1, clock: {}}, {id: 8, name: 'Solo', format_name: 'F', state: 'ready', competition_id: null, clock: {}}], formats: []});
+  assert(home.includes('data-act="mcopen" data-id="7"') && home.includes('Relay 1: running') && home.includes('Competitors &amp; relays'));
+  assert.strictEqual(count(home, /L - relay 1/g), 0, 'the relay is not repeated as a single match');
+  assert(home.includes('Solo'));
+  assert(mcList({status: {user: 'md', role: 'director'}, compsErr: 'boom', matches: []}).includes('Could not load the competitions: boom'));
+  console.log('moves OK');
+}
+
+// results of single matches and saved copies; deleting from Match Control (real server output)
+{
+  const {resultsIndex, mcList} = X;
+  const sp = resultsPage(D.single);
+  assert(sp.includes('&lt;i&gt;Night') && !sp.includes('<i>Night') && sp.includes('/results/' + D.single.key + '.csv') && !sp.includes('Teams CSV'), 'a single match: no teams');
+  assert.strictEqual(count(scoreCards(D.single, null), /class="scard"/g), 1);
+  const sv = resultsPage(D.saved);
+  assert(D.saved.key[0] === 'a' && sv.includes('saved copy from') && sv.includes('#/print/results/' + D.saved.key));
+  assert(resultsPage({missing: true}).includes('were deleted') && scoreCards({missing: true}).includes('deleted') && printResults({missing: true}).includes('deleted'));
+  const idx = resultsIndex(D.listing);
+  assert(idx.includes('Saved copy') && idx.includes('Competition') && idx.includes('#/results/' + D.saved.key) && !idx.includes('<i>Night'), 'the index lists every kind');
+  assert(resultsIndex([]).includes('No results yet'));
+  const base = {status: {user: 'md', role: 'director'}, formats: [],
+    comps: [{id: 1, name: 'L', format_name: 'F', competitors: 2, active: true, busy: true, results_hidden: false, relays: []},
+            {id: 2, name: 'Old', format_name: 'F', competitors: 2, active: false, busy: false, results_hidden: true, relays: []}],
+    matches: [{id: 8, name: 'Solo', format_name: 'F', state: 'done', competition_id: null, results_hidden: false, clock: {}}],
+    results: [{key: 'c2', kind: 'competition', name: 'Old', at_ms: 0, hidden: true}, {key: 'a3', kind: 'frozen', name: 'Gone', at_ms: 0, hidden: false}]};
+  const h = mcList(Object.assign({}, base, {msel: {c2: true, m8: true, c1: true}, rsel: {a3: true}}));
+  assert(/data-msel="c1" disabled/.test(h), 'a running competition cannot be selected');
+  assert(/data-msel="c2" checked/.test(h) && /data-msel="m8" checked/.test(h) && !/data-msel="c1" checked/.test(h));
+  assert(h.includes('Delete selected (2)'), 'a running competition ticked earlier is not counted: ' + h.match(/Delete selected[^<]*/)[0]);
+  assert.deepStrictEqual(X.deletable(Object.assign({}, base, {msel: {c2: true, m8: true, c1: true, m99: true}})).map(x => x[0]), ['c2', 'm8'], 'only what can be deleted is sent');
+  assert(h.includes('(results deleted)') && h.includes('data-act="mcresshow" data-key="c2"') && !/data-rsel="c2"/.test(h), 'deleted results: show again, not selectable');
+  assert(h.includes('Delete selected results (1)') && h.includes('#/results/m8'));
+  const ro = mcList(Object.assign({}, base, {status: {user: 'ro', role: 'officer'}}));
+  assert(!ro.includes('data-msel') && !ro.includes('mcresdel') && !ro.includes('<h3>Results</h3>'), 'officers do not delete');
+  console.log('delete OK');
+}

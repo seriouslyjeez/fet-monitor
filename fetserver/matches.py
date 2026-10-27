@@ -11,6 +11,13 @@ start of every phase until the range officer, having read the command shown, pre
 phase after phase with no commands at all. Restarts (director): the
 match goes back to a phase; shots fired in the parts that were restarted stay, flagged for a decision.
 
+Moving a shooter to another target during a match (ISSF 6.10.9.2 / 6.11.3.2, CMP 7.18.3, NRA 9.2 b / 10.3.2): the
+lane's series goes with them to the new target (their shots so far stay theirs), their own time stands still from the
+move until the range officer says they are ready, they then get the rulebook's extra time (ISSF 5 min, CMP 2 min, NRA
+none: the time lost is already given back by the stopped clock) and unlimited sighters until they start record again.
+When the match's phase ends before their own time does, they finish it on their own clock ("own" phase) while the
+match goes on; a match whose time is over while someone is still finishing is in state 'overtime'.
+
 Shots are never dropped or changed here: a shot that the timeline says was out of time (or one record shot too many)
 is FLAGGED, and does not count until the match director decides (count / annul / miss / -2 points).
 """
@@ -20,10 +27,13 @@ import json
 from typing import Dict, List, Optional
 
 from . import matchformats as mf
+from . import ranking
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
-ACTIVE = ("ready", "running", "paused", "holding")
+ACTIVE = ("ready", "running", "paused", "holding", "overtime")
 LIVE = ("running", "paused", "holding")
+ACTIVE_SQL = "('ready','running','paused','holding','overtime')"
+MOVE_EXTRA_S = {"ISSF": 300, "CMP": 120, "NRA": 0}   # extra time after a move to another target, by tie-break rule set
 PACING = ("spoken", "officer", "auto")   # spoken: the console speaks every command (default); officer: the range officer
 # reads them and the clock waits for Next at every phase; auto: phases follow each other with no commands at all
 DECISIONS = ("count", "annul", "miss", "penalty2")                 # for a flagged RECORD shot
@@ -113,15 +123,16 @@ class Matches:
     def lock_of(self, c, device_id: str) -> Optional[str]:
         """The name of the active match a target belongs to, if any (such a target is locked against other changes)."""
         r = c.execute("""SELECT m.name FROM matches m JOIN match_lanes l ON l.match_id=m.id
-                         WHERE l.device_id=? AND m.state IN ('ready','running','paused','holding')""", (device_id,)).fetchone()
+                         WHERE l.device_id=? AND m.state IN """ + ACTIVE_SQL, (device_id,)).fetchone()
         return r["name"] if r else None
 
-    def create(self, name, fmt_id, lanes, by: str, override: Optional[dict] = None, paced: str = "spoken") -> int:
+    def create(self, name, fmt_id, lanes, by: str, override: Optional[dict] = None, paced: str = "spoken",
+               fmt: Optional[dict] = None, competition_id: Optional[int] = None, relay: Optional[int] = None) -> int:
         """A match in state 'ready'. lanes: [{"device_id", "competitor"}] in firing-point order. override: a full format
         (e.g. the standard one with a longer first sighting period, CMP 5.3.1 d); it is marked as modified."""
         if not isinstance(name, str) or not name.strip():
             raise MatchError("the match needs a name")
-        base = self.format(fmt_id) if isinstance(fmt_id, str) else None
+        base = fmt if fmt is not None else (self.format(fmt_id) if isinstance(fmt_id, str) else None)   # fmt: a competition's own
         if base is None:
             raise MatchError("unknown format")
         fmt = base
@@ -149,13 +160,13 @@ class Matches:
                 other = self.lock_of(c, did)
                 if other:
                     raise MatchError(f"{did} is already in the match '{other}'")
-            mid = c.execute("INSERT INTO matches (name, format_json, state, created_ms, created_by, paced) VALUES (?,?,?,?,?,?)",
-                            (name.strip()[:80], json.dumps(fmt), "ready", now, by, paced)).lastrowid
+            mid = c.execute("INSERT INTO matches (name, format_json, state, created_ms, created_by, paced, competition_id, relay) "
+                            "VALUES (?,?,?,?,?,?,?,?)", (name.strip()[:80], json.dumps(fmt), "ready", now, by, paced, competition_id, relay)).lastrowid
             for i, ln in enumerate(lanes, 1):
                 comp = ln.get("competitor")
                 comp = comp.strip()[:60] if isinstance(comp, str) and comp.strip() else None
-                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor) VALUES (?,?,?,?)",
-                          (mid, ln["device_id"], i, comp))
+                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
+                          (mid, ln["device_id"], i, comp, ln.get("competitor_id")))
             self._log(c, mid, now, "created", None, None, {"by": by})
         self._pub(mid)
         return mid
@@ -178,11 +189,19 @@ class Matches:
     def _session(self, m, ln) -> str:
         return ln["competitor"] or m["name"]
 
-    def _set_modes(self, c, m, mode: str, now: int, only: Optional[str] = None) -> None:
+    def _set_modes(self, c, m, mode: str, now: int, only: Optional[str] = None, everyone: bool = False) -> None:
+        """Switch the lanes' targets; a lane on its own clock (moved shooter) is left alone unless named or everyone."""
         for ln in self._lanes(c, m["id"]):
             if only and ln["device_id"] != only:
                 continue
+            if not only and not everyone and own_clock(ln):
+                continue
             self.core._set_mode_in(c, ln["device_id"], mode, self._session(m, ln), now)
+
+    @staticmethod
+    def _clear_lanes(c, mid) -> None:
+        c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=0, own_phase=NULL, "
+                  "own_left_ms=NULL, own_since_ms=NULL, sighting=0 WHERE match_id=?", (mid,))
 
     def start(self, mid: int, by: str) -> None:
         now = self.core.now_ms()
@@ -207,6 +226,8 @@ class Matches:
         hold = m["paced"] == "officer"
         c.execute("UPDATE matches SET phase=?, state=?, phase_started_ms=?, phase_used_ms=0, phase_extra_ms=0, ended_ms=NULL "
                   "WHERE id=?", (i, "holding" if hold else "running", None if hold else now, m["id"]))
+        c.execute("UPDATE match_lanes SET extra_ms=0, sighting=0 WHERE match_id=? AND own_phase IS NULL AND moving_since_ms IS NULL",
+                  (m["id"],))
         self._log(c, m["id"], now, "phase_start", i, None, {"hold": True} if hold else None)
         if hold:
             self._set_modes(c, m, "sighter", now)            # nothing counts as record before START
@@ -216,13 +237,28 @@ class Matches:
     def _finish_phase(self, c, m, now: int, how: str) -> None:
         fmt = json.loads(m["format_json"])
         self._log(c, m["id"], now, "phase_end", m["phase"], None, {"how": how})
+        for ln in self._lanes(c, m["id"]):                # a moved shooter with time left finishes this phase on their own
+            if ln["own_phase"] is None and (ln["moving_since_ms"] is not None or ln["extra_ms"] > 0):
+                moving = ln["moving_since_ms"] is not None
+                c.execute("UPDATE match_lanes SET own_phase=?, own_left_ms=?, own_since_ms=?, extra_ms=0 WHERE match_id=? AND device_id=?",
+                          (m["phase"], None if moving else ln["extra_ms"], None if moving else now, m["id"], ln["device_id"]))
+                self._log(c, m["id"], now, "lane_overtime", m["phase"], ln["device_id"], {"left_ms": None if moving else ln["extra_ms"]})
+            elif ln["own_phase"] is None and ln["sighting"]:          # no time of their own left: they go on with everyone
+                c.execute("UPDATE match_lanes SET sighting=0 WHERE match_id=? AND device_id=?", (m["id"], ln["device_id"]))
         nxt = m["phase"] + 1
         if nxt < len(fmt["phases"]):
             self._enter(c, m, nxt, now)
+        elif any(own_clock(ln) for ln in self._lanes(c, m["id"])):
+            c.execute("UPDATE matches SET state='overtime', phase_started_ms=?, ended_ms=NULL WHERE id=?", (now, m["id"]))
+            self._log(c, m["id"], now, "overtime", m["phase"], None)
+            self._set_modes(c, m, "sighter", now)       # everyone else: nothing after STOP counts as record
         else:
-            c.execute("UPDATE matches SET state='done', ended_ms=?, phase_started_ms=NULL WHERE id=?", (now, m["id"]))
-            self._log(c, m["id"], now, "end", None, None)
-            self._set_modes(c, m, "sighter", now)       # nothing after STOP counts as record
+            self._done(c, m, now)
+
+    def _done(self, c, m, now: int) -> None:
+        c.execute("UPDATE matches SET state='done', ended_ms=?, phase_started_ms=NULL WHERE id=?", (now, m["id"]))
+        self._log(c, m["id"], now, "end", None, None)
+        self._set_modes(c, m, "sighter", now, everyone=True)   # nothing after STOP counts as record
 
     def remaining_ms(self, m, now: int) -> int:
         if m["phase"] < 0 or m["state"] not in LIVE:
@@ -235,8 +271,10 @@ class Matches:
         """End every phase whose time is up. Returns how many phases ended (tests use it)."""
         now = self.core.now_ms()
         ended = 0
-        ids = [r["id"] for r in self.db.conn().execute("SELECT id FROM matches WHERE state='running'")]
+        ids = [r["id"] for r in self.db.conn().execute(
+            "SELECT id FROM matches WHERE state IN ('running','overtime') OR id IN (SELECT match_id FROM match_lanes WHERE own_since_ms IS NOT NULL)")]
         for mid in ids:
+            before = ended
             with self.db.write() as c:
                 m = self._row(c, mid)
                 while m["state"] == "running" and self.remaining_ms(m, now) <= 0:
@@ -245,9 +283,45 @@ class Matches:
                     self._finish_phase(c, m, p_end, "time")
                     ended += 1
                     m = self._row(c, mid)
-            if ended:
+                ended += self._lane_tick(c, mid, now)
+            if ended != before:
                 self._pub(mid)
         return ended
+
+    def _lane_tick(self, c, mid, now: int) -> int:
+        """End the own phase of every moved shooter whose own time is up (at its exact end), then the match if it was
+        only waiting for them."""
+        n, last = 0, None
+        for ln in self._lanes(c, mid):
+            if ln["own_phase"] is not None and ln["moving_since_ms"] is None and ln["own_since_ms"] is not None:
+                end = ln["own_since_ms"] + ln["own_left_ms"]
+                if end <= now:
+                    self._lane_end(c, self._row(c, mid), ln, end)
+                    n, last = n + 1, max(last or end, end)
+        m = self._row(c, mid)
+        if m["state"] == "overtime" and not any(own_clock(ln) for ln in self._lanes(c, mid)):
+            self._done(c, m, last if last is not None else now)
+        return n
+
+    def _lane_end(self, c, m, ln, at: int) -> None:
+        """A moved shooter's own phase is over: they join whatever the match is doing now."""
+        self._log(c, m["id"], at, "lane_end", ln["own_phase"], ln["device_id"])
+        c.execute("UPDATE match_lanes SET own_phase=NULL, own_left_ms=NULL, own_since_ms=NULL, moving_since_ms=NULL, "
+                  "moving_left_ms=NULL, extra_ms=0, sighting=0 WHERE match_id=? AND device_id=?", (m["id"], ln["device_id"]))
+        p = json.loads(m["format_json"])["phases"][m["phase"]] if m["phase"] >= 0 else None
+        mode = "record" if m["state"] in ("running", "paused") and p and p["kind"] == "record" else "sighter"
+        self._set_modes(c, m, mode, at, only=ln["device_id"])
+
+    def _lanes_pause(self, c, mid, now: int) -> None:
+        for ln in self._lanes(c, mid):
+            if ln["own_since_ms"] is not None:
+                c.execute("UPDATE match_lanes SET own_left_ms=?, own_since_ms=NULL WHERE match_id=? AND device_id=?",
+                          (max(0, ln["own_left_ms"] - (now - ln["own_since_ms"])), mid, ln["device_id"]))
+
+    @staticmethod
+    def _lanes_resume(c, mid, now: int) -> None:
+        c.execute("UPDATE match_lanes SET own_since_ms=? WHERE match_id=? AND own_phase IS NOT NULL AND moving_since_ms IS NULL",
+                  (now, mid))
 
     def _overrun(self, m, now: int) -> int:
         p = json.loads(m["format_json"])["phases"][m["phase"]]
@@ -259,9 +333,15 @@ class Matches:
         """Range officer actions: go (START a held phase), pause, resume, next (end the phase now), extra (add seconds
         to this phase), abort, start_record (one lane, in an NRA-style stage). restart (to phase `seconds`... see
         restart()) is separate because only a director may do it."""
+        if action == "start_record":
+            return self.lane_command(mid, device_id, "start_record", by)
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
+            if m["state"] == "overtime":
+                self._overtime_command(c, m, action, by, now)
+                self._pub(mid)
+                return
             if m["state"] not in LIVE:
                 raise MatchError("the match is not running")
             fmt = json.loads(m["format_json"])
@@ -284,14 +364,18 @@ class Matches:
                     raise MatchError("already paused")
                 c.execute("UPDATE matches SET state='paused', phase_used_ms=?, phase_started_ms=NULL WHERE id=?",
                           (m["phase_used_ms"] + now - m["phase_started_ms"], mid))
+                self._lanes_pause(c, mid, now)
                 self._log(c, mid, now, "pause", m["phase"], None, {"by": by})
             elif action == "resume":
                 if m["state"] != "paused":
                     raise MatchError("not paused")
                 c.execute("UPDATE matches SET state='running', phase_started_ms=? WHERE id=?", (now, mid))
+                self._lanes_resume(c, mid, now)
                 self._log(c, mid, now, "resume", m["phase"], None, {"by": by})
             elif action == "next":
                 if m["state"] in ("paused", "holding"):    # ending a paused or held phase: the pause ends with it
+                    if m["state"] == "paused":
+                        self._lanes_resume(c, mid, now)
                     self._log(c, mid, now, "resume", m["phase"], None, {"by": by})
                     c.execute("UPDATE matches SET state='running', phase_started_ms=? WHERE id=?", (now, mid))
                 self._finish_phase(c, self._row(c, mid), now, "officer")
@@ -302,22 +386,44 @@ class Matches:
                 self._log(c, mid, now, "extra", m["phase"], None, {"seconds": seconds, "by": by})
             elif action == "abort":
                 self._log(c, mid, now, "phase_end", m["phase"], None, {"how": "abort"})
-                c.execute("UPDATE matches SET state='aborted', ended_ms=?, phase_started_ms=NULL WHERE id=?", (now, mid))
-                self._log(c, mid, now, "abort", m["phase"], None, {"by": by})
-                self._set_modes(c, m, "sighter", now)
-            elif action == "start_record":
-                if p["kind"] != "stage" or m["state"] != "running":
-                    raise MatchError("the shooter starts record only during a running sighting-and-record stage")
-                ln = c.execute("SELECT * FROM match_lanes WHERE match_id=? AND device_id=?", (mid, device_id)).fetchone()
-                if ln is None:
-                    raise MatchError("that target is not in this match")
-                if self._switched(c, mid, m["phase"], device_id):
-                    raise MatchError("already in record for this stage")
-                self._log(c, mid, now, "start_record", m["phase"], device_id, {"by": by})
-                self._set_modes(c, m, "record", now, only=device_id)
+                self._abort(c, m, now, by)
             else:
                 raise MatchError("unknown action")
         self._pub(mid)
+
+    def _abort(self, c, m, now: int, by: str) -> None:
+        c.execute("UPDATE matches SET state='aborted', ended_ms=?, phase_started_ms=NULL WHERE id=?", (now, m["id"]))
+        self._log(c, m["id"], now, "abort", m["phase"], None, {"by": by})
+        self._clear_lanes(c, m["id"])
+        self._set_modes(c, m, "sighter", now, everyone=True)
+
+    def _overtime_command(self, c, m, action: str, by: str, now: int) -> None:
+        """The match time is over and only moved shooters are finishing: pause/resume their clocks, end now, or stop."""
+        mid = m["id"]
+        if action == "pause":
+            if m["phase_started_ms"] is None:
+                raise MatchError("already paused")
+            self._lanes_pause(c, mid, now)
+            c.execute("UPDATE matches SET phase_started_ms=NULL WHERE id=?", (mid,))
+            self._log(c, mid, now, "pause", m["phase"], None, {"by": by})
+        elif action == "resume":
+            if m["phase_started_ms"] is not None:
+                raise MatchError("not paused")
+            self._lanes_resume(c, mid, now)
+            c.execute("UPDATE matches SET phase_started_ms=? WHERE id=?", (now, mid))
+            self._log(c, mid, now, "resume", m["phase"], None, {"by": by})
+        elif action == "next":
+            if m["phase_started_ms"] is None:
+                self._log(c, mid, now, "resume", m["phase"], None, {"by": by})
+            for ln in self._lanes(c, mid):
+                if own_clock(ln):
+                    self._lane_end(c, m, ln, now)
+            self._done(c, self._row(c, mid), now)
+        elif action == "abort":
+            self._log(c, mid, now, "phase_end", m["phase"], None, {"how": "abort"})
+            self._abort(c, m, now, by)
+        else:
+            raise MatchError("the match time is over: only moved shooters are still finishing")
 
     def restart(self, mid: int, phase: int, by: str) -> None:
         """Go back to the start of `phase` (0 = the whole match), also after the match ended. The current phase ends
@@ -335,14 +441,128 @@ class Matches:
                     self._log(c, mid, now, "resume", m["phase"], None, {"by": by})
                 self._log(c, mid, now, "phase_end", m["phase"], None, {"how": "restart"})
             self._log(c, mid, now, "restart", phase, None, {"by": by, "from": m["phase"], "state": m["state"]})
+            self._clear_lanes(c, mid)                  # moved shooters start the phase again with everyone
             self._enter(c, self._row(c, mid), phase, now)
         self._pub(mid)
 
-    @staticmethod
-    def _switched(c, mid, phase, device_id) -> bool:
+    def _switched(self, c, mid, phase, device_id) -> bool:
+        """Has this lane started record in this phase (since its last start, and since it was last moved)?"""
+        devs = self._lane_devs(c, mid, device_id)
+        q = ",".join("?" * len(devs))
         start = c.execute("SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='phase_start' AND phase=?", (mid, phase)).fetchone()[0]
-        return c.execute("SELECT 1 FROM match_log WHERE match_id=? AND kind='start_record' AND phase=? AND device_id=? AND id>?",
-                         (mid, phase, device_id, start or 0)).fetchone() is not None
+        ready = c.execute(f"SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='lane_ready' AND device_id IN ({q})", (mid, *devs)).fetchone()[0]
+        return c.execute(f"SELECT 1 FROM match_log WHERE match_id=? AND kind='start_record' AND phase=? AND device_id IN ({q}) AND id>?",
+                         (mid, phase, *devs, max(start or 0, ready or 0))).fetchone() is not None
+
+    @staticmethod
+    def _lane_devs(c, mid, device_id) -> List[str]:
+        """Every target a lane has used, newest first (a shooter may have been moved)."""
+        devs, cur = [device_id], device_id
+        for r in c.execute("SELECT device_id, data FROM match_log WHERE match_id=? AND kind='move' ORDER BY id DESC", (mid,)):
+            if r["device_id"] == cur:
+                cur = json.loads(r["data"])["from"]
+                devs.append(cur)
+        return devs
+
+    # ------------------------------------------------------------------------------------------- moving a shooter
+    def lane_left_ms(self, m, ln, now: int) -> int:
+        """A lane's own time left in its phase."""
+        if ln["moving_since_ms"] is not None:
+            return ln["moving_left_ms"] or 0
+        if ln["own_phase"] is not None:
+            return max(0, ln["own_left_ms"] - (now - ln["own_since_ms"] if ln["own_since_ms"] is not None else 0))
+        return self.remaining_ms(m, now) + ln["extra_ms"] if m["state"] in LIVE else 0
+
+    def _lane(self, c, mid, device_id):
+        ln = c.execute("SELECT * FROM match_lanes WHERE match_id=? AND device_id=?", (mid, device_id)).fetchone()
+        if ln is None:
+            raise MatchError("that target is not in this match")
+        return ln
+
+    def move(self, mid: int, from_dev: str, to_dev: str, by: str) -> None:
+        """Move a lane to another target that is in no other match. Before the start: just the target. During the
+        match: the shooter's series moves with them and their own time stands still until lane_command 'ready'."""
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["state"] in ("done", "aborted"):
+                raise MatchError("the match is over")
+            ln = self._lane(c, mid, from_dev)
+            if to_dev == from_dev:
+                raise MatchError("choose another target")
+            if not isinstance(to_dev, str) or c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0",
+                                                        (to_dev,)).fetchone() is None:
+                raise MatchError("unknown target")
+            other = self.lock_of(c, to_dev)
+            if other:
+                raise MatchError(f"that target is in the match '{other}'")
+            if m["state"] == "overtime" and not own_clock(ln):
+                raise MatchError("this shooter has finished")
+            phase = None
+            if m["state"] != "ready":
+                phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
+                if ln["moving_since_ms"] is None:            # their time stands still from now
+                    c.execute("UPDATE match_lanes SET moving_since_ms=?, moving_left_ms=?, own_since_ms=NULL, own_left_ms=NULL "
+                              "WHERE match_id=? AND device_id=?", (now, self.lane_left_ms(m, ln, now), mid, from_dev))
+                self.core._move_series(c, from_dev, to_dev, ln["series_id"], now)
+            c.execute("UPDATE match_lanes SET device_id=? WHERE match_id=? AND device_id=?", (to_dev, mid, from_dev))
+            self._log(c, mid, now, "move", phase, to_dev, {"from": from_dev, "by": by})
+        self._pub(mid)
+
+    def lane_command(self, mid: int, device_id: str, action: str, by: str, seconds: Optional[int] = None) -> None:
+        """One lane: 'ready' (a moved shooter is in position: their time runs again, plus `seconds` extra, default by
+        the rulebook), 'extra' (seconds of extra time for this shooter only), 'start_record' (after sighters)."""
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["state"] not in LIVE and m["state"] != "overtime":
+                raise MatchError("the match is not running")
+            ln = self._lane(c, mid, device_id)
+            fmt = json.loads(m["format_json"])
+            phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
+            p = fmt["phases"][phase]
+            if action == "ready":
+                if ln["moving_since_ms"] is None:
+                    raise MatchError("this shooter is not moving")
+                if seconds is None:
+                    seconds = MOVE_EXTRA_S[rules_of(fmt)]
+                if not isinstance(seconds, int) or isinstance(seconds, bool) or not 0 <= seconds <= 3600:
+                    raise MatchError("extra time: 0 to 3600 seconds")
+                left = ln["moving_left_ms"] + seconds * 1000
+                sighting = 1 if p["kind"] in ("record", "stage") else 0
+                if ln["own_phase"] is not None:
+                    counting = m["state"] not in ("paused",) and not (m["state"] == "overtime" and m["phase_started_ms"] is None)
+                    c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, own_left_ms=?, own_since_ms=?, sighting=? "
+                              "WHERE match_id=? AND device_id=?", (left, now if counting else None, sighting, mid, device_id))
+                else:
+                    c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=?, sighting=? "
+                              "WHERE match_id=? AND device_id=?", (left - self.remaining_ms(m, now), sighting, mid, device_id))
+                self._log(c, mid, now, "lane_ready", phase, device_id, {"extra_s": seconds, "left_ms": left, "by": by})
+                self._set_modes(c, m, "sighter", now, only=device_id)     # unlimited sighters first (all three rulebooks)
+            elif action == "extra":
+                if not isinstance(seconds, int) or isinstance(seconds, bool) or not 1 <= seconds <= 3600:
+                    raise MatchError("extra time: 1 to 3600 seconds")
+                col = "moving_left_ms" if ln["moving_since_ms"] is not None else "own_left_ms" if ln["own_phase"] is not None else "extra_ms"
+                c.execute(f"UPDATE match_lanes SET {col}={col}+? WHERE match_id=? AND device_id=?", (seconds * 1000, mid, device_id))
+                self._log(c, mid, now, "lane_extra", phase, device_id, {"seconds": seconds, "by": by})
+            elif action == "start_record":
+                if ln["moving_since_ms"] is not None:
+                    raise MatchError("the shooter is moving to another target: press Ready first")
+                counting = ln["own_phase"] is not None or m["state"] == "running"
+                if ln["sighting"]:
+                    if p["kind"] not in ("record", "stage") or not counting:
+                        raise MatchError("record can start only while this shooter's time is running")
+                else:
+                    if p["kind"] != "stage" or not counting:
+                        raise MatchError("the shooter starts record only during a running sighting-and-record stage")
+                    if self._switched(c, mid, phase, device_id):
+                        raise MatchError("already in record for this stage")
+                c.execute("UPDATE match_lanes SET sighting=0 WHERE match_id=? AND device_id=?", (mid, device_id))
+                self._log(c, mid, now, "start_record", phase, device_id, {"by": by})
+                self._set_modes(c, m, "record", now, only=device_id)
+            else:
+                raise MatchError("unknown action")
+        self._pub(mid)
 
     def decide(self, mid: int, shot_id: int, decision: str, by: str) -> None:
         flags = {f["shot_id"]: f for f in self.detail(mid)["flags"]}
@@ -400,18 +620,39 @@ class Matches:
             attempt_start.setdefault((w["phase"], w["attempt"]), w["start"])
         out = []
         decisions = {r["shot_id"]: r["decision"] for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (m["id"],))}
+        log = c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (m["id"],)).fetchall()
+        pauses = _pauses(log)
         for ln in self._lanes(c, m["id"]):
             if ln["series_id"] is None:
                 continue
-            switches = [(r["phase"], r["at_ms"]) for r in c.execute(
-                "SELECT phase, at_ms FROM match_log WHERE match_id=? AND kind='start_record' AND device_id=?", (m["id"], ln["device_id"]))]
+            devs = set(self._lane_devs(c, m["id"], ln["device_id"]))
+            mine = [r for r in log if r["device_id"] in devs]
+            switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
+            readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_ready"]
+            moving, own = _lane_spans(log, devs, wins)
+
+            def sighting_ok(ph, a_start, t):          # after a move: unlimited sighters until record starts again
+                ready = max((at for q, at in readies if q == ph and a_start <= at <= t), default=None)
+                return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
+
+            def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move since)
+                sw = max((at for q, at in switches if q == ph and at >= a_start and t > at), default=None)
+                return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies)
             counted: Dict[tuple, int] = {}
             for s in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring FROM shots WHERE series_id=? ORDER BY event_ms, id",
                                (ln["series_id"],)):
                 t = s["event_ms"]
-                w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
+                inside = lambda sp: sp["start"] <= t and (sp["end"] is None or t < sp["end"])
+                o = next((sp for sp in own if inside(sp)), None)
+                if o is not None:                      # finishing their own phase after the match went on
+                    w = {"phase": o["phase"], "attempt": o["attempt"], "start": o["start"], "end": o["end"], "hold": False,
+                         "live": not any(inside(pz) for pz in pauses), "superseded": o["superseded"]}
+                else:
+                    w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
                 why = None
-                if w is None:
+                if any(inside(sp) for sp in moving):
+                    why = "while moving to another target"
+                elif w is None:
                     why = "before the start" if first is None or t < first else "after the end"
                 elif w["superseded"]:
                     why = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted"
@@ -426,10 +667,9 @@ class Matches:
                         why = f"during {p['label'].lower()} (no firing)"
                     elif p["kind"] == "sight" and rec:
                         why = f"a record shot during {p['label'].lower()}"
-                    elif p["kind"] == "record" and not rec:
+                    elif p["kind"] == "record" and not rec and not sighting_ok(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
                         why = f"a sighting shot during {p['label'].lower()}"
-                    elif p["kind"] == "stage" and not rec and any(ph == w["phase"] and at >= attempt_start[(ph, w["attempt"])] and t > at
-                                                                    for ph, at in switches):
+                    elif p["kind"] == "stage" and not rec and in_record(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
                         why = "a sighting shot after record started"
                     elif rec:
                         key = (w["phase"], w["attempt"])
@@ -449,6 +689,12 @@ class Matches:
         nxt = fmt["phases"][i + 1] if p and i + 1 < len(fmt["phases"]) else None
         rem = self.remaining_ms(m, now)
         prev = fmt["phases"][i - 1] if p and i > 0 else None
+        if m["state"] == "overtime":                       # the match time is over; moved shooters are finishing
+            return {"state": "overtime", "paced": m["paced"], "phase": i, "phase_count": len(fmt["phases"]),
+                    "label": "Time over: moved shooters are finishing", "prev_end_say": "", "kind": None, "position": None,
+                    "shots": 0, "seconds": 0, "extra_ms": 0, "remaining_ms": 0, "ends_at_ms": None, "next_start_say": "",
+                    "next": None, "warnings": [], "start_say": "", "end_say": "", "server_time_ms": now,
+                    "paused": m["phase_started_ms"] is None}
         return {"state": m["state"], "paced": m["paced"], "phase": i, "phase_count": len(fmt["phases"]), "label": p["label"] if p else None,
                 "prev_end_say": prev["end"] if prev else "",
                 "kind": p["kind"] if p else None, "position": p["position"] if p else None,
@@ -470,15 +716,35 @@ class Matches:
             if ln["series_id"] is not None:
                 for r in c.execute("SELECT stream, COUNT(*) AS n FROM shots WHERE series_id=? GROUP BY stream", (ln["series_id"],)):
                     counts[r["stream"]] = r["n"]
-            lanes.append({"device_id": ln["device_id"], "lane": ln["lane"], "competitor": ln["competitor"],
+            lanes.append({**self.lane_clock(c, m, ln, now), "device_id": ln["device_id"], "lane": ln["lane"], "competitor": ln["competitor"],
                           "target": (t["name"] if t and t["name"] else ln["device_id"]), "series_id": ln["series_id"],
                           "online": bool(t) and now - t["last_seen_ms"] <= self.core.offline_after_ms,
                           "sighters": counts["sighter"], "record": counts["scored"],
                           "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False})
         return {"id": m["id"], "name": m["name"], "format": fmt, "state": m["state"], "created_by": m["created_by"],
+                "competition_id": m["competition_id"], "relay": m["relay"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
+                "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
                 "flags": self.flags(c, m) if m["state"] != "ready" else []}
+
+    def lane_clock(self, c, m, ln, now: int) -> dict:
+        """A lane's own clock, for the console and the shooter's screen: own = "moving" (time stands still until the
+        range officer presses Ready), "own" (finishing their phase after the match went on), "extra" (more time than the
+        match in this phase) or "" (the match clock). moved_from: the targets they left, oldest first."""
+        fmt = json.loads(m["format_json"])
+        own = ("moving" if ln["moving_since_ms"] is not None else "own" if ln["own_phase"] is not None
+               else "extra" if ln["extra_ms"] and m["state"] in LIVE else "")
+        phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
+        left = self.lane_left_ms(m, ln, now)
+        counting = (own == "own" and ln["own_since_ms"] is not None) or (own in ("extra", "") and m["state"] == "running")
+        devs = self._lane_devs(c, m["id"], ln["device_id"])[1:]
+        names = {r["device_id"]: r["name"] for r in c.execute(
+            f"SELECT device_id, name FROM targets WHERE device_id IN ({','.join('?' * len(devs))})", devs)} if devs else {}
+        return {"own": own, "own_label": fmt["phases"][phase]["label"] if own and 0 <= phase < len(fmt["phases"]) else None,
+                "own_kind": fmt["phases"][phase]["kind"] if own and 0 <= phase < len(fmt["phases"]) else None,
+                "own_remaining_ms": left if own else None, "own_ends_at_ms": now + left if own and counting else None,
+                "sighting": bool(ln["sighting"]), "moved_from": [names.get(d) or d for d in reversed(devs)]}
 
     def list(self, limit: int = 30) -> List[dict]:
         now = self.core.now_ms()
@@ -486,78 +752,107 @@ class Matches:
         for m in self.db.conn().execute("SELECT * FROM matches ORDER BY id DESC LIMIT ?", (max(1, min(int(limit), 200)),)):
             fmt = json.loads(m["format_json"])
             out.append({"id": m["id"], "name": m["name"], "state": m["state"], "format_name": fmt["name"],
-                        "created_ms": m["created_ms"], "clock": self._clock(m, now)})
+                        "created_ms": m["created_ms"], "clock": self._clock(m, now),
+                        "competition_id": m["competition_id"], "relay": m["relay"], "results_hidden": bool(m["results_hidden"])})
         return out
 
     def target_info(self, c, device_id: str, now: int) -> Optional[dict]:
         """What a target's own screen shows during a match (no login needed: read only)."""
         r = c.execute("""SELECT m.*, l.lane, l.competitor FROM matches m JOIN match_lanes l ON l.match_id=m.id
-                         WHERE l.device_id=? AND m.state IN ('ready','running','paused','holding') ORDER BY m.id DESC LIMIT 1""",
+                         WHERE l.device_id=? AND m.state IN """ + ACTIVE_SQL + " ORDER BY m.id DESC LIMIT 1",
                       (device_id,)).fetchone()
         if r is None:
             return None
         clock = self._clock(r, now)
         clock.update({"match_id": r["id"], "name": r["name"], "lane": r["lane"], "competitor": r["competitor"],
                       "in_record": self._switched(c, r["id"], r["phase"], device_id) if r["phase"] >= 0 else False})
+        ln = self._lane(c, r["id"], device_id)
+        lc = self.lane_clock(c, r, ln, now)
+        if lc["own"] == "moving":
+            clock.update(state="paused", label="Moving to another target: your time is stopped", remaining_ms=lc["own_remaining_ms"],
+                         ends_at_ms=None, next=None)
+        elif lc["own"] in ("own", "extra"):
+            fmt = json.loads(r["format_json"])
+            p = fmt["phases"][ln["own_phase"] if ln["own_phase"] is not None else r["phase"]]
+            clock.update(state="running" if lc["own_ends_at_ms"] is not None else "paused", label=p["label"] + " (your own time)",
+                         kind=p["kind"], shots=p["shots"], remaining_ms=lc["own_remaining_ms"], ends_at_ms=lc["own_ends_at_ms"],
+                         next=None if lc["own"] == "own" else clock.get("next"))
+        if lc["sighting"]:
+            clock.update(in_record=False, sighting=True)
+        clock["moved_from"] = lc["moved_from"]
         return clock
 
     # ------------------------------------------------------------------------------------------- results
+    def counted(self, c, m, ln, flags: Dict[int, dict]) -> List[dict]:
+        """One lane's counted record shots in firing order, after the match director's decisions: a record shot counts
+        unless flagged; flagged ones only as decided (count as fired, miss = 0, penalty2 = 2 points off, not below 0;
+        annul / undecided do not count). Decisions on stray sighting shots land on the first record shot
+        (miss_first: 0; penalty2_first: 2 points off each). Values: tenths (decimal x10) and ring, both after penalties."""
+        out = []
+        if ln["series_id"] is None:
+            return out
+        for s in c.execute("""SELECT id, is_miss, tenths, ring, ax_h, ay_h, series_no FROM shots
+                              WHERE series_id=? AND stream='scored' ORDER BY event_ms, id""", (ln["series_id"],)):
+            f = flags.get(s["id"])
+            decision = f["decision"] if f else "count"
+            if decision not in ("count", "miss", "penalty2"):
+                continue
+            miss = bool(s["is_miss"]) or decision == "miss"
+            tenths, ring = (0, 0) if miss else (s["tenths"], s["ring"])
+            if decision == "penalty2":
+                tenths, ring = max(0, tenths - 20), max(0, ring - 2)
+            out.append({"id": s["id"], "n": s["series_no"], "tenths": tenths, "ring": ring, "miss": miss,
+                        "inner": decision == "count" and not miss and is_inner(s["tenths"]), "decision": decision if f else None,
+                        "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0})
+        pens = [f["decision"] for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "sighter"]
+        if out and ("miss_first" in pens or "penalty2_first" in pens):
+            first = out[0]
+            if "miss_first" in pens:
+                first.update(tenths=0, ring=0, inner=False)
+            n = pens.count("penalty2_first")
+            first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n)
+        return out
+
+    @staticmethod
+    def entry_view(shots: List[dict], decimal: bool) -> dict:
+        """What a results row shows, from counted shots."""
+        vals = [s["tenths"] if decimal else s["ring"] * 10 for s in shots]
+        ser = [sum(vals[i:i + 10]) for i in range(0, len(vals), 10)]
+        return {"total": sum(vals) / 10.0, "x": sum(1 for s in shots if s["inner"]), "shots": len(shots),
+                "series": [v / 10.0 for v in ser], "last10": [v / 10.0 for v in vals[-10:]]}
+
     def results(self, mid: int) -> dict:
-        """Standings of one match. A record shot counts unless it is flagged; a flagged shot counts only after the
-        match director decided: count (as fired), miss (0), penalty2 (2 points off, not below 0); annul and undecided
-        do not count. Ranking (PROVISIONAL until each rulebook's tie-break rules are built): total, then inner tens
-        (decimal scoring) or X count (integer), then 10-shot series from the last one backwards."""
+        """Standings of one match, ranked with its format's tie-break rules (ranking.py)."""
         c = self.db.conn()
         m = self._row(c, mid)
         fmt = json.loads(m["format_json"])
-        decimal = fmt.get("scoring") == "decimal"
+        decimal, rules = fmt.get("scoring") == "decimal", rules_of(fmt)
         flags = {f["shot_id"]: f for f in (self.flags(c, m) if m["state"] != "ready" else [])}
-        rows = []
+        entries = []
         for ln in self._lanes(c, mid):
-            vals, xs = [], 0
-            first_pen = [f["decision"] for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "sighter"
-                         and f["decision"] in ("penalty2_first", "miss_first")]
-            if ln["series_id"] is not None:
-                for s in c.execute("SELECT id, is_miss, tenths, ring FROM shots WHERE series_id=? AND stream='scored' ORDER BY event_ms, id",
-                                   (ln["series_id"],)):
-                    f = flags.get(s["id"])
-                    decision = f["decision"] if f else "count"
-                    if decision not in ("count", "miss", "penalty2"):
-                        continue
-                    v = 0 if s["is_miss"] else (s["tenths"] if decimal else s["ring"] * 10)   # in tenths
-                    if decision == "miss":
-                        v = 0
-                    elif decision == "penalty2":
-                        v = max(0, v - 20)
-                    if decision == "count" and not s["is_miss"] and is_inner(s["tenths"]):
-                        xs += 1
-                    vals.append(v)
-            if vals and first_pen:                        # penalties for stray sighting shots land on the first record shot
-                if "miss_first" in first_pen:
-                    vals[0] = 0
-                vals[0] = max(0, vals[0] - 20 * first_pen.count("penalty2_first"))
-            series = [sum(vals[i:i + 10]) for i in range(0, len(vals), 10)]
+            shots = self.counted(c, m, ln, flags)
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
-            rows.append({"lane": ln["lane"], "device_id": ln["device_id"], "competitor": ln["competitor"] or "",
-                         "target": (t["name"] if t and t["name"] else ln["device_id"]),
-                         "total": sum(vals) / 10.0, "x": xs, "shots": len(vals), "series": [x / 10.0 for x in series],
-                         "last10": [v / 10.0 for v in vals[-10:]],
-                         "pending": sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])})
-        rows.sort(key=lambda r: (-r["total"], -r["x"], [-x for x in reversed(r["series"])], r["lane"]))
-        for i, r in enumerate(rows):
-            tied = i and (r["total"], r["x"], r["series"][::-1]) == (rows[i - 1]["total"], rows[i - 1]["x"], rows[i - 1]["series"][::-1])
-            r["place"] = rows[i - 1]["place"] if tied else i + 1
-        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"),
+            name = ln["competitor"] or ""
+            entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1],
+                                lane=ln["lane"], device_id=ln["device_id"], competitor=name,
+                                target=(t["name"] if t and t["name"] else ln["device_id"]),
+                                pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])))
+        rows = ranking.rank(entries, rules, decimal)
+        for r in rows:
+            r.pop("summary", None)
+        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "state": m["state"], "clock": self._clock(m, self.core.now_ms()),
-                "provisional_ranking": True, "rows": rows}
+                "provisional_ranking": False, "rows": rows}
 
     def board(self, ids: Optional[List[int]] = None) -> List[dict]:
         """Public scoreboard data for the given matches, or for every active match and those finished in the last 6 h."""
         c = self.db.conn()
         if not ids:
             since = self.core.now_ms() - 6 * 3600 * 1000
-            ids = [r["id"] for r in c.execute("SELECT id FROM matches WHERE state IN ('running','paused','holding','ready') "
-                                               "OR (state='done' AND ended_ms>?) ORDER BY id", (since,))]
+            ids = [r["id"] for r in c.execute("SELECT id FROM matches WHERE results_hidden=0 AND (state IN ('running','paused','holding','ready','overtime') "
+                                               "OR (state='done' AND ended_ms>?)) ORDER BY id", (since,))]
+        else:                                          # deleted results are not shown, even when asked for
+            ids = [i for i in ids if c.execute("SELECT 1 FROM matches WHERE id=? AND results_hidden=0", (int(i),)).fetchone()]
         out = []
         for mid in ids[:20]:
             try:
@@ -567,6 +862,63 @@ class Matches:
         return out
 
 
+def rules_of(fmt: dict) -> str:
+    """A format's tie-break rules (older stored formats have none: use their rulebook's, ISSF for custom ones)."""
+    r = fmt.get("tie_rules") or {"ISSF": "ISSF", "CMP": "CMP", "NRA": "NRA"}.get(fmt.get("rulebook"), "ISSF")
+    return r if r in ranking.RULES else "ISSF"
+
+
 def is_inner(tenths: int) -> bool:
     from .scoring import is_inner_ten
     return is_inner_ten(tenths)
+
+
+def own_clock(ln) -> bool:
+    """A lane that does not simply follow the match: moving, finishing its own phase, or sighting after a move."""
+    return ln["moving_since_ms"] is not None or ln["own_phase"] is not None or bool(ln["sighting"])
+
+
+def _pauses(log) -> List[dict]:
+    """Every time the match clock was paused: [start, end) (end None = still paused)."""
+    out, cur = [], None
+    for r in log:
+        if r["kind"] == "pause" and cur is None:
+            cur = {"start": r["at_ms"], "end": None}
+        elif r["kind"] in ("resume", "restart", "abort") and cur is not None:
+            cur["end"] = r["at_ms"]
+            out.append(cur)
+            cur = None
+    return out + ([cur] if cur else [])
+
+
+def _lane_spans(log, devs, wins):
+    """A lane's own timeline from the log: moving spans (its time stood still) and own phases (it finished a phase
+    after the match went on), each [start, end) with end None while open. A restart or abort ends both."""
+    moving, own, mv, ow, restarts = [], [], None, None, []
+    for r in log:
+        k, mine = r["kind"], r["device_id"] in devs
+        if k == "move" and mine and r["phase"] is not None and mv is None:
+            mv = {"start": r["at_ms"], "end": None}
+        elif k == "lane_ready" and mine and mv is not None:
+            mv["end"] = r["at_ms"]
+            moving.append(mv)
+            mv = None
+        elif k == "lane_overtime" and mine and ow is None:
+            attempt = max((w["attempt"] for w in wins if w["phase"] == r["phase"] and w["start_id"] < r["id"]), default=1)
+            ow = {"phase": r["phase"], "attempt": attempt, "start": r["at_ms"], "end": None, "start_id": r["id"]}
+        elif (k == "lane_end" and mine) or k in ("restart", "abort"):
+            if k == "restart":
+                restarts.append((r["phase"], r["id"]))
+            for sp in (mv, ow):
+                if sp is not None:
+                    sp["end"] = r["at_ms"]
+            if mv is not None:
+                moving.append(mv)
+            if ow is not None:
+                own.append(ow)
+            mv = ow = None
+    moving += [mv] if mv else []
+    own += [ow] if ow else []
+    for o in own:
+        o["superseded"] = any(rid > o["start_id"] and to <= o["phase"] for to, rid in restarts)
+    return moving, own

@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.26: Match Control (beta); signed updates from GitHub; firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.27: competitions, results and teams; Match Control (beta); signed updates from GitHub; firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -64,6 +64,26 @@ against other mode changes.
 *scoreboard* (`#/tv/board?m=<match,match>`, or every current match): everyone in place order with total, inner tens /
 X, 10-shot aggregates, the last 10 shots and shots fired; it scrolls by itself when it does not fit. The ranking is
 provisional (total, inner tens, then 10-shot series from the last) until each rulebook's tie-break rules are built.
+**Competitions** (Match Control → *New competition*): a format, competitors (family name, given name, optional class
+and team; add one by one, paste a list, or upload a CSV file, which is read in memory and never stored; edit with the
+pencil button, and a new name also shows on the targets and the shooter screens) and one or more relays; each relay is a match with its own clock and
+console, and a competitor shoots in one relay. Results combine every relay that was not stopped, one list per class,
+ranked with the format's rulebook tie-break rules (ISSF 6.15, CMP 8.6, NRA 15.3; see docs/MATCH-FORMATS.md). Teams
+are competitors with the same team name: the size follows the rulebook (ISSF 3, CMP 4, NRA from the program, 4 by
+default) and can be changed, optionally "best N count"; incomplete teams are listed, unranked, with the reason.
+Results are public (header *Results*): a results page, a printable result sheet, printable score cards (every shot,
+series totals, a target picture per 10 shots, signature lines), and CSV exports for individuals and teams. The TV
+scoreboard can show competitions (all relays together, by class).
+**Moving a shooter** when a target fails (console, *Move…*): their shots go with them, their own time stops until
+the range officer presses *Shooter ready*, then they get the rulebook's extra time and sighters before record again
+(ISSF 6.10.9.2, CMP 7.18.3, NRA 9.2 b; details in docs/MATCH-FORMATS.md). Before a relay starts, the competitor window
+places competitors on any relay and target, or swaps two.
+**Deleting** (Match Control, match director; tick several at once): *Delete selected* removes matches and competitions
+(with their relays and competitor lists) from Match Control; their results stay on the Results page as a saved copy,
+and the shots stay in each target's history. *Delete selected results* takes results off the Results page, TV,
+print-outs and CSV while the match stays in Match Control (*Show again* brings them back; a saved copy is deleted for
+good). A running match must be stopped first. Single matches have a Results page too.
+
 Users and roles (match director: formats, matches, decisions; range officer: the clock) are managed in Range Control
 or on the Pi: `cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver match-user add NAME --role director
 --data-dir /var/lib/fet-monitor` (also `list`, `passwd`, `role`, `remove`). Results lists, teams, printing, finals and
@@ -228,7 +248,15 @@ backup from /var/backups/fet-monitor in that case.
 | GET /match/formats; POST /match/formats, /match/formats/<id>/delete | Match Control (director to change) | Standard and custom formats |
 | GET, POST /match/matches; GET /match/matches/<n>; POST /match/matches/<n>/start, /command, /flags/<shot> | Match Control | Create (director), start and run (`{action: go\|pause\|resume\|next\|extra\|abort\|start_record}`), decide flagged shots (director) |
 | POST /match/matches/<n>/restart | Match Control (director) | `{phase}`: back to that phase (0 = the beginning); also reopens a finished match |
+| POST /match/matches/<n>/move | Match Control (director before the start) | `{from, to}`: a firing point to a free target |
+| POST /match/matches/<n>/lane | Match Control | `{device_id, action: ready\|extra\|start_record, seconds}`: one shooter's own clock |
+| GET /match/results; POST /match/results/delete, /match/results/restore | Match Control (director to change) | `{keys: [...]}`: results off / back on the Results page (a saved copy is deleted for good) |
+| POST /match/delete | Match Control (director) | `{matches: [ids], competitions: [ids]}`: delete from Match Control, keeping a saved copy of the results; all or nothing |
+| POST /match/competitions/<n>/competitors/<id>/move | Match Control (director) | `{match_id, device_id}` before that relay starts (`match_id` null: off the relay) |
 | GET /board?m=<n,n> | anyone | Scoreboard data for those matches (default: the current ones) |
+| GET, POST /match/competitions; GET, POST /match/competitions/<n>; POST /match/competitions/<n>/competitors[/<id>[/delete]], /relays; POST /match/competitions/<n>/competitors/import | Match Control (director to change) | Competitions, competitors, relays (`{lanes: [{device_id, competitor_id}]}`); import takes a raw CSV body (Family, Given, Class, Team; header optional; all or nothing; max 256 KB) |
+| GET /competitions; GET /results; GET /results/<key>[?shots=1]; GET /results/<key>.csv, /results/<key>-teams.csv | anyone | Competition list (TV set-up); every result; one result by class with teams (key: `c<n>` competition, `m<n>` single match, `a<n>` saved copy; a plain number = competition); CSV (UTF-8 with BOM, formula-like cells kept as text) |
+| GET /board?c=<n,n> | anyone | Scoreboard data for competitions (also `m=` for single matches) |
 | POST /targets/<id>/start-record | the shooter holding the lane | NRA-style stage: start record shots |
 | GET, POST /admin/match-users; POST /admin/match-users/<name>/delete | Range Control | Match Control users and roles |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |

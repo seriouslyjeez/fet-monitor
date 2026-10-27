@@ -248,6 +248,63 @@ MIGRATIONS = [
     -- presses Next). A separate migration because v9 had already run on a Pi before this column existed.
     ALTER TABLE matches ADD COLUMN paced TEXT NOT NULL DEFAULT 'auto';
     """,
+    """
+    -- Competitions: a format, competitors (family/given name, optional class and team) and one or more relays; each
+    -- relay is a match (its own clock) linked here; results and teams combine all relays.
+    CREATE TABLE competitions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        format_json TEXT NOT NULL,
+        team_size   INTEGER NOT NULL,
+        best_count  INTEGER NOT NULL DEFAULT 0,
+        paced       TEXT NOT NULL DEFAULT 'spoken',
+        created_ms  INTEGER NOT NULL,
+        created_by  TEXT
+    );
+    CREATE TABLE competitors (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        competition_id INTEGER NOT NULL,
+        family         TEXT NOT NULL,
+        given          TEXT,
+        class          TEXT,
+        team           TEXT,
+        created_ms     INTEGER NOT NULL
+    );
+    CREATE INDEX competitors_competition ON competitors (competition_id);
+    ALTER TABLE matches ADD COLUMN competition_id INTEGER;
+    ALTER TABLE matches ADD COLUMN relay INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN competitor_id INTEGER;
+    """,
+    """
+    -- A shooter moved to another target during a match (ISSF 6.10.9.2, 6.11.3.2; CMP 7.18.3; NRA 9.2 b, 10.3.2):
+    -- the lane's own clock. moving_*: their time stands still from the move until the range officer says they are
+    -- ready (moving_left_ms = what they had left). extra_ms: their own extra time in the current phase. own_*: the
+    -- match has gone on to the next phase while they finish theirs (own_left_ms left at own_since_ms; own_since_ms
+    -- NULL = not counting). sighting: after a move, sighters until they start record again.
+    ALTER TABLE match_lanes ADD COLUMN moving_since_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN moving_left_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN extra_ms INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE match_lanes ADD COLUMN own_phase INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN own_left_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN own_since_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN sighting INTEGER NOT NULL DEFAULT 0;
+    """,
+    """
+    -- Deleting matches and results independently. results_hidden: the results were deleted (no longer on the
+    -- Results page, TV, print or CSV); the match stays in Match Control and they can be shown again. results_archive:
+    -- a frozen copy of the results of a match or competition that was deleted from Match Control.
+    ALTER TABLE competitions ADD COLUMN results_hidden INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE matches ADD COLUMN results_hidden INTEGER NOT NULL DEFAULT 0;
+    CREATE TABLE results_archive (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind       TEXT NOT NULL CHECK (kind IN ('competition','match')),
+        source_id  INTEGER NOT NULL,
+        name       TEXT NOT NULL,
+        json       TEXT NOT NULL,
+        created_ms INTEGER NOT NULL,
+        created_by TEXT
+    );
+    """,
 ]
 
 

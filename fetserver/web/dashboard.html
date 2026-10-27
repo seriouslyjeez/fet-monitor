@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FeT Monitor</title>
 <style>
-:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc}}
+:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea;--last:#e11d48}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185}}
 *{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:#fff}
@@ -72,6 +72,14 @@ button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#
 .mcbanner{background:var(--hi);border:2px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .mcbanner .mcclock{font-size:44px}.phlist{font-size:13px}.phlist td{height:auto}.phlist tr.cur td{background:var(--hi);font-weight:700}
 .mcform input[type=text],.mcform input[type=number],.mcform select{max-width:100%}.mcform .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+/* print pages (result sheets, score cards): plain, black on white, page breaks between cards */
+body.print header,body.print #ver{display:none}body.print main{max-width:900px;padding:10px}
+.sheetpage{background:#fff;color:#111}.sheetpage h1{font-size:22px;margin:0 0 2px}.sheetpage h2{font-size:17px;margin:14px 0 4px}
+.sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
+.sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
+.scard .faces{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}.scard .faces svg{width:100%;height:auto}
+.sign{display:flex;gap:30px;margin-top:20px}.sign div{flex:1;border-top:1px solid #111;padding-top:3px;font-size:12px}
+@media print{.noprint{display:none!important}body{background:#fff}.scard{border:0}}
 /* TV displays: no header, big type */
 body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.tv #ver{display:none}
 .tvclock{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--card);border:2px solid var(--accent);border-radius:12px;padding:8px 16px;margin-bottom:10px}
@@ -87,11 +95,12 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
 <input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
+<input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
 <script>
 'use strict';
@@ -144,7 +153,8 @@ function ammoMarks(v) {
 }
 
 // Target face. Pure function returning an SVG string. Data y is up, screen y is down.
-// o: half (view half-width, mm), pellet (mm), color, mini, corner (black top-right corner = shots are not scored)
+// o: half (view half-width, mm), pellet (mm), color, mini, corner (black top-right corner = shots are not scored),
+// noLast (a printed score card: no colour for the latest shot)
 function faceSvg(shots, o) {
   o = o || {};
   const mini = !!o.mini, pr = (o.pellet || 4.5) / 2, H = o.half || FULL, col = o.color || 'var(--accent)', black = ringR(4);
@@ -165,14 +175,15 @@ function faceSvg(shots, o) {
   }
   const pts = shots.filter(x => !x.miss && x.x_mm != null);
   pts.forEach((x, i) => {
-    const isLast = i === pts.length - 1, sx = x.x_mm, sy = -x.y_mm;
+    const isLast = i === pts.length - 1 && !o.noLast, sx = x.x_mm, sy = -x.y_mm;
     if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
       // A stroke is centred on the circle's edge, so the circle is drawn half a stroke smaller: the outer edge of the
       // outline is then exactly the pellet's edge, whatever the outline width.
       const w = (isLast && !mini && !x.flyer ? 0.6 : 0.35) * f, r = +(pr - w / 2).toFixed(4);
       if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="none" stroke="#e11d48" stroke-width="' + w + '" stroke-dasharray="' + 0.7 * f + '"/>';   // sight adjustment: ignored shot
-      else s += '<circle class="pellet" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="' + col + '" fill-opacity=".55" stroke="' +
-           (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + w + '"/>';
+      else if (isLast) s += '<circle class="pellet latest" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="var(--last)" fill-opacity=".85" stroke="' +
+           (mini ? 'var(--last)' : '#fff') + '" stroke-width="' + w + '"/>';     // the latest shot: its own colour, also on the small cards
+      else s += '<circle class="pellet" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="' + col + '" fill-opacity=".55" stroke="' + col + '" stroke-width="' + w + '"/>';
       if (!mini && (!o.labelLast || isLast)) {                       // an ammo test can have hundreds of shots: label only the latest
         s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
       }
@@ -246,10 +257,70 @@ function coachView(targets, S) {
     '<button data-act="tvcfg">' + (S && S.tvcfg ? 'Close TV display setup' : 'TV display…') + '</button></div>' +
     (S && S.tvcfg ? tvConfig(targets, S) : '') + '<div class="grid">' + targets.map(coachCard).join('') + '</div>';
 }
+// ---- results (public): #/results, #/results/<key>, #/print/results/<key>, #/print/cards/<key>[?p=<competitor>] ----
+// key: c<id> a competition, m<id> a single match, a<id> a saved copy (its match was deleted); a plain number = c
+const fmtScore = (res, v) => v == null ? '' : res.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
+const RES_KIND = {competition: 'Competition', match: 'Single match', frozen: 'Saved copy'};
+const fmtDay = ms => new Date(ms).toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'});
+function resultsIndex(list) {
+  return '<div class="panel mc"><span class="title">Results</span>' + (list && list.length ? '<table class="t"><tr><th>Name</th><th>Format</th><th>Kind</th><th>Date</th><th></th></tr>' + list.map(c =>
+    '<tr><td><a href="#/results/' + esc(c.key) + '">' + esc(c.name) + '</a></td><td class="mut">' + esc(c.format_name) + '</td><td class="mut">' + esc(RES_KIND[c.kind] || '') + '</td>' +
+    '<td class="mut">' + esc(fmtDay(c.at_ms)) + '</td><td>' + (c.active ? 'in progress' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No results yet.</p>') + '</div>';
+}
+function resultsTables(res, print) {
+  const n = Math.max(1, Math.ceil(res.record_shots / 10)), xs = res.scoring === 'decimal' ? 'Inner 10s' : 'X';
+  return res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
+    '<table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Relay · FP</th>' + Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') +
+    '<th>Total</th><th>' + xs + '</th></tr>' + cl.individuals.map(e => '<tr><td>' + (e.fired ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' *' : '') + '</td><td>' + esc(e.team) + '</td><td>' +
+      (e.relay ? esc(e.relay) + ' · ' + esc(e.lane) : '') + '</td>' + Array.from({length: n}, (_, i) => '<td>' + fmtScore(res, e.series[i]) + '</td>').join('') + '<td><b>' + (e.fired ? fmtScore(res, e.total) : '') + '</b></td><td>' + (e.fired ? e.x : '') + '</td></tr>').join('') + '</table>' +
+    (cl.teams.length ? '<h3>Teams' + (cl.name ? ' · ' + esc(cl.name) : '') + '</h3><table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Team</th><th>Counting</th><th>Total</th><th>' + xs + '</th></tr>' +
+      cl.teams.map(t => '<tr><td>' + (t.place ? t.place + (t.tied ? '=' : '') : '–') + '</td><td>' + esc(t.name) + '</td><td>' + (t.place ? esc(t.counting.join(', ')) : '<span class="mut">' + esc(t.reason || '') + ': ' + esc(t.members.join(', ')) + '</span>') +
+        '</td><td><b>' + (t.place ? fmtScore(res, t.total) : '') + '</b></td><td>' + (t.place ? t.x : '') + '</td></tr>').join('') + '</table>' : '')).join('') +
+    '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director.</p>';
+}
+function resultsPage(res) {
+  if (!res) return '<div class="panel"><p class="mut">Loading…</p></div>';
+  if (res.missing) return '<div class="panel mc"><span class="title">Results</span><p>These results were deleted, or never existed.</p><a href="#/results">All results</a></div>';
+  const k = esc(res.key), teams = res.classes.some(cl => cl.teams.length);
+  return '<div class="panel mc"><div class="row"><span class="title">' + esc(res.name) + '</span><a href="#/results">All results</a></div><div class="mut">' + esc(res.format_name) + ' · ' + esc(res.scoring) + ' scoring' +
+    (res.frozen_ms ? ' · saved copy from ' + esc(new Date(res.frozen_ms).toLocaleString()) + ' (the match was deleted from Match Control)' : '') + '</div>' +
+    '<div class="mcbar"><a href="#/print/results/' + k + '" target="_blank" rel="noopener">Print results</a> · <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Print score cards</a> · ' +
+    '<a href="' + API + '/results/' + k + '.csv">CSV</a>' + (teams ? ' · <a href="' + API + '/results/' + k + '-teams.csv">Teams CSV</a>' : '') + '</div>' + resultsTables(res, false) + '</div>';
+}
+function printResults(res) {
+  if (!res) return '<p>Loading…</p>';
+  if (res.missing) return '<p>These results were deleted.</p>';
+  return '<div class="sheetpage"><div class="noprint mcbar"><button onclick="window.print()">Print</button></div><h1>' + esc(res.name) + '</h1><div>' + esc(res.format_name) + ' · ' +
+    esc(new Date().toLocaleString()) + '</div>' + resultsTables(res, true) + '</div>';
+}
+function scoreCards(res, only) {
+  if (!res) return '<p>Loading…</p>';
+  if (res.missing) return '<p>These results were deleted.</p>';
+  const all = [];
+  res.classes.forEach(cl => cl.individuals.forEach(e => { if (!only || e.id === +only) all.push([cl, e]); }));
+  return '<div class="sheetpage"><div class="noprint mcbar"><button onclick="window.print()">Print</button> <span class="mut">' + all.length + ' score card' + (all.length === 1 ? '' : 's') + '</span></div>' + all.map(([cl, e]) => {
+    const shots = e.shot_list || [], groups = [];
+    for (let i = 0; i < shots.length; i += 10) groups.push(shots.slice(i, i + 10));
+    const val = s => (s.miss ? '0' : res.scoring === 'decimal' ? (s.tenths / 10).toFixed(1) : String(s.ring)) + (s.inner ? '*' : '') + (s.decision && s.decision !== 'count' ? '†' : '');
+    return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
+      (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
+      '<div style="margin:6px 0"><b>Total ' + fmtScore(res, e.total) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + e.x + ' · place ' + (e.fired ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' +
+      '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
+      groups.map((g, gi) => '<tr><td>' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</td>' + Array.from({length: 10}, (_, i) => '<td>' + (g[i] ? val(g[i]) : '') + '</td>').join('') + '<td><b>' + fmtScore(res, e.series[gi]) + '</b></td></tr>').join('') + '</table>' +
+      '<div class="faces">' + groups.map((g, gi) => '<div><div class="mut">Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</div>' +
+        faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), {half: halfFor('auto', g.filter(s => s.x_mm != null), 2.25), pellet: 4.5, color: '#2563eb', noLast: true}) + '</div>').join('') + '</div>' +
+      '<div class="mut">* inner ten · † decided by the match director</div><div class="sign"><div>Competitor</div><div>Scorer / match director</div></div></div>';
+  }).join('') + '</div>';
+}
+
 // ---- TV displays (#/tv/targets?m=<match>&t=<id,id> and #/tv/board?m=<match,match>) ----
 function tvUrl(cfg) {
   const q = [];
-  if (cfg.kind === 'board') { if (cfg.matches && cfg.matches.length) q.push('m=' + cfg.matches.join(',')); return '#/tv/board' + (q.length ? '?' + q.join('&') : ''); }
+  if (cfg.kind === 'board') {
+    if (cfg.comps && cfg.comps.length) q.push('c=' + cfg.comps.join(','));
+    if (cfg.matches && cfg.matches.length) q.push('m=' + cfg.matches.join(','));
+    return '#/tv/board' + (q.length ? '?' + q.join('&') : '');
+  }
   if (cfg.match) q.push('m=' + cfg.match);
   if (cfg.targets && cfg.targets.length) q.push('t=' + cfg.targets.map(encodeURIComponent).join(','));
   return '#/tv/targets' + (q.length ? '?' + q.join('&') : '');
@@ -264,7 +335,9 @@ function tvConfig(targets, S) {
       '<div><b>Targets</b> <span class="mut">(none ticked = all, or the match\'s targets)</span>' + targets.map(t => '<label><input type="checkbox" data-act="tvtarget" data-id="' + esc(t.device_id) + '"' +
         ((cfg.targets || []).includes(t.device_id) ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('') + '</div>';
   } else {
-    h += '<div><b>Matches</b> <span class="mut">(none ticked = all current matches)</span>' + (boards.length ? boards.map(b => '<label><input type="checkbox" data-act="tvbm" data-id="' + b.id + '"' +
+    h += '<div><b>Competitions</b> <span class="mut">(all relays together, by class)</span>' + ((S.compList || []).length ? S.compList.map(c => '<label><input type="checkbox" data-act="tvbc" data-id="' + c.id + '"' +
+      ((cfg.comps || []).includes(c.id) ? ' checked' : '') + '> ' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + '</label>').join('') : '<p class="mut">None.</p>') + '</div>';
+    h += '<div><b>Single matches</b> <span class="mut">(none ticked and no competition = all current matches)</span>' + (boards.length ? boards.map(b => '<label><input type="checkbox" data-act="tvbm" data-id="' + b.id + '"' +
       ((cfg.matches || []).includes(b.id) ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') : '<p class="mut">No current matches.</p>') + '</div>';
   }
   const url = tvUrl(Object.assign({kind: kind}, cfg));
@@ -286,7 +359,21 @@ function tvTargets(targets, boards, params) {
   else if (m) { const ids = m.rows.map(r => r.device_id); show = targets.filter(t => ids.includes(t.device_id)); }
   return tvClock(m) + '<div class="tvgrid">' + show.map(coachCard).join('') + '</div>' + (show.length ? '' : '<p class="mut">No targets to show.</p>');
 }
-function tvBoard(boards) {
+function tvCompBoard(res) {
+  const n = Math.max(1, Math.ceil(res.record_shots / 10)), fmt = v => fmtScore(res, v);
+  const running = res.relays.find(r => ['running', 'paused', 'holding'].includes(r.state));
+  const clock = running ? tvClock({id: 'c' + res.id + '-' + running.match_id, name: res.name + ' · relay ' + running.relay, format_name: res.format_name, state: running.state, clock: running.clock}) :
+    '<div class="tvclock"><div><div class="mcphase">' + esc(res.name) + '</div><div class="mut">' + esc(res.format_name) + '</div></div></div>';
+  return '<div class="board">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
+    '<table><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Total</th><th>' + (res.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
+    Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
+    cl.individuals.map(e => '<tr class="' + (e.place === 1 && e.fired ? 'top' : '') + '"><td>' + (e.fired ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' <span class="mut">*</span>' : '') +
+      '</td><td>' + esc(e.team) + '</td><td class="tot">' + (e.fired ? fmt(e.total) : '') + '</td><td>' + (e.fired ? e.x : '') + '</td>' +
+      Array.from({length: n}, (_, i) => '<td class="ser">' + fmt(e.series[i]) + '</td>').join('') + '<td class="l10">' + e.last10.map(fmt).join(' ') + '</td><td>' + e.shots + ' / ' + res.record_shots + '</td></tr>').join('') +
+    '</table>').join('') + '</div>';
+}
+function tvBoard(boards, comps) {
+  if (comps && comps.length) return comps.map(tvCompBoard).join('') + (boards || []).map(b => tvBoard([b])).join('');
   if (!boards.length) return '<p class="mut" style="font-size:24px">No current matches.</p>';
   return boards.map(b => {
     const maxSeries = Math.max(1, Math.ceil(b.record_shots / 10)), fmt = v => b.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
@@ -609,12 +696,14 @@ function remainingNow(clock, offset) {                 // ms left in the current
 }
 function matchBanner(info, t, S) {                      // on a shooter's own screen
   if (!info) return '';
-  const canRecord = info.kind === 'stage' && info.state === 'running' && !info.in_record && t.lease && t.lease.mine;
+  const canRecord = ((info.kind === 'stage' && !info.in_record) || info.sighting) && info.state === 'running' && t.lease && t.lease.mine;
   const label = info.state === 'ready' ? 'Waiting for the start' : info.state === 'paused' ? 'Paused: ' + info.label :
     info.state === 'holding' ? 'Waiting for START: ' + info.label : info.label;
-  return '<div class="mcbanner"><div><div class="mut">' + esc(info.name) + (info.competitor ? ' · ' + esc(info.competitor) : '') + ' · firing point ' + esc(info.lane) + '</div>' +
+  return '<div class="mcbanner"><div><div class="mut">' + esc(info.name) + (info.competitor ? ' · ' + esc(info.competitor) : '') + ' · firing point ' + esc(info.lane) +
+    (info.moved_from && info.moved_from.length ? ' (moved here from ' + info.moved_from.map(esc).join(', ') + ')' : '') + '</div>' +
     '<div class="mcphase">' + esc(label || '') + '</div>' + (info.next ? '<div class="mut">Next: ' + esc(info.next) + '</div>' : '') +
-    (info.kind === 'stage' ? '<div class="mut">' + (info.in_record ? 'Record shots: ' + esc(info.shots) + ' in this stage' : 'Sighting. Start record when ready: no sighters after that.') + '</div>' : '') +
+    (info.sighting ? '<div class="mut">Sighting after the move: unlimited sighters, then start record (no sighters after that).</div>'
+      : info.kind === 'stage' ? '<div class="mut">' + (info.in_record ? 'Record shots: ' + esc(info.shots) + ' in this stage' : 'Sighting. Start record when ready: no sighters after that.') + '</div>' : '') +
     '</div><div style="text-align:right"><div class="mcclock' + (info.state === 'paused' ? ' paused' : '') + '" data-clock="target">' + (info.state === 'ready' ? '–:––' : fmtClock(info.remaining_ms)) + '</div>' +
     (canRecord ? '<button class="pri" data-act="mcmyrecord">Start record</button>' : '') + '</div></div>';
 }
@@ -676,14 +765,39 @@ function mcFormatEditor(mc) {
     '<p class="mut">Sighting, Record and Changeover follow each other like the rulebooks: add a Pause between Sighting and Record if the targets need a moment to switch. ' +
     '"Sighting + record" is NRA style: one clock, the shooter starts record. No target-change time is needed with electronic targets.</p></div>';
 }
+const RUNNING = ['running', 'paused', 'holding', 'overtime'];
+function deletable(mc) {                        // ticked matches and competitions that can be deleted now (not running)
+  const sel = mc.msel || {};
+  return (mc.comps || []).filter(c => sel['c' + c.id] && !c.busy).map(c => ['c' + c.id, c.name])
+    .concat((mc.matches || []).filter(m => m.competition_id == null && sel['m' + m.id] && !RUNNING.includes(m.state)).map(m => ['m' + m.id, m.name]));
+}
 function mcList(mc) {
   const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
-  const custom = (mc.formats || []).filter(f => !f.builtin);
+  const custom = (mc.formats || []).filter(f => !f.builtin), sel = mc.msel || {}, rsel = mc.rsel || {};
+  const singles = (mc.matches || []).filter(m => m.competition_id == null || mc.compsErr);   // relays are listed with their competition
+  const tick = (key, busy, what) => director ? '<td><input type="checkbox" data-msel="' + key + '"' + (sel[key] && !busy ? ' checked' : '') + (busy ? ' disabled title="Running: stop it first"' : '') +
+    ' aria-label="Select ' + esc(what) + '"></td>' : '';
+  const nsel = deletable(mc).length, nrsel = Object.keys(rsel).filter(k => rsel[k]).length;
+  const res = mc.results || [];
   return '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') <button data-act="mclogout">Log out</button></span></div>' +
-    (director ? '<div class="mcbar"><button class="pri" data-act="mcnew">New match</button><button data-act="mcfnew">Design your own match</button></div>' : '<p class="mut">Range officers run matches a match director has created.</p>') +
-    '<h3>Matches</h3>' + ((mc.matches || []).length ? '<table class="t"><tr><th>Match</th><th>Format</th><th>State</th><th></th></tr>' + mc.matches.map(m =>
-      '<tr><td>' + esc(m.name) + '</td><td class="mut">' + esc(m.format_name) + '</td><td>' + esc(m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '') + '</td>' +
-      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button></td></tr>').join('') + '</table>' : '<p class="mut">No matches yet.</p>') +
+    (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><button data-act="mcnew">Single match (no competitors)</button><button data-act="mcfnew">Design your own match</button></div>' : '<p class="mut">Range officers run matches a match director has created.</p>') +
+    '<h3>Competitions</h3>' + (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Competition</th><th>Format</th><th>Competitors</th><th>Relays</th><th></th></tr>' + mc.comps.map(c =>
+      '<tr>' + tick('c' + c.id, c.busy, c.name) + '<td>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(c.format_name) + '</td><td>' + c.competitors + '</td><td>' +
+      c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(r.state) + '</button>').join(' ') + '</td>' +
+      '<td><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' + (c.results_hidden ? '' : ' <a href="#/results/c' + c.id + '">Results</a>') + '</td></tr>').join('') + '</table>' : '<p class="mut">No competitions yet.</p>') +
+    '<h3>Single matches</h3>' + (singles.length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Match</th><th>Format</th><th>State</th><th></th></tr>' + singles.map(m =>
+      '<tr>' + tick('m' + m.id, RUNNING.includes(m.state), m.name) + '<td>' + esc(m.name) + (m.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(m.format_name) + '</td><td>' + esc(m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '') + '</td>' +
+      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button>' + (m.state !== 'ready' && !m.results_hidden ? ' <a href="#/results/m' + m.id + '">Results</a>' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No single matches. A competition\'s relays are listed with it above.</p>') +
+    (director && ((mc.comps || []).length || singles.length) ? '<div class="mcbar"><button class="danger" data-act="mcdelsel"' + (nsel ? '' : ' disabled') + '>Delete selected' + (nsel ? ' (' + nsel + ')' : '') + '</button>' +
+      '<span class="mut">Their results stay on the Results page as a saved copy (unless you deleted the results already). Shots stay in each target\'s history. A running match must be stopped first.</span></div>' : '') +
+    (director ? '<h3>Results</h3>' + (res.length ? '<table class="t"><tr><th></th><th>Name</th><th>Kind</th><th>Date</th><th>On the Results page</th></tr>' + res.map(r =>
+      '<tr><td>' + (r.hidden ? '' : '<input type="checkbox" data-rsel="' + esc(r.key) + '"' + (rsel[r.key] ? ' checked' : '') + ' aria-label="Select the results of ' + esc(r.name) + '">') + '</td>' +
+      '<td>' + (r.hidden ? esc(r.name) : '<a href="#/results/' + esc(r.key) + '">' + esc(r.name) + '</a>') + '</td><td class="mut">' + esc(RES_KIND[r.kind] || '') + '</td><td class="mut">' + esc(fmtDay(r.at_ms)) + '</td>' +
+      '<td>' + (r.hidden ? 'deleted <button data-act="mcresshow" data-key="' + esc(r.key) + '">Show again</button>' : 'yes') + '</td></tr>').join('') + '</table>' +
+      '<div class="mcbar"><button class="danger" data-act="mcresdel"' + (nrsel ? '' : ' disabled') + '>Delete selected results' + (nrsel ? ' (' + nrsel + ')' : '') + '</button>' +
+      '<span class="mut">Off the Results page, TV, print-outs and CSV. The matches stay here, and their results can be shown again; a saved copy is deleted for good.</span></div>'
+      : '<p class="mut">No results yet.</p>') : '') +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
     (director && custom.length ? '<h3>Your formats</h3><table class="t">' + custom.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + f.phases.length + ' phases</td>' +
       '<td><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button> <button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></td></tr>').join('') + '</table>' : '') + '</div>';
 }
@@ -691,30 +805,70 @@ function mcConsole(mc) {
   const d = mc.detail;
   if (!d) return '<div class="panel"><p class="mut">Loading…</p></div>';
   const c = d.clock, st = d.state, director = mc.status.role === 'director' || mc.status.role === 'admin';
-  const live = st === 'running' || st === 'paused' || st === 'holding', officer = c.paced === 'officer';
-  let h = '<div class="panel"><div class="row"><span class="title">' + esc(d.name) + '</span><button data-act="mcback">All matches</button></div>' +
+  const live = st === 'running' || st === 'paused' || st === 'holding', officer = c.paced === 'officer', ot = st === 'overtime';
+  let h = '<div class="panel"><div class="row"><span class="title">' + esc(d.name) + '</span><span>' +
+    (d.competition_id != null ? '<button data-act="mccopen" data-id="' + d.competition_id + '">Competitors &amp; relays</button> ' : '') + '<button data-act="mcback">All matches</button></span></div>' +
     '<div class="mut">' + [esc(d.format.name) + (d.format.modified ? ' <b>(times modified)</b>' : ''), esc(d.format.edition || ''), d.record_shots + ' record shots'].filter(Boolean).join(' · ') + '</div>' +
-    '<div class="row" style="align-items:flex-end;margin-top:8px"><div><div class="mcphase">' + esc(st === 'ready' ? 'Ready to start' : st === 'done' ? 'Match finished' : st === 'aborted' ? 'Match stopped' : (st === 'paused' ? 'PAUSED · ' : st === 'holding' ? 'Waiting for START · ' : '') + c.label) + '</div>' +
+    '<div class="row" style="align-items:flex-end;margin-top:8px"><div><div class="mcphase">' + esc(st === 'ready' ? 'Ready to start' : st === 'done' ? 'Match finished' : st === 'aborted' ? 'Match stopped' : (st === 'paused' || (ot && c.paused) ? 'PAUSED · ' : st === 'holding' ? 'Waiting for START · ' : '') + c.label) + '</div>' +
     (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (live ? '<div class="mut">' + esc(PHASE_KIND[c.kind] || '') + (c.extra_ms ? ' · +' + Math.round(c.extra_ms / 1000) + ' s extra' : '') + '</div>' : '') +
-    (st !== 'done' && st !== 'aborted' ? '<div class="mut" style="margin-top:4px"><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b> · ' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') +
+    (st !== 'done' && st !== 'aborted' && !ot ? '<div class="mut" style="margin-top:4px"><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b> · ' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') +
       ' · switch to ' + ['spoken', 'officer', 'auto'].filter(k => k !== c.paced).map(k => '<button data-act="mccmd" data-a="pacing" data-v="' + k + '">' + esc(PACE[k][0]) + '</button>').join(' ') + '</div>' : '') + '</div>' +
     '<div class="mcclock' + (st === 'paused' ? ' paused' : '') + '" data-clock="console">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>' +
     '<div class="mcbar">' + (st === 'ready' ? '<button class="pri" data-act="mcstart">Start match</button>' : '') +
     (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button>' : '') + (st === 'paused' ? '<button class="pri" data-act="mccmd" data-a="resume">Resume clock</button>' : '') +
     (st === 'running' || st === 'paused' ? '<button data-act="mccmd" data-a="extra" data-s="60">+1 min</button><button data-act="mccmd" data-a="extra" data-s="300">+5 min</button>' : '') +
     (live ? '<button data-act="mccmd" data-a="next">' + (st === 'holding' ? 'Skip this phase' : 'End this phase now') + '</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
-    (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
+    (ot ? (c.paused ? '<button class="pri" data-act="mccmd" data-a="resume">Resume their clocks</button>' : '<button data-act="mccmd" data-a="pause">Pause their clocks</button>') +
+      '<button data-act="mccmd" data-a="next" data-ot="1">End their time now</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
+    (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' && !ot ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
       : '<button class="pri" data-act="mcspeak">Turn on sound for spoken commands</button>') : '') + '</div></div>' +
     commandsPanel(d) + correctionsPanel(d, director);
-  h += '<div class="panel"><h3>Firing points</h3><table class="t"><tr><th>FP</th><th>Target</th><th>Competitor</th><th>Sighters</th><th>Record</th><th></th></tr>' + d.lanes.map(l =>
-    '<tr><td>' + l.lane + '</td><td><span class="dot ' + (l.online ? 'on' : '') + '"></span>' + esc(l.target) + '</td><td>' + esc(l.competitor || '–') + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td>' +
-    '<td>' + (live && c.kind === 'stage' ? (l.in_record ? '<span class="mut">in record</span>' : '<button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>') : '') + '</td></tr>').join('') + '</table></div>';
+  h += lanesPanel(d, mc, director);
   h += '<div class="panel"><h3>Flagged shots' + (d.flags.length ? ' (' + d.flags.length + ')' : '') + '</h3>' + (d.flags.length ? '<table class="t"><tr><th>FP</th><th>Shot</th><th>Value</th><th>Why</th><th>Decision</th></tr>' + d.flags.map(f =>
     '<tr><td>' + f.lane + '</td><td>' + (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + '</td><td>' + (f.miss ? 'miss' : dec(f.decimal)) + '</td><td>' + esc(f.why) + '</td><td>' +
     (director ? '<select data-mcdec="' + f.shot_id + '"><option value="undecided">Undecided' + (f.stream === 'scored' ? ' (not counted)' : '') + '</option>' +
       Object.keys(decisionsFor(f)).map(k => '<option value="' + k + '"' + (f.decision === k ? ' selected' : '') + '>' + esc(decisionsFor(f)[k]) + '</option>').join('') + '</select>'
       : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>').join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
+}
+function laneTime(l, d) {                       // a shooter's own clock (moved to another target), or the match's
+  if (!l.own) return '';
+  const c = l.own === 'moving' ? '<b>Moving</b> · ' + fmtClock(l.own_remaining_ms) + ' kept'
+    : '<span data-lends="' + (l.own_ends_at_ms || '') + '">' + fmtClock(l.own_remaining_ms) + '</span> ' + (l.own === 'own' ? esc(l.own_label) + ', own time' : 'own time');
+  return '<div class="mut">' + c + (l.own_ends_at_ms == null && l.own !== 'moving' ? ' (paused)' : '') + '</div>';
+}
+function lanesPanel(d, mc, director) {          // firing points: shots so far, each shooter's own clock, moving a shooter
+  const c = d.clock, st = d.state, live = st === 'running' || st === 'paused' || st === 'holding', ot = st === 'overtime';
+  const mins = Math.round(d.move_extra_s / 6) / 10;
+  return '<div class="panel"><h3>Firing points</h3><table class="t"><tr><th>FP</th><th>Target</th><th>Competitor</th><th>Sighters</th><th>Record</th><th></th></tr>' + d.lanes.map(l => {
+    const stage = live && c.kind === 'stage' && !l.own && !l.sighting;
+    const canMove = (st === 'ready' && director) || live || (ot && l.own);
+    return '<tr><td>' + l.lane + '</td><td><span class="dot ' + (l.online ? 'on' : '') + '"></span>' + esc(l.target) +
+      (l.moved_from && l.moved_from.length ? '<div class="mut">moved from ' + l.moved_from.map(esc).join(', ') + '</div>' : '') + '</td>' +
+      '<td>' + esc(l.competitor || '–') + laneTime(l, d) + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td><td><div class="mcbar" style="margin:0">' +
+      (stage ? (l.in_record ? '<span class="mut">in record</span>' : '<button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>') : '') +
+      (l.own === 'moving' ? '<label class="mut">extra <input type="number" min="0" max="60" step="0.5" style="width:56px" id="rdy_' + esc(l.device_id) + '" value="' + mins + '"> min</label>' +
+        '<button class="pri" data-act="mclready" data-id="' + esc(l.device_id) + '">Shooter ready</button>' : '') +
+      (l.sighting && l.own !== 'moving' ? '<span class="mut">sighting</span><button data-act="mclrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') +
+      ((live || (ot && l.own)) && l.own !== 'moving' ? '<button data-act="mclextra" data-id="' + esc(l.device_id) + '" title="Extra time for this shooter only">+1 min</button>' : '') +
+      (canMove ? '<button data-act="mcmove" data-id="' + esc(l.device_id) + '">Move…</button>' : '') + '</div></td></tr>';
+  }).join('') + '</table></div>';
+}
+const MOVE_RULE = {ISSF: 'ISSF 6.10.9.2 and 6.11.3.2: their time stops while they move; when they are ready they get 5 minutes extra and unlimited sighting shots before they go on with record.',
+  CMP: 'CMP 7.18.3: they get the time they had left plus 2 minutes, and unlimited sighting shots before they go on with record.',
+  NRA: 'NRA 9.2 b and 10.3.2: they get the time they lost (their time stops while they move) and unlimited sighting shots before they go on with record.'};
+function moveSheet(mc) {                         // move a shooter to another target (a target failed)
+  const d = mc.detail, mv = mc.movep, l = d && d.lanes.find(x => x.device_id === mv.from);
+  if (!l) return '';
+  const free = (mc.targets || []).filter(t => !t.in_match && t.device_id !== mv.from), started = d.state !== 'ready';
+  return '<div class="sheet"><div class="row"><h2>Move ' + esc(l.competitor || 'firing point ' + l.lane) + '</h2><button data-act="mcmovecancel">Cancel</button></div>' +
+    '<p>From <b>' + esc(l.target) + '</b> to:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="mvto" value="' + esc(t.device_id) + '"' +
+      (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
+      : '<p class="bad">No free target: every other target is in a match.</p>') +
+    '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc(MOVE_RULE[d.tie_rules] || MOVE_RULE.ISSF) +
+      ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there. ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).'
+      : 'The match has not started: only the target changes.') + '</p>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    '<div class="mcbar"><button class="pri" data-act="mcmovego"' + (free.length ? '' : ' disabled') + '>Move' + (started ? ' and stop their time' : '') + '</button></div></div>';
 }
 function commandsPanel(d) {                     // what the range officer says now (and, when they read them, the Next button)
   const c = d.clock, st = d.state;
@@ -742,10 +896,86 @@ function correctionsPanel(d, director) {        // mistakes happen: the match di
     '<p class="mut">Shots already fired in the parts you restart are kept and listed under Flagged shots for your decision.' +
     (d.state === 'done' || d.state === 'aborted' ? ' This also reopens a finished match.' : '') + '</p></div>';
 }
+// ---- competitions (Match Control) ----
+const PACE_KEYS = ['spoken', 'officer', 'auto'];
+function mcCompNew(mc) {
+  const d = mc.cdraft || {}, f = (mc.formats || []).find(x => x.id === d.format_id) || null, books = {};
+  (mc.formats || []).forEach(x => { (books[x.rulebook] = books[x.rulebook] || []).push(x); });
+  const pc = d.paced || 'spoken', size = d.team_size != null ? d.team_size : (f ? f.team_size : 4);
+  return '<div class="panel mcform"><div class="row"><span class="title">New competition</span><button data-act="mcback">Back</button></div><div class="grid">' +
+    '<label>Name</label><input type="text" data-mcx="name" maxlength="80" value="' + esc(d.name || '') + '" placeholder="e.g. Winter league 2026">' +
+    '<label>Format</label><select data-mcx="format_id"><option value="">Choose…</option>' + Object.keys(books).map(b => '<optgroup label="' + esc(b) + '">' +
+      books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</optgroup>').join('') + '</select>' +
+    '<label>Team size</label><input type="number" min="1" max="10" data-mcx="team_size" value="' + esc(size) + '">' +
+    '<label>Best count</label><label style="font-weight:400"><input type="checkbox" data-mcxc="best_count"' + (d.best_count ? ' checked' : '') + '> a team may have more members; its best ' + esc(size) + ' count (CMP 3.2.2 c)</label></div>' +
+    (f ? '<p class="mut">' + esc(f.edition || '') + ' · ' + esc(f.scoring) + ' scoring · ties: ' + esc(f.tie_rules || 'ISSF') + ' rules · rulebook team size ' + esc(f.team_size) + '</p>' + phaseTable(f, -1, true, d.times) : '') +
+    '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + PACE_KEYS.map(k => '<button data-act="mccpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' +
+      esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>' +
+    '<div class="mcbar"><button class="pri" data-act="mcccreate">Create competition</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
+}
+function mcCompPage(mc) {
+  const c = mc.comp;
+  if (!c) return '<div class="panel"><p class="mut">Loading…</p></div>';
+  const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
+  const free = c.competitors.filter(p => !p.relay), rd = mc.rdraft || {};
+  let h = '<div class="panel mcform"><div class="row"><span class="title">' + esc(c.name) + '</span><button data-act="mcback">All matches</button></div>' +
+    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ties: ' + esc(c.tie_rules) + ' rules · teams of ' + c.team_size +
+    (c.best_count ? ' (best ' + c.team_size + ' count)' : '') + ' · commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</div>' +
+    '<div class="mcbar"><a href="#/results/' + c.id + '">Results</a> · <a href="#/print/results/' + c.id + '" target="_blank" rel="noopener">Print results</a> · ' +
+    '<a href="#/print/cards/' + c.id + '" target="_blank" rel="noopener">Print score cards</a> · <a href="' + API + '/results/' + c.id + '.csv">CSV</a> · <a href="' + API + '/results/' + c.id + '-teams.csv">Teams CSV</a></div>' +
+    (director ? '<div class="mcbar"><label>Team size <input type="number" min="1" max="10" style="width:60px" id="cteam" value="' + c.team_size + '"></label>' +
+      '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label><button data-act="mccsave">Save team settings</button></div>' : '') + '</div>';
+  h += '<div class="panel mcform"><h3>Competitors (' + c.competitors.length + ')</h3><table class="t"><tr><th>Family name</th><th>Given name</th><th>Class</th><th>Team</th><th>Relay · FP</th><th></th></tr>' +
+    c.competitors.map(p => '<tr>' + ['family', 'given', 'class', 'team'].map(k => '<td>' + esc(p[k] || '') + '</td>').join('') +
+      '<td>' + (p.relay ? esc(p.relay) + ' · ' + esc(p.lane) : '–') + '</td><td>' + (director ? '<button data-act="mcpedit" data-id="' + p.id + '" title="Edit ' + esc(p.name) + '" aria-label="Edit ' + esc(p.name) + '">✎</button>' : '') + '</td></tr>').join('') + '</table>' +
+    (director ? '<div class="mcbar">' + [['family', 'Family name', 60], ['given', 'Given name', 60], ['class', 'Class (optional)', 40], ['team', 'Team (optional)', 60]].map(([k, ph, n]) =>
+      '<input id="np_' + k + '" data-np="' + k + '" placeholder="' + ph + '" maxlength="' + n + '" value="' + esc((mc.np || {})[k] || '') + '">').join('') + '<button data-act="mcpadd2">Add competitor</button></div>' +
+      '<div class="mcbar"><button data-act="mcpimport">Upload a CSV file…</button><span class="mut">Columns Family, Given, Class, Team (or a header row naming them); ' +
+      'comma, semicolon or tab separated. The file is read and discarded: only the competitors are kept. If any line has a problem, nothing is added.</span></div>' +
+      '<details id="np_details"' + (mc.npOpen ? ' open' : '') + '><summary>Or paste a list</summary><p class="mut">One competitor per line: Family, Given, Class, Team (comma or tab separated; only the family name is needed).</p>' +
+      '<textarea id="np_paste" data-np="paste" rows="6" style="width:100%">' + esc((mc.np || {}).paste || '') + '</textarea><div class="mcbar"><button data-act="mcppaste">Add these competitors</button></div></details>' : '') +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
+  h += '<div class="panel mcform"><h3>Relays</h3>' + (c.relays.length ? '<table class="t">' + c.relays.map(r => '<tr><td>Relay ' + esc(r.relay) + '</td><td>' + esc(r.state) + '</td><td><button data-act="mcopen" data-id="' + r.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No relays yet.</p>') +
+    (director ? (free.length ? '<h4>New relay: who shoots on which target</h4><table class="t">' + (mc.targets || []).filter(t => !t.in_match).map(t =>
+      '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td><td><select data-rl="' + esc(t.device_id) + '"><option value="">– empty –</option>' +
+        free.filter(p => +rd[t.device_id] === p.id || !Object.keys(rd).some(k => k !== t.device_id && +rd[k] === p.id))   // each competitor on one target
+          .map(p => '<option value="' + p.id + '"' + (+rd[t.device_id] === p.id ? ' selected' : '') + '>' + esc(p.name) + (p.class ? ' (' + esc(p.class) + ')' : '') + '</option>').join('') + '</select></td></tr>').join('') + '</table>' +
+      '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') : '') + '</div>';
+  return h;
+}
+function competitorSheet(mc) {                 // the edit window for one competitor (names are deliberately not edited in the list)
+  const e = mc.editp, p = ((mc.comp || {}).competitors || []).find(x => x.id === e.id);
+  if (!p) return '';
+  return '<div class="sheet"><div class="row"><h2>Edit competitor</h2><button data-act="mcpecancel">Cancel</button></div><div class="mcform"><div class="grid">' +
+    [['family', 'Family name', 60], ['given', 'Given name', 60], ['class', 'Class', 40], ['team', 'Team', 60]].map(([k, l, n]) =>
+      '<label for="pe_' + k + '">' + l + '</label><input type="text" id="pe_' + k + '" data-pe="' + k + '" maxlength="' + n + '" value="' + esc(e[k] != null ? e[k] : (p[k] || '')) + '">').join('') + '</div>' +
+    (p.relay ? '<p class="mut">On relay ' + esc(p.relay) + ', firing point ' + esc(p.lane) + ': a new name also shows on the target screens and in the results.</p>' : '') +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    '<div class="mcbar"><button class="pri" data-act="mcpesave">Save</button>' + (p.relay ? '' : '<button class="danger" data-act="mcpdel" data-id="' + p.id + '">Remove competitor</button>') + '</div>' +
+    placeSection(mc, p) + '</div></div>';
+}
+function placeSection(mc, p) {                   // relay and target, before the relay starts (during it: Move… on its console)
+  const e = mc.editp, rel = (mc.comp.relays || []).filter(r => r.state !== 'aborted'), on = rel.find(r => r.relay === p.relay);
+  let h = '<h3 style="margin-top:14px">Relay and target</h3>';
+  if (on && on.state !== 'ready') return h + '<p class="mut">Relay ' + esc(on.relay) + ' has started. To move this shooter to another target, use <b>Move…</b> on its console: ' +
+    'their shots and time go with them.</p><div class="mcbar"><button data-act="mcopen" data-id="' + on.match_id + '">Open the console of relay ' + esc(on.relay) + '</button></div>';
+  const ready = rel.filter(r => r.state === 'ready');
+  if (!ready.length) return h + '<p class="mut">No relay waiting to start. Create a relay below to place this competitor.</p>';
+  const mrel = e.mrel != null ? e.mrel : on ? String(on.match_id) : '', r = ready.find(x => String(x.match_id) === mrel);
+  const mdev = e.mdev || (r && on && r.match_id === on.match_id ? p.device_id : ''), names = {};
+  (mc.targets || []).forEach(t => { names[t.device_id] = t.name; });
+  const opts = r ? r.lanes.map(l => [l.device_id, (names[l.device_id] || l.device_id) + ' · FP ' + l.lane + ' · ' + (l.competitor_id === p.id ? 'here now' : (l.competitor || '–') + (on ? ' (swap)' : ' (taken)'))])
+    .concat((mc.targets || []).filter(t => !t.in_match).map(t => [t.device_id, t.name + ' · free'])) : [];
+  return h + '<div class="mcbar"><select data-pm="mrel" aria-label="Relay"><option value="">Not on a relay</option>' + ready.map(x => '<option value="' + x.match_id + '"' + (String(x.match_id) === mrel ? ' selected' : '') + '>Relay ' + esc(x.relay) + '</option>').join('') + '</select>' +
+    (r ? '<select data-pm="mdev" aria-label="Target"><option value="">Choose a target…</option>' + opts.map(([v, l]) => '<option value="' + esc(v) + '"' + (v === mdev ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>' : '') +
+    '<button data-act="mcpmove">' + (r ? 'Move here' : on ? 'Take off relay ' + esc(on.relay) : 'Move here') + '</button></div>' +
+    '<p class="mut">Before a relay starts. Choosing someone else\'s target swaps the two.</p>';
+}
 function matchView(S) {
   const mc = S.mc || {};
   const inner = !mc.status ? '<div class="panel"><p class="mut">Loading…</p></div>' : !mc.status.logged_in ? mcLogin(mc) :
-    mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) : mcList(mc);
+    mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) :
+    mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : mcList(mc);
   return '<div class="mc">' + inner + '</div>';
 }
 function matchUsersPanel(users, msg) {          // Range Control: who may use Match Control
@@ -786,6 +1016,10 @@ function toast(m) { const t = document.getElementById('toast'); t.textContent = 
 const route = () => {
   const tv = location.hash.match(/^#\/tv\/(targets|board)(?:\?(.*))?$/);
   if (tv) { const params = {}; (tv[2] || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); params[k] = v || ''; }); return {tv: tv[1], params: params}; }
+  const pr = location.hash.match(/^#\/print\/(results|cards)\/([cma]?\d+)(?:\?p=(\d+))?$/);   // c competition, m match, a saved copy
+  if (pr) return {print: pr[1], cid: pr[2], p: pr[3] || null};
+  const rs = location.hash.match(/^#\/results(?:\/([cma]?\d+))?$/);
+  if (rs) return {results: true, cid: rs[1] || null};
   if (/^#\/range\b/.test(location.hash)) return {range: true}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
@@ -831,6 +1065,15 @@ async function refresh() {
         if (ms.status === 200) mc.matches = ms.data.matches;
         if (fs.status === 200) mc.formats = fs.data.formats;
         if (ts.status === 200) mc.targets = ts.data.targets;
+        const rl = await matchCall('/results');
+        if (rl.status === 200) mc.results = rl.data.results;
+        const cs = await matchCall('/competitions');
+        if (cs.status === 200) { mc.comps = cs.data.competitions; mc.compsErr = ''; }
+        else mc.compsErr = (cs.data && cs.data.error) || 'error ' + cs.status;
+        if (mc.view === 'comp' && mc.copen) {
+          const cd = await matchCall('/competitions/' + mc.copen);
+          if (cd.status === 200) mc.comp = cd.data;
+        }
         if (mc.view === 'console' && mc.open) {
           const d = await matchCall('/matches/' + mc.open);
           if (d.status === 200) { mc.detail = d.data; mc.offset = d.data.clock.server_time_ms - Date.now(); }
@@ -839,9 +1082,19 @@ async function refresh() {
     }
     if (t && t.match) S.offset = t.match.server_time_ms - Date.now();
     const rr = route();
-    if (rr.tv || (!rr.id && !rr.range && !rr.match && S.tvcfg)) {        // TV pages and their setup: the public scoreboard feed
-      const b = await get('/board' + (rr.tv && rr.params.m ? '?m=' + encodeURIComponent(rr.params.m) : ''));
-      S.board = b.matches; S.boardOffset = b.server_time_ms - Date.now();
+    if (rr.tv || (!rr.id && !rr.range && !rr.match && !rr.results && !rr.print && S.tvcfg)) {   // TV pages and their setup
+      const q = [];
+      if (rr.tv && rr.params.m) q.push('m=' + encodeURIComponent(rr.params.m));
+      if (rr.tv && rr.params.c) q.push('c=' + encodeURIComponent(rr.params.c));
+      const b = await get('/board' + (q.length ? '?' + q.join('&') : ''));
+      S.board = b.matches; S.boardComps = b.competitions || []; S.boardOffset = b.server_time_ms - Date.now();
+      if (!rr.tv) S.compList = (await get('/competitions')).competitions;
+    }
+    if (rr.results || rr.print) {
+      if (rr.cid) {
+        const r = await fetch(API + '/results/' + rr.cid + (rr.print === 'cards' ? '?shots=1' : ''));
+        S.res = r.status === 404 ? {missing: true} : r.ok ? await r.json() : S.res;
+      } else S.resList = (await get('/results')).results;
     }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
@@ -852,19 +1105,30 @@ async function refresh() {
 
 function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
-  document.getElementById('nav-coach').className = r.id || r.range || r.match ? '' : 'on';
+  document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print ? '' : 'on';
   document.getElementById('nav-range').className = r.range ? 'on' : '';
   document.getElementById('nav-match').className = r.match ? 'on' : '';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
   const ae = document.activeElement;
   if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') return;   // never redraw under typing
   document.body.classList.toggle('tv', !!r.tv);
-  if (r.tv) { app.innerHTML = r.tv === 'board' ? tvBoard(S.board || []) : tvTargets(S.targets, S.board || [], r.params); return; }
+  document.body.classList.toggle('print', !!r.print);
+  document.getElementById('nav-results').className = r.results ? 'on' : '';
+  if (r.print) { app.innerHTML = r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res); return; }
+  if (r.results) { app.innerHTML = r.cid ? resultsPage(S.res) : resultsIndex(S.resList); return; }
+  if (r.tv) { app.innerHTML = r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params); return; }
   app.innerHTML = r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S);
   renderOverlay(t);
 }
 function renderOverlay(t) {
   const o = document.getElementById('overlay');
+  if (route().match && S.mc && (S.mc.editp || S.mc.movep)) {   // Match Control: editing a competitor, moving a shooter
+    o.className = 'open';
+    const ae = document.activeElement;
+    if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) return;
+    o.innerHTML = S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
+    return;
+  }
   o.className = (S.gear || S.sight) && t ? 'open' : '';
   if (!(S.gear || S.sight) || !t) { o.innerHTML = ''; return; }
   const ae = document.activeElement;
@@ -917,6 +1181,7 @@ async function act(el) {
     if (a === 'tvmatch') c.match = el.dataset.id ? +el.dataset.id : null;
     if (a === 'tvtarget') c.targets = el.checked ? c.targets.concat(el.dataset.id) : c.targets.filter(x => x !== el.dataset.id);
     if (a === 'tvbm') c.matches = el.checked ? c.matches.concat(+el.dataset.id) : c.matches.filter(x => x !== +el.dataset.id);
+    if (a === 'tvbc') { c.comps = c.comps || []; c.comps = el.checked ? c.comps.concat(+el.dataset.id) : c.comps.filter(x => x !== +el.dataset.id); }
     return render();
   }
   if (!id) return;
@@ -1110,7 +1375,7 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mclogout') { await matchCall('/logout', {}); mc.view = 'list'; return refresh(); }
-  if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; return refresh(); }
+  if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; return refresh(); }
   if (a === 'mcnew') { mc.view = 'new'; mc.draft = {lanes: {}}; mc.msg = ''; return render(); }
   if (a === 'mcfnew') { mc.view = 'format'; mc.fdraft = {name: '', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'Sighting', minutes: 10}, {kind: 'record', label: 'Record', minutes: 30, shots: 20, warn: '5, 2'}]}; mc.msg = ''; return render(); }
   if (a === 'mcfedit') {
@@ -1141,7 +1406,72 @@ async function matchAct(el, a) {
     if (show(res)) { mc.view = 'console'; mc.open = res.data.id; mc.detail = res.data; }
     return refresh();
   }
-  if (a === 'mcopen') { mc.view = 'console'; mc.open = +el.dataset.id; mc.detail = null; mc.msg = ''; return refresh(); }
+  if (a === 'mcopen') { mc.view = 'console'; mc.open = +el.dataset.id; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; return refresh(); }
+  if (a === 'mccnew') { mc.view = 'cnew'; mc.cdraft = {}; mc.msg = ''; return render(); }
+  if (a === 'mccpaced') { mc.cdraft.paced = el.dataset.v; return render(true); }
+  if (a === 'mccopen') { mc.view = 'comp'; mc.copen = +el.dataset.id; mc.comp = null; mc.rdraft = {}; mc.msg = ''; return refresh(); }
+  if (a === 'mcccreate') {
+    const d = mc.cdraft, f = (mc.formats || []).find(x => x.id === d.format_id);
+    let override;
+    if (f && d.times && Object.keys(d.times).length) override = Object.assign({}, f, {phases: f.phases.map((p, i) => Object.assign({}, p, d.times[i] != null ? {seconds: d.times[i]} : {}))});
+    const res = await matchCall('/competitions', {name: d.name || '', format_id: d.format_id || '', override: override, team_size: d.team_size != null ? +d.team_size : undefined,
+      best_count: !!d.best_count, paced: d.paced || 'spoken'});
+    if (show(res)) { mc.view = 'comp'; mc.copen = res.data.id; mc.comp = res.data; mc.rdraft = {}; }
+    return refresh();
+  }
+  if (a === 'mccsave') {
+    const res = await matchCall('/competitions/' + mc.copen, {team_size: +(document.getElementById('cteam') || {}).value, best_count: !!(document.getElementById('cbest') || {}).checked});
+    if (show(res)) toast('Saved');
+    return refresh();
+  }
+  if (a === 'mcpadd2' || a === 'mcppaste') {
+    const rows = a === 'mcpadd2' ? [['family', 'given', 'class', 'team'].map(k => (document.getElementById('np_' + k) || {}).value || '')]
+      : ((document.getElementById('np_paste') || {}).value || '').split(/\r?\n/).filter(l => l.trim()).map(l => l.split(/\t|,/).map(x => x.trim()));
+    let added = 0;
+    for (const r of rows) {
+      const res = await matchCall('/competitions/' + mc.copen + '/competitors', {family: r[0] || '', given: r[1] || '', class: r[2] || '', team: r[3] || ''});
+      if (!show(res)) break;
+      added++;
+    }
+    if (added) { toast(added + ' competitor' + (added === 1 ? '' : 's') + ' added'); mc.np = {}; }
+    return refresh();
+  }
+  if (a === 'mcpedit') { mc.editp = {id: +el.dataset.id}; mc.msg = ''; return render(); }
+  if (a === 'mcpecancel') { mc.editp = null; mc.msg = ''; return render(); }
+  if (a === 'mcpmove') {
+    const e = mc.editp, p = (mc.comp.competitors || []).find(x => x.id === e.id), on = p && (mc.comp.relays || []).find(r => r.relay === p.relay && r.state !== 'aborted');
+    const mrel = e.mrel != null ? e.mrel : on ? String(on.match_id) : '', dev = e.mdev || (on && String(on.match_id) === mrel ? p.device_id : '');
+    if (mrel && !dev) { mc.msg = 'Choose a target'; return render(true); }
+    if (!mrel && !on) { mc.msg = 'Choose a relay'; return render(true); }
+    const res = await matchCall('/competitions/' + mc.copen + '/competitors/' + e.id + '/move', {match_id: mrel ? +mrel : null, device_id: mrel ? dev : null});
+    if (show(res)) { mc.comp = res.data; e.mrel = undefined; e.mdev = ''; toast('Moved'); }
+    return refresh();
+  }
+  if (a === 'mcpesave') {
+    const e = mc.editp, p = (mc.comp.competitors || []).find(x => x.id === e.id);
+    if (!p) return;
+    const v = k => (e[k] != null ? e[k] : (p[k] || '')).trim();
+    const renamed = v('family') !== (p.family || '') || v('given') !== (p.given || '');
+    if (renamed && p.relay && !confirm('Change the name of a competitor who is on relay ' + p.relay + '?\nThe new name shows on the target screens and in the results.')) return;
+    const res = await matchCall('/competitions/' + mc.copen + '/competitors/' + e.id, {family: v('family'), given: v('given'), class: v('class'), team: v('team')});
+    if (show(res)) { mc.editp = null; mc.comp = res.data; toast('Saved'); }
+    return refresh();
+  }
+  if (a === 'mcpdel') {
+    if (!confirm('Remove this competitor?')) return;
+    if (show(await matchCall('/competitions/' + mc.copen + '/competitors/' + el.dataset.id + '/delete', {}))) mc.editp = null;
+    return refresh();
+  }
+  if (a === 'mcpimport') { const f = document.getElementById('csvfile'); if (f) f.click(); return; }
+  if (a === 'mcrcreate') {
+    const lanes = Object.keys(mc.rdraft || {}).filter(k => mc.rdraft[k]).map(k => ({device_id: k, competitor_id: +mc.rdraft[k]}));
+    const order = (mc.targets || []).map(t => t.device_id);
+    lanes.sort((x, y) => order.indexOf(x.device_id) - order.indexOf(y.device_id));
+    if (!lanes.length) return toast('Choose a competitor for at least one target');
+    const res = await matchCall('/competitions/' + mc.copen + '/relays', {lanes: lanes});
+    if (show(res)) { mc.rdraft = {}; mc.comp = res.data; toast('Relay ' + res.data.relays[res.data.relays.length - 1].relay + ' created: open its console to run it'); }
+    return refresh();
+  }
   if (a === 'mcpaced') { mc.draft.paced = el.dataset.v; return render(true); }
   if (a === 'mcrestart') {
     const d = mc.detail;
@@ -1156,6 +1486,27 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mcspeak') { mc.speak = !mc.speak; if (mc.speak) say('Sound is on. Commands will be spoken.'); return render(); }   // a tap unlocks sound in the browser
+  if (a === 'mcdelsel') {                        // delete matches and competitions; their results are kept as a saved copy
+    const pick = deletable(mc), keys = pick.map(x => x[0]), names = pick.map(x => x[1]);
+    if (!keys.length || !confirm('Delete ' + (keys.length === 1 ? '"' + names[0] + '"' : keys.length + ' matches and competitions (' + names.join(', ') + ')') +
+      ' from Match Control?\n\nCompetitions go with their relays and competitor lists. Their results stay on the Results page as a saved copy (unless you deleted the results already). This cannot be undone.')) return;
+    const res = await matchCall('/delete', {matches: keys.filter(k => k[0] === 'm').map(k => +k.slice(1)), competitions: keys.filter(k => k[0] === 'c').map(k => +k.slice(1))});
+    if (show(res)) { mc.msel = {}; toast('Deleted ' + res.data.deleted + (res.data.frozen ? '; ' + res.data.frozen + ' saved on the Results page' : '')); }
+    return refresh();
+  }
+  if (a === 'mcresdel') {
+    const keys = Object.keys(mc.rsel || {}).filter(k => mc.rsel[k]), saved = keys.filter(k => k[0] === 'a').length;
+    if (!keys.length || !confirm('Delete ' + keys.length + ' result' + (keys.length === 1 ? '' : 's') + ' from the Results page?' +
+      (saved ? '\n\n' + saved + ' saved cop' + (saved === 1 ? 'y is' : 'ies are') + ' deleted for good.' : '') + (keys.length > saved ? '\n\nThe matches stay in Match Control; their results can be shown again.' : ''))) return;
+    const res = await matchCall('/results/delete', {keys: keys});
+    if (show(res)) { mc.rsel = {}; mc.results = res.data.results; toast('Results deleted'); }
+    return refresh();
+  }
+  if (a === 'mcresshow') {
+    const res = await matchCall('/results/restore', {keys: [el.dataset.key]});
+    if (show(res)) { mc.results = res.data.results; toast('Results shown again'); }
+    return refresh();
+  }
   if (!mc.open) return;
   if (a === 'mcstart') {
     if (!confirm('Start the match now? The clock starts with the first phase.')) return;
@@ -1163,10 +1514,28 @@ async function matchAct(el, a) {
     if (mc.msg) toast(mc.msg);
     return refresh();
   }
+  if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.msg = ''; return render(); }
+  if (a === 'mcmovecancel') { mc.movep = null; mc.msg = ''; return render(); }
+  if (a === 'mcmovego') {
+    const pick = document.querySelector('input[name="mvto"]:checked');
+    if (!pick) { mc.msg = 'Choose the target to move to'; return render(true); }
+    if (show(await matchCall('/matches/' + mc.open + '/move', {from: mc.movep.from, to: pick.value}))) { mc.movep = null; toast('Moved'); }
+    return refresh();
+  }
+  if (a === 'mclready' || a === 'mclrecord' || a === 'mclextra') {
+    const body = {device_id: el.dataset.id, action: a === 'mclready' ? 'ready' : a === 'mclrecord' ? 'start_record' : 'extra'};
+    if (a === 'mclready') body.seconds = Math.round(parseFloat((document.getElementById('rdy_' + el.dataset.id) || {}).value || '0') * 60);
+    if (a === 'mclextra') body.seconds = 60;
+    if (a === 'mclready' && !(body.seconds >= 0 && body.seconds <= 3600)) return toast('Extra time: 0 to 60 minutes');
+    const res = await matchCall('/matches/' + mc.open + '/lane', body);
+    if (!show(res)) toast(mc.msg);
+    return refresh();
+  }
   if (a === 'mccmd' || a === 'mcrecord') {
     const action = a === 'mcrecord' ? 'start_record' : el.dataset.a;
+    if (el.dataset.ot && !confirm('End the moved shooters\' own time now? The match then finishes.')) return;
     if (action === 'abort' && !confirm('Stop the whole match now? This cannot be undone.')) return;
-    if (action === 'next' && !confirm('End this phase now and go to the next one?')) return;
+    if (action === 'next' && !el.dataset.ot && !confirm('End this phase now and go to the next one?')) return;
     if (action === 'pacing' && !confirm('Switch the commands to "' + PACE[el.dataset.v][0] + '"?\n\n' + PACE[el.dataset.v][1] + ' (from the next phase on).')) return;
     const res = await matchCall('/matches/' + mc.open + '/command', {action: action, seconds: el.dataset.s ? +el.dataset.s : undefined, device_id: el.dataset.id, paced: el.dataset.v});
     if (!show(res)) toast(mc.msg);
@@ -1185,7 +1554,8 @@ function say(text) {                              // the RO console speaks a com
 }
 function clockTick() {                            // between refreshes: count down, and speak commands on the console
   document.querySelectorAll('[data-clock^="tv-"]').forEach(el => {
-    const b = (S.board || []).find(x => 'tv-' + x.id === el.dataset.clock);
+    let b = (S.board || []).find(x => 'tv-' + x.id === el.dataset.clock);
+    if (!b) (S.boardComps || []).forEach(c => c.relays.forEach(r => { if ('tv-c' + c.id + '-' + r.match_id === el.dataset.clock) b = r; }));
     if (b && ['running', 'paused', 'holding'].includes(b.state)) el.textContent = fmtClock(remainingNow(b.clock, S.boardOffset));
   });
   const t = current(), el = document.querySelector('[data-clock="target"]');
@@ -1194,6 +1564,7 @@ function clockTick() {                            // between refreshes: count do
   if (!d || !route().match) return;
   const c = d.clock, live = d.state === 'running' || d.state === 'paused' || d.state === 'holding', left = remainingNow(c, mc.offset);
   if (cel && live) cel.textContent = fmtClock(left);
+  document.querySelectorAll('[data-lends]').forEach(x => { if (x.dataset.lends) x.textContent = fmtClock(Math.max(0, +x.dataset.lends - (Date.now() + (mc.offset || 0)))); });
   mc.spoken = mc.spoken || {};
   const pk = d.id + ':' + c.phase;
   if (mc.lastPk && mc.lastPk !== pk && mc.speak && c.paced === 'spoken' && mc.lastEndSay) say(mc.lastEndSay);   // the previous phase's STOP
@@ -1232,6 +1603,21 @@ function boot() {
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
   // The file input lives outside the redrawn screen (index.html), so a redraw while the file dialog is open cannot
   // swallow the choice. Whatever is chosen uploads at once, one file after another.
+  const csvPick = document.getElementById('csvfile');   // competitors from a CSV file: sent once, read in memory, not kept
+  if (csvPick) csvPick.addEventListener('change', async () => {
+    const f = csvPick.files && csvPick.files[0];
+    csvPick.value = '';
+    const mc = S.mc;
+    if (!f || !mc || !mc.copen) return;
+    if (f.size > 256 * 1024) { mc.msg = 'That file is too big for a competitor list (256 KB at most).'; return render(); }
+    const r = await fetch(API + '/match/competitions/' + mc.copen + '/competitors/import', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'text/csv', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (r && r.status === 200) { mc.msg = ''; mc.comp = d; toast(d.added + ' competitor' + (d.added === 1 ? '' : 's') + ' added from ' + f.name); }
+    else mc.msg = 'Not imported: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
+    refresh();
+  });
+  document.addEventListener('toggle', e => { if (e.target.id === 'np_details' && S.mc) S.mc.npOpen = e.target.open; }, true);
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -1240,14 +1626,23 @@ function boot() {
     if (!mc || !el.dataset) return;
     if (el.dataset.mcd) { mc.draft[el.dataset.mcd] = el.value; if (el.dataset.mcd === 'format_id') { mc.draft.times = {}; render(true); } }
     if (el.dataset.mcc) { (mc.draft.lanes[el.dataset.mcc] = mc.draft.lanes[el.dataset.mcc] || {}).competitor = el.value; }
-    if (el.dataset.mct != null && el.dataset.mct !== undefined) { mc.draft.times = mc.draft.times || {}; mc.draft.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
+    if (el.dataset.mct != null && el.dataset.mct !== undefined) { const dd = mc.view === 'cnew' ? (mc.cdraft = mc.cdraft || {}) : mc.draft; dd.times = dd.times || {}; dd.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
     if (el.dataset.mcf) mc.fdraft[el.dataset.mcf] = el.value;
+    if (el.dataset.pe && mc.editp) mc.editp[el.dataset.pe] = el.value;
+    if (el.dataset.np) { mc.np = mc.np || {}; mc.np[el.dataset.np] = el.value; }
+    if (el.dataset.mcx) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcx] = el.value; if (el.dataset.mcx === 'format_id') { mc.cdraft.times = {}; delete mc.cdraft.team_size; render(true); } }
     if (el.dataset.mcp) { const [i, k] = el.dataset.mcp.split(':'); mc.fdraft.phases[+i][k] = el.value; if (k === 'kind') render(true); }
   }, true);
   document.addEventListener('change', async e => {
     const el = e.target, mc = S.mc;
     if (!mc || !el.dataset) return;
     if (el.dataset.mcl) { (mc.draft.lanes[el.dataset.mcl] = mc.draft.lanes[el.dataset.mcl] || {}).on = el.checked; }
+    if (el.dataset.mcxc) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcxc] = el.checked; render(true); }
+    if (el.dataset.rl) { mc.rdraft = mc.rdraft || {}; mc.rdraft[el.dataset.rl] = el.value; render(true); }
+    if (el.name === 'mvto' && mc.movep) mc.movep.to = el.value;
+    if (el.dataset.msel) { mc.msel = mc.msel || {}; mc.msel[el.dataset.msel] = el.checked; render(true); }
+    if (el.dataset.rsel) { mc.rsel = mc.rsel || {}; mc.rsel[el.dataset.rsel] = el.checked; render(true); }
+    if (el.dataset.pm && mc.editp) { mc.editp[el.dataset.pm] = el.value; if (el.dataset.pm === 'mrel') mc.editp.mdev = ''; render(true); }
     if (el.dataset.mcdec) { const res = await matchCall('/matches/' + mc.open + '/flags/' + el.dataset.mcdec, {decision: el.value}); if (res.status !== 200) toast(res.data.error || 'Not saved'); refresh(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'mcpw') matchAct(e.target, 'mclogin'); });
@@ -1275,7 +1670,7 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; } refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   let pending;
   try {
@@ -1294,7 +1689,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

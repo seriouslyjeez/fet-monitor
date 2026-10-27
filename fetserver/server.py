@@ -22,7 +22,11 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane)|/flags/(\d{1,12}))?$")
+COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
+COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
+MAX_CSV = 256 * 1024
+RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$")   # c competition, m match, a frozen copy
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
@@ -71,6 +75,16 @@ class Handler(BaseHTTPRequestHandler):
         return hmac.compare_digest(given.encode(), self.server.token.encode())
 
     # -- Range Control --
+    def _send_csv(self, text: str, filename: str) -> None:
+        body = text.encode("utf-8-sig")                 # with a BOM so spreadsheet programs read it as UTF-8
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def _admin_request_ok(self) -> bool:
         """Only our own page may call the admin API: a custom header (a cross-site page cannot send one without a
         CORS preflight, which we never answer) and, when the browser sends one, an Origin naming this server."""
@@ -98,12 +112,33 @@ class Handler(BaseHTTPRequestHandler):
             if method == "POST":
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
             return self._send(403, {"error": "Match Control requests must come from the FeT Monitor page"})
+        sess = admin.match_session(self._match_token(), mc.user)
+        imp = COMP_IMPORT_RE.match(path)
+        if imp and method == "POST":                   # a CSV file of competitors: read in memory, never stored
+            if not sess or sess["role"] not in ("director", "admin"):
+                self.close_connection = True
+                return self._send(401 if not sess else 403, {"error": "only a match director can do that"})
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                raise BadRequest("Content-Length required")
+            if not 0 < length <= MAX_CSV:
+                self.close_connection = True
+                return self._send(413, {"error": f"a competitor file is at most {MAX_CSV // 1024} KB"})
+            raw = self.rfile.read(length)
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                text = raw.decode("cp1252", errors="replace")   # files saved by older spreadsheet programs
+            try:
+                return self._send(200, {**core.competitions.import_csv(int(imp.group(1)), text), **core.competitions.detail(int(imp.group(1)))})
+            except MatchError as exc:
+                return self._send(400, {"error": str(exc)})
         payload = {}
         if method == "POST":
             payload = self._read_json()
             if not isinstance(payload, dict):
                 raise BadRequest("body must be an object")
-        sess = admin.match_session(self._match_token(), mc.user)
         if path == "/api/v1/match/status" and method == "GET":
             return self._send(200, {"logged_in": bool(sess), **(sess or {}), "users_defined": bool(mc.users()),
                                     "admin_password_set": admin.password_set()})
@@ -144,6 +179,49 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "online": t["online"],
                                                      "in_match": bool(t["match"]), "lease": t["lease"]}
                                                     for t in core.list_targets(None)]})
+            if path == "/api/v1/match/competitions" and method == "GET":
+                return self._send(200, {"competitions": core.competitions.list()})
+            if path == "/api/v1/match/competitions" and method == "POST":
+                need_director()
+                cid = core.competitions.create(payload.get("name"), payload.get("format_id"), who, payload.get("override"),
+                                               payload.get("team_size"), bool(payload.get("best_count")), payload.get("paced") or "spoken")
+                return self._send(200, core.competitions.detail(cid))
+            cm = COMP_RE.match(path)
+            if cm:
+                cid, sub, pid, delete = int(cm.group(1)), cm.group(2), cm.group(3), cm.group(4)
+                cc = core.competitions
+                if method == "GET" and not sub:
+                    return self._send(200, cc.detail(cid))
+                need_director()
+                if method == "POST" and not sub:
+                    cc.update(cid, payload.get("name"), payload.get("team_size"), payload.get("best_count"), payload.get("paced"))
+                elif method == "POST" and sub == "competitors" and delete == "/move":
+                    cc.move_competitor(cid, int(pid), payload.get("match_id"), payload.get("device_id"), who)
+                    log.info("Match Control: %s moved competitor %s to relay match %s, %s", who, pid, payload.get("match_id"), payload.get("device_id"))
+                elif method == "POST" and sub == "competitors" and delete:
+                    cc.remove_competitor(cid, int(pid))
+                elif method == "POST" and sub == "competitors":
+                    cc.save_competitor(cid, payload, int(pid) if pid else None)
+                elif method == "POST" and sub == "relays" and not pid:
+                    mid = cc.add_relay(cid, payload.get("lanes"), who)
+                    log.info("Match Control: %s added relay match %d to competition %d", who, mid, cid)
+                else:
+                    raise NotFound("not found")
+                return self._send(200, cc.detail(cid))
+            if path == "/api/v1/match/results" and method == "GET":
+                return self._send(200, {"results": core.results.listing(hidden_too=True)})
+            if path in ("/api/v1/match/results/delete", "/api/v1/match/results/restore") and method == "POST":
+                need_director()
+                fn = core.results.delete_results if path.endswith("delete") else core.results.restore_results
+                n = fn(payload.get("keys"), who)
+                log.warning("Match Control: %s %s results %s", who, "deleted" if path.endswith("delete") else "restored", payload.get("keys"))
+                return self._send(200, {"count": n, "results": core.results.listing(hidden_too=True)})
+            if path == "/api/v1/match/delete" and method == "POST":
+                need_director()
+                out = core.results.delete_matches(payload.get("matches"), payload.get("competitions"), who)
+                log.warning("Match Control: %s deleted matches %s and competitions %s (%d frozen results)", who,
+                            payload.get("matches"), payload.get("competitions"), out["frozen"])
+                return self._send(200, out)
             if path == "/api/v1/match/matches" and method == "GET":
                 return self._send(200, {"matches": mc.list()})
             if path == "/api/v1/match/matches" and method == "POST":
@@ -165,6 +243,16 @@ class Handler(BaseHTTPRequestHandler):
                     mc.command(mid, str(payload.get("action", "")), who, payload.get("seconds"), payload.get("device_id"),
                                payload.get("paced"))
                     log.info("Match Control: %s %s match %d", who, payload.get("action"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "move":     # a shooter to another target (a target failed)
+                    if mc.detail(mid)["state"] == "ready":
+                        need_director()                    # before the start it is setting up: the match director's
+                    mc.move(mid, payload.get("from"), payload.get("to"), who)
+                    log.warning("Match Control: %s moved %s to %s in match %d", who, payload.get("from"), payload.get("to"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "lane":     # one shooter: ready after a move, extra time, start record
+                    mc.lane_command(mid, payload.get("device_id"), str(payload.get("action", "")), who, payload.get("seconds"))
+                    log.info("Match Control: %s %s for %s in match %d", who, payload.get("action"), payload.get("device_id"), mid)
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "restart":
                     need_director()                        # mistakes happen: the match director can go back
@@ -436,9 +524,31 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/v1/board":                # public scoreboard (read only, like the target pages)
             try:
                 ids = [int(x) for x in q.get("m", [""])[0].split(",") if x.strip()]
+                cids = [int(x) for x in q.get("c", [""])[0].split(",") if x.strip()]
             except ValueError:
-                raise BadRequest("m must be match numbers, e.g. m=3,4")
-            return self._send(200, {"matches": core.matches.board(ids), "server_time_ms": core.now_ms()})
+                raise BadRequest("m and c must be numbers, e.g. m=3,4 or c=2")
+            comps = []
+            for cid in cids[:20]:
+                try:
+                    comps.append(core.results.get(f"c{cid}"))     # deleted results are not shown
+                except MatchError:
+                    continue
+            return self._send(200, {"matches": core.matches.board(ids) if ids or not cids else [], "competitions": comps,
+                                    "server_time_ms": core.now_ms()})
+        if url.path == "/api/v1/competitions":         # public: the competition list (TV set-up)
+            return self._send(200, {"competitions": [x for x in core.competitions.list() if not x["results_hidden"]]})
+        if url.path == "/api/v1/results":              # public: everything on the Results page
+            return self._send(200, {"results": core.results.listing()})
+        rm = RESULTS_RE.match(url.path)
+        if rm:
+            try:
+                res = core.results.get(rm.group(1), with_shots=q.get("shots", ["0"])[0] == "1")
+            except MatchError as exc:
+                raise NotFound(str(exc))
+            if not rm.group(2):
+                return self._send(200, res)
+            return self._send_csv(results_csv(res, teams=rm.group(2) == "-teams.csv"),
+                                  f"results-{res['key']}{'-teams' if rm.group(2) == '-teams.csv' else ''}.csv")
         if url.path == "/api/v1/targets":
             return self._send(200, {"targets": core.list_targets(q.get("client_id", [None])[0])})
         m = TARGET_RE.match(url.path)
@@ -516,6 +626,37 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, core.set_mode(did, payload.get("client_id"), payload.get("mode"),
                                                  payload.get("shooter"), bool(payload.get("new_series")), payload.get("label")))
         self._send(404, {"error": "not found"})
+
+
+def results_csv(res: dict, teams: bool = False) -> str:
+    """Results as CSV: one row per competitor (or team), every class, in place order. Values are plain numbers."""
+    import csv
+    import io
+    out = io.StringIO()
+    w = csv.writer(out)
+    dec = res["scoring"] == "decimal"
+    num = (lambda v: f"{v:.1f}") if dec else (lambda v: f"{v:.0f}")
+
+    def txt(v):                                      # a cell a spreadsheet would run as a formula is kept as text
+        v = "" if v is None else str(v)
+        return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+    xs = "Inner tens" if dec else "X"
+    if teams:
+        w.writerow(["Competition", "Class", "Place", "Team", "Total", xs, "Counting members", "All members", "Note"])
+        for cl in res["classes"]:
+            for t in cl["teams"]:
+                w.writerow([txt(res["name"]), txt(cl["name"]), t["place"] or "", txt(t["name"]), num(t["total"]) if t["total"] is not None else "",
+                            t.get("x", ""), txt("; ".join(t["counting"])), txt("; ".join(t["members"])), t.get("reason", "")])
+        return out.getvalue()
+    n = max(1, -(-res["record_shots"] // 10))
+    w.writerow(["Competition", "Class", "Place", "Family name", "Given name", "Team", "Relay", "Firing point", "Total", xs, "Shots"]
+               + [f"Series {i + 1}" for i in range(n)] + ["Tie"])
+    for cl in res["classes"]:
+        for e in cl["individuals"]:
+            w.writerow([txt(res["name"]), txt(cl["name"]), e["place"], txt(e["family"]), txt(e["given"]), txt(e["team"]), e["relay"] or "", e["lane"] or "",
+                        num(e["total"]), e["x"], e["shots"]] + [num(e["series"][i]) if i < len(e["series"]) else "" for i in range(n)]
+                       + ["tied" if e["tied"] else ""])
+    return out.getvalue()
 
 
 class _TooLarge(Exception):

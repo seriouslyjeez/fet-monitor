@@ -25,7 +25,8 @@ class Clock:
         return self.t
 
 
-class MatchHttp(unittest.TestCase):
+class MatchHttpBase(unittest.TestCase):
+    """Server, clock, users and helpers; no tests of its own."""
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -56,6 +57,15 @@ class MatchHttp(unittest.TestCase):
         c.close()
         return out[0], out[1], out[2]
 
+    def raw(self, path):
+        """GET without login: (status, Content-Type, Content-Disposition, body bytes)."""
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+        c.request("GET", path)
+        r = c.getresponse()
+        out = (r.status, r.getheader("Content-Type"), r.getheader("Content-Disposition"), r.read())
+        c.close()
+        return out
+
     def login(self, who, pw):
         st, body, cookie = self.req("POST", "/api/v1/match/login", {"username": who, "password": pw})
         if st == 200:
@@ -68,6 +78,8 @@ class MatchHttp(unittest.TestCase):
         self.assertEqual(st, 200, f)
         return f["id"]
 
+
+class MatchHttp(MatchHttpBase):
     def test_logins(self):
         st, body, _ = self.req("GET", "/api/v1/match/status")
         self.assertEqual((body["logged_in"], body["users_defined"]), (False, True))
@@ -191,6 +203,27 @@ class MatchHttp(unittest.TestCase):
         self.login("md", "director-pass")
         st, body, _ = self.req("POST", "/api/v1/match/matches", {"name": "B", "format_id": self.fmt(), "lanes": [{"device_id": "lane-1"}], "paced": "maybe"}, "md")
         self.assertEqual(st, 400)
+
+
+class MoveHttp(MatchHttpBase):
+    def test_moving_a_shooter(self):
+        self.core.handle_heartbeat({"device_id": "lane-3", "boot_count": 1, "uptime_ms": 0})
+        self.login("md", "director-pass"); self.login("ro", "officer-pass")
+        st, d, _ = self.req("POST", "/api/v1/match/matches", {"name": "M", "format_id": self.fmt(), "lanes": [{"device_id": "lane-1"}]}, "md")
+        mid = d["id"]
+        st, body, _ = self.req("POST", f"/api/v1/match/matches/{mid}/move", {"from": "lane-1", "to": "lane-3"}, "ro")
+        self.assertEqual(st, 403, "before the start, moving is setting up: the match director's")
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/move", {"from": "lane-1", "to": "lane-3"}, "md")
+        self.assertEqual((st, [l["device_id"] for l in d["lanes"]]), (200, ["lane-3"]))
+        self.req("POST", f"/api/v1/match/matches/{mid}/start", {}, "md")
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/move", {"from": "lane-3", "to": "lane-1"}, "ro")
+        self.assertEqual((st, d["lanes"][0]["own"], d["move_extra_s"]), (200, "moving", 300), "a range officer moves a shooter in a match")
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/lane", {"device_id": "lane-1", "action": "ready", "seconds": 60}, "ro")
+        self.assertEqual((st, d["lanes"][0]["own"]), (200, "extra"))
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/lane", {"device_id": "lane-1", "action": "ready"}, "ro")
+        self.assertEqual((st, d["error"]), (400, "this shooter is not moving"))
+        st, _, _ = self.req("POST", f"/api/v1/match/matches/{mid}/move", {"from": "lane-1", "to": "lane-2"})
+        self.assertEqual(st, 401)
 
 
 if __name__ == "__main__":

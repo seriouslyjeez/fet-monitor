@@ -34,7 +34,7 @@ def P(kind, label, minutes=0, seconds=0, *, shots=0, position="", warnings=(), s
 
 def _issf_qual():
     return {
-        "id": "issf-ar60", "name": "10m Air Rifle 60 shots (ISSF / USA Shooting qualification)", "rulebook": "ISSF",
+        "id": "issf-ar60", "name": "10m Air Rifle 60 shots (ISSF / USA Shooting qualification)", "rulebook": "ISSF", "tie_rules": "ISSF",
         "edition": "ISSF Rule Book 2026 (third print, eff. 19 Oct 2026)", "scoring": "decimal", "team_size": 3,
         "notes": "Range personnel switch the targets to match after the preparation and sighting time (6.10.4 b).",
         "phases": [
@@ -53,7 +53,7 @@ def _cmp_3p(n):
     rule = "5.3.2" if n == 10 else "5.3.3"
     w_s, w_r = [(30, "Thirty seconds")], [(300, "Five minutes remaining"), (120, "Two minutes remaining")]
     return {
-        "id": f"cmp-3x{n}", "name": f"3x{n} Three-Position Air Rifle (CMP / NFHS National Standard)", "rulebook": "CMP",
+        "id": f"cmp-3x{n}", "name": f"3x{n} Three-Position Air Rifle (CMP / NFHS National Standard)", "rulebook": "CMP", "tie_rules": "CMP",
         "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "integer", "team_size": 4,
         "notes": "Kneeling, prone, standing. Scored in whole rings or tenths as the program announces (5.3.1 e). "
                  "For inexperienced 3x10 athletes the first preparation and sighting may be 15 or 20 minutes (5.3.1 d).",
@@ -81,7 +81,7 @@ def _cmp_3p(n):
 
 def _cmp_standing60():
     return {
-        "id": "cmp-s60", "name": "60 shots standing (CMP National Standard)", "rulebook": "CMP",
+        "id": "cmp-s60", "name": "60 shots standing (CMP National Standard)", "rulebook": "CMP", "tie_rules": "CMP",
         "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "team_size": 4,
         "notes": "Decimal scoring should be used with electronic targets (5.3.1 e).",
         "phases": [
@@ -108,7 +108,7 @@ def _cmp_standing3x20():
         phases.append(P("record", f"Standing match fire {i + 1} of 3", 25, shots=20, position="standing", warnings=w_r,
                         rule="5.3.4, 7.9", start="Standing match fire. 20 shots in a time limit of 25 minutes. Start.",
                         end="Stop. Unload."))
-    return {"id": "cmp-s3x20", "name": "60 shots standing in three 20-shot stages (CMP, paper-target style)", "rulebook": "CMP",
+    return {"id": "cmp-s3x20", "name": "60 shots standing in three 20-shot stages (CMP, paper-target style)", "rulebook": "CMP", "tie_rules": "CMP",
             "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "team_size": 4,
             "notes": "Rule 5.3.4 'STANDING EVENT -- 3X20 SHOTS': the 60-shot standing event fired in three 20-shot record "
                      "stages, as on paper targets. With electronic targets the 60-shot event may be fired without "
@@ -135,7 +135,7 @@ def _nra_3p(n):
             phases.append(P("changeover", f"Position change to {pos}", 15, rule="8.2 b",
                             start=f"Position change. Fifteen minutes to change to {pos}."))
         phases.append(_nra_stage(pos, n, i == 0))
-    return {"id": f"nra-3x{n}", "name": f"3x{n} Precision Air Rifle (NRA)", "rulebook": "NRA",
+    return {"id": f"nra-3x{n}", "name": f"3x{n} Precision Air Rifle (NRA)", "rulebook": "NRA", "tie_rules": "NRA",
             "edition": "NRA Precision Air Rifle Rules 2025", "scoring": "integer", "team_size": 4,
             "notes": "Prone, standing, kneeling (7.1). One clock per position: sighting time plus record time (8.1); "
                      "sighters until the shooter starts record, then record only (9.2 a). Position change: 15 minutes "
@@ -144,7 +144,7 @@ def _nra_3p(n):
 
 
 def _nra_standing(n):
-    return {"id": f"nra-s{n}", "name": f"{n} shots standing (NRA Precision Air Rifle)", "rulebook": "NRA",
+    return {"id": f"nra-s{n}", "name": f"{n} shots standing (NRA Precision Air Rifle)", "rulebook": "NRA", "tie_rules": "NRA",
             "edition": "NRA Precision Air Rifle Rules 2025", "scoring": "integer", "team_size": 4,
             "notes": "One clock: 8 minutes sighting plus record time (8.1, 8.2 a); sighters until the shooter starts record.",
             "phases": [_nra_stage("standing", n, True)]}
@@ -171,13 +171,15 @@ def validate(fmt) -> dict:
     out = {"id": str(fmt.get("id") or ""), "name": str(fmt.get("name") or "").strip()[:80],
            "rulebook": str(fmt.get("rulebook") or "Custom")[:20], "edition": str(fmt.get("edition") or "")[:120],
            "scoring": fmt.get("scoring") or "decimal", "notes": str(fmt.get("notes") or "")[:1000],
-           "team_size": fmt.get("team_size", 4), "phases": []}
+           "team_size": fmt.get("team_size", 4), "tie_rules": fmt.get("tie_rules") or "ISSF", "phases": []}
     if out["id"] and not ID_RE.match(out["id"]):
         raise ValueError("format id: lowercase letters, digits and dashes")
     if not out["name"]:
         raise ValueError("a format needs a name")
     if out["scoring"] not in SCORING:
         raise ValueError("scoring must be decimal or integer")
+    if out["tie_rules"] not in ("ISSF", "CMP", "NRA"):
+        raise ValueError("tie-break rules must be ISSF, CMP or NRA")
     if not isinstance(out["team_size"], int) or not 1 <= out["team_size"] <= 10:
         raise ValueError("team size must be 1 to 10")
     phases = fmt.get("phases")

@@ -74,9 +74,45 @@ class DashboardLogic(unittest.TestCase):
             targets = core.list_targets(ALICE)
             series = core.list_series("lane-1")
             closed = next(s["id"] for s in series if not s["open"])
+            # a competition on two extra targets (after the targets snapshot, so the pages above are unchanged)
+            for did in ("comp-1", "comp-2", "comp-3"):
+                hb(did, did)
+            cc = core.competitions
+            fid = core.matches.save_format({"name": "Comp", "scoring": "decimal", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 12}]}, "md")["id"]
+            cid = cc.create("<b>League</b>", fid, "md", team_size=2)
+            ids = [cc.save_competitor(cid, {"family": f, "given": g, "class": k, "team": t}) for f, g, k, t in
+                   (("Ames", "<i>Al</i>", "Open", "Red"), ("Brown", "Bo", "Open", "Red"), ("Cole", "Cy", "Junior", "Blue"))]
+            rid = cc.add_relay(cid, [{"device_id": f"comp-{i + 1}", "competitor_id": x} for i, x in enumerate(ids)], "md")
+            core.matches.start(rid, "ro")
+            for did, x in (("comp-1", "0.30"), ("comp-2", "1.50"), ("comp-3", "0.00")):
+                for _ in range(12):
+                    shoot(did, x, "0.00")
+            comp = core.results.get(f"c{cid}", with_shots=True)
+            # comp-1's target fails: its shooter moves to comp-4 (time stopped), then is ready again
+            hb("comp-4", "Spare <4>")
+            cdetail = cc.detail(cid)
+            core.matches.move(rid, "comp-1", "comp-4", "ro")
+            now[0] += 30_000
+            moving = core.matches.detail(rid)
+            core.matches.lane_command(rid, "comp-4", "ready", "ro")
+            ready = core.matches.detail(rid)
+            mtargets = [{"device_id": t["device_id"], "name": t["name"], "online": t["online"], "in_match": bool(t["match"])}
+                        for t in core.list_targets(None)]
+            moved_target = next(t for t in core.list_targets(None) if t["device_id"] == "comp-4")
+            # a single match on lane-4, stopped, then deleted from Match Control: its results are a saved copy
+            sm = core.matches.create("<i>Night</i>", fid, [{"device_id": "lane-4"}], "md")
+            core.matches.start(sm, "md")
+            shoot("lane-4", "0.50", "0.00")
+            single = core.results.get(f"m{sm}", with_shots=True)
+            core.matches.command(sm, "abort", "md")
+            core.results.delete_matches([sm], [], "md")
+            listing = core.results.listing()
+            saved = core.results.get(listing[0]["key"])
             lane2 = next(t for t in targets if t["device_id"] == "lane-2")
             payload = {"targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15),
-                       "sight": core.sight_suggestion(lane2["view"]["series_id"], 0)}
+                       "sight": core.sight_suggestion(lane2["view"]["series_id"], 0), "comp": comp,
+                       "moving": moving, "ready": ready, "cdetail": cdetail, "mtargets": mtargets, "movedTarget": moved_target,
+                       "single": single, "saved": saved, "listing": listing}
         proc = subprocess.run(["node", os.path.join(HERE, "dashboard_check.js")], input=json.dumps(payload),
                               capture_output=True, text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

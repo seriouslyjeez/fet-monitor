@@ -16,6 +16,8 @@ from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, sh
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 from .sightadj import suggest
 from .matches import Matches
+from .competitions import Competitions
+from .resultstore import ResultStore
 
 log = logging.getLogger("fetserver.core")
 
@@ -129,6 +131,8 @@ class Core:
         self.offline_after_ms = offline_after_ms
         self.heartbeat_interval_ms = heartbeat_interval_ms
         self.matches = Matches(self)
+        self.competitions = Competitions(self)
+        self.results = ResultStore(self)
 
     # ---- target bookkeeping -------------------------------------------------
     def _touch(self, c, device_id: str, recv_ms: int, **fields) -> None:
@@ -623,6 +627,25 @@ class Core:
         if changed:
             self.hub.publish({"type": "mode", "device_id": device_id})
         return series_id
+
+    def _move_series(self, c, from_dev: str, to_dev: str, series_id: int, now: int) -> None:
+        """Match Control moved a shooter to another target: their series continues on the new target (in sighter mode,
+        until the range officer says they are ready). The old target is left with no session: like a new target, it
+        shows practice and its next shot starts a practice series. Shots fired on the old target before now stay in
+        the series even if they arrive later (they are placed by event time)."""
+        seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (from_dev,)).fetchone()
+        if seg is not None and seg["series_id"] == series_id:
+            c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+        other = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (to_dev,)).fetchone()
+        if other is not None:                          # whatever the new target was doing ends now
+            c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, other["id"]))
+            if other["series_id"] is not None:
+                c.execute("UPDATE series SET ended_ms=? WHERE id=? AND ended_ms IS NULL", (now, other["series_id"]))
+        ser = c.execute("SELECT shooter FROM series WHERE id=?", (series_id,)).fetchone()
+        c.execute("UPDATE series SET device_id=? WHERE id=?", (to_dev, series_id))
+        self._new_segment(c, to_dev, "sighter", ser["shooter"], series_id, now)
+        for d in (from_dev, to_dev):
+            self.hub.publish({"type": "mode", "device_id": d})
 
     def _mode_change(self, c, device_id, mode, shooter, new_series, label, holder, now):
         kind = KIND_OF_MODE.get(mode, "match")

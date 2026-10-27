@@ -91,6 +91,26 @@ Position change: at least 5 minutes, 15 recommended (8.2 b). Unused time does no
 NRA Sporter (separate book) uses the same time table and also 4-position (prone, standing, sitting, kneeling)
 courses: to confirm against a dated edition.
 
+## Moving a shooter to another target (a target fails)
+
+| Rulebook | Rule | What the moved shooter gets |
+|---|---|---|
+| ISSF / USAS | 6.10.9.2, 6.10.9.4, 6.11.3.2 | Moved to a reserve position when the target cannot be repaired within 5 minutes; when ready, 5 minutes added to the time remaining, and unlimited sighting shots before the remaining record shots. |
+| CMP | 7.18.3, 7.15.1, 8.4 a-b | The time remaining when the interruption happened plus 2 minutes, and unlimited sighters; the Range Officer authorizes sighters during Match Fire. (7.18 also allows finishing on a later relay: not built.) |
+| NRA | 9.2 b, 10.3.2 | Extra time equal to the time lost (interruption over 3 minutes), and unlimited sighting shots after moving to another firing point. |
+
+How FeT Monitor does it (Match Control console, *Move…* on a firing point; range officer or match director):
+- the shooter's series goes with them to the new target, so their shots so far stay theirs; the old target leaves
+  the match (a shot fired on it before the move still counts, even if it arrives later);
+- their own clock stops at the move (the time lost is given back) and runs again when the range officer presses
+  *Shooter ready*, with the rulebook's extra time (ISSF 5 min, CMP 2 min, NRA none) prefilled and changeable;
+- they are in sighting until *Start record* (console, or the shooter's own screen); a sighter after that is flagged;
+- when the match moves on to the next phase before their time is up, they finish their phase on their own clock; a
+  match whose time is over while someone is finishing shows "Time over: moved shooters are finishing";
+- shots on the new target while they are moving are flagged ("while moving to another target");
+- before the start, *Move…* only changes the target; in a competition, the competitor window (pencil) places a
+  competitor on any relay that has not started, or swaps two competitors.
+
 ## Still to read before building them
 
 CMP Standard and Start-from-Zero finals (rule 10.3 to 10.5), NRA 10-shot standing final (7.1.2), team sizes and
@@ -104,4 +124,27 @@ Each table above is one format; each phase carries its rule number. The "pause" 
 Commands spoken on the RO console are the rulebook commands. NRA 3-position: one clock per position (sighting time +
 record time, 8.1) and a 15-minute position change (8.2 b, recommended; at least 5). Team sizes per rulebook are
 placeholders until the team rules are read (phase 2).
+
+## Ranking and tie-breaking (built in: fetserver/ranking.py)
+
+| Rulebook | Rule | Order |
+|---|---|---|
+| ISSF / USAS, decimal (10 m air rifle) | 6.15.1 f | total; last 10-shot series backwards (decimal); shot by shot backwards (decimal); then equal rank, listed alphabetically by family name (e) |
+| ISSF, whole rings | 6.15.1 a-d | total; inner tens; last 10-shot series backwards; shot by shot backwards with an inner ten above a ten; shot by shot in decimals (EST) |
+| CMP, decimal | 8.6.1 e | as ISSF decimal (inner tens are not used with decimals, 8.6.1 a) |
+| CMP, whole rings | 8.6.1 a-d | total; inner tens; 10-shot series backwards (score, then that series' inner tens); shot by shot backwards, inner ten above a ten; then duplicate awards |
+| NRA | 15.3 | total; last 10-shot string backwards; most 10s, then 9s, 8s ...; most inner 10s; then equal rank alphabetically |
+
+Teams: ISSF 6.15.5, CMP 8.6.4, NRA 15.7: the members' results totalled and ranked like one competitor (countback
+lists added position by position).
+
+## Teams
+
+| Rulebook | Rule | Team |
+|---|---|---|
+| ISSF / USAS | 3.3.2.3, 6.11.10 | 3 athletes; the team score is the sum of their qualification scores; only full teams are ranked |
+| CMP | 3.2 | 4 athletes; "Best-Four-Count" teams (3.2.2 c) may have more members, the best four count |
+| NRA | 2.10-2.15, 12.3 | team size set by the match program (4 used as the default here) |
+
+The built-in default size follows the rulebook and can be changed per competition; "best count" is optional.
 
