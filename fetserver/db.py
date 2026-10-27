@@ -188,6 +188,66 @@ MIGRATIONS = [
     ALTER TABLE targets ADD COLUMN ota_space INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE targets ADD COLUMN flash_size INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- Match Control: users (two roles), custom formats, matches with their lanes, a timeline per match (from which
+    -- out-of-time shots are worked out), and the match director's decisions on flagged shots.
+    CREATE TABLE match_users (
+        username   TEXT PRIMARY KEY,
+        role       TEXT NOT NULL,
+        pw_json    TEXT NOT NULL,
+        created_ms INTEGER NOT NULL
+    );
+    CREATE TABLE match_formats (
+        id         TEXT PRIMARY KEY,
+        json       TEXT NOT NULL,
+        created_by TEXT,
+        updated_ms INTEGER NOT NULL
+    );
+    CREATE TABLE matches (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT NOT NULL,
+        format_json      TEXT NOT NULL,
+        state            TEXT NOT NULL,
+        created_ms       INTEGER NOT NULL,
+        created_by       TEXT,
+        started_ms       INTEGER,
+        ended_ms         INTEGER,
+        phase            INTEGER NOT NULL DEFAULT -1,
+        phase_started_ms INTEGER,
+        phase_used_ms    INTEGER NOT NULL DEFAULT 0,
+        phase_extra_ms   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE match_lanes (
+        match_id   INTEGER NOT NULL,
+        device_id  TEXT NOT NULL,
+        lane       INTEGER NOT NULL,
+        competitor TEXT,
+        series_id  INTEGER,
+        PRIMARY KEY (match_id, device_id)
+    );
+    CREATE TABLE match_log (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id  INTEGER NOT NULL,
+        at_ms     INTEGER NOT NULL,
+        kind      TEXT NOT NULL,
+        phase     INTEGER,
+        device_id TEXT,
+        data      TEXT
+    );
+    CREATE INDEX match_log_match ON match_log (match_id, id);
+    CREATE TABLE shot_decisions (
+        shot_id    INTEGER PRIMARY KEY,
+        match_id   INTEGER NOT NULL,
+        decision   TEXT NOT NULL,
+        decided_by TEXT,
+        at_ms      INTEGER NOT NULL
+    );
+    """,
+    """
+    -- Match Control pacing: 'auto' (phases follow each other) or 'officer' (the range officer reads each command and
+    -- presses Next). A separate migration because v9 had already run on a Pi before this column existed.
+    ALTER TABLE matches ADD COLUMN paced TEXT NOT NULL DEFAULT 'auto';
+    """,
 ]
 
 

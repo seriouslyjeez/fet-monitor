@@ -15,6 +15,7 @@ from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 from .sightadj import suggest
+from .matches import Matches
 
 log = logging.getLogger("fetserver.core")
 
@@ -127,6 +128,7 @@ class Core:
         self.now_ms = now_ms or (lambda: int(time.time() * 1000))
         self.offline_after_ms = offline_after_ms
         self.heartbeat_interval_ms = heartbeat_interval_ms
+        self.matches = Matches(self)
 
     # ---- target bookkeeping -------------------------------------------------
     def _touch(self, c, device_id: str, recv_ms: int, **fields) -> None:
@@ -331,7 +333,9 @@ class Core:
         n = c.execute("SELECT COUNT(*) FROM shots WHERE series_id=? AND stream=?", (ser["id"], stream)).fetchone()[0]
         if seg["ended_ms"] is None:                      # only the live series rolls over, never a closed one
             last = c.execute("SELECT MAX(event_ms) FROM shots WHERE series_id=?", (ser["id"],)).fetchone()[0]
-            full = stream == "scored" and ser["kind"] != "ammo" and n >= ser["total"]
+            # A match lane's series never rolls over: a shot beyond the record count stays in the match and is flagged.
+            in_match = c.execute("SELECT 1 FROM match_lanes WHERE series_id=?", (ser["id"],)).fetchone() is not None
+            full = stream == "scored" and ser["kind"] != "ammo" and n >= ser["total"] and not in_match
             idle = ser["kind"] == "practice" and last is not None and event_ms - last > self.idle_new_series_ms
             if full or idle:
                 c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (event_ms, seg["id"]))
@@ -406,6 +410,9 @@ class Core:
                 raise BadRequest("serial line is not on the allowlist")
         elif ctype == "factory_reset":
             line = "erase"                    # the bridge refuses a factory reset without this word
+            locked = self.matches.lock_of(self.db.conn(), device_id)
+            if locked:
+                raise BadRequest(f"{device_id} is in the match '{locked}'")
         else:
             line = None
         with self.db.write() as c:
@@ -423,6 +430,9 @@ class Core:
             t = c.execute("SELECT * FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone()
             if t is None:
                 raise NotFound(f"unknown target {device_id}")
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise BadRequest(f"{device_id} is in the match '{locked}': update it after the match")
             if not t["ota_space"]:
                 raise BadRequest(f"{device_id} runs FeT Bridge firmware {t['bridge_fw'] or '?'}, which cannot update from the Pi: "
                                  "install 0.2.0 or newer by USB (or its /update page) once")
@@ -531,6 +541,20 @@ class Core:
             self._new_segment(c, device_id, seg["mode"], new, sid, now)
         return True
 
+    def shooter_start_record(self, device_id: str, client_id) -> dict:
+        """The shooter holding a lane's control claim starts record in an NRA-style sighting-and-record stage."""
+        self._check_client(client_id)
+        now = self.now_ms()
+        c = self.db.conn()
+        lease = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
+        if lease is None or lease["expires_ms"] <= now or lease["client_id"] != client_id:
+            raise Forbidden("take control of this target first")
+        info = self.matches.target_info(c, device_id, now)
+        if info is None:
+            raise NotFound(f"{device_id} is not in a match")
+        self.matches.command(info["match_id"], "start_record", lease["holder_name"], device_id=device_id)
+        return self.matches.target_info(self.db.conn(), device_id, self.now_ms())
+
     def release_control(self, device_id: str, client_id: str) -> bool:
         self._check_client(client_id)
         with self.db.write() as c:
@@ -576,7 +600,6 @@ class Core:
                 raise BadRequest("label must be text")
             label = label.strip()[:60] or ""
         now = self.now_ms()
-        kind = KIND_OF_MODE.get(mode, "match")
         with self.db.write() as c:
             if admin:
                 self._require_target(c, device_id)
@@ -584,42 +607,57 @@ class Core:
                 holder = lease["holder_name"] if lease else RANGE_NAME
             else:
                 holder = self._require_lease(c, device_id, client_id, now)["holder_name"]
-            seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
-                            (device_id,)).fetchone()
-            ser = self._series_of(c, seg) if seg else None
-            live_ammo = kind == "ammo" and ser is not None and ser["ended_ms"] is None and ser["kind"] == "ammo" and not new_series
-            if kind == "ammo":
-                shooter = ser["shooter"] if live_ammo else holder   # fixed for the test; takes whoever holds control
-            elif shooter is None:                       # a custom session name carries over; a default one follows the kind
-                prev = ser["shooter"] if ser is not None and ser["kind"] != "ammo" else None
-                shooter = prev if prev and not DEFAULT_SESSION_RE.match(prev) else session_name(holder, kind)
-            if live_ammo or (ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and kind != "ammo"
-                             and ser["shooter"] == shooter and not new_series):
-                series_id = ser["id"]
-                changed = seg["mode"] != mode
-                if changed:
-                    c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
-                    seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
-                else:
-                    seg_id = seg["id"]
-                if kind == "ammo" and label is not None and (ser["label"] or "") != label:
-                    c.execute("UPDATE series SET label=? WHERE id=?", (label or None, series_id))
-                    changed = True
-            else:
-                if seg:
-                    c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
-                if ser is not None and ser["ended_ms"] is None:
-                    c.execute("UPDATE series SET ended_ms=? WHERE id=?", (now, ser["id"]))
-                series_id = self._new_series(c, device_id, kind, shooter, now)
-                if kind == "ammo" and label:
-                    c.execute("UPDATE series SET label=? WHERE id=?", (label, series_id))
-                seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
-                changed = True
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise Forbidden(f"{device_id} is in the match '{locked}': Match Control runs it until the match ends")
+            series_id, seg_id, shooter, changed = self._mode_change(c, device_id, mode, shooter, new_series, label, holder, now)
         if changed:
             self.hub.publish({"type": "mode", "device_id": device_id})
-        return {"segment_id": seg_id, "series_id": series_id, "kind": kind, "mode": mode, "shooter": shooter,
-                "label": self.db.conn().execute("SELECT label FROM series WHERE id=?", (series_id,)).fetchone()[0],
+        return {"segment_id": seg_id, "series_id": series_id, "kind": KIND_OF_MODE.get(mode, "match"), "mode": mode,
+                "shooter": shooter, "label": self.db.conn().execute("SELECT label FROM series WHERE id=?", (series_id,)).fetchone()[0],
                 "started": iso(now)}
+
+    def _set_mode_in(self, c, device_id: str, mode: str, session: str, now: int, new_series: bool = False) -> int:
+        """Match Control's mode change, inside its own transaction (no claim, no lock check). Returns the series id."""
+        series_id, _, _, changed = self._mode_change(c, device_id, mode, session, new_series, None, RANGE_NAME, now)
+        if changed:
+            self.hub.publish({"type": "mode", "device_id": device_id})
+        return series_id
+
+    def _mode_change(self, c, device_id, mode, shooter, new_series, label, holder, now):
+        kind = KIND_OF_MODE.get(mode, "match")
+        seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
+                        (device_id,)).fetchone()
+        ser = self._series_of(c, seg) if seg else None
+        live_ammo = kind == "ammo" and ser is not None and ser["ended_ms"] is None and ser["kind"] == "ammo" and not new_series
+        if kind == "ammo":
+            shooter = ser["shooter"] if live_ammo else holder   # fixed for the test; takes whoever holds control
+        elif shooter is None:                       # a custom session name carries over; a default one follows the kind
+            prev = ser["shooter"] if ser is not None and ser["kind"] != "ammo" else None
+            shooter = prev if prev and not DEFAULT_SESSION_RE.match(prev) else session_name(holder, kind)
+        if live_ammo or (ser is not None and ser["ended_ms"] is None and ser["kind"] == kind and kind != "ammo"
+                         and ser["shooter"] == shooter and not new_series):
+            series_id = ser["id"]
+            changed = seg["mode"] != mode
+            if changed:
+                c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+                seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
+            else:
+                seg_id = seg["id"]
+            if kind == "ammo" and label is not None and (ser["label"] or "") != label:
+                c.execute("UPDATE series SET label=? WHERE id=?", (label or None, series_id))
+                changed = True
+        else:
+            if seg:
+                c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+            if ser is not None and ser["ended_ms"] is None:
+                c.execute("UPDATE series SET ended_ms=? WHERE id=?", (now, ser["id"]))
+            series_id = self._new_series(c, device_id, kind, shooter, now)
+            if kind == "ammo" and label:
+                c.execute("UPDATE series SET label=? WHERE id=?", (label, series_id))
+            seg_id = self._new_segment(c, device_id, mode, shooter, series_id, now)
+            changed = True
+        return series_id, seg_id, shooter, changed
 
     SETTING_LIMITS = {"bull_size": (1, 100), "group_size": (1, 100), "total_practice": (1, 1000), "total_match": (1, 1000)}
     SETTING_KEYS = tuple(SETTING_LIMITS) + ("projectile_mm",)
@@ -776,6 +814,7 @@ class Core:
                 "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "label": view["label"], "series_id": view["series_id"],
                 "settings": self._settings_view(r),
                 "lease": self._lease_view(lease, now, client_id), "view": view,
+                "match": self._match_info(c, did, now),
             })
         return out
 
@@ -797,6 +836,9 @@ class Core:
         """Hide a dead target. Its history stays; if it ever reports again it is back automatically."""
         with self.db.write() as c:
             self._require_target(c, device_id)
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise BadRequest(f"{device_id} is in the match '{locked}'")
             c.execute("UPDATE targets SET removed=1 WHERE device_id=?", (device_id,))
             c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
         self.hub.publish({"type": "targets", "device_id": device_id})
@@ -805,10 +847,22 @@ class Core:
         """A banned target's reports are refused (403) and nothing it sends is stored; unbanning lets it back."""
         with self.db.write() as c:
             self._require_target(c, device_id)
+            locked = self.matches.lock_of(c, device_id) if banned else None
+            if locked:
+                raise BadRequest(f"{device_id} is in the match '{locked}'")
             c.execute("UPDATE targets SET banned=?, removed=0 WHERE device_id=?", (int(bool(banned)), device_id))
             if banned:
                 c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
         self.hub.publish({"type": "targets", "device_id": device_id})
+
+    def _match_info(self, c, device_id: str, now: int):
+        """A target's match clock for its screen. Never allowed to break the target list: on an error the target shows
+        without it (and the error is logged), so scoring screens keep working whatever happens in Match Control."""
+        try:
+            return self.matches.target_info(c, device_id, now)
+        except Exception:
+            log.exception("match info for %s", device_id)
+            return None
 
     def list_series(self, device_id: str, limit: int = 50) -> list:
         limit = max(1, min(int(limit), 500))

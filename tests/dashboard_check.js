@@ -6,7 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
-const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel} = X;
+const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel, matchView, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, commandsPanel, correctionsPanel, tvBoard, tvTargets, tvUrl} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
 const state = (extra) => Object.assign({targets: D.targets, review: null, reviewView: null, seriesList: D.series, gear: false, adv: false, zoom: 'auto'}, extra || {});
@@ -61,7 +61,8 @@ assert(corner(pageOf(sighterT)) && corner(pageOf(practiceT)) && !corner(pageOf(r
 assert(corner(coachView([sighterT])) && !corner(coachView([recordT])));
 
 // --- 8. All Targets card
-const card = coachView([recordT]);
+const card = X.coachCard(recordT);
+assert(coachView([recordT], state()).includes('data-act="tvcfg"'), 'the TV display setup is next to the cards');
 const v = recordT.view;
 assert(card.includes('>' + dec(v.agg.decimal) + '<') && card.includes('>' + v.agg.integer + '<') && card.includes('X ' + v.agg.x), 'total, integer and X count');
 assert(card.indexOf('class="tot"') < card.indexOf('class="rows"'), 'total box is on the left');
@@ -369,4 +370,86 @@ assert(/rcupinstall[^>]*disabled/.test(updatesPanel(Object.assign({}, avail, {pe
 assert(updatesPanel(U({last_check: {available: false, latest: {version: '0.6.24'}}})).includes('This is the newest release'));
 assert(updatesPanel(U({status: {state: 'rolled_back', version: '0.6.25', message: 'did not start', time: 1793000000000}})).includes('class="bad">Update rolled back (v0.6.25): did not start'));
 assert(fwPanel().includes('data-act="rcfwgh"'));
+// Match Control
+assert.deepStrictEqual([0, 999, 1000, 59001, 60000, 4500000, 3599000, 3600000].map(fmtClock), ['0:00', '0:01', '0:01', '1:00', '1:00', '1:15:00', '59:59', '1:00:00']);
+assert.strictEqual(remainingNow({state: 'paused', remaining_ms: 5000, ends_at_ms: 1}, 0), 5000, 'paused: frozen');
+assert(Math.abs(remainingNow({state: 'running', ends_at_ms: Date.now() + 10000}, 0) - 10000) < 100);
+const MCS = (o) => state({mc: Object.assign({status: {logged_in: true, user: 'md', role: 'director', users_defined: true}, matches: [], formats: [], targets: []}, o || {})});
+assert(matchView(state({mc: {status: {logged_in: false, users_defined: false}}})).includes('data-act="mclogin"') && matchView(state({mc: {status: {logged_in: false, users_defined: false}}})).includes('match-user add'));
+assert(matchView(MCS()).includes('data-act="mcnew"') && matchView(MCS()).includes('Design your own match'));
+const roView = matchView(MCS({status: {logged_in: true, user: 'ro', role: 'officer'}}));
+assert(!roView.includes('data-act="mcnew"') && roView.includes('Range officers run matches'), 'officers do not create matches');
+const FMT = {name: 'Quick', edition: 'Test', record_shots: 2, phases: [{kind: 'sight', label: '<b>Sighting</b>', seconds: 60, shots: 0, rule: '7.8', warnings: []},
+  {kind: 'stage', label: 'Stage', seconds: 120, shots: 2, rule: '9.2', warnings: [{at: 30, say: 'Thirty'}]}]};
+const DET = (o) => Object.assign({id: 1, name: '<i>Club</i>', state: 'running', format: FMT, record_shots: 2,
+  clock: {state: 'running', paced: 'spoken', phase: 1, label: 'Stage', kind: 'stage', remaining_ms: 65000, ends_at_ms: Date.now() + 65000, next: null, extra_ms: 0, warnings: []},
+  lanes: [{device_id: 'lane-1', lane: 1, target: 'Lane 1', competitor: '<u>Al</u>', online: true, sighters: 3, record: 1, in_record: false}],
+  flags: [{shot_id: 9, lane: 1, n: 3, stream: 'scored', why: 'more than 2 record shots in stage', miss: false, decimal: 10.4, decision: null}]}, o || {});
+const con = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
+assert(con.includes('&lt;i&gt;Club') && con.includes('&lt;u&gt;Al') && con.includes('&lt;b&gt;Sighting') && !con.includes('<i>Club'), 'escaped');
+assert(con.includes('data-act="mcrecord" data-id="lane-1"') && con.includes('data-mcdec="9"') && con.includes('1:05'));
+assert(con.includes('data-a="pause"') && !con.includes('data-a="resume"') && con.includes('data-a="abort"'));
+assert(!mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('data-mcdec'), 'only directors decide');
+assert(mcConsole({status: {role: 'officer'}, detail: DET({state: 'ready', flags: []}), speak: false}).includes('data-act="mcstart"'));
+assert(mcConsole({status: {role: 'officer'}, detail: DET({state: 'paused', clock: Object.assign({}, DET().clock, {state: 'paused'})}), speak: false}).includes('data-a="resume"'));
+const info = {name: 'Club', competitor: 'Al', lane: 2, state: 'running', label: 'Stage', kind: 'stage', next: 'Changeover', remaining_ms: 61000, shots: 20, in_record: false};
+const mine = Object.assign({}, practiceT, {lease: {mine: true}}), notMine = Object.assign({}, practiceT, {lease: {mine: false}});
+assert(matchBanner(info, mine, state()).includes('data-act="mcmyrecord"') && matchBanner(info, mine, state()).includes('1:01'));
+assert(!matchBanner(info, notMine, state()).includes('mcmyrecord'), 'only whoever holds the lane');
+assert(!matchBanner(Object.assign({}, info, {in_record: true}), mine, state()).includes('mcmyrecord'));
+assert(!matchBanner(Object.assign({}, info, {kind: 'record'}), mine, state()).includes('mcmyrecord'));
+assert(matchBanner(Object.assign({}, info, {state: 'ready'}), mine, state()).includes('Waiting for the start'));
+assert.strictEqual(matchBanner(null, mine, state()), '');
+assert(matchUsersPanel([{username: '<x>', role: 'director'}], '').includes('&lt;x&gt;') && matchUsersPanel([], '').includes('data-act="rcmuadd"'));
+// during a Match Control match the shooter's own Sighter/Record buttons are not offered (the clock switches the target)
+assert.strictEqual(count(infoPanel(Object.assign(asMine(recordT), {match: {state: 'running'}}), recordT.view, 'record', state()), /data-act="mode"/g), 0);
+assert.strictEqual(count(infoPanel(asMine(recordT), recordT.view, 'record', state()), /data-act="mode"/g), 2);
+// officer-paced commands, corrections, sighter decisions
+const HOLD = DET({state: 'holding', clock: Object.assign({}, DET().clock, {state: 'holding', paced: 'officer', label: 'Record', start_say: 'Match firing. <Start>.', prev_end_say: 'End of preparation and sighting. Stop.'})});
+const hp = commandsPanel(HOLD);
+assert(hp.includes('Read now, then press Next') && hp.includes('End of preparation and sighting. Stop. … Match firing. &lt;Start&gt;.') && hp.includes('data-a="go"'));
+const hcon = mcConsole({status: {role: 'officer'}, detail: HOLD, speak: false});
+assert(!hcon.includes('data-a="pause"') && !hcon.includes('data-a="extra"') && hcon.includes('Skip this phase') && !hcon.includes('data-act="mcspeak"'), 'held: only Next / skip / stop; no speech when the officer reads');
+assert(hcon.includes('ask the match director') && !hcon.includes('data-act="mcrestart"'), 'officers cannot restart');
+const dcon = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
+assert(count(dcon, /data-act="mcrestart"/g) === 3 && dcon.includes('id="mcrsel"'));
+assert(correctionsPanel(DET({state: 'done'}), true).includes('reopens a finished match') && !correctionsPanel(DET({state: 'done'}), true).includes('Restart this phase'));
+assert.strictEqual(correctionsPanel(DET({state: 'ready'}), true), '');
+assert(commandsPanel(DET()).includes('id="mcsay"') && commandsPanel(DET()).includes('Given: “Stage”'));
+const sflag = DET({flags: [{shot_id: 7, lane: 1, n: 1, stream: 'sighter', why: 'during set-up', miss: false, decimal: 10.1, decision: null}]});
+const sc = mcConsole({status: {role: 'director'}, detail: sflag, speak: false});
+assert(sc.includes('value="penalty2_first"') && sc.includes('value="miss_first"') && !sc.includes('value="annul"'), 'sighter flags get sighter decisions');
+// TV displays
+assert.strictEqual(tvUrl({kind: 'board', matches: [3, 4]}), '#/tv/board?m=3,4');
+assert.strictEqual(tvUrl({kind: 'board', matches: []}), '#/tv/board');
+assert.strictEqual(tvUrl({kind: 'targets', match: 2, targets: ['lane-1', 'a b']}), '#/tv/targets?m=2&t=lane-1,a%20b');
+const B = {id: 2, name: '<b>League</b>', format_name: 'F', scoring: 'decimal', record_shots: 20, state: 'running', provisional_ranking: true,
+  clock: {state: 'running', label: 'Record', remaining_ms: 61000, next: null},
+  rows: [{place: 1, lane: 2, competitor: '<i>Bob</i>', target: 'Lane 2', device_id: 'lane-2', total: 104.3, x: 3, shots: 10, series: [104.3], last10: [10.1, 10.9], pending: 1},
+         {place: 2, lane: 1, competitor: '', target: 'Lane 1', device_id: 'lane-1', total: 98, x: 0, shots: 10, series: [98], last10: [9.8], pending: 0}]};
+const tb = tvBoard([B]);
+assert(tb.includes('&lt;b&gt;League') && tb.includes('&lt;i&gt;Bob') && !tb.includes('<i>Bob'), 'escaped');
+assert(tb.indexOf('&lt;i&gt;Bob') < tb.indexOf('Lane 1'), 'ordered by place');
+assert(tb.includes('<th>1–10</th><th>11–20</th>') && tb.includes('>104.3<') && tb.includes('10.1 10.9') && tb.includes('10 / 20') && tb.includes('title="shots waiting'));
+assert(tb.includes('data-clock="tv-2"') && tb.includes('1:01') && tb.includes('Provisional'));
+assert(tvBoard([Object.assign({}, B, {scoring: 'integer', rows: [Object.assign({}, B.rows[0], {total: 98, series: [98], last10: [10, 9]})]})]).includes('>98<'), 'integer scoring without decimals');
+assert(tvBoard([]).includes('No current matches'));
+const tt = tvTargets(D.targets, [B], {m: '2'});
+assert(tt.includes('data-clock="tv-2"') && count(tt, /class="card/g) === D.targets.filter(t => ['lane-1', 'lane-2'].includes(t.device_id)).length, 'the match\'s targets');
+assert.strictEqual(count(tvTargets(D.targets, [], {t: 'lane-4'}), /class="card/g), 1, 'a chosen list of targets');
+assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.targets.length, 'all targets');
+// the console says how commands are given and can switch to the other two
+const spk = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
+assert(spk.includes('Commands: Spoken commands') && spk.includes('data-v="officer"') && spk.includes('data-v="auto"') && !spk.includes('data-a="pacing" data-v="spoken"'));
+assert(spk.includes('Turn on sound for spoken commands') && mcConsole({status: {role: 'director'}, detail: DET(), speak: true}).includes('Sound on · mute this device'));
+const offc = mcConsole({status: {role: 'officer'}, detail: HOLD, speak: false});
+assert(offc.includes('data-a="pacing" data-v="spoken"') && offc.includes('data-a="pacing" data-v="auto"') && offc.includes('the clock waits for Next') && !offc.includes('data-act="mcspeak"'));
+const AUTO = DET({clock: Object.assign({}, DET().clock, {paced: 'auto'})});
+const autoc = mcConsole({status: {role: 'director'}, detail: AUTO, speak: false});
+assert(autoc.includes('Commands: Automatic (no commands)') && autoc.includes('nothing is spoken or shown to read') && autoc.includes('None: automatic') &&
+       !autoc.includes('data-act="mcspeak"') && !autoc.includes('id="mcsay"') && !autoc.includes('Given:'), 'automatic means no commands at all');
+// new match: the three choices in order, spoken by default
+const nm = X.mcNew({draft: {lanes: {}}, formats: [], targets: []});
+assert(nm.indexOf('data-v="spoken"') < nm.indexOf('data-v="officer"') && nm.indexOf('data-v="officer"') < nm.indexOf('data-v="auto"'));
+assert(/data-v="spoken" class="sel"/.test(nm) && !/data-v="auto" class="sel"/.test(nm), 'spoken commands is the default');
 console.log('OK');

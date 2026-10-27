@@ -13,14 +13,18 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, Admin
+from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, Admin
+from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_firmware
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart)|/flags/(\d{1,12}))?$")
+MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
+MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
 ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command)$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
@@ -76,6 +80,104 @@ class Handler(BaseHTTPRequestHandler):
         if origin:
             return urlparse(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
         return True
+
+    def _match_token(self):
+        try:
+            c = SimpleCookie(self.headers.get("Cookie", ""))
+        except CookieError:
+            return None
+        return c[MATCH_COOKIE].value if MATCH_COOKIE in c else None
+
+    def _match(self, path: str, method: str) -> None:
+        """Match Control. Directors (and the Range Control admin) create formats and matches and decide flagged
+        shots; range officers run the clock. Same cross-site guard as Range Control."""
+        admin: Admin = self.server.admin
+        core: Core = self.server.core
+        mc = core.matches
+        if not self._admin_request_ok():
+            if method == "POST":
+                self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
+            return self._send(403, {"error": "Match Control requests must come from the FeT Monitor page"})
+        payload = {}
+        if method == "POST":
+            payload = self._read_json()
+            if not isinstance(payload, dict):
+                raise BadRequest("body must be an object")
+        sess = admin.match_session(self._match_token(), mc.user)
+        if path == "/api/v1/match/status" and method == "GET":
+            return self._send(200, {"logged_in": bool(sess), **(sess or {}), "users_defined": bool(mc.users()),
+                                    "admin_password_set": admin.password_set()})
+        if path == "/api/v1/match/login" and method == "POST":
+            status, value = admin.login_match(payload.get("username"), payload.get("password"), self.client_address[0], mc.user)
+            if status == "ok":
+                cookie = f"{MATCH_COOKIE}={value}; Path={MATCH_COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age={ADMIN_MAX_S}"
+                return self._send(200, {"logged_in": True}, headers=[("Set-Cookie", cookie)])
+            if status == "locked":
+                return self._send(429, {"error": "too many wrong passwords", "retry_after": value}, headers=[("Retry-After", str(value))])
+            log.warning("Match Control: failed login for %r from %s", str(payload.get("username"))[:32], self.client_address[0])
+            return self._send(401, {"error": "wrong username or password"})
+        if path == "/api/v1/match/logout" and method == "POST":
+            admin.logout(self._match_token())
+            return self._send(200, {"logged_in": False},
+                              headers=[("Set-Cookie", f"{MATCH_COOKIE}=; Path={MATCH_COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0")])
+        if not sess:
+            return self._send(401, {"error": "log in to Match Control"})
+        who, role = sess["user"], sess["role"]
+        director = role in ("director", "admin")
+
+        def need_director():
+            if not director:
+                raise Forbidden("only a match director can do that")
+        try:
+            if path == "/api/v1/match/formats" and method == "GET":
+                return self._send(200, {"formats": mc.formats()})
+            if path == "/api/v1/match/formats" and method == "POST":
+                need_director()
+                return self._send(200, mc.save_format(payload.get("format"), who))
+            fd = MATCH_FORMAT_DELETE_RE.match(path)
+            if fd and method == "POST":
+                need_director()
+                if not mc.delete_format(fd.group(1)):
+                    raise NotFound("no such custom format")
+                return self._send(200, {"ok": True})
+            if path == "/api/v1/match/targets" and method == "GET":
+                return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "online": t["online"],
+                                                     "in_match": bool(t["match"]), "lease": t["lease"]}
+                                                    for t in core.list_targets(None)]})
+            if path == "/api/v1/match/matches" and method == "GET":
+                return self._send(200, {"matches": mc.list()})
+            if path == "/api/v1/match/matches" and method == "POST":
+                need_director()
+                mid = mc.create(payload.get("name"), payload.get("format_id"), payload.get("lanes"), who, payload.get("override"),
+                                payload.get("paced") or "spoken")
+                log.info("Match Control: %s created match %d", who, mid)
+                return self._send(200, mc.detail(mid))
+            mm = MATCH_RE.match(path)
+            if mm:
+                mid = int(mm.group(1))
+                if method == "GET" and not mm.group(2) and not mm.group(3):
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "start":
+                    mc.start(mid, who)
+                    log.info("Match Control: %s started match %d", who, mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "command":
+                    mc.command(mid, str(payload.get("action", "")), who, payload.get("seconds"), payload.get("device_id"),
+                               payload.get("paced"))
+                    log.info("Match Control: %s %s match %d", who, payload.get("action"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "restart":
+                    need_director()                        # mistakes happen: the match director can go back
+                    mc.restart(mid, payload.get("phase"), who)
+                    log.warning("Match Control: %s restarted match %d at phase %s", who, mid, payload.get("phase"))
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(3):
+                    need_director()
+                    mc.decide(mid, int(mm.group(3)), str(payload.get("decision", "")), who)
+                    return self._send(200, mc.detail(mid))
+        except MatchError as exc:
+            return self._send(400, {"error": str(exc)})
+        self._send(404, {"error": "not found"})
 
     def _firmware_upload(self) -> None:
         """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big."""
@@ -170,6 +272,23 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, view)
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
+        if path == "/api/v1/admin/match-users" and method == "GET":
+            return self._send(200, {"users": core.matches.users()})
+        if path == "/api/v1/admin/match-users" and method == "POST":
+            name = payload.get("username")
+            try:
+                core.matches.set_user(name, payload.get("role"), payload.get("password") or None)
+            except MatchError as exc:
+                return self._send(400, {"error": str(exc)})
+            admin.drop_user(name)                      # a new role or password ends that user's sessions
+            log.info("Range Control from %s: Match Control user %s set (%s)", self.client_address[0], name, payload.get("role"))
+            return self._send(200, {"users": core.matches.users()})
+        mu = MATCH_USER_DELETE_RE.match(path)
+        if mu and method == "POST":
+            if not core.matches.remove_user(mu.group(1)):
+                raise NotFound("no such user")
+            admin.drop_user(mu.group(1))
+            return self._send(200, {"users": core.matches.users()})
         if path == "/api/v1/admin/updates" and method == "GET":
             return self._send(200, {"current": __version__, **self.server.updates.status()})
         if path == "/api/v1/admin/updates/check" and method == "POST":
@@ -304,6 +423,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._page()
         if url.path.startswith("/api/v1/admin/"):
             return self._admin(url.path, "GET")
+        if url.path.startswith("/api/v1/match/"):
+            return self._match(url.path, "GET")
         dm = DEVICE_FW_RE.match(url.path)
         if dm:
             return self._device_firmware(dm.group(1))
@@ -312,6 +433,12 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/v1/health":
             return self._send(200, {"ok": True, "version": __version__, "time": iso(core.now_ms()),
                                     "event_conflicts": core.conflict_count()})
+        if url.path == "/api/v1/board":                # public scoreboard (read only, like the target pages)
+            try:
+                ids = [int(x) for x in q.get("m", [""])[0].split(",") if x.strip()]
+            except ValueError:
+                raise BadRequest("m must be match numbers, e.g. m=3,4")
+            return self._send(200, {"matches": core.matches.board(ids), "server_time_ms": core.now_ms()})
         if url.path == "/api/v1/targets":
             return self._send(200, {"targets": core.list_targets(q.get("client_id", [None])[0])})
         m = TARGET_RE.match(url.path)
@@ -357,6 +484,8 @@ class Handler(BaseHTTPRequestHandler):
         ip = self.client_address[0]
         if url.path.startswith("/api/v1/admin/"):
             return self._admin(url.path, "POST")
+        if url.path.startswith("/api/v1/match/"):
+            return self._match(url.path, "POST")
         if url.path in ("/api/v1/events", "/api/v1/heartbeat"):
             if not self._device_auth():
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
@@ -366,11 +495,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
-        if m and m.group(2) in ("control", "control/release", "mode", "settings"):
+        if m and m.group(2) in ("control", "control/release", "mode", "settings", "start-record"):
             payload = self._read_json()
             if not isinstance(payload, dict):
                 raise BadRequest("body must be an object")
             did, what = m.group(1), m.group(2)
+            if what == "start-record":                 # NRA-style stage: the shooter (holding the lane) starts record
+                try:
+                    return self._send(200, {"match": core.shooter_start_record(did, payload.get("client_id"))})
+                except MatchError as exc:
+                    return self._send(400, {"error": str(exc)})
             if what == "control":
                 res = core.acquire_control(did, payload.get("client_id"), payload.get("name"), bool(payload.get("takeover")))
                 return self._send(200 if res["granted"] else 409, res)

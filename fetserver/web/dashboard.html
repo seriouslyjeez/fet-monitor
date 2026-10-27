@@ -65,6 +65,21 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
 .notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
 #ver:hover{opacity:1;color:var(--fg)}.fwres{margin:6px 0;padding-left:18px;font-size:13px}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
+/* match control */
+.mc table.t td,.mc table.t th{text-align:left}.cmdtext{font-size:22px;font-weight:700;margin:6px 0;min-height:1em}.cmdtext:empty{display:none}
+button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#111;border-radius:8px;padding:6px 10px}.mcclock{font-size:64px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}.mcclock.paused{color:var(--mut)}
+.mcphase{font-size:20px;font-weight:700}.mcwarn{color:var(--bad)}.mcbar{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.mcbanner{background:var(--hi);border:2px solid var(--accent);border-radius:10px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.mcbanner .mcclock{font-size:44px}.phlist{font-size:13px}.phlist td{height:auto}.phlist tr.cur td{background:var(--hi);font-weight:700}
+.mcform input[type=text],.mcform input[type=number],.mcform select{max-width:100%}.mcform .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
+/* TV displays: no header, big type */
+body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.tv #ver{display:none}
+.tvclock{display:flex;justify-content:space-between;align-items:center;gap:12px;background:var(--card);border:2px solid var(--accent);border-radius:12px;padding:8px 16px;margin-bottom:10px}
+.tvclock .mcclock{font-size:72px}.tvclock .mcphase{font-size:30px}.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.board{margin-bottom:22px}.board h2{margin:0 0 6px;font-size:26px}.board table{width:100%;border-collapse:collapse;font-size:20px;font-variant-numeric:tabular-nums}
+.board th{font-size:14px;color:var(--mut);text-align:left;padding:4px 8px;border-bottom:2px solid var(--line)}.board td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+.board td.tot{font-weight:800;font-size:24px}.board td.l10{font-size:15px;color:var(--mut)}.board tr.top td{background:var(--hi)}.board .ser{font-size:15px}
+.tvcfg label{display:block;margin:2px 0}.tvcfg .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -72,7 +87,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
@@ -225,9 +240,66 @@ function coachCard(t) {
     '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
     '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div></a>';
 }
-function coachView(targets) {
+function coachView(targets, S) {
   if (!targets.length) return '<p class="mut">No targets have reported yet. Power one on and check its WiFi setup.</p>';
-  return '<p class="mut">' + targets.filter(t => t.online).length + ' of ' + targets.length + ' targets online</p><div class="grid">' + targets.map(coachCard).join('') + '</div>';
+  return '<div class="row"><p class="mut">' + targets.filter(t => t.online).length + ' of ' + targets.length + ' targets online</p>' +
+    '<button data-act="tvcfg">' + (S && S.tvcfg ? 'Close TV display setup' : 'TV display…') + '</button></div>' +
+    (S && S.tvcfg ? tvConfig(targets, S) : '') + '<div class="grid">' + targets.map(coachCard).join('') + '</div>';
+}
+// ---- TV displays (#/tv/targets?m=<match>&t=<id,id> and #/tv/board?m=<match,match>) ----
+function tvUrl(cfg) {
+  const q = [];
+  if (cfg.kind === 'board') { if (cfg.matches && cfg.matches.length) q.push('m=' + cfg.matches.join(',')); return '#/tv/board' + (q.length ? '?' + q.join('&') : ''); }
+  if (cfg.match) q.push('m=' + cfg.match);
+  if (cfg.targets && cfg.targets.length) q.push('t=' + cfg.targets.map(encodeURIComponent).join(','));
+  return '#/tv/targets' + (q.length ? '?' + q.join('&') : '');
+}
+function tvConfig(targets, S) {
+  const cfg = S.tvcfg, boards = S.board || [], kind = cfg.kind || 'targets';
+  let h = '<div class="panel tvcfg"><h3>TV display</h3><div class="seg"><button data-act="tvkind" data-k="targets" class="' + (kind === 'targets' ? 'sel' : '') + '">Targets and match clock</button>' +
+    '<button data-act="tvkind" data-k="board" class="' + (kind === 'board' ? 'sel' : '') + '">Scoreboard (scrolling list)</button></div><div class="cols" style="margin-top:8px">';
+  if (kind === 'targets') {
+    h += '<div><b>Match clock</b>' + '<label><input type="radio" name="tvm" data-act="tvmatch" data-id=""' + (!cfg.match ? ' checked' : '') + '> none</label>' +
+      boards.map(b => '<label><input type="radio" name="tvm" data-act="tvmatch" data-id="' + b.id + '"' + (+cfg.match === b.id ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') + '</div>' +
+      '<div><b>Targets</b> <span class="mut">(none ticked = all, or the match\'s targets)</span>' + targets.map(t => '<label><input type="checkbox" data-act="tvtarget" data-id="' + esc(t.device_id) + '"' +
+        ((cfg.targets || []).includes(t.device_id) ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('') + '</div>';
+  } else {
+    h += '<div><b>Matches</b> <span class="mut">(none ticked = all current matches)</span>' + (boards.length ? boards.map(b => '<label><input type="checkbox" data-act="tvbm" data-id="' + b.id + '"' +
+      ((cfg.matches || []).includes(b.id) ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') : '<p class="mut">No current matches.</p>') + '</div>';
+  }
+  const url = tvUrl(Object.assign({kind: kind}, cfg));
+  return h + '</div><div class="mcbar"><a class="pri" style="padding:8px 14px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener">Open the display</a>' +
+    '<span class="mut">Bookmark that page on the TV: it remembers the choice. Address: ' + esc(location.origin + '/' + url) + '</span></div></div>';
+}
+function tvClock(b) {
+  if (!b) return '';
+  const c = b.clock, live = ['running', 'paused', 'holding'].includes(b.state);
+  const label = b.state === 'ready' ? 'Starting soon' : b.state === 'done' ? 'Finished' : b.state === 'aborted' ? 'Stopped' :
+    (b.state === 'paused' ? 'Paused · ' : b.state === 'holding' ? 'Waiting for START · ' : '') + c.label;
+  return '<div class="tvclock"><div><div class="mut">' + esc(b.name) + ' · ' + esc(b.format_name) + '</div><div class="mcphase">' + esc(label || '') + '</div>' +
+    (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + '</div><div class="mcclock" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>';
+}
+function tvTargets(targets, boards, params) {
+  const m = params.m ? boards.find(b => b.id === +params.m) : null;
+  let show = targets;
+  if (params.t) { const ids = params.t.split(',').map(decodeURIComponent); show = targets.filter(t => ids.includes(t.device_id)); }
+  else if (m) { const ids = m.rows.map(r => r.device_id); show = targets.filter(t => ids.includes(t.device_id)); }
+  return tvClock(m) + '<div class="tvgrid">' + show.map(coachCard).join('') + '</div>' + (show.length ? '' : '<p class="mut">No targets to show.</p>');
+}
+function tvBoard(boards) {
+  if (!boards.length) return '<p class="mut" style="font-size:24px">No current matches.</p>';
+  return boards.map(b => {
+    const maxSeries = Math.max(1, Math.ceil(b.record_shots / 10)), fmt = v => b.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
+    const live = ['running', 'paused', 'holding'].includes(b.state);
+    return '<div class="board">' + tvClock(b) +
+      '<table><tr><th>Place</th><th>FP</th><th>Competitor</th><th>Total</th><th>' + (b.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
+      Array.from({length: maxSeries}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
+      b.rows.map(r => '<tr class="' + (r.place === 1 && r.shots ? 'top' : '') + '"><td>' + r.place + '</td><td>' + r.lane + '</td><td>' + esc(r.competitor || r.target) + (r.pending ? ' <span class="mut" title="shots waiting for the match director">*</span>' : '') + '</td>' +
+        '<td class="tot">' + fmt(r.total) + '</td><td>' + r.x + '</td>' +
+        Array.from({length: maxSeries}, (_, i) => '<td class="ser">' + (r.series[i] != null ? fmt(r.series[i]) : '') + '</td>').join('') +
+        '<td class="l10">' + r.last10.map(fmt).join(' ') + '</td><td>' + r.shots + ' / ' + b.record_shots + '</td></tr>').join('') + '</table>' +
+      (b.provisional_ranking ? '<div class="mut">Provisional: ties are split by inner tens, then 10-shot series from the last one. * = shots waiting for the match director.</div>' : '') + '</div>';
+  }).join('');
 }
 
 // ---- Single target ----
@@ -294,7 +366,7 @@ function zoomBar(zoom) {
 function infoPanel(t, v, mode, S) {
   const reviewing = !!S.review, L = t.lease;
   let ctl = '';
-  if (!reviewing && t.kind === 'match') {
+  if (!reviewing && t.kind === 'match' && !t.match) {          // in a Match Control match the clock switches the target
     ctl = '<div class="modes">' + ['sighter', 'record'].map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '"' + (L.mine ? '' : ' disabled') + '>' + MODES[m] + '</button>').join('') + '</div>' +
           (L.mine ? '' : '<div class="mut">Open the gear and take control to switch.</div>');
   }
@@ -313,7 +385,8 @@ function shooterView(t, S) {
     (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
     ' <button data-act="rback">Back to live</button></div>' : '';
   const pager = reviewing ? reviewPager(v, ammo) : '';
-  return '<div class="shoot"><div class="left">' + zoomBar(S.zoom) +
+  const mb = reviewing ? '' : matchBanner(t.match, t, S);
+  return '<div class="shoot"><div class="left">' + mb + zoomBar(S.zoom) +
     faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + pager + '</div>' +
     '<div class="right">' + banner + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v) : shotsTable(v) + lastPanel(v)) + '</div></div>';
 }
@@ -511,7 +584,178 @@ function rangeView(S) {
       '<div class="bulk"><button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' +
       esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + ') on ' + nsel + ' selected</button><span class="mut">e.g. to go back to an older version</span></div>' :
       '<p class="mut">No images uploaded.</p>') + '</div>';
-  return h + updatesPanel(rc.updates) + '</div>';
+  return h + matchUsersPanel(rc.musers || [], rc.muMsg) + updatesPanel(rc.updates) + '</div>';
+}
+
+// ---- Match Control ----
+// The server owns the clock; pages show it from ends_at_ms (server time) and the offset between the clocks.
+const PHASE_KIND = {setup: 'Set-up (no firing)', sight: 'Sighting', pause: 'Pause: targets to record', record: 'Record',
+  stage: 'Sighting + record (shooter starts record)', changeover: 'Changeover (no firing)'};
+const PACE = {spoken: ['Spoken commands', 'the console speaks every command and time warning (turn its sound on)'],
+  officer: ['Range officer reads them', 'the clock waits for Next at every phase while the commands on screen are read'],
+  auto: ['Automatic (no commands)', 'phases follow each other; nothing is spoken or shown to read']};
+const DECISION = {count: 'Count it', annul: 'Annul (not counted)', miss: 'Score as a miss', penalty2: 'Count, 2 points off'};
+const SIGHTER_DECISION = {ignore: 'No penalty (it was a sighter)', penalty2_first: '2 points off the first record shot', miss_first: 'First record shot scored as a miss'};
+const decisionsFor = f => (f.stream === 'scored' ? DECISION : SIGHTER_DECISION);
+function fmtClock(ms) {
+  const t = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(t / 3600), m = Math.floor(t % 3600 / 60), sec = t % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
+}
+const mins = secs => (secs % 60 ? (secs / 60).toFixed(1) : String(secs / 60)) + ' min';
+function remainingNow(clock, offset) {                 // ms left in the current phase, seen from this device
+  if (!clock) return 0;
+  if (clock.state !== 'running' || clock.ends_at_ms == null) return clock.remaining_ms || 0;
+  return clock.ends_at_ms - (Date.now() + (offset || 0));
+}
+function matchBanner(info, t, S) {                      // on a shooter's own screen
+  if (!info) return '';
+  const canRecord = info.kind === 'stage' && info.state === 'running' && !info.in_record && t.lease && t.lease.mine;
+  const label = info.state === 'ready' ? 'Waiting for the start' : info.state === 'paused' ? 'Paused: ' + info.label :
+    info.state === 'holding' ? 'Waiting for START: ' + info.label : info.label;
+  return '<div class="mcbanner"><div><div class="mut">' + esc(info.name) + (info.competitor ? ' · ' + esc(info.competitor) : '') + ' · firing point ' + esc(info.lane) + '</div>' +
+    '<div class="mcphase">' + esc(label || '') + '</div>' + (info.next ? '<div class="mut">Next: ' + esc(info.next) + '</div>' : '') +
+    (info.kind === 'stage' ? '<div class="mut">' + (info.in_record ? 'Record shots: ' + esc(info.shots) + ' in this stage' : 'Sighting. Start record when ready: no sighters after that.') + '</div>' : '') +
+    '</div><div style="text-align:right"><div class="mcclock' + (info.state === 'paused' ? ' paused' : '') + '" data-clock="target">' + (info.state === 'ready' ? '–:––' : fmtClock(info.remaining_ms)) + '</div>' +
+    (canRecord ? '<button class="pri" data-act="mcmyrecord">Start record</button>' : '') + '</div></div>';
+}
+function mcLogin(mc) {
+  return '<div class="panel"><span class="title">Match Control</span><p>Log in with your Match Control user name and password. ' +
+    'The Range Control administrator can use <b>admin</b> and the Range Control password.</p>' +
+    '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input id="mcuser" autocomplete="username" placeholder="User name" maxlength="32">' +
+    '<input id="mcpw" type="password" autocomplete="current-password" placeholder="Password"><button class="pri" data-act="mclogin">Log in</button></div>' +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    (mc.status && !mc.status.users_defined ? '<p class="mut">No Match Control users yet: add them in Range Control (Match Control users), or on the Pi with <code>python3 -m fetserver match-user add NAME --role director</code>.</p>' : '') +
+    '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div>';
+}
+const fmtLine = f => esc(f.name) + (f.builtin ? '' : ' <span class="mut">(custom)</span>');
+function phaseTable(fmt, cur, editable, times) {
+  return '<table class="t phlist"><tr><th>#</th><th>Phase</th><th>Kind</th><th>Time</th><th>Shots</th><th>Rule</th></tr>' + fmt.phases.map((p, i) =>
+    '<tr class="' + (i === cur ? 'cur' : '') + '"><td>' + (i + 1) + '</td><td>' + esc(p.label) + '</td><td>' + esc(PHASE_KIND[p.kind] || p.kind) + '</td><td>' +
+    (editable ? '<input type="number" min="0.5" max="240" step="0.5" style="width:70px" data-mct="' + i + '" value="' + esc(((times && times[i] != null ? times[i] : p.seconds) / 60)) + '"> min' : esc(mins(p.seconds))) +
+    '</td><td>' + (p.shots || '') + '</td><td class="mut">' + esc(p.rule || '') + '</td></tr>').join('') + '</table>';
+}
+function mcNew(mc) {
+  const d = mc.draft || {}, f = (mc.formats || []).find(x => x.id === d.format_id) || null, books = {};
+  (mc.formats || []).forEach(x => { (books[x.rulebook] = books[x.rulebook] || []).push(x); });
+  const lanes = mc.targets || [];
+  let h = '<div class="panel mcform"><div class="row"><span class="title">New match</span><button data-act="mcback">Back</button></div><div class="grid">' +
+    '<label for="mcname">Name</label><input type="text" id="mcname" data-mcd="name" maxlength="80" value="' + esc(d.name || '') + '" placeholder="e.g. Club league, round 3">' +
+    '<label for="mcfmt">Format</label><select id="mcfmt" data-mcd="format_id"><option value="">Choose…</option>' +
+    Object.keys(books).map(b => '<optgroup label="' + esc(b) + '">' + books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</optgroup>').join('') +
+    '</select></div>';
+  if (f) h += '<p class="mut">' + esc(f.edition || '') + (f.notes ? ' · ' + esc(f.notes) : '') + ' · ' + esc(f.scoring) + ' scoring</p>' + phaseTable(f, -1, true, d.times) +
+    '<p class="mut">Times come from the rulebook; change one only where the rules allow it (it is marked as modified).</p>';
+  h += '<h3 style="margin-top:12px">Targets and competitors</h3>' + (lanes.length ? '<table class="t"><tr><th></th><th>Target</th><th>Competitor</th></tr>' + lanes.map(t => {
+    const ln = (d.lanes || {})[t.device_id] || {};
+    return '<tr><td><input type="checkbox" data-mcl="' + esc(t.device_id) + '"' + (ln.on ? ' checked' : '') + (t.in_match ? ' disabled' : '') + ' aria-label="Use ' + esc(t.name) + '"></td>' +
+      '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.in_match ? ' <span class="mut">(in a match)</span>' : '') + '</td>' +
+      '<td><input type="text" maxlength="60" data-mcc="' + esc(t.device_id) + '" value="' + esc(ln.competitor || '') + '" placeholder="optional"></td></tr>';
+  }).join('') + '</table>' : '<p class="mut">No targets.</p>');
+  const pc = d.paced || 'spoken';
+  h += '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + ['spoken', 'officer', 'auto'].map(k =>
+    '<button data-act="mcpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' + esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>';
+  return h + '<div class="mcbar"><button class="pri" data-act="mccreate">Create match</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
+}
+function mcFormatEditor(mc) {
+  const f = mc.fdraft || {name: '', scoring: 'decimal', team_size: 4, phases: []};
+  const kinds = ['setup', 'sight', 'pause', 'record', 'stage', 'changeover'], positions = ['', 'standing', 'prone', 'kneeling', 'sitting'];
+  return '<div class="panel mcform"><div class="row"><span class="title">Design your own match</span><button data-act="mcback">Back</button></div><div class="grid">' +
+    '<label>Name</label><input type="text" data-mcf="name" maxlength="80" value="' + esc(f.name) + '">' +
+    '<label>Scoring</label><select data-mcf="scoring">' + ['decimal', 'integer'].map(x => '<option' + (f.scoring === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' +
+    '<label>Team size</label><input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '"></div>' +
+    '<table class="t phlist" style="margin-top:8px"><tr><th>#</th><th>Kind</th><th>Label</th><th>Min</th><th>Shots</th><th>Position</th><th>Warnings (min before end)</th><th></th></tr>' +
+    f.phases.map((p, i) => '<tr><td>' + (i + 1) + '</td><td><select data-mcp="' + i + ':kind">' + kinds.map(k => '<option value="' + k + '"' + (p.kind === k ? ' selected' : '') + '>' + esc(PHASE_KIND[k]) + '</option>').join('') + '</select></td>' +
+      '<td><input type="text" maxlength="80" data-mcp="' + i + ':label" value="' + esc(p.label || '') + '"></td>' +
+      '<td><input type="number" min="0.5" step="0.5" max="240" style="width:64px" data-mcp="' + i + ':minutes" value="' + esc(p.minutes != null ? p.minutes : '') + '"></td>' +
+      '<td><input type="number" min="0" max="200" style="width:56px" data-mcp="' + i + ':shots" value="' + esc(p.shots || '') + '"' + (p.kind === 'record' || p.kind === 'stage' ? '' : ' disabled') + '></td>' +
+      '<td><select data-mcp="' + i + ':position">' + positions.map(x => '<option value="' + x + '"' + ((p.position || '') === x ? ' selected' : '') + '>' + (x || '–') + '</option>').join('') + '</select></td>' +
+      '<td><input type="text" maxlength="40" style="width:110px" data-mcp="' + i + ':warn" value="' + esc(p.warn || '') + '" placeholder="e.g. 5, 2"></td>' +
+      '<td><button data-act="mcprm" data-i="' + i + '" aria-label="Remove phase">✕</button></td></tr>').join('') + '</table>' +
+    '<div class="mcbar"><button data-act="mcpadd">Add phase</button><button class="pri" data-act="mcfsave">Save format</button></div>' +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    '<p class="mut">Sighting, Record and Changeover follow each other like the rulebooks: add a Pause between Sighting and Record if the targets need a moment to switch. ' +
+    '"Sighting + record" is NRA style: one clock, the shooter starts record. No target-change time is needed with electronic targets.</p></div>';
+}
+function mcList(mc) {
+  const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
+  const custom = (mc.formats || []).filter(f => !f.builtin);
+  return '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') <button data-act="mclogout">Log out</button></span></div>' +
+    (director ? '<div class="mcbar"><button class="pri" data-act="mcnew">New match</button><button data-act="mcfnew">Design your own match</button></div>' : '<p class="mut">Range officers run matches a match director has created.</p>') +
+    '<h3>Matches</h3>' + ((mc.matches || []).length ? '<table class="t"><tr><th>Match</th><th>Format</th><th>State</th><th></th></tr>' + mc.matches.map(m =>
+      '<tr><td>' + esc(m.name) + '</td><td class="mut">' + esc(m.format_name) + '</td><td>' + esc(m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '') + '</td>' +
+      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button></td></tr>').join('') + '</table>' : '<p class="mut">No matches yet.</p>') +
+    (director && custom.length ? '<h3>Your formats</h3><table class="t">' + custom.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + f.phases.length + ' phases</td>' +
+      '<td><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button> <button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></td></tr>').join('') + '</table>' : '') + '</div>';
+}
+function mcConsole(mc) {
+  const d = mc.detail;
+  if (!d) return '<div class="panel"><p class="mut">Loading…</p></div>';
+  const c = d.clock, st = d.state, director = mc.status.role === 'director' || mc.status.role === 'admin';
+  const live = st === 'running' || st === 'paused' || st === 'holding', officer = c.paced === 'officer';
+  let h = '<div class="panel"><div class="row"><span class="title">' + esc(d.name) + '</span><button data-act="mcback">All matches</button></div>' +
+    '<div class="mut">' + [esc(d.format.name) + (d.format.modified ? ' <b>(times modified)</b>' : ''), esc(d.format.edition || ''), d.record_shots + ' record shots'].filter(Boolean).join(' · ') + '</div>' +
+    '<div class="row" style="align-items:flex-end;margin-top:8px"><div><div class="mcphase">' + esc(st === 'ready' ? 'Ready to start' : st === 'done' ? 'Match finished' : st === 'aborted' ? 'Match stopped' : (st === 'paused' ? 'PAUSED · ' : st === 'holding' ? 'Waiting for START · ' : '') + c.label) + '</div>' +
+    (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (live ? '<div class="mut">' + esc(PHASE_KIND[c.kind] || '') + (c.extra_ms ? ' · +' + Math.round(c.extra_ms / 1000) + ' s extra' : '') + '</div>' : '') +
+    (st !== 'done' && st !== 'aborted' ? '<div class="mut" style="margin-top:4px"><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b> · ' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') +
+      ' · switch to ' + ['spoken', 'officer', 'auto'].filter(k => k !== c.paced).map(k => '<button data-act="mccmd" data-a="pacing" data-v="' + k + '">' + esc(PACE[k][0]) + '</button>').join(' ') + '</div>' : '') + '</div>' +
+    '<div class="mcclock' + (st === 'paused' ? ' paused' : '') + '" data-clock="console">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>' +
+    '<div class="mcbar">' + (st === 'ready' ? '<button class="pri" data-act="mcstart">Start match</button>' : '') +
+    (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button>' : '') + (st === 'paused' ? '<button class="pri" data-act="mccmd" data-a="resume">Resume clock</button>' : '') +
+    (st === 'running' || st === 'paused' ? '<button data-act="mccmd" data-a="extra" data-s="60">+1 min</button><button data-act="mccmd" data-a="extra" data-s="300">+5 min</button>' : '') +
+    (live ? '<button data-act="mccmd" data-a="next">' + (st === 'holding' ? 'Skip this phase' : 'End this phase now') + '</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
+    (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
+      : '<button class="pri" data-act="mcspeak">Turn on sound for spoken commands</button>') : '') + '</div></div>' +
+    commandsPanel(d) + correctionsPanel(d, director);
+  h += '<div class="panel"><h3>Firing points</h3><table class="t"><tr><th>FP</th><th>Target</th><th>Competitor</th><th>Sighters</th><th>Record</th><th></th></tr>' + d.lanes.map(l =>
+    '<tr><td>' + l.lane + '</td><td><span class="dot ' + (l.online ? 'on' : '') + '"></span>' + esc(l.target) + '</td><td>' + esc(l.competitor || '–') + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td>' +
+    '<td>' + (live && c.kind === 'stage' ? (l.in_record ? '<span class="mut">in record</span>' : '<button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>') : '') + '</td></tr>').join('') + '</table></div>';
+  h += '<div class="panel"><h3>Flagged shots' + (d.flags.length ? ' (' + d.flags.length + ')' : '') + '</h3>' + (d.flags.length ? '<table class="t"><tr><th>FP</th><th>Shot</th><th>Value</th><th>Why</th><th>Decision</th></tr>' + d.flags.map(f =>
+    '<tr><td>' + f.lane + '</td><td>' + (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + '</td><td>' + (f.miss ? 'miss' : dec(f.decimal)) + '</td><td>' + esc(f.why) + '</td><td>' +
+    (director ? '<select data-mcdec="' + f.shot_id + '"><option value="undecided">Undecided' + (f.stream === 'scored' ? ' (not counted)' : '') + '</option>' +
+      Object.keys(decisionsFor(f)).map(k => '<option value="' + k + '"' + (f.decision === k ? ' selected' : '') + '>' + esc(decisionsFor(f)[k]) + '</option>').join('') + '</select>'
+      : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>').join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
+  return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
+}
+function commandsPanel(d) {                     // what the range officer says now (and, when they read them, the Next button)
+  const c = d.clock, st = d.state;
+  if (!(st === 'running' || st === 'paused' || st === 'holding')) return '';
+  const officer = c.paced === 'officer';
+  if (c.paced === 'auto' && st !== 'holding') return '<div class="panel cmds"><h3>Commands</h3><p class="mut">None: automatic, the phases follow each other without commands.</p></div>';
+  if (st === 'holding') {
+    const words = [c.prev_end_say, c.start_say].filter(Boolean).join(' … ');
+    return '<div class="panel cmds"><h3>Read now, then press Next</h3><div class="cmdtext">' + esc(words || c.label + '. Start.') + '</div>' +
+      '<div class="mcbar"><button class="pri big" data-act="mccmd" data-a="go">Next: START ' + esc(c.label) + '</button></div></div>';
+  }
+  const warn = (c.warnings || []).map(w => esc(fmtClock(w.at * 1000)) + ' left: “' + esc(w.say) + '”').join(' · ');
+  return '<div class="panel cmds"><h3>Commands' + (officer ? ' (read by the range officer)' : ' (spoken by the console)') + '</h3>' +
+    '<div class="mut">Given: “' + esc(c.start_say || c.label) + '”</div>' + (warn ? '<div class="mut">Coming: ' + warn + (c.end_say ? ' · at 0:00 “' + esc(c.end_say) + '”' : '') + '</div>' : '') +
+    '<div class="cmdtext" id="mcsay"></div></div>';
+}
+function correctionsPanel(d, director) {        // mistakes happen: the match director can go back
+  if (d.state === 'ready') return '';
+  if (!director) return '<div class="panel"><h3>Corrections</h3><p class="mut">To restart a phase or the match, ask the match director.</p></div>';
+  const cur = d.clock.phase;
+  return '<div class="panel"><h3>Corrections</h3><div class="mcbar">' +
+    (cur >= 0 && d.state !== 'done' && d.state !== 'aborted' ? '<button data-act="mcrestart" data-p="' + cur + '">Restart this phase</button>' : '') +
+    '<select id="mcrsel" aria-label="Phase to restart from">' + d.format.phases.map((p, i) => '<option value="' + i + '"' + (i === cur ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(p.label) + '</option>').join('') + '</select>' +
+    '<button data-act="mcrestart" data-sel="1">Restart from this phase</button><button class="danger" data-act="mcrestart" data-p="0">Restart the match from the beginning</button></div>' +
+    '<p class="mut">Shots already fired in the parts you restart are kept and listed under Flagged shots for your decision.' +
+    (d.state === 'done' || d.state === 'aborted' ? ' This also reopens a finished match.' : '') + '</p></div>';
+}
+function matchView(S) {
+  const mc = S.mc || {};
+  const inner = !mc.status ? '<div class="panel"><p class="mut">Loading…</p></div>' : !mc.status.logged_in ? mcLogin(mc) :
+    mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) : mcList(mc);
+  return '<div class="mc">' + inner + '</div>';
+}
+function matchUsersPanel(users, msg) {          // Range Control: who may use Match Control
+  return '<div class="panel"><h3>Match Control users</h3>' + (users.length ? '<table class="t">' + users.map(u =>
+    '<tr><td>' + esc(u.username) + '</td><td>' + esc(u.role === 'director' ? 'Match director' : 'Range officer') + '</td>' +
+    '<td><button data-act="rcmurole" data-u="' + esc(u.username) + '" data-r="' + (u.role === 'director' ? 'officer' : 'director') + '">Make ' + (u.role === 'director' ? 'range officer' : 'match director') + '</button> ' +
+    '<button data-act="rcmupw" data-u="' + esc(u.username) + '" data-r="' + esc(u.role) + '">New password</button> <button class="danger" data-act="rcmudel" data-u="' + esc(u.username) + '">Remove</button></td></tr>').join('') + '</table>' : '<p class="mut">None yet.</p>') +
+    '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-top:8px"><input id="mu_name" placeholder="User name" maxlength="32"><select id="mu_role"><option value="officer">Range officer</option><option value="director">Match director</option></select>' +
+    '<input id="mu_pw" type="password" placeholder="Password (8+)" autocomplete="new-password"><button data-act="rcmuadd">Add user</button></div>' + (msg ? '<p class="bad">' + esc(msg) + '</p>' : '') +
+    '<p class="mut">Match directors create matches and formats and decide flagged shots; range officers run the clock. Also on the Pi: <code>python3 -m fetserver match-user</code>.</p></div>';
 }
 
 // ---- browser only from here ----
@@ -524,6 +768,11 @@ function clientId() {
   store('fet_cid', CID);
 }
 async function get(p) { const r = await fetch(API + p); if (!r.ok) throw new Error(r.status); return r.json(); }
+async function matchCall(p, body) {        // Match Control API: same cross-site header as Range Control
+  const r = await fetch(API + '/match' + p, body === undefined ? {headers: {'X-FET-Admin': '1'}, credentials: 'same-origin'}
+    : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-FET-Admin': '1'}, credentials: 'same-origin', body: JSON.stringify(body)});
+  return {status: r.status, data: await r.json().catch(() => ({}))};
+}
 async function adminCall(p, body) {        // the custom header keeps other web sites from making these requests
   const r = await fetch(API + '/admin' + p, body === undefined ? {headers: {'X-FET-Admin': '1'}, credentials: 'same-origin'}
     : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-FET-Admin': '1'}, credentials: 'same-origin', body: JSON.stringify(body)});
@@ -534,7 +783,10 @@ async function post(p, body) {
   return {status: r.status, data: await r.json().catch(() => ({}))};
 }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
-const route = () => { if (/^#\/range\b/.test(location.hash)) return {range: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+const route = () => {
+  const tv = location.hash.match(/^#\/tv\/(targets|board)(?:\?(.*))?$/);
+  if (tv) { const params = {}; (tv[2] || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); params[k] = v || ''; }); return {tv: tv[1], params: params}; }
+  if (/^#\/range\b/.test(location.hash)) return {range: true}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
@@ -561,6 +813,8 @@ async function refresh() {
         if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
         const fw = await adminCall('/firmware');
         if (fw.status === 200) S.rc.images = fw.data.images;
+        const mu = await adminCall('/match-users');
+        if (mu.status === 200) S.rc.musers = mu.data.users;
         const up = await adminCall('/updates');
         if (up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
@@ -569,6 +823,26 @@ async function refresh() {
         }
       }
     }
+    if (route().match) {
+      const mc = S.mc = S.mc || {view: 'list', draft: {lanes: {}}, spoken: {}};
+      mc.status = (await matchCall('/status')).data;
+      if (mc.status.logged_in) {
+        const [ms, fs, ts] = await Promise.all([matchCall('/matches'), matchCall('/formats'), matchCall('/targets')]);
+        if (ms.status === 200) mc.matches = ms.data.matches;
+        if (fs.status === 200) mc.formats = fs.data.formats;
+        if (ts.status === 200) mc.targets = ts.data.targets;
+        if (mc.view === 'console' && mc.open) {
+          const d = await matchCall('/matches/' + mc.open);
+          if (d.status === 200) { mc.detail = d.data; mc.offset = d.data.clock.server_time_ms - Date.now(); }
+        }
+      }
+    }
+    if (t && t.match) S.offset = t.match.server_time_ms - Date.now();
+    const rr = route();
+    if (rr.tv || (!rr.id && !rr.range && !rr.match && S.tvcfg)) {        // TV pages and their setup: the public scoreboard feed
+      const b = await get('/board' + (rr.tv && rr.params.m ? '?m=' + encodeURIComponent(rr.params.m) : ''));
+      S.board = b.matches; S.boardOffset = b.server_time_ms - Date.now();
+    }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
@@ -576,14 +850,17 @@ async function refresh() {
   if (S.again) { S.again = false; refresh(); }
 }
 
-function render() {
+function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
-  document.getElementById('nav-coach').className = r.id || r.range ? '' : 'on';
+  document.getElementById('nav-coach').className = r.id || r.range || r.match ? '' : 'on';
   document.getElementById('nav-range').className = r.range ? 'on' : '';
+  document.getElementById('nav-match').className = r.match ? 'on' : '';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
   const ae = document.activeElement;
-  if (r.range && app.contains(ae) && ae.tagName === 'INPUT' && ae.type === 'password') return;   // never redraw under typing
-  app.innerHTML = r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets);
+  if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') return;   // never redraw under typing
+  document.body.classList.toggle('tv', !!r.tv);
+  if (r.tv) { app.innerHTML = r.tv === 'board' ? tvBoard(S.board || []) : tvTargets(S.targets, S.board || [], r.params); return; }
+  app.innerHTML = r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S);
   renderOverlay(t);
 }
 function renderOverlay(t) {
@@ -631,6 +908,17 @@ async function act(el) {
   if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
   if (a === 'rnav') return reviewMove(el.dataset.move);
   if (/^rc/.test(a)) return rangeAct(el, a);
+  if (/^mc/.test(a)) return matchAct(el, a);
+  if (/^tv/.test(a)) {                              // TV display setup on All targets
+    if (a === 'tvcfg') { S.tvcfg = S.tvcfg ? null : {kind: 'targets', targets: [], matches: []}; return refresh(); }
+    const c = S.tvcfg;
+    if (!c) return;
+    if (a === 'tvkind') c.kind = el.dataset.k;
+    if (a === 'tvmatch') c.match = el.dataset.id ? +el.dataset.id : null;
+    if (a === 'tvtarget') c.targets = el.checked ? c.targets.concat(el.dataset.id) : c.targets.filter(x => x !== el.dataset.id);
+    if (a === 'tvbm') c.matches = el.checked ? c.matches.concat(+el.dataset.id) : c.matches.filter(x => x !== +el.dataset.id);
+    return render();
+  }
   if (!id) return;
   if (a === 'take' || a === 'takeover') {
     const name = (val('who') || store('fet_name') || '').trim();
@@ -748,6 +1036,22 @@ async function rangeAct(el, a) {
     delete sel[t.device_id];
     return refresh();
   }
+  if (a === 'rcmuadd' || a === 'rcmurole' || a === 'rcmupw') {
+    let body;
+    if (a === 'rcmuadd') body = {username: (document.getElementById('mu_name') || {}).value || '', role: (document.getElementById('mu_role') || {}).value, password: (document.getElementById('mu_pw') || {}).value || ''};
+    else if (a === 'rcmurole') body = {username: el.dataset.u, role: el.dataset.r};
+    else { const pw = prompt('New password for ' + el.dataset.u + ' (at least 8 characters):'); if (!pw) return; body = {username: el.dataset.u, role: el.dataset.r, password: pw}; }
+    const res = await adminCall('/match-users', body);
+    rc.muMsg = res.status === 200 ? '' : (res.data.error || 'error ' + res.status);
+    if (res.status === 200) { rc.musers = res.data.users; if (a === 'rcmuadd') { document.getElementById('mu_name').value = ''; document.getElementById('mu_pw').value = ''; } }
+    return refresh();
+  }
+  if (a === 'rcmudel') {
+    if (!confirm('Remove ' + el.dataset.u + ' from Match Control?')) return;
+    const res = await adminCall('/match-users/' + encodeURIComponent(el.dataset.u) + '/delete', {});
+    if (res.status === 200) rc.musers = res.data.users;
+    return refresh();
+  }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
   const ids = a === 'rcunban' ? [el.dataset.id] : chosen();
   if (!ids.length) return;
@@ -789,6 +1093,131 @@ async function uploadFirmware(files) {
   return refresh();
 }
 
+async function matchAct(el, a) {
+  const mc = S.mc = S.mc || {view: 'list', draft: {lanes: {}}, spoken: {}};
+  const show = res => { mc.msg = res.status >= 400 ? (res.data.error || 'error ' + res.status) : ''; return res.status < 400; };
+  if (a === 'mcmyrecord') {                       // on the shooter's own screen (needs the lane's control claim)
+    const t = current();
+    if (!t) return;
+    const res = await post('/targets/' + t.device_id + '/start-record', {});
+    if (res.status !== 200) toast(res.data.error || 'Could not start record');
+    return refresh();
+  }
+  if (a === 'mclogin') {
+    const res = await matchCall('/login', {username: (document.getElementById('mcuser') || {}).value || '', password: (document.getElementById('mcpw') || {}).value || ''});
+    mc.msg = res.status === 200 ? '' : res.status === 429 ? 'Too many wrong passwords from this device; try again in ' + Math.ceil((res.data.retry_after || 600) / 60) + ' min.' : 'Wrong user name or password.';
+    document.activeElement && document.activeElement.blur();
+    return refresh();
+  }
+  if (a === 'mclogout') { await matchCall('/logout', {}); mc.view = 'list'; return refresh(); }
+  if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; return refresh(); }
+  if (a === 'mcnew') { mc.view = 'new'; mc.draft = {lanes: {}}; mc.msg = ''; return render(); }
+  if (a === 'mcfnew') { mc.view = 'format'; mc.fdraft = {name: '', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'Sighting', minutes: 10}, {kind: 'record', label: 'Record', minutes: 30, shots: 20, warn: '5, 2'}]}; mc.msg = ''; return render(); }
+  if (a === 'mcfedit') {
+    const f = (mc.formats || []).find(x => x.id === el.dataset.id);
+    if (!f) return;
+    mc.fdraft = {id: f.id, name: f.name, scoring: f.scoring, team_size: f.team_size, phases: f.phases.map(p => ({kind: p.kind, label: p.label, minutes: p.seconds / 60,
+      shots: p.shots, position: p.position, warn: p.warnings.map(w => w.at / 60).join(', ')}))};
+    mc.view = 'format'; mc.msg = ''; return render();
+  }
+  if (a === 'mcfdel') { if (confirm('Delete this format?')) await matchCall('/formats/' + el.dataset.id + '/delete', {}); return refresh(); }
+  if (a === 'mcpadd') { mc.fdraft.phases.push({kind: 'record', label: 'Record', minutes: 10, shots: 10}); return render(); }
+  if (a === 'mcprm') { mc.fdraft.phases.splice(+el.dataset.i, 1); return render(); }
+  if (a === 'mcfsave') {
+    const f = mc.fdraft, phases = f.phases.map(p => ({kind: p.kind, label: p.label || PHASE_KIND[p.kind], seconds: Math.round((+p.minutes || 0) * 60),
+      shots: p.kind === 'record' || p.kind === 'stage' ? (+p.shots || 0) : 0, position: p.position || '',
+      warnings: String(p.warn || '').split(/[ ,;]+/).filter(Boolean).map(x => ({at: Math.round(parseFloat(x) * 60), say: (+x === 1 ? 'One minute' : x + ' minutes') + ' remaining'})),
+      start: (p.label || PHASE_KIND[p.kind]) + '. Start.', end: 'Stop.'}));
+    const res = await matchCall('/formats', {format: {id: f.id, name: f.name, scoring: f.scoring, team_size: +f.team_size, phases: phases}});
+    if (show(res)) { mc.view = 'list'; toast('Format saved'); }
+    return refresh();
+  }
+  if (a === 'mccreate') {
+    const d = mc.draft, f = (mc.formats || []).find(x => x.id === d.format_id);
+    const lanes = (mc.targets || []).filter(t => (d.lanes[t.device_id] || {}).on).map(t => ({device_id: t.device_id, competitor: (d.lanes[t.device_id] || {}).competitor || ''}));
+    let override;
+    if (f && d.times && Object.keys(d.times).length) override = Object.assign({}, f, {phases: f.phases.map((p, i) => Object.assign({}, p, d.times[i] != null ? {seconds: d.times[i]} : {}))});
+    const res = await matchCall('/matches', {name: d.name || '', format_id: d.format_id || '', lanes: lanes, override: override, paced: d.paced || 'spoken'});
+    if (show(res)) { mc.view = 'console'; mc.open = res.data.id; mc.detail = res.data; }
+    return refresh();
+  }
+  if (a === 'mcopen') { mc.view = 'console'; mc.open = +el.dataset.id; mc.detail = null; mc.msg = ''; return refresh(); }
+  if (a === 'mcpaced') { mc.draft.paced = el.dataset.v; return render(true); }
+  if (a === 'mcrestart') {
+    const d = mc.detail;
+    if (!d) return;
+    const p = el.dataset.sel ? +(document.getElementById('mcrsel') || {}).value : +el.dataset.p;
+    const label = (d.format.phases[p] || {}).label || '';
+    const what = p === 0 && !el.dataset.sel ? 'the whole match from the beginning' : 'from phase ' + (p + 1) + ' (' + label + ')';
+    if (!confirm('Interrupt the match and restart ' + what + '?\n\nThe clock goes back to the start of that phase now. Shots already fired in the restarted parts are kept and flagged for your decision.')) return;
+    if (!confirm('Are you really sure? Shooters must be told before you continue.')) return;
+    const res = await matchCall('/matches/' + mc.open + '/restart', {phase: p});
+    if (!show(res)) toast(mc.msg); else toast('Restarted ' + what);
+    return refresh();
+  }
+  if (a === 'mcspeak') { mc.speak = !mc.speak; if (mc.speak) say('Sound is on. Commands will be spoken.'); return render(); }   // a tap unlocks sound in the browser
+  if (!mc.open) return;
+  if (a === 'mcstart') {
+    if (!confirm('Start the match now? The clock starts with the first phase.')) return;
+    show(await matchCall('/matches/' + mc.open + '/start', {}));
+    if (mc.msg) toast(mc.msg);
+    return refresh();
+  }
+  if (a === 'mccmd' || a === 'mcrecord') {
+    const action = a === 'mcrecord' ? 'start_record' : el.dataset.a;
+    if (action === 'abort' && !confirm('Stop the whole match now? This cannot be undone.')) return;
+    if (action === 'next' && !confirm('End this phase now and go to the next one?')) return;
+    if (action === 'pacing' && !confirm('Switch the commands to "' + PACE[el.dataset.v][0] + '"?\n\n' + PACE[el.dataset.v][1] + ' (from the next phase on).')) return;
+    const res = await matchCall('/matches/' + mc.open + '/command', {action: action, seconds: el.dataset.s ? +el.dataset.s : undefined, device_id: el.dataset.id, paced: el.dataset.v});
+    if (!show(res)) toast(mc.msg);
+    return refresh();
+  }
+}
+let audio;
+function say(text) {                              // the RO console speaks a command, after a short tone
+  if (!text) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; g.gain.value = 0.15; o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.25);
+  } catch (e) { /* no audio */ }
+  try { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; setTimeout(() => speechSynthesis.speak(u), 300); } catch (e) { /* no speech */ }
+}
+function clockTick() {                            // between refreshes: count down, and speak commands on the console
+  document.querySelectorAll('[data-clock^="tv-"]').forEach(el => {
+    const b = (S.board || []).find(x => 'tv-' + x.id === el.dataset.clock);
+    if (b && ['running', 'paused', 'holding'].includes(b.state)) el.textContent = fmtClock(remainingNow(b.clock, S.boardOffset));
+  });
+  const t = current(), el = document.querySelector('[data-clock="target"]');
+  if (el && t && t.match && t.match.state !== 'ready') el.textContent = fmtClock(remainingNow(t.match, S.offset));
+  const mc = S.mc, d = mc && mc.view === 'console' && mc.detail, cel = document.querySelector('[data-clock="console"]');
+  if (!d || !route().match) return;
+  const c = d.clock, live = d.state === 'running' || d.state === 'paused' || d.state === 'holding', left = remainingNow(c, mc.offset);
+  if (cel && live) cel.textContent = fmtClock(left);
+  mc.spoken = mc.spoken || {};
+  const pk = d.id + ':' + c.phase;
+  if (mc.lastPk && mc.lastPk !== pk && mc.speak && c.paced === 'spoken' && mc.lastEndSay) say(mc.lastEndSay);   // the previous phase's STOP
+  if (mc.lastPk !== pk) { mc.lastPk = pk; mc.lastEndSay = live ? c.end_say : ''; }
+  if (d.state === 'done' && !mc.spoken[d.id + ':done']) {           // the last phase's STOP, once
+    mc.spoken[d.id + ':done'] = true;
+    if (mc.speak && c.paced === 'spoken' && mc.seenRunning === d.id) say((mc.lastEndSay ? mc.lastEndSay + ' ' : '') + 'The match is finished.');
+  }
+  if (d.state === 'running') mc.seenRunning = d.id;
+  const sayEl = document.getElementById('mcsay');
+  if (sayEl) {                                     // the warning the range officer should give now (shown for 10 s)
+    const due = d.state === 'running' && c.paced === 'officer' && (c.warnings || []).find(w => left <= w.at * 1000 && left > w.at * 1000 - 10000);
+    const html = due ? '<span class="mcsaynow">Say now: “' + esc(due.say) + '”</span>' : '';
+    if (sayEl.innerHTML !== html) sayEl.innerHTML = html;
+  }
+  if (!mc.speak || c.paced !== 'spoken' || d.state !== 'running') return;
+  const elapsed = c.seconds * 1000 + (c.extra_ms || 0) - left;   // running clock time used in this phase
+  if (!mc.spoken[pk + ':start'] && c.start_say && elapsed < 5000) { mc.spoken[pk + ':start'] = true; say(c.start_say); }
+  (c.warnings || []).forEach(w => {
+    const k = pk + ':' + w.at;
+    if (!mc.spoken[k] && left <= w.at * 1000 && left > w.at * 1000 - 3000) { mc.spoken[k] = true; say(w.say); }
+  });
+}
+
 function reviewMove(move) {
   const v = S.reviewView;
   if (!S.review || !v) return;
@@ -806,6 +1235,33 @@ function boot() {
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
+  document.addEventListener('input', e => {                 // Match Control forms keep their values in S.mc (redraw-proof)
+    const el = e.target, mc = S.mc;
+    if (!mc || !el.dataset) return;
+    if (el.dataset.mcd) { mc.draft[el.dataset.mcd] = el.value; if (el.dataset.mcd === 'format_id') { mc.draft.times = {}; render(true); } }
+    if (el.dataset.mcc) { (mc.draft.lanes[el.dataset.mcc] = mc.draft.lanes[el.dataset.mcc] || {}).competitor = el.value; }
+    if (el.dataset.mct != null && el.dataset.mct !== undefined) { mc.draft.times = mc.draft.times || {}; mc.draft.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
+    if (el.dataset.mcf) mc.fdraft[el.dataset.mcf] = el.value;
+    if (el.dataset.mcp) { const [i, k] = el.dataset.mcp.split(':'); mc.fdraft.phases[+i][k] = el.value; if (k === 'kind') render(true); }
+  }, true);
+  document.addEventListener('change', async e => {
+    const el = e.target, mc = S.mc;
+    if (!mc || !el.dataset) return;
+    if (el.dataset.mcl) { (mc.draft.lanes[el.dataset.mcl] = mc.draft.lanes[el.dataset.mcl] || {}).on = el.checked; }
+    if (el.dataset.mcdec) { const res = await matchCall('/matches/' + mc.open + '/flags/' + el.dataset.mcdec, {decision: el.value}); if (res.status !== 200) toast(res.data.error || 'Not saved'); refresh(); }
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'mcpw') matchAct(e.target, 'mclogin'); });
+  setInterval(clockTick, 250);
+  let pauseUntil = 0;
+  setInterval(() => {                               // the scoreboard scrolls itself when it is taller than the screen
+    if (route().tv !== 'board' || Date.now() < pauseUntil) return;
+    const max = document.documentElement.scrollHeight - window.innerHeight;
+    if (max <= 4) return;
+    if (window.scrollY >= max - 1) { pauseUntil = Date.now() + 4000; setTimeout(() => window.scrollTo(0, 0), 3500); return; }
+    if (window.scrollY === 0 && !pauseUntil) { pauseUntil = Date.now() + 3000; return; }
+    window.scrollBy(0, 1);
+    if (window.scrollY === 0) pauseUntil = 0;
+  }, 40);
   document.addEventListener('input', e => {
     if (e.target.id !== 'cpr') return;
     S.cpr = e.target.value;
@@ -838,7 +1294,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

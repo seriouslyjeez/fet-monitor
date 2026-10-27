@@ -29,6 +29,10 @@ FAIL_WINDOW_S = 600
 LOCK_S = 600
 COOKIE = "fet_admin"
 COOKIE_PATH = "/api/v1/admin"
+MATCH_COOKIE = "fet_match"
+MATCH_COOKIE_PATH = "/api/v1/match"
+ROLES = ("director", "officer")          # Match Control: director (formats, matches, decisions) and range officer (clock)
+USERNAME_RE = __import__("re").compile(r"^[A-Za-z0-9._-]{2,32}$")
 SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}   # ~16 MB and well under a second on a Raspberry Pi
 PBKDF2_ITER = 310_000                     # fallback where Python lacks scrypt (built without OpenSSL 1.1+)
 
@@ -118,8 +122,83 @@ class Admin:
                 return "bad", None
             self._fails.pop(addr, None)
             token = secrets.token_urlsafe(32)
-            self._sessions[self._key(token)] = {"created": now, "last": now, "pw": rec.get("hash")}
+            self._sessions[self._key(token)] = {"created": now, "last": now, "pw": rec.get("hash"), "kind": "rc",
+                                                "user": "admin", "role": "admin"}
             return "ok", token
+
+    def _throttled(self, addr: str, now: float):
+        with self._lock:
+            until = self._locked.get(addr, 0)
+            return int(until - now) + 1 if until > now else 0
+
+    def _failed(self, addr: str, now: float) -> None:
+        with self._lock:
+            fails = [t for t in self._fails.get(addr, []) if t > now - FAIL_WINDOW_S] + [now]
+            self._fails[addr] = fails
+            if len(fails) >= FAIL_LIMIT:
+                self._locked[addr] = now + LOCK_S
+                self._fails.pop(addr, None)
+
+    def login_match(self, username, password, addr: str, users: Callable[[str], Optional[dict]]):
+        """Match Control login: a Match Control user (users(name) -> {"role", "pw"} or None), or "admin" with the Range
+        Control password (role admin, can do everything). Same lockout as Range Control. Returns like login()."""
+        now = self.now()
+        wait = self._throttled(addr, now)
+        if wait:
+            return "locked", wait
+        if not isinstance(username, str) or not isinstance(password, str):
+            self._failed(addr, now)
+            return "bad", None
+        if username == "admin":
+            rec, role = self._record(), "admin"
+        else:
+            u = users(username) if USERNAME_RE.match(username) else None
+            rec, role = (u["pw"], u["role"]) if u else (None, None)
+        if rec is None or not verify_password(password, rec):
+            if rec is None:
+                verify_password(password, hash_password("x" * MIN_PASSWORD))   # same work either way: no user probing
+            self._failed(addr, now)
+            return "bad", None
+        with self._lock:
+            self._fails.pop(addr, None)
+            token = secrets.token_urlsafe(32)
+            self._sessions[self._key(token)] = {"created": now, "last": now, "pw": rec.get("hash"), "kind": "match",
+                                                "user": username, "role": role}
+            return "ok", token
+
+    def match_session(self, token: Optional[str], users: Callable[[str], Optional[dict]]) -> Optional[dict]:
+        """{"user", "role"} for a valid Match Control session made with the user's current password, else None."""
+        if not token:
+            return None
+        now = self.now()
+        with self._lock:
+            self._expire(now)
+            s = self._sessions.get(self._key(token))
+            if s is None or s["kind"] != "match":
+                return None
+            user, role, pw = s["user"], s["role"], s["pw"]
+        if role == "admin":
+            rec = self._record()
+            current = rec.get("hash") if rec else None
+        else:
+            u = users(user)
+            current = u["pw"].get("hash") if u and u["role"] == role else None
+        if current is None or current != pw:
+            return None
+        with self._lock:
+            if self._key(token) in self._sessions:
+                self._sessions[self._key(token)]["last"] = now
+        return {"user": user, "role": role}
+
+    def drop_user(self, username: str) -> None:
+        """End every session of a Match Control user (removed, or role changed)."""
+        with self._lock:
+            for k in [k for k, s in self._sessions.items() if s["kind"] == "match" and s["user"] == username]:
+                del self._sessions[k]
+
+    def _expire(self, now: float) -> None:
+        for k in [k for k, s in self._sessions.items() if now - s["last"] > ADMIN_IDLE_S or now - s["created"] > ADMIN_MAX_S]:
+            del self._sessions[k]
 
     @staticmethod
     def _key(token: str) -> str:
@@ -132,10 +211,9 @@ class Admin:
         rec = self._record()
         now = self.now()
         with self._lock:
-            for k in [k for k, s in self._sessions.items() if now - s["last"] > ADMIN_IDLE_S or now - s["created"] > ADMIN_MAX_S]:
-                del self._sessions[k]
+            self._expire(now)
             s = self._sessions.get(self._key(token))
-            if s is None or rec is None or s["pw"] != rec.get("hash"):
+            if s is None or s["kind"] != "rc" or rec is None or s["pw"] != rec.get("hash"):
                 return False
             s["last"] = now
             return True

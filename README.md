@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.25: signed updates from GitHub; firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.26: Match Control (beta); signed updates from GitHub; firmware updates from the Pi; Range Control; series, zoom, scoring screens, ammo test, sight adjustment; ESP-01 firmware included)
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
@@ -39,6 +39,35 @@ keeping at least 3 shots; flyers are drawn dashed and misses are left out. *Clic
 such as 3.5 or 3,5 accepted; one ring = 2.5 mm) is remembered by that browser. On **Done** it offers to **clear the
 target** (a new practice series) or **keep the shots**, after which only newer shots count; a new series (including the
 automatic one after 20 shots) starts the count afresh.
+
+**Match Control** (header link; beta, 10 m air rifle): runs a match's clock over chosen targets. Standard formats are
+transcribed from the rulebooks with their rule numbers ([docs/MATCH-FORMATS.md](docs/MATCH-FORMATS.md)): ISSF / USA
+Shooting 60 shots (qualification), CMP National Standard 3x10, 3x20, 3x20 standing and 60 standing, NRA Precision
+3x10, 3x20, 3x40, 40 and 60 standing; plus *Design your own match*. The server owns the clock: it starts each phase
+(set-up, preparation and sighting, the pause while targets switch to record, record, changeover), switches the targets
+between sighting and record as each rulebook says (ISSF / CMP: at START after the pause; NRA: one clock per position
+and the shooter starts record from their own screen), shows the countdown on every shooter screen. How commands are given is chosen per match (and can be switched during it):
+**Spoken commands** (default: the RO console speaks every rulebook command and time warning; tap "Turn on sound" once on
+that device, and only on one device), **Range officer reads them** (the console holds at the start of every phase,
+shows the exact words to read, the previous phase's STOP and the next phase's START, and starts the phase on **Next**;
+warnings appear as "Say now: ...") or **Automatic (no commands)** (phases follow each other; nothing is spoken or shown
+to read). Pause, extra time and "end this phase now" are on the console. Mistakes happen: the match director can restart the current phase, restart from any
+phase, or restart the whole match (also after it ended, which reopens it), each with a double confirmation; shots fired
+in the restarted parts stay and are flagged. Shots fired out of their time (during set-up, a pause or a changeover, while the clock is paused, before the
+start or after the end, or beyond a stage's record shots) are kept and flagged; they do not count until the match
+director decides: a record shot can be counted, annulled, scored as a miss or counted with 2 points off; a stray
+sighting shot can be let go, or cost 2 points (or a miss) on the first record shot. Targets in a match are locked
+against other mode changes.
+
+**TV displays** (All targets → *TV display…*; no login, bookmark the address on the TV): *targets and match clock*
+(`#/tv/targets?m=<match>&t=<target,target>`: a match's countdown over its targets or a chosen list) and the
+*scoreboard* (`#/tv/board?m=<match,match>`, or every current match): everyone in place order with total, inner tens /
+X, 10-shot aggregates, the last 10 shots and shots fired; it scrolls by itself when it does not fit. The ranking is
+provisional (total, inner tens, then 10-shot series from the last) until each rulebook's tie-break rules are built.
+Users and roles (match director: formats, matches, decisions; range officer: the clock) are managed in Range Control
+or on the Pi: `cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver match-user add NAME --role director
+--data-dir /var/lib/fet-monitor` (also `list`, `passwd`, `role`, `remove`). Results lists, teams, printing, finals and
+the public displays come next.
 
 **Range Control** (header link; needs the Range Control password, set on the Pi by the installer or with
 `cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor`):
@@ -195,6 +224,13 @@ backup from /var/backups/fet-monitor in that case.
 | POST /admin/targets/<id>/mode\|remove\|ban\|unban\|firmware\|command | Range Control | `command`: `{type: reboot\|wifi_portal\|serial, line}` (serial lines allowlisted). `firmware`: `{sha256}` or `{sha256: "best"}` queues an update (refused with the reason if the target cannot take it). `mode`: `{mode, new_series, session, label}` without the control claim. Every /admin call needs the header `X-FET-Admin: 1` and, if the browser sends one, an Origin naming this server |
 | GET /admin/updates; POST /admin/updates/check, /admin/updates/install | Range Control | Update status (GET never contacts GitHub); check GitHub; `{version}` stages a signed release for the root update service (202) |
 | POST /admin/firmware/github | Range Control | Download the newest signed FeT Bridge release's images |
+| /match/status, /match/login, /match/logout | Match Control | Session (cookie `fet_match`, path /api/v1/match); user + password, or `admin` + the Range Control password |
+| GET /match/formats; POST /match/formats, /match/formats/<id>/delete | Match Control (director to change) | Standard and custom formats |
+| GET, POST /match/matches; GET /match/matches/<n>; POST /match/matches/<n>/start, /command, /flags/<shot> | Match Control | Create (director), start and run (`{action: go\|pause\|resume\|next\|extra\|abort\|start_record}`), decide flagged shots (director) |
+| POST /match/matches/<n>/restart | Match Control (director) | `{phase}`: back to that phase (0 = the beginning); also reopens a finished match |
+| GET /board?m=<n,n> | anyone | Scoreboard data for those matches (default: the current ones) |
+| POST /targets/<id>/start-record | the shooter holding the lane | NRA-style stage: start record shots |
+| GET, POST /admin/match-users; POST /admin/match-users/<name>/delete | Range Control | Match Control users and roles |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
 
 ## Durability notes
