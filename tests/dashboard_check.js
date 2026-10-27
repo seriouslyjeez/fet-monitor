@@ -41,7 +41,14 @@ svg = faceSvg([sh(0, 0, 1)], {half: zoomHalf(8)});
 assert(svg.includes('viewBox="-6.75 -6.75 13.5 13.5"'), 'ring-8 zoom');
 svg = faceSvg([sh(0, 0, 1), sh(15, 0, 2)], {half: zoomHalf(8)});
 assert(svg.includes('stroke-dasharray'), 'a shot outside a fixed zoom is marked at the edge');
-assert.strictEqual(count(svg, /r="2.25"/g), 1, 'only the shot inside the view is drawn as a pellet');
+assert.strictEqual(count(svg, /class="pellet"/g), 1, 'only the shot inside the view is drawn as a pellet');
+// the outline's outer edge is the pellet's edge (a stroke is centred on the circle), for the latest shot and the others
+for (const o of [{half: 26}, {half: zoomHalf(8)}, {half: 26, mini: true}, {half: 26, pellet: 5.7}]) {
+  const g = faceSvg([sh(0, 0, 1), sh(3, 3, 2), Object.assign(sh(-3, 3, 3), {flyer: true}), sh(1, -2, 4)], o);
+  const circles = [...g.matchAll(/<circle class="(?:pellet|flyer)"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)];
+  assert.strictEqual(circles.length, 4, 'every shot drawn');
+  circles.forEach(m => assert(Math.abs(+m[1] + m[2] / 2 - (o.pellet || 4.5) / 2) < 1e-3, 'outline outer edge is the pellet edge: ' + m[0]));
+}
 
 // --- 9. black top-right corner when the shots are not scored
 const corner = s => s.includes('class="corner"');
@@ -164,7 +171,7 @@ assert(count(apage, /<td>first shot<\/td>/g) === 1, 'the first shot is the refer
 assert.strictEqual(count(ammoTable(av), /<tr class="/g), av.bull_shots.length, 'every shot is listed, none dropped');
 assert(ammoTable(av).indexOf('<td>14</td>') < ammoTable(av).indexOf('<td>13</td>') && ammoTable(av).includes('class="last"'), 'newest first');
 assert(ammoTable(av).includes('class="miss">miss'), 'the miss is listed');
-assert(apage.includes('r="2.85"'), 'pellets drawn at the projectile size');
+assert([...apage.matchAll(/<circle class="pellet"[^>]* r="([\d.]+)"[^>]* stroke-width="([\d.]+)"/g)].some(m => Math.abs(+m[1] + m[2] / 2 - 2.85) < 1e-3), 'pellets drawn at the projectile size');
 assert(apage.includes('#c026d3') && apage.includes('stroke="#fff"'), 'marks have a halo so they show on black and white');
 assert(!/<i>Lot 7<\/i>/.test(apage + coachView(D.targets) + overlayView(asMine(ammoT), state(), '')), 'label is escaped');
 assert(apage.includes('&lt;i&gt;Lot 7&lt;/i&gt;'));

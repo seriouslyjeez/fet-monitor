@@ -152,9 +152,12 @@ function faceSvg(shots, o) {
   pts.forEach((x, i) => {
     const isLast = i === pts.length - 1, sx = x.x_mm, sy = -x.y_mm;
     if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
-      if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="none" stroke="#e11d48" stroke-width="' + 0.35 * f + '" stroke-dasharray="' + 0.7 * f + '"/>';   // sight adjustment: ignored shot
-      else s += '<circle cx="' + sx + '" cy="' + sy + '" r="' + pr + '" fill="' + col + '" fill-opacity=".55" stroke="' +
-           (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + (isLast && !mini ? 0.6 : 0.35) * f + '"/>';
+      // A stroke is centred on the circle's edge, so the circle is drawn half a stroke smaller: the outer edge of the
+      // outline is then exactly the pellet's edge, whatever the outline width.
+      const w = (isLast && !mini && !x.flyer ? 0.6 : 0.35) * f, r = +(pr - w / 2).toFixed(4);
+      if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="none" stroke="#e11d48" stroke-width="' + w + '" stroke-dasharray="' + 0.7 * f + '"/>';   // sight adjustment: ignored shot
+      else s += '<circle class="pellet" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="' + col + '" fill-opacity=".55" stroke="' +
+           (isLast && !mini ? '#e11d48' : col) + '" stroke-width="' + w + '"/>';
       if (!mini && (!o.labelLast || isLast)) {                       // an ammo test can have hundreds of shots: label only the latest
         s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
       }
