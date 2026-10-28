@@ -70,10 +70,10 @@ class ResultStore:
         flags = {f["shot_id"]: f for f in (self.matches.flags(c, m) if m["state"] != "ready" else [])}
         rows = []
         for ln in self.matches._lanes(c, mid):
-            shots = self.matches.counted(c, m, ln, flags)
+            shots, x = self.matches.counted_row(c, m, ln, flags)
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             name = ln["competitor"] or (t["name"] if t and t["name"] else ln["device_id"])
-            e = dict(self.matches.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1],
+            e = dict(self.matches.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1], **x,
                      id=ln["lane"], name=name, family=name, given="", cls="", team="", relay=None, lane=ln["lane"], device_id=ln["device_id"],
                      pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"]), fired=bool(shots))
             if with_shots:

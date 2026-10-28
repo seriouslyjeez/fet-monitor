@@ -318,13 +318,13 @@ class Competitions:
             flags = {f["shot_id"]: f for f in (self.matches.flags(c, m) if m["state"] != "ready" else [])}
             for ln in c.execute("SELECT * FROM match_lanes WHERE match_id=?", (m["id"],)).fetchall():
                 if ln["competitor_id"] in people:
-                    shots = self.matches.counted(c, m, ln, flags)
-                    found[ln["competitor_id"]] = {"shots": shots, "relay": m["relay"], "lane": ln["lane"], "device_id": ln["device_id"],
+                    shots, x = self.matches.counted_row(c, m, ln, flags)
+                    found[ln["competitor_id"]] = {"shots": shots, "x": x, "relay": m["relay"], "lane": ln["lane"], "device_id": ln["device_id"],
                                                   "pending": sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])}
         classes: Dict[str, List[dict]] = {}
         for pid, p in people.items():
-            f = found.get(pid, {"shots": [], "relay": None, "lane": None, "device_id": None, "pending": 0})
-            e = dict(self.matches.entry_view(f["shots"], decimal), summary=ranking.summary(f["shots"]), sort_name=p["family"],
+            f = found.get(pid, {"shots": [], "x": {"dq": None, "penalties": [], "removed": []}, "relay": None, "lane": None, "device_id": None, "pending": 0})
+            e = dict(self.matches.entry_view(f["shots"], decimal), summary=ranking.summary(f["shots"]), sort_name=p["family"], **f["x"],
                      id=pid, name=display_name(p), family=p["family"], given=p["given"], cls=p["class"] or "", team=p["team"] or "",
                      relay=f["relay"], lane=f["lane"], device_id=f["device_id"], pending=f["pending"], fired=bool(f["shots"]))
             if with_shots:
@@ -353,6 +353,9 @@ class Competitions:
             if len(members) < size or (len(members) > size and not best):
                 why = f"{len(members)} of {size} members" if len(members) < size else f"{len(members)} members for a team of {size}"
                 others.append({"name": name, "members": [m["name"] for m in members], "counting": [], "reason": why})
+                continue
+            if rules == "ISSF" and any(m.get("dq") for m in members):     # ISSF 6.12.6.2 g; CMP/NRA say nothing: the member counts 0
+                others.append({"name": name, "members": [m["name"] for m in members], "counting": [], "reason": "DSQ: a member was disqualified (ISSF 6.12.6.2 g)"})
                 continue
             counting = members[:size]
             summ = ranking.combine([m["summary"] for m in counting])

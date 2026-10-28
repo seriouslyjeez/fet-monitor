@@ -18,6 +18,7 @@ from .sightadj import suggest
 from .matches import Matches
 from .competitions import Competitions
 from .resultstore import ResultStore
+from .corrections import Corrections
 
 log = logging.getLogger("fetserver.core")
 
@@ -133,6 +134,7 @@ class Core:
         self.matches = Matches(self)
         self.competitions = Competitions(self)
         self.results = ResultStore(self)
+        self.corrections = Corrections(self)
 
     # ---- target bookkeeping -------------------------------------------------
     def _touch(self, c, device_id: str, recv_ms: int, **fields) -> None:

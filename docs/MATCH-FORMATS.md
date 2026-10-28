@@ -111,6 +111,29 @@ How FeT Monitor does it (Match Control console, *Move…* on a firing point; ran
 - before the start, *Move…* only changes the target; in a competition, the competitor window (pencil) places a
   competitor on any relay that has not started, or swaps two competitors.
 
+## Corrections: reviews, protests, crossfires, penalties, disqualification
+
+| Topic | ISSF / USAS | CMP | NRA |
+|---|---|---|---|
+| Crossfired record shot | a miss for the firer (6.11.6.1) | a miss (7.17.9) | a miss (10.10.4 a) |
+| Sighter crossfired onto another's record target | 2 points off the firer's first series (6.11.6.3) | not covered | 2 points off, first series (10.10.4 a) |
+| Sighter onto another's sighting target | no penalty (6.11.6.2) | no penalty (7.17.9) | no penalty (10.10.4 b) |
+| Disclaimed shot | annulled if the RO confirms it; otherwise it counts (6.11.6.6-8) | the same (7.17.10) | the same (10.10.4 e-f) |
+| Shot-value protest (electronic targets) | before the next shot or within 3 min; not upheld: 2 points off the shot (6.16.5.2) | the same (8.4 c) | challenges by total score (16.1) |
+| Results protest | 10 min after preliminary results (6.16.5.1) | 10 min (8.2) | time set by the match (16.1 b) |
+| Penalties | warning, 2 points, DSQ (6.12.6.1); false information 2 points (6.12.6.1 c) | warning, 2 points, DQ (7.22.1); DQ by two officials (7.22.2-3) | warning, deduction, DQ (9.30) |
+
+How FeT Monitor does it (Match Control console, *Shots…* on a firing point; fetserver/corrections.py):
+- range officers mark a shot *under review* or record a *protest*; the match director settles it (upheld, not upheld,
+  withdrawn). A protest of a shot value that is not upheld suggests 2 points off that shot (ISSF 6.16.5.2 c,
+  CMP 8.4 c), unless the shot was a zero;
+- the match director can override a shot's value (the fired value stays on record and on the score card), annul a
+  shot, add a shot (marked "added by the match director"), record a crossfire (from a firing point, or unknown),
+  give a penalty (a rule reference is required) or disqualify (a rule reference and a second official, CMP 7.22);
+- a penalty without a shot comes off the first series (its best shot, so the whole deduction applies);
+- nothing is deleted: every correction is kept with who and when, and can be voided;
+- common rule references are explained in plain words on the results and score cards (fetserver/rules.py).
+
 ## Still to read before building them
 
 CMP Standard and Start-from-Zero finals (rule 10.3 to 10.5), NRA 10-shot standing final (7.1.2), team sizes and

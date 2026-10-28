@@ -305,6 +305,25 @@ MIGRATIONS = [
         created_by TEXT
     );
     """,
+    """
+    -- Corrections by the range officials (fetserver/corrections.py): reviews and protests, overrides, annulled and
+    -- added shots, crossfires, penalties, disqualifications. The shots themselves are never changed. lane = the
+    -- firing point number in the match (it stays when a shooter is moved to another target).
+    CREATE TABLE shot_corrections (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        match_id    INTEGER NOT NULL,
+        lane        INTEGER NOT NULL,
+        shot_id     INTEGER,
+        kind        TEXT NOT NULL,
+        status      TEXT NOT NULL,
+        data        TEXT NOT NULL,
+        created_by  TEXT,
+        created_ms  INTEGER NOT NULL,
+        resolved_by TEXT,
+        resolved_ms INTEGER
+    );
+    CREATE INDEX shot_corrections_match ON shot_corrections (match_id, lane);
+    """,
 ]
 
 

@@ -28,6 +28,7 @@ from typing import Dict, List, Optional
 
 from . import matchformats as mf
 from . import ranking
+from .rules import lookup_text
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
 ACTIVE = ("ready", "running", "paused", "holding", "overtime")
@@ -639,8 +640,12 @@ class Matches:
                 sw = max((at for q, at in switches if q == ph and at >= a_start and t > at), default=None)
                 return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies)
             counted: Dict[tuple, int] = {}
-            for s in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring FROM shots WHERE series_id=? ORDER BY event_ms, id",
-                               (ln["series_id"],)):
+            eff = self.core.corrections.effects(c, m, ln["lane"])
+            items = [dict(r) for r in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring FROM shots WHERE series_id=? ORDER BY event_ms, id",
+                                                (ln["series_id"],)) if r["id"] not in eff["annulled"]]      # an annulled shot needs no flag
+            items += [{"id": None, "event_ms": a["at_ms"], "stream": "scored"} for a in eff["added"]]     # added shots count, never flagged
+            items.sort(key=lambda r: (r["event_ms"], r["id"] or 0))
+            for s in items:
                 t = s["event_ms"]
                 inside = lambda sp: sp["start"] <= t and (sp["end"] is None or t < sp["end"])
                 o = next((sp for sp in own if inside(sp)), None)
@@ -676,7 +681,7 @@ class Matches:
                         counted[key] = counted.get(key, 0) + 1
                         if counted[key] > p["shots"]:
                             why = f"more than {p['shots']} record shots in {p['label'].lower()}"
-                if why:
+                if why and s["id"] is not None:
                     out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
                                 "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
                                 "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"]})
@@ -726,7 +731,8 @@ class Matches:
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
-                "flags": self.flags(c, m) if m["state"] != "ready" else []}
+                "flags": self.flags(c, m) if m["state"] != "ready" else [],
+                "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid)}
 
     def lane_clock(self, c, m, ln, now: int) -> dict:
         """A lane's own clock, for the console and the shooter's screen: own = "moving" (time stands still until the
@@ -784,26 +790,41 @@ class Matches:
 
     # ------------------------------------------------------------------------------------------- results
     def counted(self, c, m, ln, flags: Dict[int, dict]) -> List[dict]:
-        """One lane's counted record shots in firing order, after the match director's decisions: a record shot counts
-        unless flagged; flagged ones only as decided (count as fired, miss = 0, penalty2 = 2 points off, not below 0;
-        annul / undecided do not count). Decisions on stray sighting shots land on the first record shot
-        (miss_first: 0; penalty2_first: 2 points off each). Values: tenths (decimal x10) and ring, both after penalties."""
+        """One lane's counted record shots in firing order, after the match director's decisions and the corrections
+        (corrections.py). A record shot counts unless flagged; flagged ones only as decided (count as fired, miss = 0,
+        penalty2 = 2 points off, not below 0; annul / undecided do not count). Corrections: annulled shots (also
+        crossfires received) are left out; an override replaces the value (orig keeps the fired one); added shots and
+        crossfire misses take their place in firing order (n None). Decisions on stray sighting shots land on the first
+        record shot (miss_first: 0; penalty2_first: 2 points off each); penalties on their shot, or
+        on the first series. Values: tenths (decimal x10) and ring, both after penalties."""
         out = []
         if ln["series_id"] is None:
             return out
-        for s in c.execute("""SELECT id, is_miss, tenths, ring, ax_h, ay_h, series_no FROM shots
+        eff = self.core.corrections.effects(c, m, ln["lane"])
+        for s in c.execute("""SELECT id, is_miss, tenths, ring, ax_h, ay_h, series_no, event_ms FROM shots
                               WHERE series_id=? AND stream='scored' ORDER BY event_ms, id""", (ln["series_id"],)):
+            if s["id"] in eff["annulled"]:
+                continue
             f = flags.get(s["id"])
             decision = f["decision"] if f else "count"
             if decision not in ("count", "miss", "penalty2"):
                 continue
-            miss = bool(s["is_miss"]) or decision == "miss"
-            tenths, ring = (0, 0) if miss else (s["tenths"], s["ring"])
+            fired = {"tenths": s["tenths"], "ring": s["ring"], "miss": bool(s["is_miss"]), "inner": not s["is_miss"] and is_inner(s["tenths"])}
+            o = eff["overrides"].get(s["id"])
+            v = {k: o[k] for k in ("tenths", "ring", "miss", "inner")} if o else fired
+            miss = v["miss"] or decision == "miss"
+            tenths, ring = (0, 0) if miss else (v["tenths"], v["ring"])
             if decision == "penalty2":
                 tenths, ring = max(0, tenths - 20), max(0, ring - 2)
             out.append({"id": s["id"], "n": s["series_no"], "tenths": tenths, "ring": ring, "miss": miss,
-                        "inner": decision == "count" and not miss and is_inner(s["tenths"]), "decision": decision if f else None,
-                        "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0})
+                        "inner": decision == "count" and not miss and v["inner"], "decision": decision if f else None,
+                        "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0,
+                        "t": s["event_ms"], "orig": fired if o else None, "override": o["note"] if o else None})
+        for a in eff["added"]:
+            out.append({"id": None, "n": None, "tenths": 0 if a["miss"] else a["tenths"], "ring": 0 if a["miss"] else a["ring"], "miss": a["miss"],
+                        "inner": a["inner"], "decision": None, "x_mm": None, "y_mm": None, "t": a["at_ms"],
+                        "added": not a.get("crossfire_to"), "crossfire_to": a.get("crossfire_to"), "note": a.get("note")})
+        out.sort(key=lambda x: (x["t"], x["id"] or 0))
         pens = [f["decision"] for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "sighter"]
         if out and ("miss_first" in pens or "penalty2_first" in pens):
             first = out[0]
@@ -812,7 +833,34 @@ class Matches:
             n = pens.count("penalty2_first")
             first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n,
                          decision=first["decision"] or ("miss_first" if "miss_first" in pens else "penalty2_first"))   # shown as decided
+        for p in eff["penalties"]:                     # whole points off its shot, or off the first series (its best shot,
+            if p["shot_id"] is not None:                # so the whole deduction applies: ISSF 6.11.6.3, 6.12.6.1 a)
+                hit = [y for y in out if y["id"] == p["shot_id"]]
+            else:
+                hit = sorted(out[:10], key=lambda y: -y["tenths"])[:1]
+            for x in hit:
+                x.update(tenths=max(0, x["tenths"] - 10 * p["points"]), ring=max(0, x["ring"] - p["points"]), inner=False)
+                x.setdefault("penalties", []).append(p["rule"])
         return out
+
+    def counted_row(self, c, m, ln, flags: Dict[int, dict]) -> tuple:
+        """(counted shots, extras) for a results row. Disqualified: no shots (their values are cleared). extras: dq,
+        penalties ({points, rule, note}) and removed (record shots annulled by a correction, for the score card)."""
+        shots = self.counted(c, m, ln, flags)
+        eff = self.core.corrections.effects(c, m, ln["lane"])
+        removed = []
+        for sid, a in eff["annulled"].items():
+            r = c.execute("SELECT series_no, stream, tenths, is_miss FROM shots WHERE id=?", (sid,)).fetchone()
+            if r is not None and r["stream"] == "scored":
+                why = ("crossfire from firing point %d" % a["from_lane"] if a["from_lane"] else "crossfire (source unknown)") \
+                    if a["kind"] == "crossfire" else (a["note"] or "annulled")
+                removed.append({"n": r["series_no"], "tenths": 0 if r["is_miss"] else r["tenths"], "why": why})
+        book = rules_of(json.loads(m["format_json"]))
+        dq = dict(eff["dq"], text=lookup_text(eff["dq"]["rule"], book)) if eff["dq"] else None
+        extras = {"dq": dq, "removed": sorted(removed, key=lambda x: x["n"] or 0),
+                  "penalties": [{"points": p["points"], "rule": p["rule"], "note": p["note"], "text": lookup_text(p["rule"], book)}
+                                for p in eff["penalties"]]}
+        return ([] if eff["dq"] else shots), extras
 
     @staticmethod
     def entry_view(shots: List[dict], decimal: bool) -> dict:
@@ -831,10 +879,10 @@ class Matches:
         flags = {f["shot_id"]: f for f in (self.flags(c, m) if m["state"] != "ready" else [])}
         entries = []
         for ln in self._lanes(c, mid):
-            shots = self.counted(c, m, ln, flags)
+            shots, x = self.counted_row(c, m, ln, flags)
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             name = ln["competitor"] or ""
-            entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1],
+            entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1], **x,
                                 lane=ln["lane"], device_id=ln["device_id"], competitor=name,
                                 target=(t["name"] if t and t["name"] else ln["device_id"]),
                                 pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])))

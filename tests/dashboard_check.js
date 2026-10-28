@@ -599,7 +599,7 @@ console.log('OK');
   assert(!plain.includes('†') && !plain.includes('decided by the match director'), 'no decisions: no dagger, no legend');
   e.shot_list[2].decision = 'count'; e.shot_list[5].decision = 'penalty2_first';
   const marked = scoreCards(one, String(e.id));
-  assert.strictEqual(count(marked, /†<\/td>/g), 2, 'counted-after-a-flag and a sighter penalty are both marked');
+  assert.strictEqual(count(marked, /†/g), 3, 'counted-after-a-flag and a sighter penalty are both marked (and the legend)');
   assert(marked.includes('† decided by the match director'));
   e.shot_list.forEach(s => { s.inner = false; s.decision = null; });
   assert(!scoreCards(one, String(e.id)).includes('* inner ten'), 'no inner tens: no * legend');
@@ -617,4 +617,31 @@ console.log('OK');
   assert(mineMenu.includes('data-act="exitrange">Exit (release control)') && !mineMenu.includes('Take control') && !mineMenu.includes('href="#/"'), 'holding it: Exit, no way out but Exit');
   assert(ph(ammoT).includes('mm group'), 'an ammo test shows the group size');
   console.log('phone OK');
+}
+
+// corrections (real server output): results, score cards, the console's shot list
+{
+  const {shotSheet} = X;
+  const ind = C.classes.flatMap(cl => cl.individuals), by = f => ind.find(e => e.family === f);
+  const cole = by('Cole'), brown = by('Brown'), ames = by('Ames');
+  assert(cole.dq && cole.place === null && cole.dq.text.includes('two match officials'));
+  const rp = resultsPage(C);
+  assert(/COLE Cy<\/td><td>Blue<\/td><td>1 · 3<\/td><td><\/td><td><\/td><td><b>DQ<\/b><\/td><td><\/td>/.test(rp), 'DQ in the total, no series, no place');
+  assert(rp.includes('−2</span>') && rp.includes('<h3>Penalties</h3>') && rp.includes('CMP 7.22.1: Open rule violation'), 'penalty marked and explained');
+  assert(!rp.includes('<i>J. Doe'), 'escaped');
+  const card = scoreCards(C, String(ames.id));
+  assert(card.includes('<sup>A</sup>') && card.includes('A added by the match director'), 'added shot marked');
+  assert(/9\.5[^<]*<s>1\d\.\d<\/s>/.test(card), 'override: new value and the fired one struck through');
+  assert(scoreCards(C, String(cole.id)).includes('DISQUALIFIED') && scoreCards(C, String(cole.id)).includes('&lt;i&gt;J. Doe'), 'DQ on the card, escaped');
+  assert(scoreCards(C, String(brown.id)).includes('<sup>P</sup>') && scoreCards(C, String(brown.id)).includes('Penalties: −2 CMP 7.22.1'));
+  // the shot list: an officer can review/protest only; a director sees the tools and can settle the open protest
+  const L = D.laneShots, mcO = {status: {role: 'officer'}, shotp: {lane: 2, data: L}}, mcD = {status: {role: 'director'}, shotp: {lane: 2, data: L}};
+  const o = shotSheet(mcO), dsh = shotSheet(mcD);
+  assert(o.includes('data-k="protest"') && !o.includes('data-k="override"') && !o.includes('mcvoid') && !o.includes('data-k="dq"'), 'officer: mark only');
+  assert(dsh.includes('data-k="override"') && dsh.includes('data-k="crossfire"') && dsh.includes('data-k="dq"') && dsh.includes('data-k="settle"'), 'director: all tools, settle');
+  const settle = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'settle', shot: L.shots.find(x => x.corrections.length).id, corr: L.shots.find(x => x.corrections.length).corrections[0].id, outcome: 'not_upheld'}}}));
+  assert(settle.includes('2 points off this shot (CMP 8.4 c)') || settle.includes('2 points off this shot (ISSF 6.16.5.2 c)'), 'not upheld: the -2 suggested with the rule');
+  const cf = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'crossfire', shot: L.shots[0].id}}}));
+  assert(cf.includes('<option value="">unknown</option>') && cf.includes('Firing point 1') && !cf.includes('<option value="2"'), 'crossfire: the other firing points or unknown');
+  console.log('corrections OK');
 }

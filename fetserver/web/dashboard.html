@@ -99,6 +99,7 @@ body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:
 .sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
 .scard .faces{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}.scard .faces svg{width:100%;height:auto}
+.dqbox{border:2px solid #b91c1c;color:#b91c1c;padding:4px 8px;margin:6px 0}.rulenotes{margin:4px 0 8px 18px;padding:0;font-size:13px}
 .sign{display:flex;gap:30px;margin-top:20px}.sign div{flex:1;border-top:1px solid #111;padding-top:3px;font-size:12px}
 @media print{.noprint{display:none!important}body{background:#fff}.scard{border:0}}
 /* TV displays: no header, big type */
@@ -289,16 +290,26 @@ function resultsIndex(list) {
     '<tr><td><a href="#/results/' + esc(c.key) + '">' + esc(c.name) + '</a></td><td class="mut">' + esc(c.format_name) + '</td><td class="mut">' + esc(RES_KIND[c.kind] || '') + '</td>' +
     '<td class="mut">' + esc(fmtDay(c.at_ms)) + '</td><td>' + (c.active ? 'in progress' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No results yet.</p>') + '</div>';
 }
+const penMark = e => (e.penalties || []).length ? ' <span class="mut" title="penalty">−' + e.penalties.reduce((a, p) => a + p.points, 0) + '</span>' : '';
+function ruleNotes(res) {                       // penalties and disqualifications, with what the rule says
+  const rows = [];
+  res.classes.forEach(cl => cl.individuals.forEach(e => {
+    if (e.dq) rows.push('<li><b>' + esc(e.name) + ': disqualified</b> (' + esc(e.dq.rule) + (e.dq.text ? ': ' + esc(e.dq.text) : '') + ')' + (e.dq.note ? ' · ' + esc(e.dq.note) : '') + '</li>');
+    (e.penalties || []).forEach(p => rows.push('<li>' + esc(e.name) + ': −' + p.points + ' (' + esc(p.rule) + (p.text ? ': ' + esc(p.text) : '') + ')' + (p.note ? ' · ' + esc(p.note) : '') + '</li>'));
+  }));
+  return rows.length ? '<h3>Penalties</h3><ul class="rulenotes">' + rows.join('') + '</ul>' : '';
+}
 function resultsTables(res, print) {
   const n = Math.max(1, Math.ceil(res.record_shots / 10)), xs = res.scoring === 'decimal' ? 'Inner 10s' : 'X';
   return res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
     '<table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Relay · FP</th>' + Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') +
-    '<th>Total</th><th>' + xs + '</th></tr>' + cl.individuals.map(e => '<tr><td>' + (e.fired ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' *' : '') + '</td><td>' + esc(e.team) + '</td><td>' +
-      (e.relay ? esc(e.relay) + ' · ' + esc(e.lane) : '') + '</td>' + Array.from({length: n}, (_, i) => '<td>' + fmtScore(res, e.series[i]) + '</td>').join('') + '<td><b>' + (e.fired ? fmtScore(res, e.total) : '') + '</b></td><td>' + (e.fired ? e.x : '') + '</td></tr>').join('') + '</table>' +
+    '<th>Total</th><th>' + xs + '</th></tr>' + cl.individuals.map(e => '<tr><td>' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' *' : '') + penMark(e) + '</td><td>' + esc(e.team) + '</td><td>' +
+      (e.relay ? esc(e.relay) + ' · ' + esc(e.lane) : '') + '</td>' + Array.from({length: n}, (_, i) => '<td>' + (e.dq ? '' : fmtScore(res, e.series[i])) + '</td>').join('') +
+      '<td><b>' + (e.dq ? 'DQ' : e.fired ? fmtScore(res, e.total) : '') + '</b></td><td>' + (e.fired && !e.dq ? e.x : '') + '</td></tr>').join('') + '</table>' +
     (cl.teams.length ? '<h3>Teams' + (cl.name ? ' · ' + esc(cl.name) : '') + '</h3><table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Team</th><th>Counting</th><th>Total</th><th>' + xs + '</th></tr>' +
       cl.teams.map(t => '<tr><td>' + (t.place ? t.place + (t.tied ? '=' : '') : '–') + '</td><td>' + esc(t.name) + '</td><td>' + (t.place ? esc(t.counting.join(', ')) : '<span class="mut">' + esc(t.reason || '') + ': ' + esc(t.members.join(', ')) + '</span>') +
         '</td><td><b>' + (t.place ? fmtScore(res, t.total) : '') + '</b></td><td>' + (t.place ? t.x : '') + '</td></tr>').join('') + '</table>' : '')).join('') +
-    '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director.</p>';
+    ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director; −n penalty points; DQ disqualified.</p>';
 }
 function resultsPage(res) {
   if (!res) return '<div class="panel"><p class="mut">Loading…</p></div>';
@@ -324,11 +335,18 @@ function scoreCards(res, only) {
   return '<div class="sheetpage" data-cards="' + all.length + '">' + all.map(([cl, e]) => {
     const shots = e.shot_list || [], groups = [];
     for (let i = 0; i < shots.length; i += 10) groups.push(shots.slice(i, i + 10));
-    const val = s => (s.miss ? '0' : res.scoring === 'decimal' ? (s.tenths / 10).toFixed(1) : String(s.ring)) + (s.inner ? '*' : '') + (s.decision ? '†' : '');
-    const notes = [shots.some(s => s.inner) ? '* inner ten' : '', shots.some(s => s.decision) ? '† decided by the match director' : ''].filter(Boolean);
+    const one = v => res.scoring === 'decimal' ? (v.tenths / 10).toFixed(1) : String(v.ring);
+    const val = s => (s.miss ? '0' : one(s)) + (s.inner ? '*' : '') + (s.decision ? '†' : '') + (s.added ? '<sup>A</sup>' : '') + (s.crossfire_to ? '<sup>CF</sup>' : '') +
+      (s.orig ? ' <s>' + (s.orig.miss ? '0' : one(s.orig)) + '</s>' : '') + ((s.penalties || []).length ? '<sup>P</sup>' : '');
+    const notes = [shots.some(s => s.inner) ? '* inner ten' : '', shots.some(s => s.decision) ? '† decided by the match director' : '',
+      shots.some(s => s.added) ? 'A added by the match director' : '', shots.some(s => s.crossfire_to) ? 'CF crossfire, scored as a miss' : '',
+      shots.some(s => s.orig) ? '<s>value</s> as fired, before the match director changed it' : '', shots.some(s => (s.penalties || []).length) ? 'P penalty taken off this shot' : ''].filter(Boolean);
+    const extra = (e.dq ? '<div class="dqbox"><b>DISQUALIFIED</b> · ' + esc(e.dq.rule) + (e.dq.text ? ': ' + esc(e.dq.text) : '') + ' · decided by ' + esc(e.dq.by || '') + ' and ' + esc(e.dq.official) + '</div>' : '') +
+      ((e.removed || []).length ? '<div class="mut">Not counted: ' + e.removed.map(r => 'shot ' + r.n + ' (' + esc(r.why) + ')').join(', ') + '</div>' : '') +
+      ((e.penalties || []).length ? '<div class="mut">Penalties: ' + e.penalties.map(p => '−' + p.points + ' ' + esc(p.rule) + (p.text ? ' (' + esc(p.text) + ')' : '') + (p.note ? ' · ' + esc(p.note) : '')).join('; ') + '</div>' : '');
     return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
       (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
-      '<div style="margin:6px 0"><b>Total ' + fmtScore(res, e.total) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + e.x + ' · place ' + (e.fired ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' +
+      '<div style="margin:6px 0"><b>Total ' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + (e.dq ? '–' : e.x) + ' · place ' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' + extra +
       '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
       groups.map((g, gi) => '<tr><td>' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</td>' + Array.from({length: 10}, (_, i) => '<td>' + (g[i] ? val(g[i]) : '') + '</td>').join('') + '<td><b>' + fmtScore(res, e.series[gi]) + '</b></td></tr>').join('') + '</table>' +
       '<div class="faces">' + groups.map((g, gi) => '<div><div class="mut">Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</div>' +
@@ -391,9 +409,9 @@ function tvCompBoard(res) {
   return '<div class="board">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
     '<table><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Total</th><th>' + (res.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
     Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
-    cl.individuals.map(e => '<tr class="' + (e.place === 1 && e.fired ? 'top' : '') + '"><td>' + (e.fired ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' <span class="mut">*</span>' : '') +
-      '</td><td>' + esc(e.team) + '</td><td class="tot">' + (e.fired ? fmt(e.total) : '') + '</td><td>' + (e.fired ? e.x : '') + '</td>' +
-      Array.from({length: n}, (_, i) => '<td class="ser">' + fmt(e.series[i]) + '</td>').join('') + '<td class="l10">' + e.last10.map(fmt).join(' ') + '</td><td>' + e.shots + ' / ' + res.record_shots + '</td></tr>').join('') +
+    cl.individuals.map(e => '<tr class="' + (e.place === 1 && e.fired && !e.dq ? 'top' : '') + '"><td>' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' <span class="mut">*</span>' : '') + penMark(e) +
+      '</td><td>' + esc(e.team) + '</td><td class="tot">' + (e.dq ? 'DQ' : e.fired ? fmt(e.total) : '') + '</td><td>' + (e.fired && !e.dq ? e.x : '') + '</td>' +
+      Array.from({length: n}, (_, i) => '<td class="ser">' + (e.dq ? '' : fmt(e.series[i])) + '</td>').join('') + '<td class="l10">' + (e.dq ? '' : e.last10.map(fmt).join(' ')) + '</td><td>' + (e.dq ? '' : e.shots + ' / ' + res.record_shots) + '</td></tr>').join('') +
     '</table>').join('') + '</div>';
 }
 function tvBoard(boards, comps) {
@@ -405,10 +423,10 @@ function tvBoard(boards, comps) {
     return '<div class="board">' + tvClock(b) +
       '<table><tr><th>Place</th><th>FP</th><th>Competitor</th><th>Total</th><th>' + (b.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
       Array.from({length: maxSeries}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
-      b.rows.map(r => '<tr class="' + (r.place === 1 && r.shots ? 'top' : '') + '"><td>' + r.place + '</td><td>' + r.lane + '</td><td>' + esc(r.competitor || r.target) + (r.pending ? ' <span class="mut" title="shots waiting for the match director">*</span>' : '') + '</td>' +
-        '<td class="tot">' + fmt(r.total) + '</td><td>' + r.x + '</td>' +
-        Array.from({length: maxSeries}, (_, i) => '<td class="ser">' + (r.series[i] != null ? fmt(r.series[i]) : '') + '</td>').join('') +
-        '<td class="l10">' + r.last10.map(fmt).join(' ') + '</td><td>' + r.shots + ' / ' + b.record_shots + '</td></tr>').join('') + '</table>' +
+      b.rows.map(r => '<tr class="' + (r.place === 1 && r.shots ? 'top' : '') + '"><td>' + (r.dq ? '' : r.place) + '</td><td>' + r.lane + '</td><td>' + esc(r.competitor || r.target) + (r.pending ? ' <span class="mut" title="shots waiting for the match director">*</span>' : '') + penMark(r) + '</td>' +
+        '<td class="tot">' + (r.dq ? 'DQ' : fmt(r.total)) + '</td><td>' + (r.dq ? '' : r.x) + '</td>' +
+        Array.from({length: maxSeries}, (_, i) => '<td class="ser">' + (!r.dq && r.series[i] != null ? fmt(r.series[i]) : '') + '</td>').join('') +
+        '<td class="l10">' + (r.dq ? '' : r.last10.map(fmt).join(' ')) + '</td><td>' + (r.dq ? '' : r.shots + ' / ' + b.record_shots) + '</td></tr>').join('') + '</table>' +
       (b.provisional_ranking ? '<div class="mut">Provisional: ties are split by inner tens, then 10-shot series from the last one. * = shots waiting for the match director.</div>' : '') + '</div>';
   }).join('');
 }
@@ -907,7 +925,8 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
         '<button class="pri" data-act="mclready" data-id="' + esc(l.device_id) + '">Shooter ready</button>' : '') +
       (l.sighting && l.own !== 'moving' ? '<span class="mut">sighting</span><button data-act="mclrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') +
       ((live || (ot && l.own)) && l.own !== 'moving' ? '<button data-act="mclextra" data-id="' + esc(l.device_id) + '" title="Extra time for this shooter only">+1 min</button>' : '') +
-      (canMove ? '<button data-act="mcmove" data-id="' + esc(l.device_id) + '">Move…</button>' : '') + '</div></td></tr>';
+      (canMove ? '<button data-act="mcmove" data-id="' + esc(l.device_id) + '">Move…</button>' : '') +
+      (st !== 'ready' ? '<button data-act="mcshots" data-lane="' + l.lane + '">Shots…</button>' : '') + '</div></td></tr>';
   }).join('') + '</table></div>';
 }
 const MOVE_RULE = {ISSF: 'ISSF 6.10.9.2 and 6.11.3.2: their time stops while they move; when they are ready they get 5 minutes extra and unlimited sighting shots before they go on with record.',
@@ -925,6 +944,70 @@ function moveSheet(mc) {                         // move a shooter to another ta
       ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there. ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).'
       : 'The match has not started: only the target changes.') + '</p>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
     '<div class="mcbar"><button class="pri" data-act="mcmovego"' + (free.length ? '' : ' disabled') + '>Move' + (started ? ' and stop their time' : '') + '</button></div></div>';
+}
+// ---- corrections (corrections.py): the shot list of one firing point, with reviews, protests and the director's tools
+const CORR = {review: 'Under review', protest: 'Protest', override: 'Override', annul: 'Annulled', added: 'Added shot', crossfire: 'Crossfire',
+  penalty: 'Penalty', dq: 'Disqualified'};
+const OUTCOME = {upheld: 'Upheld', not_upheld: 'Not upheld', withdrawn: 'Withdrawn'};
+const NOT_UPHELD = {ISSF: 'ISSF 6.16.5.2 c', CMP: 'CMP 8.4 c'};
+function corrText(x, lanes) {                   // one correction in words
+  const d = x.data || {}, v = d.miss ? 'miss' : d.tenths != null ? (d.tenths / 10).toFixed(1) : '';
+  const what = x.kind === 'override' ? 'set to ' + v : x.kind === 'added' ? v : x.kind === 'crossfire' ? (d.from_lane ? 'from firing point ' + d.from_lane : 'source unknown') :
+    x.kind === 'penalty' ? '−' + d.points + ' (' + d.rule + ')' : x.kind === 'dq' ? d.rule + ' · second official ' + d.official : x.kind === 'annul' ? (d.rule || '') : '';
+  return esc(CORR[x.kind] || x.kind) + (what ? ' ' + esc(what) : '') + (d.note ? ' · ' + esc(d.note) : '') + (d.outcome ? ' · <b>' + esc(OUTCOME[d.outcome]) + '</b>' : '') +
+    ' <span class="mut">(' + esc(x.by || '') + (x.status === 'void' ? ', void' : x.status === 'open' ? ', open' : '') + ')</span>';
+}
+function shotSheet(mc) {
+  const sp = mc.shotp, L = sp.data, director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
+  if (!L) return '<div class="sheet"><p class="mut">Loading…</p></div>';
+  const f = sp.form || {}, rec = L.shots.filter(x => x.stream === 'scored');
+  const live = x => x.status !== 'void';
+  const row = x => {
+    const cs = x.corrections.filter(live), gone = cs.some(c => c.kind === 'annul' || c.kind === 'crossfire');
+    const open = cs.filter(c => c.status === 'open');
+    return '<tr' + (gone ? ' class="mut"' : '') + '><td>' + (x.stream === 'scored' ? x.n : 'S' + x.n) + '</td><td>' + (x.miss ? 'miss' : dec(x.decimal) + (x.inner ? '*' : '')) + '</td>' +
+      '<td class="mut">' + esc(clock(new Date(x.at_ms).toISOString())) + '</td><td>' + cs.map(c => corrText(c)).join('<br>') + '</td><td><div class="mcbar" style="margin:0">' +
+      (gone ? '' : '<button data-act="mcfix" data-k="review" data-shot="' + x.id + '">Review</button><button data-act="mcfix" data-k="protest" data-shot="' + x.id + '">Protest</button>') +
+      (director && !gone ? '<button data-act="mcfix" data-k="override" data-shot="' + x.id + '">Override…</button><button data-act="mcfix" data-k="annul" data-shot="' + x.id + '">Annul…</button>' +
+        '<button data-act="mcfix" data-k="crossfire" data-shot="' + x.id + '">Crossfire…</button>' : '') +
+      (director ? open.map(c => '<button class="pri" data-act="mcfix" data-k="settle" data-corr="' + c.id + '" data-shot="' + x.id + '">Settle ' + esc(CORR[c.kind].toLowerCase()) + '…</button>').join('') : '') +
+      (director ? cs.map(c => '<button data-act="mcvoid" data-corr="' + c.id + '" title="Undo this correction">Void ' + esc(CORR[c.kind].toLowerCase()) + '</button>').join('') : '') + '</div></td></tr>';
+  };
+  const shot = f.shot ? L.shots.find(x => x.id === f.shot) : null;
+  const inp = (k, type, attrs) => '<input type="' + type + '" data-fx="' + k + '" value="' + esc(f[k] != null ? f[k] : '') + '"' + (attrs || '') + '>';
+  const valueFields = inp('value', 'number', ' step="0.1" min="0" max="10.9" style="width:90px" placeholder="10.4"') + ' <label><input type="checkbox" data-fxc="miss"' + (f.miss ? ' checked' : '') + '> miss</label>';
+  const forms = {
+    review: () => 'Mark shot ' + shot.n + ' under review. ' + inp('note', 'text', ' maxlength="300" placeholder="What is being checked" style="width:100%"'),
+    protest: () => 'Record a protest of shot ' + shot.n + '. ' + inp('note', 'text', ' maxlength="300" placeholder="What the shooter says" style="width:100%"') +
+      '<p class="mut">A shot-value protest must be made before the next shot or within 3 minutes of the last one (ISSF 6.16.5.2, CMP 8.4).</p>',
+    override: () => 'New value of shot ' + shot.n + ' (fired ' + (shot.miss ? 'miss' : dec(shot.decimal)) + '): ' + valueFields + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:100%"'),
+    annul: () => 'Annul shot ' + shot.n + ': ' + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:60%"') + ' ' + inp('rule', 'text', ' maxlength="60" placeholder="Rule, e.g. ISSF 6.11.6.7" style="width:35%"'),
+    crossfire: () => 'Shot ' + shot.n + ' was fired by: <select data-fx="from_lane"><option value="">unknown</option>' + L.others.map(o => '<option value="' + o.lane + '"' + (String(f.from_lane) === String(o.lane) ? ' selected' : '') + '>Firing point ' + o.lane + (o.competitor ? ' · ' + esc(o.competitor) : '') + '</option>').join('') + '</select>' +
+      '<p class="mut">It is annulled here. A record shot is scored as a miss for the firing point that fired it; a sighter on a record target costs that firing point 2 points (ISSF 6.11.6, CMP 7.17.9, NRA 10.10.4).</p>',
+    added: () => 'Added shot: ' + valueFields + ' after <select data-fx="after"><option value="">the last shot</option>' + rec.map(x => '<option value="' + x.n + '"' + (String(f.after) === String(x.n) ? ' selected' : '') + '>record shot ' + x.n + '</option>').join('') + '</select>' +
+      inp('note', 'text', ' maxlength="300" placeholder="Reason (required), e.g. failed to register" style="width:100%"') + '<p class="mut">Shown as added by the match director on the results and score cards.</p>',
+    penalty: () => 'Penalty: ' + inp('points', 'number', ' min="1" max="100" style="width:70px"') + ' points · rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. CMP 7.22.1 (required)"') + inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') +
+      '<p class="mut">Taken off the first series. Common rules are explained on the results.</p>',
+    dq: () => 'Disqualify ' + esc(L.competitor || 'firing point ' + L.lane) + ': rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. CMP 7.22.2 (required)"') + ' second official ' + inp('official', 'text', ' maxlength="60" placeholder="Name (required)"') +
+      inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') + '<p class="mut">CMP 7.22: a disqualification is decided by at least two match officials. Scores are cleared and DQ is shown.</p>',
+    settle: () => {
+      const c = shot.corrections.find(x => x.id === f.corr) || {}, prot = c.kind === 'protest', zero = shot.miss || shot.decimal === 0;
+      const rule = NOT_UPHELD[L.tie_rules];
+      return 'Settle the ' + esc(CORR[c.kind] || '').toLowerCase() + ' of shot ' + shot.n + ': ' + ['upheld', 'not_upheld', 'withdrawn'].map(o => '<label><input type="radio" name="fxo" data-fxr="outcome" value="' + o + '"' +
+        (f.outcome === o ? ' checked' : '') + '> ' + OUTCOME[o] + '</label>').join(' ') +
+        (prot && rule && f.outcome === 'not_upheld' ? '<p><label><input type="checkbox" data-fxc="pen"' + (f.pen !== false && !zero ? ' checked' : '') + '> 2 points off this shot (' + esc(rule) + ')</label>' +
+          (zero ? ' <span class="mut">not for a zero or a shot that failed to register</span>' : '') + '</p>' : '') +
+        (f.outcome === 'upheld' ? '<p class="mut">Then correct the shot: Override, Annul or Crossfire.</p>' : '') + inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"');
+    }};
+  const form = f.kind && forms[f.kind] && (f.kind === 'added' || f.kind === 'penalty' || f.kind === 'dq' || shot) ?
+    '<div class="panel" style="margin-top:10px">' + forms[f.kind]() + '<div class="mcbar"><button class="pri" data-act="mcfixgo">Save</button><button data-act="mcfixcancel">Cancel</button></div></div>' : '';
+  const laneCorr = L.corrections.filter(live);
+  return '<div class="sheet" style="max-width:900px"><div class="row"><h2>Firing point ' + L.lane + (L.competitor ? ' · ' + esc(L.competitor) : '') + '</h2><button data-act="mcshotsclose">Close</button></div>' +
+    (director ? '<div class="mcbar"><button data-act="mcfix" data-k="added">Add a shot…</button><button data-act="mcfix" data-k="penalty">Penalty…</button><button class="danger" data-act="mcfix" data-k="dq">Disqualify…</button></div>' : '') +
+    form + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    (laneCorr.length ? '<h4>For the whole firing point</h4>' + laneCorr.map(c => '<div>' + corrText(c) + (director && c.lane === L.lane ? ' <button data-act="mcvoid" data-corr="' + c.id + '">Void</button>' : '') + '</div>').join('') : '') +
+    '<h4>Shots</h4><div class="scroll" style="max-height:55vh"><table class="t"><tr><th>#</th><th>Value</th><th>Time</th><th>Corrections</th><th></th></tr>' + L.shots.slice().reverse().map(row).join('') + '</table></div>' +
+    '<p class="mut">Newest first; S = sighting shot. Range officers mark shots under review or record protests; the match director settles them and corrects scores. Nothing is deleted: a correction can be voided.</p></div>';
 }
 function commandsPanel(d) {                     // what the range officer says now (and, when they read them, the Next button)
   const c = d.clock, st = d.state;
@@ -1138,6 +1221,7 @@ async function refresh() {
           if (cd.status === 200) mc.comp = cd.data;
         }
         if (mc.view === 'console' && mc.open) {
+          await loadShots(mc);
           const d = await matchCall('/matches/' + mc.open);
           if (d.status === 200) { mc.detail = d.data; mc.offset = d.data.clock.server_time_ms - Date.now(); }
         }
@@ -1201,11 +1285,11 @@ function render(force) {                  // force: a structural change (e.g. an
 }
 function renderOverlay(t) {
   const o = document.getElementById('overlay');
-  if (route().match && S.mc && (S.mc.editp || S.mc.movep)) {   // Match Control: editing a competitor, moving a shooter
+  if (route().match && S.mc && (S.mc.editp || S.mc.movep || S.mc.shotp)) {   // Match Control: a competitor, a move, a shot list
     o.className = 'open';
     const ae = document.activeElement;
     if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) return;
-    o.innerHTML = S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
+    o.innerHTML = S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
     return;
   }
   o.className = (S.gear || S.sight) && t ? 'open' : '';
@@ -1464,7 +1548,7 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mclogout') { await matchCall('/logout', {}); mc.view = 'list'; return refresh(); }
-  if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; return refresh(); }
+  if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; mc.shotp = null; return refresh(); }
   if (a === 'mcnew') { mc.view = 'new'; mc.draft = {lanes: {}}; mc.msg = ''; return render(); }
   if (a === 'mcfnew') { mc.view = 'format'; mc.fdraft = {name: '', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'Sighting', minutes: 10}, {kind: 'record', label: 'Record', minutes: 30, shots: 20, warn: '5, 2'}]}; mc.msg = ''; return render(); }
   if (a === 'mcfedit') {
@@ -1603,6 +1687,34 @@ async function matchAct(el, a) {
     if (mc.msg) toast(mc.msg);
     return refresh();
   }
+  if (a === 'mcshots') { mc.shotp = {lane: +el.dataset.lane, data: null, form: null}; mc.msg = ''; await loadShots(mc); return render(); }
+  if (a === 'mcshotsclose') { mc.shotp = null; mc.msg = ''; return render(); }
+  if (a === 'mcfix') { mc.shotp.form = {kind: el.dataset.k, shot: el.dataset.shot ? +el.dataset.shot : null, corr: el.dataset.corr ? +el.dataset.corr : null}; mc.msg = ''; return render(true); }
+  if (a === 'mcfixcancel') { mc.shotp.form = null; mc.msg = ''; return render(true); }
+  if (a === 'mcvoid') {
+    if (!confirm('Void this correction? It stays on record, marked void, and no longer counts.')) return;
+    if (show(await matchCall('/matches/' + mc.open + '/corrections/' + el.dataset.corr + '/void', {}))) toast('Voided');
+    await loadShots(mc); return refresh();
+  }
+  if (a === 'mcfixgo') {
+    const f = mc.shotp.form, num = v => v === '' || v == null ? undefined : +v;
+    let res;
+    if (f.kind === 'settle') {
+      if (!f.outcome) { mc.msg = 'Choose the outcome'; return render(true); }
+      const sh = mc.shotp.data.shots.find(x => x.id === f.shot), c = sh && sh.corrections.find(x => x.id === f.corr);
+      const pen = c && c.kind === 'protest' && f.outcome === 'not_upheld' && NOT_UPHELD[mc.shotp.data.tie_rules] && f.pen !== false && !(sh.miss || sh.decimal === 0);
+      res = await matchCall('/matches/' + mc.open + '/corrections/' + f.corr + '/settle', {outcome: f.outcome, penalty: pen ? 2 : undefined, note: f.note || undefined});
+    } else {
+      const data = {note: f.note || undefined, rule: f.rule || undefined, official: f.official || undefined};
+      if (f.kind === 'override' || f.kind === 'added') Object.assign(data, f.miss ? {miss: true} : {value: num(f.value)});
+      if (f.kind === 'added') data.after = num(f.after);
+      if (f.kind === 'crossfire') data.from_lane = f.from_lane ? +f.from_lane : null;
+      if (f.kind === 'penalty') data.points = num(f.points);
+      res = await matchCall('/matches/' + mc.open + '/corrections', {kind: f.kind, lane: mc.shotp.lane, shot_id: f.shot || undefined, data: data});
+    }
+    if (show(res)) { mc.shotp.form = null; toast('Saved'); }
+    await loadShots(mc); return refresh();
+  }
   if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.msg = ''; return render(); }
   if (a === 'mcmovecancel') { mc.movep = null; mc.msg = ''; return render(); }
   if (a === 'mcmovego') {
@@ -1721,6 +1833,7 @@ function boot() {
     if (el.dataset.mct != null && el.dataset.mct !== undefined) { const dd = mc.view === 'cnew' ? (mc.cdraft = mc.cdraft || {}) : mc.draft; dd.times = dd.times || {}; dd.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
     if (el.dataset.mcf) mc.fdraft[el.dataset.mcf] = el.value;
     if (el.dataset.pe && mc.editp) mc.editp[el.dataset.pe] = el.value;
+    if (el.dataset.fx && mc.shotp && mc.shotp.form && el.tagName === 'INPUT') mc.shotp.form[el.dataset.fx] = el.value;
     if (el.dataset.np) { mc.np = mc.np || {}; mc.np[el.dataset.np] = el.value; }
     if (el.dataset.mcx) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcx] = el.value; if (el.dataset.mcx === 'format_id') { mc.cdraft.times = {}; delete mc.cdraft.team_size; render(true); } }
     if (el.dataset.mcp) { const [i, k] = el.dataset.mcp.split(':'); mc.fdraft.phases[+i][k] = el.value; if (k === 'kind') render(true); }
@@ -1732,6 +1845,11 @@ function boot() {
     if (el.dataset.mcxc) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcxc] = el.checked; render(true); }
     if (el.dataset.rl) { mc.rdraft = mc.rdraft || {}; mc.rdraft[el.dataset.rl] = el.value; render(true); }
     if (el.name === 'mvto' && mc.movep) mc.movep.to = el.value;
+    if (mc.shotp && mc.shotp.form && (el.dataset.fxc || el.dataset.fxr || (el.dataset.fx && el.tagName === 'SELECT'))) {
+      const f = mc.shotp.form;
+      if (el.dataset.fxc) f[el.dataset.fxc] = el.checked; else if (el.dataset.fxr) f[el.dataset.fxr] = el.value; else f[el.dataset.fx] = el.value;
+      render(true);
+    }
     if (el.dataset.msel) { mc.msel = mc.msel || {}; mc.msel[el.dataset.msel] = el.checked; render(true); }
     if (el.dataset.rsel) { mc.rsel = mc.rsel || {}; mc.rsel[el.dataset.rsel] = el.checked; render(true); }
     if (el.dataset.pm && mc.editp) { mc.editp[el.dataset.pm] = el.value; if (el.dataset.pm === 'mrel') mc.editp.mdev = ''; render(true); }
@@ -1763,13 +1881,18 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   openStream();
   window.addEventListener('afterprint', endPrint);
   setInterval(refresh, 5000);
   setInterval(renew, 20000);
   refresh();
+}
+async function loadShots(mc) {             // the open shot list (Match Control console)
+  if (!mc.shotp || !mc.open) return;
+  const r = await matchCall('/matches/' + mc.open + '/shots/' + mc.shotp.lane);
+  if (r.status === 200 && mc.shotp) mc.shotp.data = r.data;
 }
 let pendingRefresh;
 function openStream() {                    // live updates: every change on the server triggers a refresh
@@ -1797,7 +1920,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

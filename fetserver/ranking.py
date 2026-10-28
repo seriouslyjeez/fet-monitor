@@ -85,7 +85,10 @@ def _cmp(a, b) -> int:
 
 def rank(entries: List[dict], rules: str, decimal: bool) -> List[dict]:
     """entries: {"summary": summary(...), "sort_name": family name for alphabetical listing, ...}. Returns them best
-    first with "place" (ties share a place; the next place skips) and "tied" (True when an unbreakable tie remains)."""
+    first with "place" (ties share a place; the next place skips) and "tied" (True when an unbreakable tie remains).
+    An entry with "dq" set (disqualified) gets no place and is listed after the others."""
+    dq = [dict(e, place=None, tied=False) for e in entries if e.get("dq")]          # disqualified: no place, listed last
+    entries = [e for e in entries if not e.get("dq")]
     keyed = [(sort_key(e["summary"], rules, decimal), e) for e in entries]
 
     def order(x, y):
@@ -104,4 +107,4 @@ def rank(entries: List[dict], rules: str, decimal: bool) -> List[dict]:
             e["tied"] = True
             out[-1]["tied"] = True
         out.append(e)
-    return out
+    return out + sorted(dq, key=lambda e: (e.get("sort_name") or "").casefold())

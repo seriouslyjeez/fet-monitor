@@ -13,6 +13,7 @@ from fetserver.db import Database
 from fetserver.server import make_server
 
 BASE = 1_000_000_000
+SHOT = '{"shot":%d, "miss":0, "name":"TARGET", "time":1.00 ,"x":%s, "y":0.50 , "N":1, "E":2, "S":3, "W":0 , "VERSION":"4.3.0" }'
 TOKEN = "dev-token"
 ALICE = "alice-client-01"
 
@@ -225,6 +226,33 @@ class MoveHttp(MatchHttpBase):
         st, _, _ = self.req("POST", f"/api/v1/match/matches/{mid}/move", {"from": "lane-1", "to": "lane-2"})
         self.assertEqual(st, 401)
 
+
+
+class CorrectionsHttp(MatchHttpBase):
+    def test_officer_marks_director_corrects(self):
+        self.login("md", "director-pass"); self.login("ro", "officer-pass")
+        st, d, _ = self.req("POST", "/api/v1/match/matches", {"name": "M", "format_id": self.fmt(), "lanes": [{"device_id": "lane-1"}, {"device_id": "lane-2"}]}, "md")
+        mid = d["id"]
+        self.req("POST", f"/api/v1/match/matches/{mid}/start", {}, "md")
+        self.core.handle_events({"device_id": "lane-1", "boot_count": 1, "uptime_ms": self.clock.t - BASE + 1, "events": [
+            {"seq": 1, "type": "shot", "uptime_ms": self.clock.t - BASE + 1, "raw": SHOT % (1, "1.00")}]})
+        st, ls, _ = self.req("GET", f"/api/v1/match/matches/{mid}/shots/1", None, "ro")
+        sid = ls["shots"][0]["id"]
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/corrections", {"kind": "protest", "lane": 1, "shot_id": sid, "data": {"note": "x"}}, "ro")
+        self.assertEqual((st, d["open_corrections"]), (200, 1))
+        pid = d["id"]
+        self.assertEqual(self.req("POST", f"/api/v1/match/matches/{mid}/corrections", {"kind": "override", "lane": 1, "shot_id": sid,
+                                                                                       "data": {"value": 9.0, "note": "x"}}, "ro")[0], 403)
+        self.assertEqual(self.req("POST", f"/api/v1/match/matches/{mid}/corrections/{pid}/settle", {"outcome": "upheld"}, "ro")[0], 403)
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/corrections/{pid}/settle", {"outcome": "upheld"}, "md")
+        self.assertEqual((st, d["open_corrections"]), (200, 0))
+        st, d, _ = self.req("POST", f"/api/v1/match/matches/{mid}/corrections", {"kind": "override", "lane": 1, "shot_id": sid,
+                                                                                 "data": {"value": 9.0, "note": "gauge"}}, "md")
+        self.assertEqual(st, 200)
+        st, body, _ = self.req("POST", f"/api/v1/match/matches/{mid}/corrections", {"kind": "dq", "lane": 2, "data": {"rule": "CMP 7.22.2"}}, "md")
+        self.assertEqual((st, body["error"]), (400, "the second official's name is required"))
+        self.assertEqual(self.req("POST", f"/api/v1/match/matches/{mid}/corrections/{d['id']}/void", {}, "md")[0], 200)
+        self.assertEqual(self.req("GET", f"/api/v1/match/matches/{mid}/shots/1", None)[0], 401)
 
 if __name__ == "__main__":
     unittest.main()

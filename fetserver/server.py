@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, Admin
+from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
@@ -22,7 +23,8 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections)|/flags/(\d{1,12}))?$")
+CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4}))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
 MAX_CSV = 256 * 1024
@@ -230,6 +232,19 @@ class Handler(BaseHTTPRequestHandler):
                                 payload.get("paced") or "spoken")
                 log.info("Match Control: %s created match %d", who, mid)
                 return self._send(200, mc.detail(mid))
+            cr = CORR_RE.match(path)
+            if cr:
+                mid = int(cr.group(1))
+                if cr.group(4) and method == "GET":
+                    return self._send(200, core.corrections.lane_shots(mid, int(cr.group(4))))
+                if cr.group(2) and method == "POST":
+                    need_director()
+                    if cr.group(3) == "settle":
+                        core.corrections.settle(mid, int(cr.group(2)), str(payload.get("outcome", "")), who, payload.get("penalty"), payload.get("note"))
+                    else:
+                        core.corrections.void(mid, int(cr.group(2)), who)
+                    log.warning("Match Control: %s %s correction %s of match %d", who, cr.group(3), cr.group(2), mid)
+                    return self._send(200, mc.detail(mid))
             mm = MATCH_RE.match(path)
             if mm:
                 mid = int(mm.group(1))
@@ -254,6 +269,14 @@ class Handler(BaseHTTPRequestHandler):
                     mc.lane_command(mid, payload.get("device_id"), str(payload.get("action", "")), who, payload.get("seconds"))
                     log.info("Match Control: %s %s for %s in match %d", who, payload.get("action"), payload.get("device_id"), mid)
                     return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "corrections":   # range officer: review/protest; the rest: director
+                    if payload.get("kind") not in OFFICER_KINDS:
+                        need_director()
+                    cid = core.corrections.add(mid, str(payload.get("kind", "")), payload.get("lane"), who, director,
+                                               payload.get("shot_id"), payload.get("data"))
+                    log.warning("Match Control: %s recorded %s on firing point %s of match %d (correction %d)", who, payload.get("kind"),
+                                payload.get("lane"), mid, cid)
+                    return self._send(200, {"id": cid, **mc.detail(mid)})
                 if method == "POST" and mm.group(2) == "restart":
                     need_director()                        # mistakes happen: the match director can go back
                     mc.restart(mid, payload.get("phase"), who)
@@ -650,12 +673,17 @@ def results_csv(res: dict, teams: bool = False) -> str:
         return out.getvalue()
     n = max(1, -(-res["record_shots"] // 10))
     w.writerow(["Competition", "Class", "Place", "Family name", "Given name", "Team", "Relay", "Firing point", "Total", xs, "Shots"]
-               + [f"Series {i + 1}" for i in range(n)] + ["Tie"])
+               + [f"Series {i + 1}" for i in range(n)] + ["Tie", "Penalties"])
     for cl in res["classes"]:
         for e in cl["individuals"]:
-            w.writerow([txt(res["name"]), txt(cl["name"]), e["place"], txt(e["family"]), txt(e["given"]), txt(e["team"]), e["relay"] or "", e["lane"] or "",
-                        num(e["total"]), e["x"], e["shots"]] + [num(e["series"][i]) if i < len(e["series"]) else "" for i in range(n)]
-                       + ["tied" if e["tied"] else ""])
+            dq = e.get("dq")
+            pens = "; ".join(f"−{p['points']} {p['rule']}" for p in e.get("penalties") or [])
+            if dq:
+                pens = "; ".join(x for x in (f"DQ {dq['rule']}", pens) if x)
+            w.writerow([txt(res["name"]), txt(cl["name"]), e["place"] if e["place"] is not None else "", txt(e["family"]), txt(e["given"]), txt(e["team"]),
+                        e["relay"] or "", e["lane"] or "", "DQ" if dq else num(e["total"]), "" if dq else e["x"], "" if dq else e["shots"]]
+                       + ["" if dq else (num(e["series"][i]) if i < len(e["series"]) else "") for i in range(n)]
+                       + ["tied" if e["tied"] else "", txt(pens)])
     return out.getvalue()
 
 

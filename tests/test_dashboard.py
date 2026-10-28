@@ -87,6 +87,15 @@ class DashboardLogic(unittest.TestCase):
             for did, x in (("comp-1", "0.30"), ("comp-2", "1.50"), ("comp-3", "0.00")):
                 for _ in range(12):
                     shoot(did, x, "0.00")
+            # corrections: an override and an added shot for Ames, a penalty for Brown, Cole disqualified
+            corr = core.corrections
+            ames_shots = corr.lane_shots(rid, 1)["shots"]
+            corr.add(rid, "override", 1, "md", True, ames_shots[0]["id"], {"value": 9.5, "note": "<b>gauge</b>"})
+            corr.add(rid, "added", 1, "md", True, None, {"value": 10.4, "after": 2, "note": "failed to register"})
+            corr.add(rid, "penalty", 2, "md", True, None, {"points": 2, "rule": "CMP 7.22.1", "note": "position"})
+            corr.add(rid, "dq", 3, "md", True, None, {"rule": "CMP 7.22.2", "official": "<i>J. Doe</i>"})
+            corr.add(rid, "protest", 2, "ro", False, corr.lane_shots(rid, 2)["shots"][0]["id"], {"note": "says 10.9"})
+            lane_shots = corr.lane_shots(rid, 2)
             comp = core.results.get(f"c{cid}", with_shots=True)
             # comp-1's target fails: its shooter moves to comp-4 (time stopped), then is ready again
             hb("comp-4", "Spare <4>")
@@ -112,7 +121,7 @@ class DashboardLogic(unittest.TestCase):
             payload = {"targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15),
                        "sight": core.sight_suggestion(lane2["view"]["series_id"], 0), "comp": comp,
                        "moving": moving, "ready": ready, "cdetail": cdetail, "mtargets": mtargets, "movedTarget": moved_target,
-                       "single": single, "saved": saved, "listing": listing}
+                       "single": single, "saved": saved, "listing": listing, "laneShots": lane_shots}
         proc = subprocess.run(["node", os.path.join(HERE, "dashboard_check.js")], input=json.dumps(payload),
                               capture_output=True, text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

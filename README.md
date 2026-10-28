@@ -78,6 +78,10 @@ scoreboard can show competitions (all relays together, by class).
 the range officer presses *Shooter ready*, then they get the rulebook's extra time and sighters before record again
 (ISSF 6.10.9.2, CMP 7.18.3, NRA 9.2 b; details in docs/MATCH-FORMATS.md). Before a relay starts, the competitor window
 places competitors on any relay and target, or swaps two.
+**Corrections** (console, *Shots…* on a firing point): range officers mark shots under review or record protests;
+the match director settles them and can override a shot (the original value is kept and shown), annul or add a shot,
+record crossfires (rulebook scoring), give penalties with a rule reference (explained on the results) and
+disqualify (rule and second official). Results, score cards, TV boards and CSV show DQ, penalties and changed shots.
 **Deleting** (Match Control, match director; tick several at once): *Delete selected* removes matches and competitions
 (with their relays and competitor lists) from Match Control; their results stay on the Results page as a saved copy,
 and the shots stay in each target's history. *Delete selected results* takes results off the Results page, TV,
@@ -251,6 +255,7 @@ backup from /var/backups/fet-monitor in that case.
 | POST /match/matches/<n>/move | Match Control (director before the start) | `{from, to}`: a firing point to a free target |
 | POST /match/matches/<n>/lane | Match Control | `{device_id, action: ready\|extra\|start_record, seconds}`: one shooter's own clock |
 | GET /match/results; POST /match/results/delete, /match/results/restore | Match Control (director to change) | `{keys: [...]}`: results off / back on the Results page (a saved copy is deleted for good) |
+| GET /match/matches/<n>/shots/<fp>; POST /match/matches/<n>/corrections; POST /match/matches/<n>/corrections/<id>/settle, /void | Match Control (review/protest: officer; the rest: director) | A firing point's shots with their corrections; `{kind, lane, shot_id, data}`; settle `{outcome, penalty, note}` |
 | POST /match/delete | Match Control (director) | `{matches: [ids], competitions: [ids]}`: delete from Match Control, keeping a saved copy of the results; all or nothing |
 | POST /match/competitions/<n>/competitors/<id>/move | Match Control (director) | `{match_id, device_id}` before that relay starts (`match_id` null: off the relay) |
 | GET /board?m=<n,n> | anyone | Scoreboard data for those matches (default: the current ones) |
