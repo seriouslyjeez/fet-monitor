@@ -14,7 +14,7 @@ from typing import Dict, List, Optional
 
 from . import matchformats as mf
 from . import ranking
-from .matches import ACTIVE, PACING, MatchError, rules_of
+from .matches import ACTIVE, PACING, MatchError, own_clock, rules_of
 
 MAX_COMPETITORS = 500
 
@@ -214,7 +214,7 @@ class Competitions:
             if person is None:
                 raise MatchError("unknown competitor")
             cur = c.execute("""SELECT l.*, m.state, m.relay FROM match_lanes l JOIN matches m ON m.id=l.match_id
-                               WHERE l.competitor_id=? AND m.competition_id=? AND m.state!='aborted'""", (competitor_id, cid)).fetchone()
+                               WHERE l.competitor_id=? AND m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL""", (competitor_id, cid)).fetchone()
             if cur is not None and cur["state"] != "ready":
                 raise MatchError(f"relay {cur['relay']} has started: move this shooter on its console (Move)")
             if match_id is None:
@@ -254,6 +254,72 @@ class Competitions:
         self._pub(cid)
         self.matches._pub(match_id)
 
+    def finish_on_later_relay(self, mid: int, device_id: str, to_match, to_device: str, by: str) -> int:
+        """CMP 7.18: a shooter whose target failed finishes the match on a later relay. Their shots so far stay on this
+        relay; on the later one (to_match: a relay that has not started, or None for a new relay) they wait until the
+        phase they left, then get the time they had left there plus 2 minutes (7.18.3), sighters first, and only the
+        record shots still to fire. Returns the later relay's match id."""
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self.matches._row(c, mid)
+            if m["competition_id"] is None:
+                raise MatchError("only a competition's relay can send a shooter to a later relay")
+            if m["state"] not in ("running", "paused", "holding", "overtime"):
+                raise MatchError("the relay is not running")
+            self.matches.not_official(m)
+            ln = self.matches._lane(c, mid, device_id)
+            if ln["left_ms"] is not None or ln["competitor_id"] is None:
+                raise MatchError("this firing point has no competitor to move")
+            fmt = json.loads(m["format_json"])
+            phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
+            if phase < 0 or fmt["phases"][phase]["kind"] not in mf.FIRE_KINDS:
+                raise MatchError("between stages: place the competitor on a later relay with the competitor window instead")
+            left = self.matches.lane_left_ms(m, ln, now)
+            wins = [w for w in self.matches.windows(c, mid) if w["phase"] == phase]
+            start = max((w["start"] for w in wins if w["attempt"] == max(x["attempt"] for x in wins)), default=0) if wins else 0
+            fired = c.execute("SELECT COUNT(*) FROM shots WHERE series_id=? AND stream='scored' AND event_ms>=?", (ln["series_id"], start)).fetchone()[0] \
+                if ln["series_id"] is not None else 0
+            comp = self._row(c, m["competition_id"])
+            if to_match is None:
+                self._check_free(c, to_device)
+                relay = (c.execute("SELECT MAX(relay) FROM matches WHERE competition_id=?", (comp["id"],)).fetchone()[0] or 0) + 1
+                to = None
+            else:
+                t = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=?", (to_match, comp["id"])).fetchone() if isinstance(to_match, int) else None
+                if t is None or t["state"] != "ready" or t["relay"] <= m["relay"]:
+                    raise MatchError("choose a later relay that has not started")
+                if c.execute("SELECT 1 FROM match_lanes WHERE match_id=? AND device_id=?", (to_match, to_device)).fetchone():
+                    raise MatchError("that target is taken on that relay")
+                self._check_free(c, to_device)
+                to = to_match
+        if to is None:                                   # a new relay (its own transaction, like any relay)
+            to = self.matches.create(f"{comp['name']} - relay {relay}", None, [{"device_id": to_device, "competitor": ln["competitor"],
+                                                                                   "competitor_id": ln["competitor_id"]}], by,
+                                     paced=comp["paced"], fmt=fmt, competition_id=comp["id"], relay=relay)
+        with self.db.write() as c:
+            if c.execute("SELECT 1 FROM match_lanes WHERE match_id=? AND device_id=?", (to, to_device)).fetchone() is None:
+                lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (to,)).fetchone()[0] or 0) + 1
+                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
+                          (to, to_device, lane, ln["competitor"], ln["competitor_id"]))
+            c.execute("UPDATE match_lanes SET start_phase=?, carry_shots=?, carry_ms=?, from_match=? WHERE match_id=? AND device_id=?",
+                      (phase, fired, left, mid, to, to_device))
+            c.execute("UPDATE match_lanes SET left_ms=?, to_match=?, moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=0, own_phase=NULL, "
+                      "own_left_ms=NULL, own_since_ms=NULL, sighting=0 WHERE match_id=? AND device_id=?", (now, to, mid, device_id))
+            seg = c.execute("SELECT id FROM segments WHERE device_id=? AND ended_ms IS NULL", (device_id,)).fetchone()
+            if seg is not None:                          # the failed target leaves the match (its shots so far stay)
+                c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (now, seg["id"]))
+            if ln["series_id"] is not None:
+                c.execute("UPDATE series SET ended_ms=? WHERE id=? AND ended_ms IS NULL", (now, ln["series_id"]))
+            self.matches._log(c, mid, now, "left_relay", phase, device_id, {"to_match": to, "to_device": to_device, "shots": fired, "left_ms": left, "by": by})
+            self.matches._log(c, to, now, "joins_relay", phase, to_device, {"from_match": mid, "shots": fired, "left_ms": left, "by": by})
+            mm = self.matches._row(c, mid)
+            if mm["state"] == "overtime" and not any(own_clock(x) for x in self.matches._lanes(c, mid) if x["left_ms"] is None):
+                self.matches._done(c, mm, now)
+        self.matches._pub(mid)
+        self.matches._pub(to)
+        self._pub(comp["id"])
+        return to
+
     def _check_free(self, c, device_id: str) -> None:
         if c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone() is None:
             raise MatchError("unknown target")
@@ -287,7 +353,7 @@ class Competitions:
         fmt = json.loads(r["format_json"])
         lanes = {l["competitor_id"]: l for l in c.execute(
             """SELECT l.*, m.relay, m.state FROM match_lanes l JOIN matches m ON m.id=l.match_id
-               WHERE m.competition_id=? AND m.state!='aborted'""", (cid,))}
+               WHERE m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL""", (cid,))}
         people = []
         for p in c.execute("SELECT * FROM competitors WHERE competition_id=? ORDER BY family COLLATE NOCASE, given COLLATE NOCASE", (cid,)):
             ln = lanes.get(p["id"])
@@ -319,11 +385,23 @@ class Competitions:
             for ln in c.execute("SELECT * FROM match_lanes WHERE match_id=?", (m["id"],)).fetchall():
                 if ln["competitor_id"] in people:
                     shots, x = self.matches.counted_row(c, m, ln, flags)
-                    found[ln["competitor_id"]] = {"shots": shots, "x": x, "relay": m["relay"], "lane": ln["lane"], "device_id": ln["device_id"],
-                                                  "pending": sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])}
+                    part = {"shots": shots, "x": x, "relay": m["relay"], "lane": ln["lane"], "device_id": ln["device_id"],
+                            "pending": sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])}
+                    prev = found.get(ln["competitor_id"])
+                    if prev is None:
+                        found[ln["competitor_id"]] = part
+                    else:                                # finished on a later relay (CMP 7.18): both parts, in firing order
+                        first, later = (prev, part) if ln["from_match"] is not None else (part, prev)
+                        found[ln["competitor_id"]] = {"shots": first["shots"] + later["shots"], "relay": later["relay"], "lane": later["lane"],
+                                                      "device_id": later["device_id"], "pending": first["pending"] + later["pending"],
+                                                      "moved_from": {"relay": first["relay"], "lane": first["lane"]},
+                                                      "x": {"dq": later["x"]["dq"] or first["x"]["dq"], "penalties": first["x"]["penalties"] + later["x"]["penalties"],
+                                                            "removed": first["x"]["removed"] + later["x"]["removed"]}}
         classes: Dict[str, List[dict]] = {}
         for pid, p in people.items():
             f = found.get(pid, {"shots": [], "x": {"dq": None, "penalties": [], "removed": []}, "relay": None, "lane": None, "device_id": None, "pending": 0})
+            if f.get("moved_from"):
+                f["x"] = dict(f["x"], moved_from=f["moved_from"])
             e = dict(self.matches.entry_view(f["shots"], decimal), summary=ranking.summary(f["shots"]), sort_name=p["family"], **f["x"],
                      id=pid, name=display_name(p), family=p["family"], given=p["given"], cls=p["class"] or "", team=p["team"] or "",
                      relay=f["relay"], lane=f["lane"], device_id=f["device_id"], pending=f["pending"], fired=bool(f["shots"]))

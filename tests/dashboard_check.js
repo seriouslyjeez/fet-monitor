@@ -672,3 +672,20 @@ console.log('OK');
   assert(!todo.includes('Suggested') && todo.includes('Ignore this shot'));
   console.log('guidance OK');
 }
+
+// CMP 7.18: the results say where the shooter started and finished; the move window offers the later relay
+{
+  const {moveSheet} = X;
+  const one = JSON.parse(JSON.stringify(C)), e = one.classes[0].individuals[0];
+  e.moved_from = {relay: 1, lane: 3}; e.relay = 2; e.lane = 1;
+  assert(resultsPage(one).includes('1 · 3 → 2 · 1') && scoreCards(one, String(e.id)).includes('firing point 3, then (CMP 7.18)'));
+  const d = Object.assign({}, D.ready, {competition_id: 5, relay: 1});
+  const comps = [{id: 5, relays: [{id: 1, relay: 1, state: 'running'}, {id: 9, relay: 2, state: 'ready'}, {id: 10, relay: 3, state: 'running'}]}];
+  const base = {detail: d, targets: D.mtargets, comps: comps};
+  const plain = moveSheet(Object.assign({}, base, {movep: {from: 'comp-2'}}));
+  assert(plain.includes('Finish on a later relay (CMP 7.18)') && !plain.includes('data-mvrel'), 'the choice is offered');
+  const rel = moveSheet(Object.assign({}, base, {movep: {from: 'comp-2', mode: 'relay'}}));
+  assert(rel.includes('<option value="">a new relay</option>') && rel.includes('value="9"') && !rel.includes('value="10"') && rel.includes('Send to the later relay'), 'later relays that have not started, or a new one');
+  assert(!moveSheet(Object.assign({}, base, {detail: Object.assign({}, d, {competition_id: null}), movep: {from: 'comp-2'}})).includes('CMP 7.18'), 'single matches: no relays');
+  console.log('7.18 OK');
+}

@@ -110,6 +110,11 @@ How FeT Monitor does it (Match Control console, *Move…* on a firing point; ran
 - shots on the new target while they are moving are flagged ("while moving to another target");
 - before the start, *Move…* only changes the target; in a competition, the competitor window (pencil) places a
   competitor on any relay that has not started, or swaps two competitors.
+- **CMP 7.18, finishing on a later relay** (competitions; *Move…*, *Finish on a later relay*): the shots so far stay on
+  this relay; on the later relay (one that has not started, or a new one) the shooter waits in sighting until the
+  stage they left, then has the time they had left plus 2 minutes (7.18.3), unlimited sighters, and only the record
+  shots still owed; then the rest of the match with everyone. Shots before their stage, or after their own time, are
+  flagged. The results join both parts (relay and firing point shown as "1 · 3 → 2 · 1").
 
 ## Corrections: reviews, protests, crossfires, penalties, disqualification
 
@@ -133,6 +138,18 @@ How FeT Monitor does it (Match Control console, *Shots…* on a firing point; fe
 - a penalty without a shot comes off the first series (its best shot, so the whole deduction applies);
 - nothing is deleted: every correction is kept with who and when, and can be voided;
 - common rule references are explained in plain words on the results and score cards (fetserver/rules.py).
+
+## Official results and decision guidance
+
+- Results are *provisional* until the match director makes them *official*: only when the match finished, every
+  flagged shot is decided and every review or protest is settled. Official results cannot be changed until they are
+  reopened (logged). A competition is official when every relay that was not stopped is. Results pages and print-outs
+  say which. The rulebook protest time (10 minutes after the results are posted, ISSF 6.16.5.1, CMP 8.2) is shown,
+  not enforced.
+- Each flagged shot shows the rule that applies for the match's rulebook (ISSF 6.11.1.1 h/k, 6.11.1.2 d, 6.11.1.3 a,
+  6.11.5; CMP 7.15.1, 7.17.1-3, 7.17.8; NRA 9.2 d, 10.10.4 d, 14.5), a plain summary, a link to the rulebook page and
+  the suggested decision, or what to do by hand where no decision fits (e.g. NRA 14.5: the highest-value shot becomes
+  a miss). The suggestion is never applied by itself.
 
 ## Still to read before building them
 

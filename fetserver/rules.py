@@ -123,7 +123,7 @@ def guidance(code, kind, stream: str, book: str) -> dict:
         table = _BETWEEN
     elif code == "no_fire" and kind == "changeover":
         table = _CHANGEOVER
-    elif code == "after_end":
+    elif code in ("after_end", "after_own_time"):
         table = _AFTER_RECORD if rec else _AFTER_SIGHTER
     elif code in ("sighter_in_record", "sighter_after_record"):
         table = _EXTRA_SIGHTER
@@ -134,7 +134,8 @@ def guidance(code, kind, stream: str, book: str) -> dict:
     if table is None:                                  # restarted, moving, a record shot during sighting: no rule says it
         why = {"restarted": "The match director restarted this part of the match: shots from before the restart normally do not count.",
                "moving": "Fired while the shooter was moving to another target (their time was stopped).",
-               "record_in_sight": "A record shot during sighting time: sighting time is for sighters."}.get(code, "The match director decides.")
+               "record_in_sight": "A record shot during sighting time: sighting time is for sighters.",
+               "waiting": "Fired before this shooter's part of the match on this relay began (CMP 7.18): it does not count."}.get(code, "The match director decides.")
         rule, text, suggest, todo = None, why, ("annul" if rec else "ignore"), None
     else:
         rule, text, suggest, todo = table[book]

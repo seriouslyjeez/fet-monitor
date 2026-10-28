@@ -305,7 +305,7 @@ function resultsTables(res, print) {
   return res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
     '<table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Relay · FP</th>' + Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') +
     '<th>Total</th><th>' + xs + '</th></tr>' + cl.individuals.map(e => '<tr><td>' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' *' : '') + penMark(e) + '</td><td>' + esc(e.team) + '</td><td>' +
-      (e.relay ? esc(e.relay) + ' · ' + esc(e.lane) : '') + '</td>' + Array.from({length: n}, (_, i) => '<td>' + (e.dq ? '' : fmtScore(res, e.series[i])) + '</td>').join('') +
+      (e.moved_from ? esc(e.moved_from.relay) + ' · ' + esc(e.moved_from.lane) + ' → ' : '') + (e.relay ? esc(e.relay) + ' · ' + esc(e.lane) : '') + '</td>' + Array.from({length: n}, (_, i) => '<td>' + (e.dq ? '' : fmtScore(res, e.series[i])) + '</td>').join('') +
       '<td><b>' + (e.dq ? 'DQ' : e.fired ? fmtScore(res, e.total) : '') + '</b></td><td>' + (e.fired && !e.dq ? e.x : '') + '</td></tr>').join('') + '</table>' +
     (cl.teams.length ? '<h3>Teams' + (cl.name ? ' · ' + esc(cl.name) : '') + '</h3><table class="' + (print ? '' : 't') + '"><tr><th>Place</th><th>Team</th><th>Counting</th><th>Total</th><th>' + xs + '</th></tr>' +
       cl.teams.map(t => '<tr><td>' + (t.place ? t.place + (t.tied ? '=' : '') : '–') + '</td><td>' + esc(t.name) + '</td><td>' + (t.place ? esc(t.counting.join(', ')) : '<span class="mut">' + esc(t.reason || '') + ': ' + esc(t.members.join(', ')) + '</span>') +
@@ -347,6 +347,7 @@ function scoreCards(res, only) {
       ((e.removed || []).length ? '<div class="mut">Not counted: ' + e.removed.map(r => 'shot ' + r.n + ' (' + esc(r.why) + ')').join(', ') + '</div>' : '') +
       ((e.penalties || []).length ? '<div class="mut">Penalties: ' + e.penalties.map(p => '−' + p.points + ' ' + esc(p.rule) + (p.text ? ' (' + esc(p.text) + ')' : '') + (p.note ? ' · ' + esc(p.note) : '')).join('; ') + '</div>' : '');
     return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
+      (e.moved_from ? ' · relay ' + esc(e.moved_from.relay) + ', firing point ' + esc(e.moved_from.lane) + ', then (CMP 7.18)' : '') +
       (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
       '<div style="margin:6px 0"><b>Total ' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + (e.dq ? '–' : e.x) + ' · place ' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' + extra +
       '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
@@ -909,6 +910,7 @@ function mcConsole(mc) {
 }
 function laneTime(l, d) {                       // a shooter's own clock (moved to another target), or the match's
   if (!l.own) return '';
+  if (l.own === 'left' || l.own === 'waiting') return '<div class="mut">' + esc(l.relay_note || '') + '</div>';   // CMP 7.18
   const c = l.own === 'moving' ? '<b>Moving</b> · ' + fmtClock(l.own_remaining_ms) + ' kept'
     : '<span data-lends="' + (l.own_ends_at_ms || '') + '">' + fmtClock(l.own_remaining_ms) + '</span> ' + (l.own === 'own' ? esc(l.own_label) + ', own time' : 'own time');
   return '<div class="mut">' + c + (l.own_ends_at_ms == null && l.own !== 'moving' ? ' (paused)' : '') + '</div>';
@@ -918,7 +920,7 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
   const mins = Math.round(d.move_extra_s / 6) / 10;
   return '<div class="panel"><h3>Firing points</h3><table class="t"><tr><th>FP</th><th>Target</th><th>Competitor</th><th>Sighters</th><th>Record</th><th></th></tr>' + d.lanes.map(l => {
     const stage = live && c.kind === 'stage' && !l.own && !l.sighting;
-    const canMove = (st === 'ready' && director) || live || (ot && l.own);
+    const canMove = ((st === 'ready' && director) || live || (ot && l.own)) && l.own !== 'left';
     return '<tr><td>' + l.lane + '</td><td><span class="dot ' + (l.online ? 'on' : '') + '"></span>' + esc(l.target) +
       (l.moved_from && l.moved_from.length ? '<div class="mut">moved from ' + l.moved_from.map(esc).join(', ') + '</div>' : '') + '</td>' +
       '<td>' + esc(l.competitor || '–') + laneTime(l, d) + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td><td><div class="mcbar" style="margin:0">' +
@@ -938,14 +940,20 @@ function moveSheet(mc) {                         // move a shooter to another ta
   const d = mc.detail, mv = mc.movep, l = d && d.lanes.find(x => x.device_id === mv.from);
   if (!l) return '';
   const free = (mc.targets || []).filter(t => !t.in_match && t.device_id !== mv.from), started = d.state !== 'ready';
+  const comp = d.competition_id != null && started ? (mc.comps || []).find(c => c.id === d.competition_id) : null;
+  const later = comp ? comp.relays.filter(r => r.state === 'ready' && r.relay > d.relay) : [], toRelay = mv.mode === 'relay';
   return '<div class="sheet"><div class="row"><h2>Move ' + esc(l.competitor || 'firing point ' + l.lane) + '</h2><button data-act="mcmovecancel">Cancel</button></div>' +
+    (comp ? '<div class="seg"><button data-act="mcmvmode" data-v="target" class="' + (toRelay ? '' : 'sel') + '">Another target, this relay</button>' +
+      '<button data-act="mcmvmode" data-v="relay" class="' + (toRelay ? 'sel' : '') + '">Finish on a later relay (CMP 7.18)</button></div>' : '') +
+    (toRelay ? '<p>Relay: <select data-mvrel><option value="">a new relay</option>' + later.map(r => '<option value="' + r.id + '"' + (String(mv.rel) === String(r.id) ? ' selected' : '') + '>Relay ' + esc(r.relay) + ' (not started)</option>').join('') + '</select></p>' +
+      '<p class="mut">CMP 7.18: their shots so far stay on this relay. On the later relay they wait until this stage, then have the time they have left now plus 2 minutes, unlimited sighters, and only the record shots they still owe; then the rest of the match. The results join both parts.</p>' : '') +
     '<p>From <b>' + esc(l.target) + '</b> to:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="mvto" value="' + esc(t.device_id) + '"' +
       (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
       : '<p class="bad">No free target: every other target is in a match.</p>') +
-    '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc(MOVE_RULE[d.tie_rules] || MOVE_RULE.ISSF) +
+    (toRelay ? '' : '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc(MOVE_RULE[d.tie_rules] || MOVE_RULE.ISSF) +
       ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there. ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).'
-      : 'The match has not started: only the target changes.') + '</p>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
-    '<div class="mcbar"><button class="pri" data-act="mcmovego"' + (free.length ? '' : ' disabled') + '>Move' + (started ? ' and stop their time' : '') + '</button></div></div>';
+      : 'The match has not started: only the target changes.') + '</p>') + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    '<div class="mcbar"><button class="pri" data-act="mcmovego"' + (free.length ? '' : ' disabled') + '>' + (toRelay ? 'Send to the later relay' : 'Move' + (started ? ' and stop their time' : '')) + '</button></div></div>';
 }
 // ---- corrections (corrections.py): the shot list of one firing point, with reviews, protests and the director's tools
 const CORR = {review: 'Under review', protest: 'Protest', override: 'Override', annul: 'Annulled', added: 'Added shot', crossfire: 'Crossfire',
@@ -1742,10 +1750,17 @@ async function matchAct(el, a) {
   }
   if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.msg = ''; return render(); }
   if (a === 'mcmovecancel') { mc.movep = null; mc.msg = ''; return render(); }
+  if (a === 'mcmvmode') { mc.movep.mode = el.dataset.v; mc.msg = ''; return render(true); }
   if (a === 'mcmovego') {
-    const pick = document.querySelector('input[name="mvto"]:checked');
+    const pick = document.querySelector('input[name="mvto"]:checked'), mv = mc.movep;
     if (!pick) { mc.msg = 'Choose the target to move to'; return render(true); }
-    if (show(await matchCall('/matches/' + mc.open + '/move', {from: mc.movep.from, to: pick.value}))) { mc.movep = null; toast('Moved'); }
+    if (mv.mode === 'relay') {
+      if (!confirm('Send this shooter to ' + (mv.rel ? 'that relay' : 'a new relay') + ' to finish the match (CMP 7.18)?')) return;
+      const res = await matchCall('/matches/' + mc.open + '/later-relay', {from: mv.from, to_match: mv.rel ? +mv.rel : null, to: pick.value});
+      if (show(res)) { mc.movep = null; toast('Sent to the later relay'); }
+      return refresh();
+    }
+    if (show(await matchCall('/matches/' + mc.open + '/move', {from: mv.from, to: pick.value}))) { mc.movep = null; toast('Moved'); }
     return refresh();
   }
   if (a === 'mclready' || a === 'mclrecord' || a === 'mclextra') {
@@ -1870,6 +1885,7 @@ function boot() {
     if (el.dataset.mcxc) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcxc] = el.checked; render(true); }
     if (el.dataset.rl) { mc.rdraft = mc.rdraft || {}; mc.rdraft[el.dataset.rl] = el.value; render(true); }
     if (el.name === 'mvto' && mc.movep) mc.movep.to = el.value;
+    if (el.dataset.mvrel !== undefined && mc.movep) { mc.movep.rel = el.value; render(true); }
     if (mc.shotp && mc.shotp.form && (el.dataset.fxc || el.dataset.fxr || (el.dataset.fx && el.tagName === 'SELECT'))) {
       const f = mc.shotp.form;
       if (el.dataset.fxc) f[el.dataset.fxc] = el.checked; else if (el.dataset.fxr) f[el.dataset.fxr] = el.value; else f[el.dataset.fx] = el.value;

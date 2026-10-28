@@ -23,7 +23,7 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay)|/flags/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4}))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
@@ -265,6 +265,10 @@ class Handler(BaseHTTPRequestHandler):
                     mc.move(mid, payload.get("from"), payload.get("to"), who)
                     log.warning("Match Control: %s moved %s to %s in match %d", who, payload.get("from"), payload.get("to"), mid)
                     return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "later-relay":   # CMP 7.18: finish the match on a later relay
+                    to = core.competitions.finish_on_later_relay(mid, payload.get("from"), payload.get("to_match"), payload.get("to"), who)
+                    log.warning("Match Control: %s sent %s of match %d to relay match %d (CMP 7.18)", who, payload.get("from"), mid, to)
+                    return self._send(200, {"to_match": to, **mc.detail(mid)})
                 if method == "POST" and mm.group(2) == "lane":     # one shooter: ready after a move, extra time, start record
                     mc.lane_command(mid, payload.get("device_id"), str(payload.get("action", "")), who, payload.get("seconds"))
                     log.info("Match Control: %s %s for %s in match %d", who, payload.get("action"), payload.get("device_id"), mid)

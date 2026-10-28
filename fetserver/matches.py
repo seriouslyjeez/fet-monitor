@@ -34,7 +34,8 @@ from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 ACTIVE = ("ready", "running", "paused", "holding", "overtime")
 LIVE = ("running", "paused", "holding")
 ACTIVE_SQL = "('ready','running','paused','holding','overtime')"
-MOVE_EXTRA_S = {"ISSF": 300, "CMP": 120, "NRA": 0}   # extra time after a move to another target, by tie-break rule set
+MOVE_EXTRA_S = {"ISSF": 300, "CMP": 120, "NRA": 0}
+REJOIN_EXTRA_MS = 120_000          # CMP 7.18.3: the time left when interrupted plus 2 minutes, on the later relay   # extra time after a move to another target, by tie-break rule set
 PACING = ("spoken", "officer", "auto")   # spoken: the console speaks every command (default); officer: the range officer
 # reads them and the clock waits for Next at every phase; auto: phases follow each other with no commands at all
 DECISIONS = ("count", "annul", "miss", "penalty2")                 # for a flagged RECORD shot
@@ -191,13 +192,19 @@ class Matches:
         return ln["competitor"] or m["name"]
 
     def _set_modes(self, c, m, mode: str, now: int, only: Optional[str] = None, everyone: bool = False) -> None:
-        """Switch the lanes' targets; a lane on its own clock (moved shooter) is left alone unless named or everyone."""
+        """Switch the lanes' targets; a lane on its own clock (moved shooter) is left alone unless named or everyone.
+        A lane that left for a later relay (CMP 7.18) is never switched; one that rejoins at a later phase stays in
+        sighting until then."""
+        phase = c.execute("SELECT phase FROM matches WHERE id=?", (m["id"],)).fetchone()["phase"]
         for ln in self._lanes(c, m["id"]):
             if only and ln["device_id"] != only:
                 continue
+            if ln["left_ms"] is not None:
+                continue
             if not only and not everyone and own_clock(ln):
                 continue
-            self.core._set_mode_in(c, ln["device_id"], mode, self._session(m, ln), now)
+            self.core._set_mode_in(c, ln["device_id"], "sighter" if ln["start_phase"] > phase and not everyone else mode,
+                                   self._session(m, ln), now)
 
     @staticmethod
     def _clear_lanes(c, mid) -> None:
@@ -229,6 +236,9 @@ class Matches:
                   "WHERE id=?", (i, "holding" if hold else "running", None if hold else now, m["id"]))
         c.execute("UPDATE match_lanes SET extra_ms=0, sighting=0 WHERE match_id=? AND own_phase IS NULL AND moving_since_ms IS NULL",
                   (m["id"],))
+        c.execute("UPDATE match_lanes SET extra_ms=?, sighting=? WHERE match_id=? AND start_phase=? AND from_match IS NOT NULL",
+                  ((REJOIN_EXTRA_MS - p["seconds"] * 1000), 1 if p["kind"] in ("record", "stage") else 0, m["id"], i))
+        c.execute("UPDATE match_lanes SET extra_ms=extra_ms+carry_ms WHERE match_id=? AND start_phase=? AND from_match IS NOT NULL", (m["id"], i))
         self._log(c, m["id"], now, "phase_start", i, None, {"hold": True} if hold else None)
         if hold:
             self._set_modes(c, m, "sighter", now)            # nothing counts as record before START
@@ -238,7 +248,11 @@ class Matches:
     def _finish_phase(self, c, m, now: int, how: str) -> None:
         fmt = json.loads(m["format_json"])
         self._log(c, m["id"], now, "phase_end", m["phase"], None, {"how": how})
+        c.execute("UPDATE match_lanes SET own_phase=NULL, own_left_ms=NULL, sighting=0, extra_ms=0 WHERE match_id=? AND own_phase=? "
+                  "AND own_left_ms=0 AND own_since_ms IS NULL AND moving_since_ms IS NULL", (m["id"], m["phase"]))   # their time ended early
         for ln in self._lanes(c, m["id"]):                # a moved shooter with time left finishes this phase on their own
+            if ln["left_ms"] is not None:
+                continue
             if ln["own_phase"] is None and (ln["moving_since_ms"] is not None or ln["extra_ms"] > 0):
                 moving = ln["moving_since_ms"] is not None
                 c.execute("UPDATE match_lanes SET own_phase=?, own_left_ms=?, own_since_ms=?, extra_ms=0 WHERE match_id=? AND device_id=?",
@@ -273,7 +287,7 @@ class Matches:
         now = self.core.now_ms()
         ended = 0
         ids = [r["id"] for r in self.db.conn().execute(
-            "SELECT id FROM matches WHERE state IN ('running','overtime') OR id IN (SELECT match_id FROM match_lanes WHERE own_since_ms IS NOT NULL)")]
+            "SELECT id FROM matches WHERE state IN ('running','overtime') OR id IN (SELECT match_id FROM match_lanes WHERE own_since_ms IS NOT NULL)")]   # (running covers lanes with less time)
         for mid in ids:
             before = ended
             with self.db.write() as c:
@@ -293,7 +307,18 @@ class Matches:
         """End the own phase of every moved shooter whose own time is up (at its exact end), then the match if it was
         only waiting for them."""
         n, last = 0, None
+        m0 = self._row(c, mid)
         for ln in self._lanes(c, mid):
+            if ln["own_phase"] is None and ln["moving_since_ms"] is None and ln["extra_ms"] < 0 and m0["state"] == "running":
+                rem = self.remaining_ms(m0, now) + ln["extra_ms"]
+                if rem <= 0:                            # less time than the match (CMP 7.18.3): this shooter stops now
+                    end = now + rem
+                    c.execute("UPDATE match_lanes SET own_phase=?, own_left_ms=0, own_since_ms=NULL, extra_ms=0, sighting=0 "
+                              "WHERE match_id=? AND device_id=?", (m0["phase"], mid, ln["device_id"]))
+                    self._log(c, mid, end, "lane_stop", m0["phase"], ln["device_id"])
+                    self._set_modes(c, m0, "sighter", end, only=ln["device_id"])
+                    n += 1
+                continue
             if ln["own_phase"] is not None and ln["moving_since_ms"] is None and ln["own_since_ms"] is not None:
                 end = ln["own_since_ms"] + ln["own_left_ms"]
                 if end <= now:
@@ -321,8 +346,8 @@ class Matches:
 
     @staticmethod
     def _lanes_resume(c, mid, now: int) -> None:
-        c.execute("UPDATE match_lanes SET own_since_ms=? WHERE match_id=? AND own_phase IS NOT NULL AND moving_since_ms IS NULL",
-                  (now, mid))
+        c.execute("UPDATE match_lanes SET own_since_ms=? WHERE match_id=? AND own_phase IS NOT NULL AND moving_since_ms IS NULL "
+                  "AND own_left_ms > 0", (now, mid))
 
     def _overrun(self, m, now: int) -> int:
         p = json.loads(m["format_json"])["phases"][m["phase"]]
@@ -676,10 +701,12 @@ class Matches:
             mine = [r for r in log if r["device_id"] in devs]
             switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
             readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_ready"]
+            stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
             moving, own = _lane_spans(log, devs, wins)
 
-            def sighting_ok(ph, a_start, t):          # after a move: unlimited sighters until record starts again
-                ready = max((at for q, at in readies if q == ph and a_start <= at <= t), default=None)
+            def sighting_ok(ph, a_start, t):          # after a move, or rejoining from an earlier relay (CMP 7.18.3):
+                rejoin = [a_start] if ph == ln["start_phase"] and ln["from_match"] is not None else []   # unlimited sighters
+                ready = max([at for q, at in readies if q == ph and a_start <= at <= t] + rejoin, default=None)   # until record starts
                 return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
 
             def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move since)
@@ -708,6 +735,10 @@ class Matches:
                     why = "before the start" if code == "before_start" else "after the end"
                 elif w["superseded"]:
                     why, code = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted", "restarted"
+                elif w["phase"] < ln["start_phase"]:
+                    why, code = f"before this shooter rejoins at {fmt['phases'][ln['start_phase']]['label'].lower()} (CMP 7.18)", "waiting"
+                elif any(ph == w["phase"] and at <= t and at >= attempt_start[(w["phase"], w["attempt"])] for ph, at in stops):
+                    why, code = "after this shooter's own time (CMP 7.18.3)", "after_own_time"
                 elif w["hold"]:
                     kind = fmt["phases"][w["phase"]]["kind"]
                     why, code = f"before START of {fmt['phases'][w['phase']]['label'].lower()}", "before_cmd"
@@ -727,7 +758,7 @@ class Matches:
                         why, code = "a sighting shot after record started", "sighter_after_record"
                     elif rec:
                         key = (w["phase"], w["attempt"])
-                        counted[key] = counted.get(key, 0) + 1
+                        counted[key] = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0) + 1   # CMP 7.18: shots already fired
                         if counted[key] > p["shots"]:
                             why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
                 if why and s["id"] is not None:
@@ -790,6 +821,12 @@ class Matches:
         range officer presses Ready), "own" (finishing their phase after the match went on), "extra" (more time than the
         match in this phase) or "" (the match clock). moved_from: the targets they left, oldest first."""
         fmt = json.loads(m["format_json"])
+        if ln["left_ms"] is not None or (ln["start_phase"] > m["phase"] and m["state"] in LIVE):   # CMP 7.18
+            left = ln["left_ms"] is not None
+            relay = c.execute("SELECT relay FROM matches WHERE id=?", (ln["to_match"] if left else ln["from_match"],)).fetchone()
+            return {"own": "left" if left else "waiting", "own_label": fmt["phases"][ln["start_phase"]]["label"] if not left else None,
+                    "own_kind": None, "own_remaining_ms": None, "own_ends_at_ms": None, "sighting": False, "moved_from": [],
+                    "relay_note": ("finishes the match on relay %s" % relay["relay"] if left else "joins from relay %s at %s" % (relay["relay"], fmt["phases"][ln["start_phase"]]["label"])) if relay else None}
         own = ("moving" if ln["moving_since_ms"] is not None else "own" if ln["own_phase"] is not None
                else "extra" if ln["extra_ms"] and m["state"] in LIVE else "")
         phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
@@ -826,7 +863,9 @@ class Matches:
                       "in_record": self._switched(c, r["id"], r["phase"], device_id) if r["phase"] >= 0 else False})
         ln = self._lane(c, r["id"], device_id)
         lc = self.lane_clock(c, r, ln, now)
-        if lc["own"] == "moving":
+        if lc["own"] == "waiting":                      # CMP 7.18: rejoining at a later phase
+            clock.update(state="paused", label="Waiting: you start at " + lc["own_label"], remaining_ms=0, ends_at_ms=None, kind=None)
+        elif lc["own"] == "moving":
             clock.update(state="paused", label="Moving to another target: your time is stopped", remaining_ms=lc["own_remaining_ms"],
                          ends_at_ms=None, next=None)
         elif lc["own"] in ("own", "extra"):
