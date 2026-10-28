@@ -1,5 +1,7 @@
 """Corrections by the range officials: reviews and protests, overrides, annulled and added shots, crossfires (ISSF
 6.11.6, CMP 7.17.9, NRA 10.10.4), penalties and disqualification. The shots themselves never change."""
+import json
+
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase
 
@@ -211,7 +213,8 @@ class OfficialResults(CorrCase):
         flag = self.m.detail(mid)["flags"][0]["shot_id"]
         self.m.decide(mid, flag, "ignore", "md")
         self.cc.settle(mid, pid, "withdrawn", "md")
-        self.m.make_official(mid, "md")
+        self.m.post_results(mid, "md")
+        self.m.make_official(mid, "md", override=True)
         d = self.m.detail(mid)
         self.assertEqual((d["official_by"], d["open_items"], self.m.results(mid)["official_ms"] is not None), ("md", [], True))
         for fn in (lambda: self.m.decide(mid, flag, "penalty2_first", "md"), lambda: self.cc.add(mid, "review", 1, "ro", False, sid, {}),
@@ -230,10 +233,12 @@ class OfficialResults(CorrCase):
         cid = cc.create("L", fid, "md")
         a, b = cc.save_competitor(cid, {"family": "Ames"}), cc.save_competitor(cid, {"family": "Bell"})
         r1 = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
-        self.m.start(r1, "md"); self.at(100); self.m.make_official(r1, "md")
+        self.m.start(r1, "md"); self.at(100); self.m.post_results(r1, "md"); self.at(700); self.m.make_official(r1, "md")
         r2 = cc.add_relay(cid, [{"device_id": "lane-2", "competitor_id": b}], "md")
         self.assertIsNone(cc.results(cid)["official_ms"], "relay 2 not yet")
-        self.m.start(r2, "md"); self.at(200); self.m.make_official(r2, "md")
+        self.m.start(r2, "md"); self.at(800)
+        self.assertIsNone(cc.results(cid)["results_posted_ms"], "relay 2 not posted yet")
+        self.m.post_results(r2, "md"); self.at(1400); self.m.make_official(r2, "md")
         self.assertIsNotNone(cc.results(cid)["official_ms"])
 
 
@@ -341,3 +346,70 @@ class PhaseE(CorrCase):
         for other in (s4["id"], 999, None):                    # itself, unknown, missing
             with self.assertRaises(MatchError, msg=other):
                 self.cc.add(mid, "double_load", 1, "md", True, s4["id"], {"other_shot": other})
+
+
+class ProtestTime(CorrCase):
+    def test_post_then_wait_or_override(self):
+        mid = self.match([("record", 60, 1)])
+        self.at(10); self.shoot("lane-1")
+        with self.assertRaises(MatchError):
+            self.m.post_results(mid, "md")                        # not finished
+        self.at(100)
+        with self.assertRaises(MatchError) as ctx:
+            self.m.make_official(mid, "md")
+        self.assertIn("post the preliminary results first", str(ctx.exception))
+        self.m.post_results(mid, "md")
+        d = self.m.detail(mid)
+        self.assertEqual(d["protest_until_ms"] - d["results_posted_ms"], 10 * 60_000, "10 minutes (ISSF 6.16.5.1)")
+        self.assertEqual(self.m.results(mid)["protest_until_ms"], d["protest_until_ms"])
+        self.at(699)
+        with self.assertRaises(MatchError) as ctx:
+            self.m.make_official(mid, "md")
+        self.assertIn("protest time is not over", str(ctx.exception))
+        self.at(700)
+        self.m.make_official(mid, "md")
+        self.m.reopen(mid, "md")
+        self.assertIsNone(self.m.detail(mid)["results_posted_ms"], "reopened: post again")
+        self.m.post_results(mid, "md")
+        self.m.make_official(mid, "md", override=True)              # the director may override (logged)
+        log = [json.loads(r["data"]) for r in self.core.db.conn().execute("SELECT data FROM match_log WHERE match_id=? AND kind='official'", (mid,))]
+        self.assertEqual([x["protest_time_overridden"] for x in log], [False, True])
+
+    def test_nra_challenge_time_per_competition(self):
+        cc = self.core.competitions
+        cid = cc.create("N", "nra-s40", "md")
+        self.assertEqual(cc.detail(cid)["challenge_min"], 30)
+        cc.update(cid, challenge_min=45)
+        a = cc.save_competitor(cid, {"family": "Ames"})
+        rid = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
+        self.m.start(rid, "md"); self.m.command(rid, "abort", "md")
+        m = self.m._row(self.core.db.conn(), rid)
+        self.assertEqual(self.m.protest_minutes(self.core.db.conn(), m), 45)
+        for bad in (0, 1441, "10", True):
+            with self.assertRaises(MatchError):
+                cc.update(cid, challenge_min=bad)
+
+
+class IncidentReport(CorrCase):
+    def test_everything_in_time_order_with_who(self):
+        mid = self.match([("setup", 60, 0), ("record", 100, 2)])
+        self.at(5); self.shoot("lane-1")                           # flagged
+        self.at(70); self.shoot("lane-1"); self.m.command(mid, "pause", "ro")
+        self.at(80); self.m.command(mid, "resume", "ro"); self.m.command(mid, "extra", "ro", seconds=60)
+        sid = self.shots(mid, 1, "scored")[0]["id"]
+        p = self.cc.add(mid, "protest", 1, "ro", False, sid, {"note": "says 10.9"})
+        self.cc.settle(mid, p, "not_upheld", "md", penalty=2)
+        v = self.cc.add(mid, "penalty", 2, "md", True, None, {"points": 2, "rule": "CMP 7.22.1"})
+        self.cc.void(mid, v, "md")
+        r = self.m.incidents(mid)
+        whats = [x["what"] for x in r["rows"]]
+        for w in ("Match started", "Flagged sighting shot 1 (", "Clock paused", "Clock resumed", "Extra time for everyone", "Protest · record shot 1", "Penalty"):
+            self.assertTrue(any(x.startswith(w) for x in whats), w)
+        self.assertEqual([x["at_ms"] for x in r["rows"]], sorted(x["at_ms"] for x in r["rows"]))
+        flag = next(x for x in r["rows"] if x["what"].startswith("Flagged"))
+        self.assertEqual((flag["lane"], flag["rule"], flag["detail"].endswith("NOT DECIDED")), (1, "ISSF 6.11.1.1 h", True))
+        prot = next(x for x in r["rows"] if x["what"].startswith("Protest"))
+        self.assertIn("outcome: not upheld", prot["detail"]); self.assertIn("settled by md", prot["detail"]); self.assertEqual(prot["by"], "ro")
+        voided = [x for x in r["rows"] if x["rule"] == "CMP 7.22.1"]
+        self.assertTrue(voided and "VOID (voided by md)" in voided[0]["detail"], "voided corrections stay on the report")
+        self.assertEqual(next(x for x in r["rows"] if x["what"] == "Clock paused")["by"], "ro")

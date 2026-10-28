@@ -24,7 +24,7 @@ log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
 MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay)|/flags/(\d{1,12}))?$")
-CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4}))$")
+CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
 MAX_CSV = 256 * 1024
@@ -196,7 +196,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, cc.detail(cid))
                 need_director()
                 if method == "POST" and not sub:
-                    cc.update(cid, payload.get("name"), payload.get("team_size"), payload.get("best_count"), payload.get("paced"))
+                    cc.update(cid, payload.get("name"), payload.get("team_size"), payload.get("best_count"), payload.get("paced"),
+                              payload.get("challenge_min"))
                 elif method == "POST" and sub == "competitors" and delete == "/move":
                     cc.move_competitor(cid, int(pid), payload.get("match_id"), payload.get("device_id"), who)
                     log.info("Match Control: %s moved competitor %s to relay match %s, %s", who, pid, payload.get("match_id"), payload.get("device_id"))
@@ -237,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
                 mid = int(cr.group(1))
                 if cr.group(4) and method == "GET":
                     return self._send(200, core.corrections.lane_shots(mid, int(cr.group(4))))
+                if cr.group(5) and method == "GET":                 # the Range Incident Report
+                    return self._send(200, mc.incidents(mid))
                 if cr.group(2) and method == "POST":
                     need_director()
                     if cr.group(3) == "settle":
@@ -284,8 +287,15 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, {"id": cid, **mc.detail(mid)})
                 if method == "POST" and mm.group(2) == "official":     # make the results official, or reopen them
                     need_director()
-                    (mc.reopen if payload.get("action") == "reopen" else mc.make_official)(mid, who)
-                    log.warning("Match Control: %s %s the results of match %d", who, "reopened" if payload.get("action") == "reopen" else "made official", mid)
+                    action = payload.get("action")
+                    if action == "reopen":
+                        mc.reopen(mid, who)
+                    elif action == "post":
+                        mc.post_results(mid, who)
+                    else:
+                        mc.make_official(mid, who, payload.get("override") is True)
+                    log.warning("Match Control: %s %s the results of match %d%s", who, {"reopen": "reopened", "post": "posted"}.get(action, "made official"),
+                                mid, " (protest time overridden)" if payload.get("override") is True else "")
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "restart":
                     need_director()                        # mistakes happen: the match director can go back

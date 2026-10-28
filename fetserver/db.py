@@ -338,6 +338,13 @@ MIGRATIONS = [
     ALTER TABLE match_lanes ADD COLUMN left_ms INTEGER;
     ALTER TABLE match_lanes ADD COLUMN to_match INTEGER;
     """,
+    """
+    -- Preliminary results and the protest time (ISSF 6.14.1, 6.16.5.1; CMP 8.2; NRA 16.1 b): when the match director
+    -- posted them and when protests close. NRA's challenge time is set per competition (minutes; NULL: 30).
+    ALTER TABLE matches ADD COLUMN results_posted_ms INTEGER;
+    ALTER TABLE matches ADD COLUMN protest_until_ms INTEGER;
+    ALTER TABLE competitions ADD COLUMN challenge_min INTEGER;
+    """,
 ]
 
 

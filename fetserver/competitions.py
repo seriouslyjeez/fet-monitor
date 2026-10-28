@@ -73,7 +73,7 @@ class Competitions:
         if not isinstance(best_count, bool):
             raise MatchError("best count must be true or false")
 
-    def update(self, cid: int, name=None, team_size=None, best_count=None, paced=None) -> None:
+    def update(self, cid: int, name=None, team_size=None, best_count=None, paced=None, challenge_min=None) -> None:
         with self.db.write() as c:
             r = self._row(c, cid)
             size = r["team_size"] if team_size is None else team_size
@@ -84,8 +84,10 @@ class Competitions:
             nm = r["name"] if name is None else (name.strip()[:80] if isinstance(name, str) and name.strip() else None)
             if not nm:
                 raise MatchError("the competition needs a name")
-            c.execute("UPDATE competitions SET name=?, team_size=?, best_count=?, paced=? WHERE id=?",
-                      (nm, size, int(best), paced or r["paced"], cid))
+            if challenge_min is not None and (not isinstance(challenge_min, int) or isinstance(challenge_min, bool) or not 1 <= challenge_min <= 1440):
+                raise MatchError("challenge time: 1 to 1440 minutes")
+            c.execute("UPDATE competitions SET name=?, team_size=?, best_count=?, paced=?, challenge_min=? WHERE id=?",
+                      (nm, size, int(best), paced or r["paced"], r["challenge_min"] if challenge_min is None else challenge_min, cid))
         self._pub(cid)
 
     # ------------------------------------------------------------------------------------------- competitors
@@ -365,6 +367,7 @@ class Competitions:
                              for l in c.execute("SELECT * FROM match_lanes WHERE match_id=? ORDER BY lane", (m["id"],))]}
                   for m in c.execute("SELECT * FROM matches WHERE competition_id=? ORDER BY relay", (cid,)).fetchall()]
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
+                "challenge_min": r["challenge_min"] if r["challenge_min"] is not None else 30,
                 "paced": r["paced"], "tie_rules": rules_of(fmt), "record_shots": mf.record_shots(fmt),
                 "competitors": people, "relays": relays}
 
@@ -417,13 +420,21 @@ class Competitions:
             out_classes.append({"name": cls, "individuals": ranked, "teams": teams})
         return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
-                "relays": relays, "classes": out_classes, "official_ms": self._official(c, cid)}
+                "relays": relays, "classes": out_classes, "official_ms": self._official(c, cid), **self._posted(c, cid)}
 
     @staticmethod
     def _official(c, cid):
         """When the competition's results became official: every relay that was not stopped is official (the latest)."""
         rows = [r for r in c.execute("SELECT state, official_ms FROM matches WHERE competition_id=? AND state!='aborted'", (cid,))]
         return max(r["official_ms"] for r in rows) if rows and all(r["official_ms"] for r in rows) else None
+
+    @staticmethod
+    def _posted(c, cid) -> dict:
+        """Preliminary results: posted when every relay that was not stopped is; protests until the latest close."""
+        rows = [r for r in c.execute("SELECT results_posted_ms, protest_until_ms FROM matches WHERE competition_id=? AND state!='aborted'", (cid,))]
+        done = bool(rows) and all(r["results_posted_ms"] for r in rows)
+        return {"results_posted_ms": max(r["results_posted_ms"] for r in rows) if done else None,
+                "protest_until_ms": max(r["protest_until_ms"] for r in rows) if done else None}
 
     @staticmethod
     def _teams(ranked: List[dict], comp, rules: str, decimal: bool) -> List[dict]:

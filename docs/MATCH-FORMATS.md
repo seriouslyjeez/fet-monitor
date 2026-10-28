@@ -158,6 +158,13 @@ How FeT Monitor does it (Match Control console, *Shots…* on a firing point; fe
   6.11.5; CMP 7.15.1, 7.17.1-3, 7.17.8; NRA 9.2 d, 10.10.4 d, 14.5), a plain summary, a link to the rulebook page and
   the suggested decision, or what to do by hand where no decision fits (e.g. NRA 14.5: the highest-value shot becomes
   a miss). The suggestion is never applied by itself.
+- *Post preliminary results* (match director, once the match finished) starts the protest time: 10 minutes for ISSF
+  (6.16.5.1) and CMP (8.2); NRA: the challenge time set for the competition (16.1 b; 30 minutes unless changed).
+  Results pages and TV boards show "protests until hh:mm". *Make official* waits for it; the match director can
+  override (logged). Reopening official results clears the posting.
+- *Range incident report* (console, Results panel; ISSF 6.10.4 h, CMP 6.5, NRA Range Officer's Notation): every
+  flag and decision, correction (also voided ones), move, relay change, pause, extra time, restart, posting and
+  official/reopen of a match, in time order with who did it; printable with signature lines, and as CSV.
 
 ## Still to read before building them
 

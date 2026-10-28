@@ -650,8 +650,13 @@ console.log('OK');
 {
   const {officialPanel} = X;
   const prov = officialPanel({state: 'done', open_items: ['1 flagged shot not decided'], ended_ms: 0}, true);
-  assert(prov.includes('Results: provisional') && prov.includes('1 flagged shot not decided') && /data-act="mcofficial" data-a="make" disabled/.test(prov));
-  assert(!officialPanel({state: 'done', open_items: []}, true).includes('disabled'), 'settled: the button works');
+  assert(prov.includes('Results: provisional') && prov.includes('1 flagged shot not decided') && prov.includes('data-a="post"') && !prov.includes('data-a="make"'), 'post first');
+  const now = Date.now(), running = officialPanel({state: 'done', open_items: [], results_posted_ms: now, protest_until_ms: now + 5 * 60000, tie_rules: 'CMP'}, true);
+  assert(running.includes('Protest time until') && running.includes('data-a="override"') && !running.includes('data-a="make"') && running.includes('CMP 8.2'), 'during the protest time: only the override');
+  const over = officialPanel({state: 'done', open_items: [], results_posted_ms: now - 20 * 60000, protest_until_ms: now - 60000}, true);
+  assert(over.includes('The protest time is over') && /data-a="make">/.test(over), 'afterwards: make official');
+  assert(/data-a="make" disabled/.test(officialPanel({state: 'done', open_items: ['x'], results_posted_ms: 1, protest_until_ms: 2}, true)), 'still open items: disabled');
+  assert(officialPanel({state: 'done', id: 7, open_items: []}, false).includes('#/print/incidents/7'), 'the incident report is linked');
   assert(!officialPanel({state: 'done', open_items: []}, false).includes('mcofficial'), 'officers see the status only');
   const off = officialPanel({state: 'done', official_ms: 1, official_by: '<b>md</b>'}, true);
   assert(off.includes('Results: official') && off.includes('data-a="reopen"') && off.includes('&lt;b&gt;md'));
@@ -710,4 +715,17 @@ console.log('OK');
   const dl = sheet('director', {form: {kind: 'double_load', shot: L.shots[0].id}});
   assert(dl.includes('data-fx="other_shot"') && !dl.includes('<option value="' + L.shots[0].id + '"'), 'double load: the other shot, not itself');
   console.log('phase E OK');
+}
+
+// the range incident report page and its CSV
+{
+  const {incidentReport, incidentCsv, statusLine} = X;
+  const r = {match_id: 3, name: '<b>N</b>', format_name: 'F', rulebook: 'CMP', rows: [{at_ms: 0, lane: 2, competitor: 'AMES', what: 'Penalty', detail: '-2 points; =cmd', rule: 'CMP 7.22.1', by: 'md'}]};
+  const page = incidentReport(r);
+  assert(page.includes('Range incident report') && page.includes('&lt;b&gt;N') && page.includes('CMP 7.22.1') && page.includes('Match director / Jury'));
+  assert(incidentReport({error: 'Log in'}).includes('Log in') && incidentReport({match_id: 1, name: 'n', format_name: 'f', rulebook: 'ISSF', rows: []}).includes('Nothing to report'));
+  const csv = incidentCsv(r);
+  assert(csv.startsWith('\ufeffTime,') && csv.includes(',2,AMES,Penalty,-2 points; =cmd,') === false && csv.includes("'-2 points; =cmd"), 'a formula-like cell is kept as text');
+  assert(statusLine({results_posted_ms: 1, protest_until_ms: Date.now() + 120000}).includes('protests until') && statusLine({}).includes('Provisional'));
+  console.log('phase F OK');
 }

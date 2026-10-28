@@ -614,7 +614,30 @@ class Matches:
             out.append(f"{n} review{'s' if n != 1 else ''} or protest{'s' if n != 1 else ''} not settled")
         return out
 
-    def make_official(self, mid: int, by: str) -> None:
+    def protest_minutes(self, c, m) -> int:
+        """The protest time after preliminary results: 10 minutes (ISSF 6.16.5.1, CMP 8.2); NRA: the challenge time
+        the match sets (16.1 b), per competition, 30 minutes if not set."""
+        if rules_of(json.loads(m["format_json"])) != "NRA":
+            return 10
+        r = c.execute("SELECT challenge_min FROM competitions WHERE id=?", (m["competition_id"],)).fetchone() if m["competition_id"] else None
+        return r["challenge_min"] if r and r["challenge_min"] is not None else 30
+
+    def post_results(self, mid: int, by: str) -> None:
+        """Post preliminary results: the protest time starts now (posting again starts it again)."""
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["state"] != "done":
+                raise MatchError("the match has not finished")
+            self.not_official(m)
+            until = now + self.protest_minutes(c, m) * 60_000
+            c.execute("UPDATE matches SET results_posted_ms=?, protest_until_ms=? WHERE id=?", (now, until, mid))
+            self._log(c, mid, now, "posted", None, None, {"by": by, "protest_until_ms": until})
+        self._pub(mid)
+
+    def make_official(self, mid: int, by: str, override: bool = False) -> None:
+        """Official results: nothing open, preliminary results posted, and the protest time over (unless the match
+        director overrides it; logged)."""
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
@@ -623,8 +646,13 @@ class Matches:
             todo = self.open_items(c, m)
             if todo:
                 raise MatchError("not yet: " + "; ".join(todo))
+            if m["results_posted_ms"] is None:
+                raise MatchError("post the preliminary results first: the protest time starts then")
+            running = m["protest_until_ms"] is not None and now < m["protest_until_ms"]
+            if running and not override:
+                raise MatchError("the protest time is not over")
             c.execute("UPDATE matches SET official_ms=?, official_by=? WHERE id=?", (now, by, mid))
-            self._log(c, mid, now, "official", None, None, {"by": by})
+            self._log(c, mid, now, "official", None, None, {"by": by, "protest_time_overridden": running})
         self._pub(mid)
 
     def reopen(self, mid: int, by: str) -> None:
@@ -633,7 +661,7 @@ class Matches:
             m = self._row(c, mid)
             if m["official_ms"] is None:
                 raise MatchError("the results are not official")
-            c.execute("UPDATE matches SET official_ms=NULL, official_by=NULL WHERE id=?", (mid,))
+            c.execute("UPDATE matches SET official_ms=NULL, official_by=NULL, results_posted_ms=NULL, protest_until_ms=NULL WHERE id=?", (mid,))
             self._log(c, mid, now, "reopen", None, None, {"by": by, "was_official_ms": m["official_ms"]})
         self._pub(mid)
 
@@ -811,12 +839,76 @@ class Matches:
                           "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False})
         return {"id": m["id"], "name": m["name"], "format": fmt, "state": m["state"], "created_by": m["created_by"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
+                "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
                 "flags": self.flags(c, m) if m["state"] != "ready" else [],
                 "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid),
                 "open_items": self.open_items(c, m) if m["official_ms"] is None else []}
+
+    LOG_TEXT = {"start": "Match started", "end": "Match finished", "abort": "Match stopped", "pause": "Clock paused", "resume": "Clock resumed",
+                "restart": "Restarted", "extra": "Extra time for everyone", "pacing": "Commands changed", "move": "Shooter moved to another target",
+                "lane_ready": "Moved shooter ready", "lane_extra": "Extra time for this shooter", "lane_stop": "Shooter's own time ended",
+                "left_relay": "Sent to a later relay (CMP 7.18)", "joins_relay": "Joins from an earlier relay (CMP 7.18)",
+                "posted": "Preliminary results posted", "official": "Results made official", "reopen": "Official results reopened"}
+
+    WORDS = {"count": "counted", "annul": "annulled", "miss": "scored as a miss", "penalty2": "counted, 2 points off",
+             "annul_penalty2": "annulled, 2 points off", "ignore": "no penalty", "penalty2_first": "2 points off the first record shot",
+             "miss_first": "first record shot scored as a miss", "upheld": "upheld", "not_upheld": "not upheld", "withdrawn": "withdrawn",
+             "justified": "justified", "not_justified": "not justified", "found": "found", "not_found": "not found (a miss)"}
+
+    def incidents(self, mid: int) -> dict:
+        """The Range Incident Report (ISSF 6.10.4 h, CMP 6.5, NRA Range Officer's Notation): every irregularity,
+        decision, correction, move, interruption and extra time of the match, in time order, with who did it."""
+        c = self.db.conn()
+        m = self._row(c, mid)
+        fmt = json.loads(m["format_json"])
+        lanes = self._lanes(c, mid)
+        lane_of, who_of = {}, {}
+        for ln in lanes:
+            for d in self._lane_devs(c, mid, ln["device_id"]):
+                lane_of[d] = ln["lane"]
+            who_of[ln["lane"]] = ln["competitor"] or ""
+        label = lambda i: fmt["phases"][i]["label"] if i is not None and 0 <= i < len(fmt["phases"]) else ""
+        rows = []
+        for r in c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (mid,)):
+            k = r["kind"]
+            if k not in self.LOG_TEXT:
+                continue
+            d = json.loads(r["data"]) if r["data"] else {}
+            detail = {"restart": "back to " + label(r["phase"]), "extra": "+%s s" % d.get("seconds"), "lane_extra": "+%s s" % d.get("seconds"),
+                      "pacing": d.get("paced", ""), "move": "from %s" % d.get("from", ""), "lane_ready": "+%s s extra" % d.get("extra_s"),
+                      "official": "protest time overridden" if d.get("protest_time_overridden") else "",
+                      "left_relay": "%s record shots fired, %s s left" % (d.get("shots"), (d.get("left_ms") or 0) // 1000)}.get(k, label(r["phase"]) if k in ("pause", "resume") else "")
+            lane = lane_of.get(r["device_id"]) if r["device_id"] else None
+            rows.append({"at_ms": r["at_ms"], "lane": lane, "competitor": who_of.get(lane, ""), "what": self.LOG_TEXT[k], "detail": detail,
+                         "rule": "CMP 7.18" if k in ("left_relay", "joins_relay") else "", "by": d.get("by", "")})
+        decided = {r["shot_id"]: r for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (mid,))}
+        if m["state"] != "ready":
+            for f in self.flags(c, m):
+                dd = decided.get(f["shot_id"])
+                rows.append({"at_ms": f["event_ms"], "lane": f["lane"], "competitor": who_of.get(f["lane"], ""),
+                             "what": "Flagged %s shot %s (%s)" % ("record" if f["stream"] == "scored" else "sighting", f["n"], "miss" if f["miss"] else "%.1f" % f["decimal"]),
+                             "detail": f["why"] + (" · decided: " + self.WORDS.get(f["decision"], f["decision"]) if f["decision"] else " · NOT DECIDED"),
+                             "rule": (f["guide"] or {}).get("rule") or "", "by": dd["decided_by"] if dd else ""})
+        for x in self.core.corrections.list(c, mid):
+            d = x["data"]
+            detail = "; ".join(v for v in (
+                ("value %s" % ("miss" if d.get("miss") else "%.1f" % (d["tenths"] / 10))) if "tenths" in d and x["kind"] in ("override", "added", "not_registered") else "",
+                ("from firing point %s" % d["from_lane"] if d.get("from_lane") else "source unknown") if x["kind"] == "crossfire" else "",
+                ("-%s points" % d["points"]) if x["kind"] == "penalty" else "",
+                ("second official " + d["official"]) if x["kind"] == "dq" else "",
+                d.get("note") or "", ("outcome: " + self.WORDS.get(d["outcome"], d["outcome"])) if d.get("outcome") else "",
+                ("settled by " + x["settled_by"]) if x["settled_by"] and x["status"] != "void" else "",
+                "VOID (voided by %s)" % x["settled_by"] if x["status"] == "void" else "", "OPEN" if x["status"] == "open" else "") if v)
+            shot = c.execute("SELECT series_no, stream FROM shots WHERE id=?", (x["shot_id"],)).fetchone() if x["shot_id"] else None
+            rows.append({"at_ms": x["at_ms"], "lane": x["lane"], "competitor": who_of.get(x["lane"], ""),
+                         "what": x["kind"].replace("_", " ").capitalize() + (" · %s shot %s" % ("record" if shot["stream"] == "scored" else "sighting", shot["series_no"]) if shot else ""),
+                         "detail": detail, "rule": d.get("rule") or "", "by": x["by"] or ""})
+        rows.sort(key=lambda r: r["at_ms"])
+        return {"match_id": mid, "name": m["name"], "format_name": fmt["name"], "rulebook": rules_of(fmt), "started_ms": m["started_ms"],
+                "ended_ms": m["ended_ms"], "official_ms": m["official_ms"], "rows": rows}
 
     def lane_clock(self, c, m, ln, now: int) -> dict:
         """A lane's own clock, for the console and the shooter's screen: own = "moving" (time stands still until the
@@ -995,7 +1087,8 @@ class Matches:
             r.pop("summary", None)
         return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "state": m["state"], "clock": self._clock(m, self.core.now_ms()),
-                "provisional_ranking": False, "rows": rows, "official_ms": m["official_ms"], "official_by": m["official_by"]}
+                "provisional_ranking": False, "rows": rows, "official_ms": m["official_ms"], "official_by": m["official_by"],
+                "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"]}
 
     def board(self, ids: Optional[List[int]] = None) -> List[dict]:
         """Public scoreboard data for the given matches, or for every active match and those finished in the last 6 h."""

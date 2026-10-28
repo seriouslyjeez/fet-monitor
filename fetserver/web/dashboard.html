@@ -312,7 +312,8 @@ function resultsTables(res, print) {
         '</td><td><b>' + (t.place ? fmtScore(res, t.total) : '') + '</b></td><td>' + (t.place ? t.x : '') + '</td></tr>').join('') + '</table>' : '')).join('') +
     ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director; −n penalty points; DQ disqualified.</p>';
 }
-const statusLine = res => '<div class="resstatus ' + (res.official_ms ? 'off' : 'prov') + '">' + (res.official_ms ? 'Official results · ' + esc(new Date(res.official_ms).toLocaleString()) : 'Provisional results') + '</div>';
+const statusLine = res => '<div class="resstatus ' + (res.official_ms ? 'off' : 'prov') + '">' + (res.official_ms ? 'Official results · ' + esc(new Date(res.official_ms).toLocaleString())
+  : res.results_posted_ms ? 'Preliminary results' + (protestLeft(res.protest_until_ms) ? ' · protests until ' + esc(hhmm(res.protest_until_ms)) : ' · protest time over') : 'Provisional results') + '</div>';
 function resultsPage(res) {
   if (!res) return '<div class="panel"><p class="mut">Loading…</p></div>';
   if (res.missing) return '<div class="panel mc"><span class="title">Results</span><p>These results were deleted, or never existed.</p><a href="#/results">All results</a></div>';
@@ -321,6 +322,24 @@ function resultsPage(res) {
     (res.frozen_ms ? ' · saved copy from ' + esc(new Date(res.frozen_ms).toLocaleString()) + ' (the match was deleted from Match Control)' : '') + '</div>' +
     '<div class="mcbar"><a href="#/print/results/' + k + '" target="_blank" rel="noopener">Print results</a> · <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Print score cards</a> · ' +
     '<a href="' + API + '/results/' + k + '.csv">CSV</a>' + (teams ? ' · <a href="' + API + '/results/' + k + '-teams.csv">Teams CSV</a>' : '') + '</div>' + resultsTables(res, false) + '</div>';
+}
+// The Range Incident Report (ISSF 6.10.4 h, CMP 6.5 Range Incident Form, NRA Range Officer's Notation): from the server's
+// match log, flags and corrections; printable, and a CSV made here
+function incidentReport(r) {
+  if (!r) return '<p>Loading…</p>';
+  if (r.error) return '<p>' + esc(r.error) + '</p>';
+  return '<div class="sheetpage"><h1>Range incident report</h1><div>' + esc(r.name) + ' · ' + esc(r.format_name) + ' · ' + esc(r.rulebook) + ' rules' +
+    (r.started_ms ? ' · started ' + esc(new Date(r.started_ms).toLocaleString()) : '') + (r.official_ms ? ' · official ' + esc(new Date(r.official_ms).toLocaleString()) : ' · results not official yet') + '</div>' +
+    '<div class="noprint mcbar"><button data-act="inccsv">Download CSV</button></div>' +
+    '<table><tr><th>Time</th><th>FP</th><th>Competitor</th><th>What</th><th>Details</th><th>Rule</th><th>By</th></tr>' +
+    (r.rows.length ? r.rows.map(x => '<tr><td>' + esc(new Date(x.at_ms).toLocaleTimeString()) + '</td><td>' + esc(x.lane == null ? '' : x.lane) + '</td><td>' + esc(x.competitor) + '</td><td>' + esc(x.what) +
+      '</td><td>' + esc(x.detail) + '</td><td>' + esc(x.rule) + '</td><td>' + esc(x.by) + '</td></tr>').join('') : '<tr><td colspan="7">Nothing to report.</td></tr>') + '</table>' +
+    '<div class="sign"><div>Range officer</div><div>Match director / Jury</div></div></div>';
+}
+function incidentCsv(r) {                         // the same rows as CSV (formula-like cells kept as text, like the results CSV)
+  const cell = v => { v = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  return '\ufeff' + [['Time', 'Firing point', 'Competitor', 'What', 'Details', 'Rule', 'By']].concat(r.rows.map(x => [new Date(x.at_ms).toISOString(), x.lane, x.competitor, x.what, x.detail, x.rule, x.by]))
+    .map(row => row.map(cell).join(',')).join('\r\n') + '\r\n';
 }
 // Print pages: the Print button is outside #app (#printbar), so a redraw never takes it away mid-click
 function printResults(res, at) {
@@ -395,7 +414,8 @@ function tvClock(b) {
   const label = b.state === 'ready' ? 'Starting soon' : b.state === 'done' ? 'Finished' : b.state === 'aborted' ? 'Stopped' :
     (b.state === 'paused' ? 'Paused · ' : b.state === 'holding' ? 'Waiting for START · ' : '') + c.label;
   return '<div class="tvclock"><div><div class="mut">' + esc(b.name) + ' · ' + esc(b.format_name) + '</div><div class="mcphase">' + esc(label || '') + '</div>' +
-    (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + '</div><div class="mcclock" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>';
+    (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (b.state === 'done' ? statusLine(b) : '') +
+    '</div><div class="mcclock" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>';
 }
 function tvTargets(targets, boards, params) {
   const m = params.m ? boards.find(b => b.id === +params.m) : null;
@@ -408,7 +428,7 @@ function tvCompBoard(res) {
   const n = Math.max(1, Math.ceil(res.record_shots / 10)), fmt = v => fmtScore(res, v);
   const running = res.relays.find(r => ['running', 'paused', 'holding'].includes(r.state));
   const clock = running ? tvClock({id: 'c' + res.id + '-' + running.match_id, name: res.name + ' · relay ' + running.relay, format_name: res.format_name, state: running.state, clock: running.clock}) :
-    '<div class="tvclock"><div><div class="mcphase">' + esc(res.name) + '</div><div class="mut">' + esc(res.format_name) + '</div></div></div>';
+    '<div class="tvclock"><div><div class="mcphase">' + esc(res.name) + '</div><div class="mut">' + esc(res.format_name) + '</div>' + statusLine(res) + '</div></div>';
   return '<div class="board">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
     '<table><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Total</th><th>' + (res.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
     Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
@@ -1061,14 +1081,24 @@ function commandsPanel(d) {                     // what the range officer says n
     '<div class="mut">Given: “' + esc(c.start_say || c.label) + '”</div>' + (warn ? '<div class="mut">Coming: ' + warn + (c.end_say ? ' · at 0:00 “' + esc(c.end_say) + '”' : '') + '</div>' : '') +
     '<div class="cmdtext" id="mcsay"></div></div>';
 }
-function officialPanel(d, director) {         // provisional -> official, once everything is settled
+const hhmm = ms => new Date(ms).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+function protestLeft(until) {                    // whole minutes of protest time left (0: over), from this device's clock
+  return until ? Math.max(0, Math.ceil((until - (Date.now() + (S.mc && S.mc.offset || 0))) / 60000)) : 0;
+}
+function officialPanel(d, director) {         // provisional -> posted (protest time) -> official
   if (d.state === 'ready') return '';
+  const report = '<a href="#/print/incidents/' + d.id + '" target="_blank" rel="noopener">Range incident report</a>';
   if (d.official_ms) return '<div class="panel"><h3>Results: official</h3><p>Made official ' + esc(new Date(d.official_ms).toLocaleString()) + ' by ' + esc(d.official_by || '') +
-    '. Nothing can be changed until they are reopened.</p>' + (director ? '<button data-act="mcofficial" data-a="reopen">Reopen the results</button>' : '') + '</div>';
-  const todo = d.open_items || [], since = d.ended_ms ? Math.floor((Date.now() + (S.mc && S.mc.offset || 0) - d.ended_ms) / 60000) : null;
-  return '<div class="panel"><h3>Results: provisional</h3>' + (todo.length ? '<p>Before they can be made official: ' + todo.map(esc).join('; ') + '.</p>' : '<p>Everything is settled.</p>') +
-    (d.state === 'done' && since != null && since < 10 ? '<p class="mut">Protest time: results protests may be made until 10 minutes after the results are posted (ISSF 6.16.5.1, CMP 8.2); ' + since + ' min so far.</p>' : '') +
-    (director ? '<button class="pri" data-act="mcofficial" data-a="make"' + (todo.length ? ' disabled' : '') + '>Make the results official</button>' : '') + '</div>';
+    '. Nothing can be changed until they are reopened.</p><div class="mcbar">' + (director ? '<button data-act="mcofficial" data-a="reopen">Reopen the results</button>' : '') + report + '</div></div>';
+  const todo = d.open_items || [], posted = d.results_posted_ms, left = protestLeft(d.protest_until_ms);
+  const rule = d.tie_rules === 'NRA' ? 'NRA 16.1 b: the challenge time set for the competition' : 'ISSF 6.16.5.1, CMP 8.2: 10 minutes';
+  return '<div class="panel"><h3>Results: ' + (posted ? 'preliminary, posted ' + esc(hhmm(posted)) : 'provisional') + '</h3>' +
+    (todo.length ? '<p>Before they can be made official: ' + todo.map(esc).join('; ') + '.</p>' : '<p>Everything is settled.</p>') +
+    (posted ? '<p>' + (left ? '<b>Protest time until ' + esc(hhmm(d.protest_until_ms)) + '</b> (' + left + ' min left; ' + esc(rule) + ').' : 'The protest time is over.') + '</p>'
+      : d.state === 'done' ? '<p class="mut">Post the preliminary results to start the protest time (' + esc(rule) + ').</p>' : '') +
+    '<div class="mcbar">' + (director && d.state === 'done' ? '<button' + (posted ? '' : ' class="pri"') + ' data-act="mcofficial" data-a="post">' + (posted ? 'Post again (restarts the protest time)' : 'Post preliminary results') + '</button>' : '') +
+    (director && posted ? (left ? '<button class="danger" data-act="mcofficial" data-a="override"' + (todo.length ? ' disabled' : '') + '>Make official now (override the protest time)</button>'
+      : '<button class="pri" data-act="mcofficial" data-a="make"' + (todo.length ? ' disabled' : '') + '>Make the results official</button>') : '') + report + '</div></div>';
 }
 function correctionsPanel(d, director) {        // mistakes happen: the match director can go back
   if (d.state === 'ready') return '';
@@ -1109,7 +1139,9 @@ function mcCompPage(mc) {
     '<div class="mcbar"><a href="#/results/' + c.id + '">Results</a> · <a href="#/print/results/' + c.id + '" target="_blank" rel="noopener">Print results</a> · ' +
     '<a href="#/print/cards/' + c.id + '" target="_blank" rel="noopener">Print score cards</a> · <a href="' + API + '/results/' + c.id + '.csv">CSV</a> · <a href="' + API + '/results/' + c.id + '-teams.csv">Teams CSV</a></div>' +
     (director ? '<div class="mcbar"><label>Team size <input type="number" min="1" max="10" style="width:60px" id="cteam" value="' + c.team_size + '"></label>' +
-      '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label><button data-act="mccsave">Save team settings</button></div>' : '') + '</div>';
+      '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label>' +
+      (c.tie_rules === 'NRA' ? '<label title="NRA 16.1 b: set by the match">Challenge time <input type="number" min="1" max="1440" style="width:70px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
+      '<button data-act="mccsave">Save settings</button></div>' : '') + '</div>';
   h += '<div class="panel mcform"><h3>Competitors (' + c.competitors.length + ')</h3><table class="t"><tr><th>Family name</th><th>Given name</th><th>Class</th><th>Team</th><th>Relay · FP</th><th></th></tr>' +
     c.competitors.map(p => '<tr>' + ['family', 'given', 'class', 'team'].map(k => '<td>' + esc(p[k] || '') + '</td>').join('') +
       '<td>' + (p.relay ? esc(p.relay) + ' · ' + esc(p.lane) : '–') + '</td><td>' + (director ? '<button data-act="mcpedit" data-id="' + p.id + '" title="Edit ' + esc(p.name) + '" aria-label="Edit ' + esc(p.name) + '">✎</button>' : '') + '</td></tr>').join('') + '</table>' +
@@ -1207,7 +1239,7 @@ function toast(m) { const t = document.getElementById('toast'); t.textContent = 
 const route = () => {
   const tv = location.hash.match(/^#\/tv\/(targets|board)(?:\?(.*))?$/);
   if (tv) { const params = {}; (tv[2] || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); params[k] = v || ''; }); return {tv: tv[1], params: params}; }
-  const pr = location.hash.match(/^#\/print\/(results|cards)\/([cma]?\d+)(?:\?p=(\d+))?$/);   // c competition, m match, a saved copy
+  const pr = location.hash.match(/^#\/print\/(results|cards|incidents)\/([cma]?\d+)(?:\?p=(\d+))?$/);   // c competition, m match, a saved copy; incidents: a match id
   if (pr) return {print: pr[1], cid: pr[2], p: pr[3] || null};
   const rs = location.hash.match(/^#\/results(?:\/([cma]?\d+))?$/);
   if (rs) return {results: true, cid: rs[1] || null};
@@ -1284,7 +1316,10 @@ async function refresh() {
       if (!rr.tv) S.compList = (await get('/competitions')).competitions;
     }
     if (rr.results || rr.print) {
-      if (rr.cid) {
+      if (rr.print === 'incidents') {             // the Range Incident Report needs a Match Control login
+        const r = await matchCall('/matches/' + rr.cid + '/incidents');
+        S.inc = r.status === 200 ? r.data : {error: r.status === 401 ? 'Log in to Match Control (in another tab) to see the range incident report.' : (r.data.error || 'error ' + r.status)};
+      } else if (rr.cid) {
         const r = await fetch(API + '/results/' + rr.cid + (rr.print === 'cards' ? '?shots=1' : ''));
         S.res = r.status === 404 ? {missing: true} : r.ok ? await r.json() : S.res;
       } else S.resList = (await get('/results')).results;
@@ -1319,7 +1354,7 @@ function render(force) {                  // force: a structural change (e.g. an
   if (bar) bar.hidden = !r.print;
   if (r.print) {
     S.printAt = S.printAt || new Date();          // the time on the sheet: when the page was opened (a ticking clock would redraw it)
-    setApp(app, r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res, S.printAt));
+    setApp(app, r.print === 'incidents' ? incidentReport(S.inc) : r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res, S.printAt));
     const n = r.print === 'cards' && app.firstElementChild ? app.firstElementChild.dataset.cards : null;
     document.getElementById('printinfo').textContent = n != null ? ' ' + n + ' score card' + (n === '1' ? '' : 's') : '';
     return;
@@ -1379,6 +1414,12 @@ async function act(el) {
   if (a === 'menu') { S.menu = !S.menu; return render(true); }
   if (a === 'menugear' || a === 'menureview') { S.menu = false; S.gear = a === 'menureview' ? 'review' : true; return refresh(); }
   if (a === 'print') return printNow();
+  if (a === 'inccsv' && S.inc && S.inc.rows) {
+    const url = URL.createObjectURL(new Blob([incidentCsv(S.inc)], {type: 'text/csv'})), link = document.createElement('a');
+    link.href = url; link.download = 'incidents-match-' + S.inc.match_id + '.csv'; document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  }
   if (a === 'gearclose') { S.gear = false; return render(); }
   if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
@@ -1639,7 +1680,9 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mccsave') {
-    const res = await matchCall('/competitions/' + mc.copen, {team_size: +(document.getElementById('cteam') || {}).value, best_count: !!(document.getElementById('cbest') || {}).checked});
+    const chal = document.getElementById('cchal');
+    const res = await matchCall('/competitions/' + mc.copen, {team_size: +(document.getElementById('cteam') || {}).value, best_count: !!(document.getElementById('cbest') || {}).checked,
+      challenge_min: chal ? +chal.value : undefined});
     if (show(res)) toast('Saved');
     return refresh();
   }
@@ -1734,11 +1777,14 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mcofficial') {
-    const reopen = el.dataset.a === 'reopen';
-    if (!confirm(reopen ? 'Reopen the official results? Decisions and corrections become possible again; this is logged.' :
-      'Make the results official? After this nothing can be changed unless they are reopened.')) return;
-    const res = await matchCall('/matches/' + mc.open + '/official', {action: reopen ? 'reopen' : 'make'});
-    if (!show(res)) toast(mc.msg); else toast(reopen ? 'Results reopened' : 'Results are official');
+    const k = el.dataset.a;
+    const ask = {reopen: 'Reopen the official results? Decisions and corrections become possible again; this is logged.',
+      post: 'Post the preliminary results? The protest time starts now.',
+      make: 'Make the results official? After this nothing can be changed unless they are reopened.',
+      override: 'The protest time is not over. Make the results official anyway? This is logged on the incident report.'}[k];
+    if (!confirm(ask)) return;
+    const res = await matchCall('/matches/' + mc.open + '/official', {action: k === 'override' ? 'make' : k, override: k === 'override'});
+    if (!show(res)) toast(mc.msg); else toast({reopen: 'Results reopened', post: 'Preliminary results posted', make: 'Results are official', override: 'Results are official'}[k]);
     return refresh();
   }
   if (a === 'mcshots') { mc.shotp = {lane: +el.dataset.lane, data: null, form: null}; mc.msg = ''; await loadShots(mc); return render(); }
@@ -1984,7 +2030,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, officialPanel, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>
