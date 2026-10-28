@@ -25,7 +25,7 @@ FIRE_KINDS = {"sight", "record", "stage"}
 SCORING = {"decimal", "integer"}
 POSITIONS = {"", "standing", "prone", "kneeling", "sitting"}
 MAX_PHASES = 80                  # a final with its single shots and shoot-offs needs more than a qualification
-FINALS = ("standard", "airgun", "sfz_standing", "sfz_3p")
+FINALS = ("standard", "airgun", "sfz_standing", "sfz_3p", "issf", "nra")
 MAX_SECONDS = 4 * 3600
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
@@ -255,9 +255,11 @@ def validate(fmt) -> dict:
         for flag in ("nohold", "early"):           # finals: no hold for START after LOAD; the shot ends when all have fired
             if p.get(flag) is True:
                 out["phases"][-1][flag] = True
-        for key in ("out", "round"):              # finals: the place decided after this phase; a shoot-off's decision
+        for key in ("out", "round"):              # finals: the place(s) decided after this phase; a shoot-off's decision
             if isinstance(p.get(key), int) and not isinstance(p.get(key), bool):
                 out["phases"][-1][key] = p[key]
+        if isinstance(p.get("out"), list) and p["out"] and all(isinstance(x, int) and not isinstance(x, bool) for x in p["out"]):
+            out["phases"][-1]["out"] = list(p["out"])      # several places, lowest first (3PAR 10.3.1: 8th and 7th)
         if isinstance(p.get("lanes"), list) and all(isinstance(x, int) and not isinstance(x, bool) for x in p["lanes"]):
             out["phases"][-1]["lanes"] = sorted(set(p["lanes"]))   # a shoot-off: only these firing points fire
     if not any(p["kind"] in ("record", "stage") for p in out["phases"]):
@@ -292,17 +294,24 @@ def cmp_standard_final(spoken: bool = False) -> dict:
                      "notes": "Added to the qualification score (10.4.3); ties for 1st-3rd shot off (10.2.9 n).", "phases": phases})
 
 
-def shoot_off_phases(lanes, n: int, rule: str = "10.2.9 n", round_: Optional[int] = None) -> list:
-    """One tie-breaking shot for the tied firing points (3PAR 10.2.9 n, Air Gun 10.3.5): LOAD, 5 seconds, START,
-    50 seconds or until the tied have fired. round_: the phase whose decision it settles."""
+def shoot_off_phases(lanes, n: int, rule: str = "10.2.9 n", round_: Optional[int] = None, seconds: int = 50,
+                     attention: bool = False) -> list:
+    """One tie-breaking shot for the tied firing points (3PAR 10.2.9 n, Air Gun 10.3.5, ISSF 6.17.2 h): LOAD, 5
+    seconds, START, 50 seconds or until the tied have fired. NRA 7.1.2 q: the final's own procedure (LOAD, ATTENTION
+    3 2 1, START, 75 seconds). round_: the phase whose decision it settles."""
     extra = {"round": round_} if round_ is not None else {}
-    return [dict(P("pause", "Shoot-off %d: load" % n, 0, 5, rule=rule,
-                   start="These commands are for the tied athletes only, for your tie-breaking shot. Load."), lanes=list(lanes), **extra),
-            dict(P("record", "Shoot-off %d" % n, 0, 50, shots=1, position="standing", rule=rule, start="Start.", end="Stop."),
-                 nohold=True, early=True, lanes=list(lanes), **extra)]
+    out = [dict(P("pause", "Shoot-off %d: load" % n, 0, 5, rule=rule,
+                  start="These commands are for the tied athletes only, for your tie-breaking shot. Load."), lanes=list(lanes), **extra)]
+    if attention:
+        out.append(dict(P("pause", "Shoot-off %d: attention" % n, 0, 4, rule=rule, start="Attention. Three, two, one."),
+                        nohold=True, lanes=list(lanes), **extra))
+    out.append(dict(P("record", "Shoot-off %d" % n, 0, seconds, shots=1, position="standing", rule=rule, start="Start.", end="Stop."),
+                    nohold=True, early=True, lanes=list(lanes), **extra))
+    return out
 
 
-AIRGUN_OUT = {12: 8, 14: 7, 16: 6, 18: 5, 20: 4, 22: 3, 24: 2}   # after shot n, place p is decided (24: 1st and 2nd)
+ELIM_24 = {12: 8, 14: 7, 16: 6, 18: 5, 20: 4, 22: 3, 24: 2}      # 24-shot finals: after shot n, place p is decided (24: 1st and 2nd)
+AIRGUN_OUT = ELIM_24
 
 
 def cmp_airgun_final(spoken: bool = False) -> dict:
@@ -333,3 +342,150 @@ def cmp_airgun_final(spoken: bool = False) -> dict:
     return validate({"id": "cmp-final-airgun", "name": "CMP Air Gun Final", "book": "CMP-AG", "rulebook": "CMP Air Gun", "tie_rules": "CMP", "edition": AG_EDITION,
                      "scoring": "decimal", "final": "airgun", "notes": "The final alone decides the places (10.1.1); every tie is shot off (10.3.5).",
                      "phases": phases})
+
+
+class _Final:
+    """Builds a final's phases: LOAD (5 s) before every shot or series, with a pause for the scores before it when
+    the console speaks the commands (the range officer reading them takes the time the comments need)."""
+    def __init__(self, spoken: bool, comment_rule: str):
+        self.phases, self.spoken, self.comment_rule = [], spoken, comment_rule
+
+    def add(self, *phases):
+        self.phases += list(phases)
+
+    def shot(self, label, say, seconds, shots, position, rule, out=None, warn=(), early=True, attention=False):
+        if self.spoken and self.phases and self.phases[-1]["kind"] == "record":
+            self.phases.append(P("pause", "Scores and commentary", 0, COMMENTARY_S, rule=self.comment_rule))
+        self.phases.append(P("pause", label + ": load", 0, 5, rule=rule, start=say))
+        if attention:
+            self.phases.append(dict(P("pause", label + ": attention", 0, 4, rule=rule, start="Attention. Three, two, one."), nohold=True))
+        ph = dict(P("record", label, 0, seconds, shots=shots, position=position, rule=rule, warnings=warn, start="Start.", end="Stop."), nohold=True)
+        if early:
+            ph["early"] = True
+        if out is not None:
+            ph["out"] = out
+        self.phases.append(ph)
+
+
+def _singles_24(f: _Final, rule: str) -> None:
+    for n in range(11, 25):
+        f.shot("Shot %d" % n, "For the next competition shot. Load.", 50, 1, "standing", rule, out=ELIM_24.get(n))
+
+
+def issf_final(spoken: bool = False) -> dict:
+    """ISSF 10 m Air Rifle Final (Rule Book 2026, 6.17.2): TAKE YOUR POSITIONS, 30 s; 5 minutes preparation and
+    sighting (30 s warning); 60 s to clear the targets; 2 series of 5 shots in 250 s and 14 single shots in 50 s, each
+    stopped at its time or when everyone has fired (6.17.2 e, f); the lowest finalist is eliminated after shots 12, 14
+    ... 22, shot 24 decides gold and silver (g); a tie for an elimination is shot off at once (h)."""
+    f = _Final(spoken, "6.17.2 e")
+    f.add(P("setup", "Take your positions", 0, 30, rule="6.17.2 d", start="Take your positions."),
+          P("sight", "Preparation and sighting", 5, position="standing", warnings=[(30, "Thirty seconds")], rule="6.17.2 d",
+            start="Five minutes preparation and sighting time. Start.", end="Stop. Unload."),
+          P("pause", "Targets cleared for match", 0, 60, rule="6.17.2 d"))
+    for k in (1, 2):
+        f.shot("Series %d" % k, "For the %s competition series. Load." % ("first" if k == 1 else "next"), 250, 5, "standing", "6.17.2 e")
+    _singles_24(f, "6.17.2 f")
+    return validate({"id": "issf-final-ar", "name": "ISSF 10m Air Rifle Final", "book": "ISSF", "rulebook": "ISSF", "tie_rules": "ISSF",
+                     "edition": "ISSF Rule Book 2026 (Edition 2025, third print)", "scoring": "decimal", "final": "issf",
+                     "notes": "Starts from zero (6.17.1.5); start positions by draw (6.17.1.2); ties at an elimination shot off (6.17.2 h).",
+                     "phases": f.phases})
+
+
+def cmp_sfz_standing_final(spoken: bool = False) -> dict:
+    """CMP 3PAR Standing Start-from-Zero Final (10.5, ISSF style, after a 60-shot standing event) with the CMP script
+    "ISSF Standing Final (24 shots start-from-zero)": take your positions 2 min; 5 min preparation and sighting (30 s
+    warning); 30 s pause (10.2.9 b); 2 series of 5 in 250 s, then single shots in 50 s, each stopped at its time or when
+    everyone has fired (10.5.3 c, 10.5.4 d); eliminations after shots 12, 14 ... 22, shot 24 decides 1st and 2nd
+    (10.5.4 f); every tie shot off at once (10.2.9 n)."""
+    f = _Final(spoken, "10.5.3 d")
+    f.add(P("setup", "Take your positions", 2, rule="script", start="Take your positions."),
+          P("sight", "Preparation and sighting", 5, position="standing", warnings=[(30, "Thirty seconds")], rule="10.5.2",
+            start="Five minutes preparation and sighting. Start.", end="Sighting shots. Stop. Unload."),
+          P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b"))
+    for k in (1, 2):
+        f.shot("Series %d" % k, "For the %s competition series. Load." % ("first" if k == 1 else "next"), 250, 5, "standing", "10.5.3")
+    _singles_24(f, "10.5.4")
+    return validate({"id": "cmp-final-sfz-standing", "name": "CMP Standing Start-from-Zero Final", "book": "CMP-3PAR", "rulebook": "CMP 3PAR",
+                     "tie_rules": "CMP", "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal",
+                     "final": "sfz_standing", "notes": "The final alone decides (10.5); positions by draw; every tie shot off (10.2.9 n).",
+                     "phases": f.phases})
+
+
+def cmp_sfz_3p_final(spoken: bool = False) -> dict:
+    """CMP 3PAR Three-Position Start-from-Zero Final (10.3, after 3x10 or 3x20) with the CMP script "ISSF Three-Position
+    Final (35 shots start-from-zero)": take your positions 30 s; 5 min preparation and sighting kneeling; 10 shots
+    kneeling in 400 s; 5 min changeover and sighting prone (the script; 10.3.1 prints "5 7-minutes"); 10 prone in
+    300 s; 7 min changeover and sighting standing; 5 standing in 250 s; 5 standing in 250 s, then 8th and 7th are
+    eliminated; single shots 31-35 in 50 s eliminate 6th, 5th, 4th, 3rd and decide 1st and 2nd (10.3.3 f). Series and
+    shots stop at their time or when everyone has fired (10.3.2 c, 10.3.3 d); 30 s warnings (script)."""
+    w = [(30, "Thirty seconds")]
+    f = _Final(spoken, "10.3.2 d")
+    f.add(P("setup", "Take your positions", 0, 30, rule="10.3.1", start="Take your positions."),
+          P("sight", "Preparation and sighting, kneeling", 5, position="kneeling", warnings=w, rule="10.3.1",
+            start="Five minutes preparation and sighting time. Start.", end="Sighting shots. Stop. Unload."),
+          P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b"))
+    f.shot("Kneeling series", "For the first competition series, ten match shots kneeling in a time limit of 400 seconds. Load.",
+           400, 10, "kneeling", "10.3.1, 10.3.2", warn=w)
+    f.add(P("sight", "Changeover and sighting, prone", 5, position="prone", warnings=w, rule="10.3.1, script",
+            start="Five minutes changeover and sighting time. Start.", end="Sighting shots. Stop. Unload."),
+          P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b"))
+    f.shot("Prone series", "For the next competition series, ten match shots prone in a time limit of 300 seconds. Load.",
+           300, 10, "prone", "10.3.1, 10.3.2", warn=w)
+    f.add(P("sight", "Changeover and sighting, standing", 7, position="standing", warnings=w, rule="10.3.1",
+            start="Seven minutes changeover and sighting time. Start.", end="Sighting shots. Stop. Unload."),
+          P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b"))
+    for k in (1, 2):
+        f.shot("Standing series %d" % k, "For the next competition series, five match shots standing in 250 seconds. Load.",
+               250, 5, "standing", "10.3.1, 10.3.2", warn=w, out=[8, 7] if k == 2 else None)
+    for n, place in zip(range(31, 36), (6, 5, 4, 3, 2)):
+        f.shot("Shot %d" % n, "For the next competition shot. Load.", 50, 1, "standing", "10.3.3", out=place)
+    return validate({"id": "cmp-final-sfz-3p", "name": "CMP Three-Position Start-from-Zero Final", "book": "CMP-3PAR", "rulebook": "CMP 3PAR",
+                     "tie_rules": "CMP", "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal",
+                     "final": "sfz_3p", "notes": "The final alone decides (10.3); positions by draw (10.3.1); every tie shot off (10.2.9 n).",
+                     "phases": f.phases})
+
+
+def nra_final(spoken: bool = False) -> dict:
+    """NRA Precision Air Rifle final (7.1.2): 3 minutes preparation (d); 7 minutes sighting, 30 s warning (e, f); 30 s
+    pause (g); 10 shots standing, each: LOAD, ATTENTION 3 2 1, START, 75 seconds, STOP after the last finalist has
+    fired (m); every shot scored and announced before the next (n). Added to the qualification score (o); ties shot
+    off shot for shot by the same procedure (q). Start positions by qualification rank (k)."""
+    f = _Final(spoken, "7.1.2 n")
+    f.add(P("setup", "Preparation period", 3, rule="7.1.2 d", start="Preparation period. Three minutes."),
+          P("sight", "Sighting", 7, position="standing", warnings=[(30, "Thirty seconds")], rule="7.1.2 e, f",
+            start="Sighting shots. Start.", end="Stop."),
+          P("pause", "Targets to record", 0, 30, rule="7.1.2 g"))
+    for k in range(1, 11):
+        f.shot("Shot %d" % k, "For the %s competition shot. Load." % ("first" if k == 1 else "next"), 75, 1, "standing", "7.1.2 m",
+               attention=True)
+    return validate({"id": "nra-final", "name": "NRA Final", "book": "NRA", "rulebook": "NRA", "tie_rules": "NRA",
+                     "edition": "NRA Precision Air Rifle Rules 2025", "scoring": "decimal", "final": "nra",
+                     "notes": "Added to the qualification score (7.1.2 o); ties shot off, shot for shot (7.1.2 q).", "phases": f.phases})
+
+
+# Every final: its book, how finalists are placed (a random draw, or the best qualifier first), whether eliminations
+# decide the places (the final alone) or the final is added to the qualification, which ties are shot off, and the
+# shoot-off procedure.
+FINAL_KINDS = {
+    "standard": {"book": "CMP-3PAR", "name": "CMP Standard Final (CMP 3PAR 10.4)", "build": cmp_standard_final, "draw": False, "elim": False,
+                 "relay": True, "tie_places": 3, "so_rule": "10.2.9 n", "so_s": 50, "events": "any"},
+    "sfz_standing": {"book": "CMP-3PAR", "name": "CMP Standing Start-from-Zero Final (CMP 3PAR 10.5)", "build": cmp_sfz_standing_final, "draw": True,
+                     "elim": True, "relay": False, "so_rule": "10.2.9 n", "so_s": 50, "events": "standing"},
+    "sfz_3p": {"book": "CMP-3PAR", "name": "CMP Three-Position Start-from-Zero Final (CMP 3PAR 10.3)", "build": cmp_sfz_3p_final, "draw": True,
+               "elim": True, "relay": False, "so_rule": "10.2.9 n", "so_s": 50, "events": "3p"},
+    "airgun": {"book": "CMP-AG", "name": "CMP Air Gun Final (CMP AG 10.2)", "build": cmp_airgun_final, "draw": True, "elim": True,
+               "relay": False, "so_rule": "10.3.5", "so_s": 50, "events": "any"},
+    "issf": {"book": "ISSF", "name": "ISSF 10m Air Rifle Final (ISSF 6.17.2)", "build": issf_final, "draw": True, "elim": True,
+             "relay": False, "so_rule": "6.17.2 h", "so_s": 50, "events": "any"},
+    "nra": {"book": "NRA", "name": "NRA Final (NRA 7.1.2)", "build": nra_final, "draw": False, "elim": False, "relay": False,
+            "tie_places": 8, "so_rule": "7.1.2 q", "so_s": 75, "attention": True, "events": "any"},
+}
+
+
+def final_fits(kind: str, fmt: dict) -> bool:
+    """Whether a final goes with a qualification format: the three-position Start-from-Zero final follows a 3x10 or
+    3x20 (3PAR 10.3), the standing one a standing event (10.5)."""
+    pos = {p["position"] for p in fmt["phases"] if p["kind"] in ("record", "stage") and p.get("position")}
+    ev = FINAL_KINDS[kind]["events"]
+    return ev == "any" or (ev == "3p" and {"kneeling", "prone"} <= pos) or (ev == "standing" and not pos & {"kneeling", "prone", "sitting"})
+

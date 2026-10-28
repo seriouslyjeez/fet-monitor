@@ -13,8 +13,8 @@ anywhere (electronic targets). Times are minutes unless marked.
 |---|---|---|---|
 | **ISSF** (`ISSF`) | ISSF Rule Book, 2026 edition (2025), third print, effective 19 October 2026. USA Shooting applies ISSF rules for these events (its 2025 extract for NCAA quotes the same 6.11.1). | 10 m Air Rifle 60 | none yet (6.17.2 written up below) |
 | **CMP Air Gun** (`CMP-AG`) | CMP Air Rifle and Air Pistol Competition Rules, 5th edition 2026 (effective 1 March 2026), with the CMP Range Officer scripts "60-shot event on electronic targets" (7 Jan 2025) and "Air gun final on EST" (20 Feb 2026), from https://thecmp.org/competitions/cmp-competitions-rulebooks/ (authoritative for CMP, the user's choice). Standing only. | AR60 | Air Gun Final (10.2) |
-| **CMP 3PAR** (`CMP-3PAR`) | CMP National Standard Three-Position Air Rifle Rules, 16th edition, October 2026 to September 2028, with the RO scripts on https://thecmp.org/air/national-standard-three-position-air-rifle-rules/. Also the book NFHS / high-school 3-position air rifle uses. | 3x10, 3x20, 60 standing, 3x20 standing | Standard Final (10.4); Start-from-Zero finals not yet |
-| **NRA** (`NRA`) | NRA Precision Air Rifle Rules, 2025. | 3x10, 3x20, 3x40, 40 and 60 standing | none yet |
+| **CMP 3PAR** (`CMP-3PAR`) | CMP National Standard Three-Position Air Rifle Rules, 16th edition, October 2026 to September 2028, with the RO scripts on https://thecmp.org/air/national-standard-three-position-air-rifle-rules/. Also the book NFHS / high-school 3-position air rifle uses. | 3x10, 3x20, 60 standing, 3x20 standing | Standard Final (10.4); Standing Start-from-Zero (10.5, after a standing event); Three-Position Start-from-Zero (10.3, after 3x10 / 3x20) |
+| **NRA** (`NRA`) | NRA Precision Air Rifle Rules, 2025. | 3x10, 3x20, 3x40, 40 and 60 standing | NRA Final (7.1.2) |
 | **No rulebook** (`NONE`) | — | custom only | any built final (each follows its own book) |
 
 The documents themselves are not in this repository (each is its publisher's copyright). The Pi downloads them from
@@ -48,7 +48,7 @@ shooter cannot switch early.
 
 Scoring decimal; top 8 to the Final (qualification scores not carried).
 
-### 10 m Air Rifle Final, 6.17.2 (not built yet)
+### 10 m Air Rifle Final, 6.17.2 (built in)
 
 | Phase | Time |
 |---|---|
@@ -60,6 +60,16 @@ Scoring decimal; top 8 to the Final (qualification scores not carried).
 | 14 single shots | 50 s each; "FOR THE NEXT COMPETITION SHOT, LOAD", START 5 s later |
 | Eliminations | after shot 12 (8th), 14, 16, 18, 20, 22 (bronze decided), 24 (silver/gold) |
 | Ties for elimination | extra single shots until broken |
+
+Start positions by random draw (6.17.1.2); the final starts from zero (6.17.1.5). A finalist who fires out of turn
+(not in a shoot-off, or eliminated): the shot is nullified, no penalty (6.17.1.14 m). The ISSF "Ranking Match / Medal
+Match" format of the 2023 finals document is not in the 2026 Rule Book and is not used.
+
+How FeT Monitor runs it (competition page, *Finals*): the top n of the class, drawn to the targets (*Draw again*
+before the start); officer-paced by default, or spoken (20 s for the announcer's comments before each LOAD, 6.17.2
+e). Every series and shot stops at its time or as soon as every finalist still in it has fired. After shots 12-22 the
+lowest finalist is out (only places that exist), shot 24 decides gold and silver; a tie at a decision inserts a
+one-shot shoot-off (LOAD, 5 s, START, 50 s) for the tied right away, repeated until broken (6.17.2 h).
 
 ### ISSF procedures
 
@@ -182,7 +192,7 @@ Scoring: whole rings, or tenths with electronic targets as the program announces
 
 40-shot standing events are mentioned in 5.3.1 e (scoring) but have no table in 5.3.4: to confirm.
 
-### 3PAR finals (Rule 10; the Standard Final is built, Start-from-Zero not yet)
+### 3PAR finals (Rule 10; all three built in)
 
 The top 8 of the qualification event (3x10, 3x20, 40 or 60 standing) fire a Final on 8 adjacent firing points,
 labelled A-H (10.2.2, 10.2.3); decimal scoring (10.2.8); a count-down clock per shot (10.2.2).
@@ -213,6 +223,17 @@ results.
 
 Note: 10.3.2 c says "400/300/150 seconds" for the series, but the course of fire in 10.3.1 gives 250 s for each
 5-shot standing series; 250 s is used.
+
+How FeT Monitor runs the Start-from-Zero finals (competition page, *Finals*; only after the event they belong to: the
+three-position one after an event with kneeling and prone, the standing one after a standing event): the top n of
+the class drawn to the targets (*Draw again* before the start); the commands of the CMP scripts ("ISSF Standing
+Final", "ISSF Three-Position Final"): standing, TAKE YOUR POSITIONS 2 minutes; three-position, 30 seconds and a
+**5-minute** kneeling-to-prone changeover (the script; 10.3.1 prints "5 7-minutes"), 7 minutes prone-to-standing;
+30-second warnings in every series and changeover (script). Every series and shot stops at its time or when every
+finalist still in it has fired (10.3.2 c, 10.5.3 c). After the second standing series of the three-position final the
+two lowest are out together (8th, then 7th); a tie at any decision, also between the two going out, inserts a
+one-shot shoot-off for the tied right away (10.2.9 n). Spoken: 20 s for the comments before each LOAD (10.3.2 d,
+10.5.3 d).
 
 ### CMP 3PAR procedures
 
@@ -287,6 +308,22 @@ against a dated edition before building.
 | Teams | 2.10-2.15, 12.3 | size set by the match program (4 used as the default) |
 
 ---
+
+### NRA Final (7.1.2; built in)
+
+| Phase | Time |
+|---|---|
+| Preparation period | 3 (d) |
+| Sighting | 7, unlimited sighters on the sighter bulls; 30 s warning (e, f) |
+| Pause | 30 s (g) |
+| 10 shots standing | each: "FOR THE FIRST (NEXT) COMPETITION SHOT, LOAD"; "ATTENTION - 3 2 1"; "START", 75 s; "STOP" after the last finalist has fired or at 75 s (m); each shot scored and announced before the next (n) |
+| Ranking | qualification + final (o); the final is scored in tenths (o), also after a whole-ring qualification |
+| Ties | qualification + final tied: single shots by the same procedure until broken (q), for any place |
+| Start positions | firing points 1-8 by qualification rank (k) |
+
+How FeT Monitor runs it: the top n of the class on the targets in qualification order; officer-paced or spoken (20 s
+for the scores before each LOAD, n); after the last shot the console offers a shoot-off for every tie (LOAD,
+ATTENTION 3 2 1, START, 75 s). A finalist who does not report is placed last (i): the match director leaves them out.
 
 ## No rulebook
 
@@ -368,5 +405,11 @@ Teams (ISSF 6.15.5, CMP AG 8.5.4, CMP 3PAR 8.6.4, NRA 15.7): the members' result
 competitor (countback lists added position by position). The built-in team size follows the book and can be changed
 per competition; "best count" is optional.
 
+## Finals on the TV board
+*TV board* (Results → TV, or *TV board for this final* on a final's console) shows a running final: the finalists in
+their current places, everyone's last shot, the final (and for the added finals the qualification and total), shot
+k of n fired, which place is decided next and after which shot, who is in a shoot-off and which decision it settles,
+eliminated finalists greyed with their place, and the medals as they are decided.
+
 ## Still to build
-ISSF final (6.17.2), 3PAR Start-from-Zero finals (10.3, 10.5), NRA 10-shot standing final (7.1.2), the finals TV board.
+Nothing from the rulebook finals list. NRA Sporter Air Rifle (separate book) when needed.

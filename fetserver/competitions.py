@@ -343,23 +343,29 @@ class Competitions:
     # ------------------------------------------------------------------------------------------- finals (CMP 3PAR 10, CMP AG 10)
     def create_final(self, cid: int, kind: str, devices: List[str], by: str, cls: Optional[str] = None, n: Optional[int] = None,
                      for_relay: Optional[int] = None, paced: str = "officer") -> int:
-        """A final, only one its competition's rulebook has (rulebooks.finals). Standard (CMP 3PAR 10.4): the top n of the class (n up to 8, at most one per target) on the targets given,
-        best qualifier on the first (point A, 10.4.1). for_relay: "Final for All Athletes" (10.1.2 a), everyone of
-        that finished relay on their own target. The final is a match of the competition; paced "officer" (default:
-        the range officer gives LOAD for every shot) or "spoken" (the console speaks the commands, with a pause for the
-        scores before each LOAD)."""
-        if kind not in ("standard", "airgun"):
-            raise MatchError("this final is not built yet")
-        if kind == "airgun" and for_relay is not None:
-            raise MatchError("the Air Gun Final is for the top of a class, not for a relay")
+        """A final, only one its competition's rulebook has (rulebooks.finals) and that goes with its event
+        (matchformats.final_fits). The top n of the class (n up to 8, at most one per target) on the targets given:
+        by random draw (Start-from-Zero, Air Gun and ISSF finals), or best qualifier on the first target (point A:
+        CMP 3PAR 10.4.1, NRA 7.1.2 k). for_relay (the Standard Final only): "Final for All Athletes" (3PAR 10.1.2 a),
+        everyone of that finished relay on their own target. The final is a match of the competition; paced "officer"
+        (default: the range officer gives LOAD for every shot) or "spoken" (the console speaks the commands, with a
+        pause for the scores before each LOAD)."""
+        fk = mf.FINAL_KINDS.get(kind) if isinstance(kind, str) else None
+        if fk is None:
+            raise MatchError("unknown final")
+        if for_relay is not None and not fk["relay"]:
+            raise MatchError(f"the {fk['name']} is for the top of a class, not for a relay")
         if paced not in ("officer", "spoken"):
             raise MatchError("a final's commands: officer (the range officer reads them) or spoken")
         c = self.db.conn()
         comp = self._row(c, cid)
-        book = rb.book_of(json.loads(comp["format_json"]))
+        qfmt = json.loads(comp["format_json"])
+        book = rb.book_of(qfmt)
         if kind not in rb.finals(book):                  # a final belongs to its book (no rulebook: any final, by its own book)
-            raise MatchError(f"the {rb.BOOKS[book]['name']} rules have no {rb.FINAL_NAMES[kind]}" if book != rb.NONE else "unknown final")
-        fmt = mf.cmp_standard_final(spoken=paced == "spoken") if kind == "standard" else mf.cmp_airgun_final(spoken=paced == "spoken")
+            raise MatchError(f"the {rb.BOOKS[book]['name']} rules have no {fk['name']}")
+        if not mf.final_fits(kind, qfmt):
+            raise MatchError(f"the {fk['name']} follows " + ("a 3x10 or 3x20 event" if fk["events"] == "3p" else "a standing event"))
+        fmt = fk["build"](spoken=paced == "spoken")
         if for_relay is not None:
             r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
             if r is None or r["state"] != "done":
@@ -383,7 +389,7 @@ class Competitions:
             if len(ranked) < want:
                 raise MatchError(f"only {len(ranked)} competitors have a score")
             chosen = ranked[:want]
-            if kind == "airgun":                         # firing points by random draw (Air Gun 10.1.2)
+            if fk["draw"]:                               # firing points by random draw (AG 10.1.2, 3PAR 10.3.1, ISSF 6.17.1.2)
                 chosen = list(chosen)
                 random.SystemRandom().shuffle(chosen)
             lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, chosen)]
@@ -397,10 +403,10 @@ class Competitions:
         return mid
 
     def redraw_final(self, mid: int, by: str) -> None:
-        """A new random draw of an Air Gun Final's firing points, before it starts (10.1.2)."""
+        """A new random draw of a final's firing points, before it starts (a final placed by draw)."""
         with self.db.write() as c:
             m = self.matches._row(c, mid)
-            if m["final_kind"] != "airgun":
+            if not m["final_kind"] or not mf.FINAL_KINDS[m["final_kind"]]["draw"]:
                 raise MatchError("only a final with a draw can be redrawn")
             if m["state"] != "ready":
                 raise MatchError("the final has started")
@@ -424,6 +430,8 @@ class Competitions:
             if m["state"] == "aborted":
                 continue
             fmt = json.loads(m["format_json"])
+            fk = mf.FINAL_KINDS[m["final_kind"]]
+            fdec = fmt.get("scoring") == "decimal"         # finals are scored in tenths, also after a whole-ring qualification
             wins = self.matches.windows(c, m["id"])
             off_phases = {i for i, p in enumerate(fmt["phases"]) if p.get("lanes") is not None}
             flags = {f["shot_id"]: f for f in (self.matches.flags(c, m) if m["state"] != "ready" else [])}
@@ -434,15 +442,16 @@ class Competitions:
                 main = [s for s in shots if phase_of(s["t"]) not in off_phases]
                 off = [s["tenths"] for s in shots if phase_of(s["t"]) in off_phases]
                 q = qual.get(ln["competitor_id"], {})
-                ft = sum(s["tenths"] if decimal else s["ring"] * 10 for s in main) / 10.0
+                ft = sum(s["tenths"] if fdec else s["ring"] * 10 for s in main) / 10.0
                 row = {"pos": ln["final_pos"], "lane": ln["lane"], "device_id": ln["device_id"], "id": ln["competitor_id"], "name": ln["competitor"] or "",
                        "family": q.get("family", ""), "cls": q.get("cls", ""), "qual": q.get("total"), "final": ft, "shots": len(main),
                        "total": round((q.get("total") or 0) + ft, 1), "shoot_off": [v / 10.0 for v in off], "dq": x["dq"],
-                       "counts": m["final_for"] is None or ln["competitor_id"] in top8, "summary": ranking.summary(main)}
+                       "counts": m["final_for"] is None or ln["competitor_id"] in top8, "summary": ranking.summary(main),
+                       "last": (shots[-1]["tenths"] if fdec else shots[-1]["ring"] * 10) / 10.0 if shots and not x["dq"] else None}
                 if with_shots:
                     row["shot_list"] = main
                 rows.append(row)
-            if m["final_kind"] == "airgun":              # the final alone decides (Air Gun 10.1.1); places as decided
+            if fk["elim"]:                               # the final alone decides (AG 10.1.1, 3PAR 10.3/10.5, ISSF 6.17.1.5)
                 outs = {ln["lane"]: ln["out_place"] for ln in self.matches._lanes(c, m["id"])}
                 for r in rows:
                     r["total"], r["out"] = r["final"], outs.get(r["lane"])
@@ -450,10 +459,12 @@ class Competitions:
                 for i, r in enumerate(ranked):
                     r["place"], r["tied"] = (i + 1 if not r["dq"] else None), False     # eliminated rows sort by their place
             else:
-                ranked = self._rank_final(rows)
+                ranked = self._rank_final(rows, places=fk["tie_places"])
             entry = {"match_id": m["id"], "name": m["name"], "kind": m["final_kind"], "cls": m["final_class"] or "", "for_relay": m["final_for"],
-                     "state": m["state"], "official_ms": m["official_ms"], "rows": ranked}
-            entry["shoot_off_needed"] = self._ties_for_medals(entry["rows"]) if m["state"] == "done" and m["final_kind"] == "standard" else []
+                     "state": m["state"], "official_ms": m["official_ms"], "rows": ranked, "elim": fk["elim"], "draw": fk["draw"],
+                     "title": fk["name"], "so_rule": rb.cite(fk["book"], fk["so_rule"]), "so_s": fk["so_s"],
+                     "tie_places": fk.get("tie_places")}
+            entry["shoot_off_needed"] = self._ties_for_medals(entry["rows"], fk["tie_places"]) if m["state"] == "done" and not fk["elim"] else []
             out.append(entry)
             if m["final_for"] is not None:
                 pooled += [r for r in rows if r["counts"]]
@@ -468,10 +479,11 @@ class Competitions:
         return out
 
     @staticmethod
-    def _rank_final(rows: List[dict], shoot_offs: bool = True) -> List[dict]:
-        """Places by total (CMP 10.4.3). A tie that reaches into places 1-3 stays tied until a shoot-off breaks it
-        (10.2.9 n); other ties: the final score, then the final's shots by CMP 8.6.1 e (8.6.2 b). Without shoot-offs
-        (the pooled final for all athletes) every tie goes by the final score first (10.4.8 c)."""
+    def _rank_final(rows: List[dict], shoot_offs: bool = True, places: int = 3) -> List[dict]:
+        """Places by total (CMP 3PAR 10.4.3, NRA 7.1.2 o). A tie that reaches into the shoot-off places (3PAR: 1-3,
+        10.2.9 n; NRA: all, 7.1.2 q) stays tied until a shoot-off breaks it; other ties: the final score, then the
+        final's shots by 3PAR 8.6.1 e (8.6.2 b). Without shoot-offs (the pooled final for all athletes) every tie goes
+        by the final score first (10.4.8 c)."""
         cmp = ranking._cmp
         live = sorted([r for r in rows if not r["dq"]], key=cmp_to_key(lambda a, b: cmp((b["total"], b["shoot_off"]), (a["total"], a["shoot_off"]))))
         out, i = [], 0
@@ -480,7 +492,7 @@ class Competitions:
             while j + 1 < len(live) and cmp((live[j + 1]["total"], live[j + 1]["shoot_off"]), (live[i]["total"], live[i]["shoot_off"])) == 0:
                 j += 1
             group, place = live[i:j + 1], i + 1
-            if len(group) > 1 and (place > 3 or not shoot_offs):
+            if len(group) > 1 and (place > places or not shoot_offs):
                 key = lambda r: (r["final"], ranking.sort_key(r["summary"], "CMP", True))
                 group.sort(key=cmp_to_key(lambda a, b: cmp(key(b), key(a))))
                 for k, r in enumerate(group):
@@ -496,11 +508,12 @@ class Competitions:
         return out + [dict(r, place=None, tied=False) for r in rows if r["dq"]]
 
     @staticmethod
-    def _ties_for_medals(rows: List[dict]) -> List[List[int]]:
-        """Groups of firing points tied on total (and any shoot-off so far) for places 1-3 (CMP 10.2.9 n)."""
+    def _ties_for_medals(rows: List[dict], places: int = 3) -> List[List[int]]:
+        """Groups of firing points tied on total (and any shoot-off so far) for the shoot-off places (3PAR 10.2.9 n:
+        1-3; NRA 7.1.2 q: all)."""
         groups: Dict[tuple, List[int]] = {}
         for r in rows:
-            if r["place"] is not None and r["place"] <= 3:
+            if r["place"] is not None and r["place"] <= places:
                 groups.setdefault((r["total"], tuple(r["shoot_off"])), []).append(r["lane"])
         return [sorted(v) for v in groups.values() if len(v) > 1]
 
@@ -551,6 +564,8 @@ class Competitions:
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
                 "challenge_min": r["challenge_min"] if r["challenge_min"] is not None else 30,
                 "paced": r["paced"], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)), "record_shots": mf.record_shots(fmt),
+                "finals_allowed": [{"kind": k, "name": mf.FINAL_KINDS[k]["name"], "draw": mf.FINAL_KINDS[k]["draw"], "elim": mf.FINAL_KINDS[k]["elim"],
+                                    "relay": mf.FINAL_KINDS[k]["relay"]} for k in rb.finals(rb.book_of(fmt)) if mf.final_fits(k, fmt)],
                 "competitors": people, "relays": relays,
                 "finals": [{"match_id": m["id"], "kind": m["final_kind"], "cls": m["final_class"], "for_relay": m["final_for"], "state": m["state"], "name": m["name"]}
                            for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NOT NULL ORDER BY id", (cid,))]}

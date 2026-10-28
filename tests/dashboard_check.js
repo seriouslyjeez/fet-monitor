@@ -754,16 +754,20 @@ console.log('OK');
 {
   const {finalsPanel, finalPanel, finalTable} = X;
   const comp = {competitors: [{class: 'Sporter'}, {class: 'Precision'}], relays: [{match_id: 4, relay: 1, state: 'done'}, {match_id: 5, relay: 2, state: 'running'}], finals: [],
-    rb: {name: 'CMP Air Gun', title: 'CMP AG', finals: ['airgun']}};
+    rb: {name: 'CMP Air Gun', title: 'CMP AG', book: 'CMP-AG'}, finals_allowed: [{kind: 'airgun', name: 'CMP Air Gun Final (CMP AG 10.2)', draw: true, elim: true, relay: false}]};
   const p = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}, {device_id: 't2', name: '<b>L2</b>', in_match: true}], fin: {}}, true);
   assert(p.includes('data-fintgt="t1"') && !p.includes('data-fintgt="t2"') && p.includes('value="Precision"') && /data-act="mcfinal" disabled/.test(p), 'free targets, classes; nothing picked yet');
   assert(!p.includes('mcfinalrelay') && p.includes('random draw') && !p.includes('data-v="standard"'), 'Air Gun rules: only its final; no relay finals; a draw');
-  const issf = finalsPanel(Object.assign({}, comp, {rb: {name: 'ISSF', finals: []}}), {targets: [], fin: {}}, true);
-  assert(issf.includes('ISSF finals are not built yet') && !issf.includes('mcfinkind'), 'a book without a built final offers none');
-  const par = Object.assign({}, comp, {rb: {name: 'CMP 3PAR', finals: ['standard']}});
+  const none = finalsPanel(Object.assign({}, comp, {rb: {name: 'NRA'}, finals_allowed: []}), {targets: [], fin: {}}, true);
+  assert(none.includes('No final of the NRA rules is built for this event') && !none.includes('mcfinkind'), 'nothing to offer: said so');
+  const par = Object.assign({}, comp, {rb: {name: 'CMP 3PAR', book: 'CMP-3PAR'}, finals_allowed: [
+    {kind: 'standard', name: 'CMP Standard Final (CMP 3PAR 10.4)', draw: false, elim: false, relay: true},
+    {kind: 'sfz_3p', name: 'CMP Three-Position Start-from-Zero Final (CMP 3PAR 10.3)', draw: true, elim: true, relay: false}]});
+  const p3 = finalsPanel(par, {targets: [], fin: {kind: 'sfz_3p'}}, true);
+  assert(p3.includes('10 kneeling in 400 s') && p3.includes('data-v="sfz_3p" class="sel"') && !p3.includes('mcfinalrelay'), 'the 3P Start-from-Zero final: chosen, explained, no relay finals');
   const ps = finalsPanel(par, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}], fin: {kind: 'airgun'}}, true);
   assert(ps.includes('data-act="mcfinalrelay" data-id="4"') && !ps.includes('data-id="5"'), 'Standard: a final for a finished relay only');
-  assert(!ps.includes('data-v="airgun"') && ps.includes('Standard Final (CMP 3PAR 10.4)'), '3PAR rules: the Standard Final only, even if another was picked');
+  assert(!ps.includes('data-v="airgun"') && ps.includes('CMP Standard Final (CMP 3PAR 10.4)') && ps.includes('data-v="standard" class="sel"'), 'only what the server allows; an unknown choice falls back to the first');
   assert(!finalsPanel(comp, {targets: []}, false).includes('mcfinal'), 'officers see the list only');
   const f = {name: 'L - final', shoot_off_needed: [[1, 2]], rows: [
     {place: 1, tied: true, pos: 'A', name: '<i>AMES</i>', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},
@@ -772,21 +776,30 @@ console.log('OK');
     {place: 4, tied: false, pos: 'D', name: 'DUNN', qual: 150, final: 90, shots: 10, total: 240, shoot_off: [], dq: null, counts: false}]};
   const t = finalTable(f, false);
   assert(t.includes('1=') && t.includes('&lt;i&gt;AMES') && t.includes('<b>DQ</b>') && t.includes('For information') && t.indexOf('DUNN') > t.indexOf('For information'));
+  Object.assign(f, {so_s: 50, so_rule: 'CMP 3PAR 10.2.9 n', tie_places: 3});
   const cp = finalPanel({final: f}, true);
+  assert(cp.includes('Tied for a medal place: a one-shot shoot-off, 50 seconds (CMP 3PAR 10.2.9 n)'), 'the final\'s own rule');
+  assert(finalPanel({final: Object.assign({}, f, {so_s: 75, so_rule: 'NRA 7.1.2 q', tie_places: 8})}, true).includes('Tied for a place: a one-shot shoot-off, 75 seconds (NRA 7.1.2 q)'), 'NRA: any place, 75 s');
   assert(cp.includes('data-act="mcshootoff" data-lanes="1,2"') && !finalPanel({final: f}, false).includes('mcshootoff'), 'the director starts the shoot-off');
   assert(finalPanel({final: null}, true) === '');
+  assert(finalPanel({id: 12, final: f}, false).includes('href="#/tv/board?m=12"'), 'the TV board for this final');
   console.log('finals OK');
 }
 
 // the Air Gun Final's standings and the redraw
 {
   const {finalTable, finalPanel} = X;
-  const f = {name: 'L - final', kind: 'airgun', state: 'running', shoot_off_needed: [], rows: [
+  const f = {name: 'L - final', kind: 'airgun', elim: true, draw: true, state: 'running', shoot_off_needed: [], rows: [
     {place: 1, out: null, pos: 'B', name: 'BELL', qual: 210, final: 215.3, shots: 22, total: 215.3, shoot_off: [], dq: null},
     {place: 3, out: 3, pos: 'A', name: '<i>AMES</i>', qual: 212, final: 210.1, shots: 22, total: 210.1, shoot_off: [10.1], dq: null}]};
   const t = finalTable(f, false);
   assert(t.includes('(so far)') && t.includes('&lt;i&gt;AMES') && t.includes('<th>Shoot-off</th>') && !t.includes('<th>Total</th>'), 'final only, provisional places marked');
   assert(finalPanel({final: f, state: 'ready'}, true).includes('data-act="mcredraw"') && !finalPanel({final: f, state: 'running'}, true).includes('mcredraw'));
+  assert(!finalPanel({final: Object.assign({}, f, {draw: false}), state: 'ready'}, true).includes('mcredraw'), 'no draw, no redraw');
+  const issfT = finalTable(Object.assign({}, f, {kind: 'issf'}), false);
+  assert(issfT.includes('(so far)') && !issfT.includes('<th>Total</th>'), 'any elimination final: the final alone');
+  const old = finalTable(Object.assign({}, f, {elim: undefined}), false);
+  assert(old.includes('(so far)'), 'a saved copy from before (no elim field): the Air Gun Final still reads right');
   console.log('air gun final OK');
 }
 
@@ -812,4 +825,27 @@ console.log('OK');
   const f = {guide: {rule: 'CMP AG 7.11.8', text: 't', suggest: null, todo: null, url: ag.url}};
   assert(guideRow(f, {}, bookFile(base, ag)).includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && guideRow(f, {}, null).includes('href="' + ag.url + '"'), 'guidance opens the local copy');
   console.log('rulebooks OK');
+}
+
+// the finals TV board: live places, last shots, eliminations, medals, shoot-offs, the next decision
+{
+  const {tvFinalBoard, tvBoard, ORD} = X;
+  assert.deepStrictEqual([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ORD), ['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
+  const row = (o) => Object.assign({place: null, tied: false, pos: 'A', name: 'X', lane: 1, qual: 200.0, final: 100.0, total: 100.0, shots: 14, shoot_off: [], dq: null, out: null, last: 10.4}, o);
+  const b = {id: 9, name: 'League - final', format_name: 'ISSF 10m Air Rifle Final', state: 'running', clock: {label: 'Shoot-off 1', remaining_ms: 40000, phase: 40},
+    final: {title: 'ISSF 10m Air Rifle Final (ISSF 6.17.2)', elim: true, shots_done: 22, shots_total: 24, now: 'Shoot-off 1', shoot_off: [2, 3],
+      next_out: {after: 22, places: [3]}, rows: [row({place: 1, name: '<b>AMES</b>', lane: 1, last: 10.9}), row({place: 2, name: 'BELL', lane: 2, shoot_off: [10.1]}),
+        row({place: 3, name: 'COLE', lane: 3, shoot_off: [10.1]}), row({place: 4, name: 'DUNN', lane: 4, out: 4, last: 9.8})]}};
+  const t = tvBoard([b], []);
+  assert(t === tvFinalBoard(b), 'a final gets the finals board');
+  assert(t.includes('Shot 22 of 24 fired') && t.includes('3rd place is decided after shot 22') && t.includes('Shoot-off: BELL and COLE'), t);
+  assert(t.includes('&lt;b&gt;AMES') && t.includes('<td class="last">10.9</td>') && count(t, /SHOOT-OFF<\/span>/g) === 2, 'names escaped; last shots; shoot-off marked');
+  assert(t.includes('class="out"') && t.includes('out, 4th') && !t.includes('class="medal'), 'eliminated 4th: muted; no medals before they are decided');
+  const done = tvFinalBoard(Object.assign({}, b, {state: 'done', final: Object.assign({}, b.final, {shoot_off: null, next_out: null, shots_done: 24,
+    rows: [row({place: 1, out: 1}), row({place: 2, out: 2, lane: 2}), row({place: 3, out: 3, lane: 3}), row({place: 4, out: 4, lane: 4})]})}));
+  assert(done.includes('class="medal m1"') && done.includes('class="medal m3"') && !done.includes('class="out"') && done.includes('Shot 24 of 24'), 'medals at the end');
+  const nra = tvFinalBoard(Object.assign({}, b, {final: {title: 'NRA Final (NRA 7.1.2)', elim: false, shots_done: 4, shots_total: 10, next_out: null, shoot_off: null,
+    rows: [row({place: 1, total: 300.4, qual: 196, final: 104.4}), row({place: 1, tied: true, lane: 2, total: 300.4})]}}));
+  assert(nra.includes('<th>Qualification</th>') && nra.includes('300.4') && nra.includes('added to the qualification') && !nra.includes('medal'), 'added finals: totals; no medal while running');
+  console.log('final board OK');
 }

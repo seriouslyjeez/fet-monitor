@@ -109,7 +109,9 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 .tvclock .mcclock{font-size:72px}.tvclock .mcphase{font-size:30px}.tvgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .board{margin-bottom:22px}.board h2{margin:0 0 6px;font-size:26px}.board table{width:100%;border-collapse:collapse;font-size:20px;font-variant-numeric:tabular-nums}
 .board th{font-size:14px;color:var(--mut);text-align:left;padding:4px 8px;border-bottom:2px solid var(--line)}.board td{padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.board td.tot{font-weight:800;font-size:24px}.board td.l10{font-size:15px;color:var(--mut)}.board tr.top td{background:var(--hi)}.board .ser{font-size:15px}
+.board tr.out td{opacity:.45}.board tr.so td{background:var(--hi)}.board td.last{font-weight:800;font-size:30px}.board .sotag{font-size:13px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--bad);color:#fff;margin-left:8px}
+.medal{display:inline-block;min-width:1.6em;text-align:center;border-radius:999px;font-weight:800;padding:0 6px}.medal.m1{background:#d4af37;color:#000}.medal.m2{background:#c0c0c0;color:#000}.medal.m3{background:#cd7f32;color:#000}
+.finalnote{font-size:18px;margin:4px 0 10px}.board td.tot{font-weight:800;font-size:24px}.board td.l10{font-size:15px;color:var(--mut)}.board tr.top td{background:var(--hi)}.board .ser{font-size:15px}
 .tvcfg label{display:block;margin:2px 0}.tvcfg .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
@@ -439,10 +441,36 @@ function tvCompBoard(res) {
       Array.from({length: n}, (_, i) => '<td class="ser">' + (e.dq ? '' : fmt(e.series[i])) + '</td>').join('') + '<td class="l10">' + (e.dq ? '' : e.last10.map(fmt).join(' ')) + '</td><td>' + (e.dq ? '' : e.shots + ' / ' + res.record_shots) + '</td></tr>').join('') +
     '</table>').join('') + '</div>';
 }
+const ORD = n => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
+function tvFinalBoard(b) {                       // a final on the TV: live places, everyone's last shot, eliminations, shoot-offs
+  const f = b.final, so = f.shoot_off || [], done = b.state === 'done';
+  const any = f.rows.some(r => r.shoot_off.length);
+  const place = r => {
+    if (r.dq) return 'DQ';
+    const decided = f.elim ? r.out != null : done && !r.tied;
+    const p = (r.place || '') + (r.tied ? '=' : '');
+    return decided && r.place <= 3 ? '<span class="medal m' + r.place + '">' + r.place + '</span>' : esc(p);
+  };
+  const note = [f.shots_total ? 'Shot ' + Math.min(f.shots_done, f.shots_total) + ' of ' + f.shots_total + ' fired' : '',
+    f.next_out ? (f.next_out.places.includes(2) ? '1st and 2nd are decided' : f.next_out.places.map(ORD).join(' and ') + ' place ' + (f.next_out.places.length > 1 ? 'are' : 'is') + ' decided') +
+      ' after shot ' + f.next_out.after : '',
+    so.length ? 'Shoot-off: ' + f.rows.filter(r => so.includes(r.lane)).map(r => esc(r.name)).join(' and ') : ''].filter(Boolean).join(' · ');
+  return '<div class="board">' + tvClock(b) + '<h2>' + esc(f.title || f.name) + '</h2><div class="finalnote">' + note + '</div>' +
+    '<table><tr><th>Place</th><th>Pos</th><th>Finalist</th><th>Last shot</th>' + (f.elim ? '<th>Final</th>' : '<th>Qualification</th><th>Final</th><th>Total</th>') +
+    (any ? '<th>Shoot-off</th>' : '') + '</tr>' +
+    f.rows.map(r => '<tr class="' + (f.elim && r.out != null && r.out > 3 && !done ? 'out' : '') + (so.includes(r.lane) ? ' so' : '') + '"><td>' + place(r) + '</td><td>' + esc(r.pos || '') + '</td>' +
+      '<td>' + esc(r.name) + (so.includes(r.lane) ? '<span class="sotag">SHOOT-OFF</span>' : '') + (f.elim && r.out != null && r.out > 3 ? ' <span class="mut">out, ' + ORD(r.out) + '</span>' : '') + '</td>' +
+      '<td class="last">' + (r.last != null ? r.last.toFixed(1) : '') + '</td>' +
+      (f.elim ? '<td class="tot">' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut" style="font-size:15px">(' + r.shots + ')</span></td>'
+        : '<td>' + (r.qual != null ? r.qual.toFixed(1) : '') + '</td><td>' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut" style="font-size:15px">(' + r.shots + ')</span></td><td class="tot">' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</td>') +
+      (any ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>').join('') + '</table>' +
+    (f.elim ? '<div class="mut">The final alone decides; the lowest finalist is eliminated at each decision.</div>' : '<div class="mut">The final is added to the qualification score.</div>') + '</div>';
+}
 function tvBoard(boards, comps) {
   if (comps && comps.length) return comps.map(tvCompBoard).join('') + (boards || []).map(b => tvBoard([b])).join('');
   if (!boards.length) return '<p class="mut" style="font-size:24px">No current matches.</p>';
   return boards.map(b => {
+    if (b.final) return tvFinalBoard(b);
     const maxSeries = Math.max(1, Math.ceil(b.record_shots / 10)), fmt = v => b.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
     const live = ['running', 'paused', 'holding'].includes(b.state);
     return '<div class="board">' + tvClock(b) +
@@ -1144,7 +1172,7 @@ function protestLeft(until) {                    // whole minutes of protest tim
 }
 function finalTable(f, print) {                 // a final's standings (results page, console, print)
   const so = f.rows.some(r => r.shoot_off.length), cls = print ? '' : 't';
-  if (f.kind === 'airgun') {                     // the final alone decides (CMP Air Gun 10.1.1)
+  if (f.elim != null ? f.elim : f.kind === 'airgun') {   // the final alone decides (saved copies before 0.6.29: no elim) (eliminations; AG 10.1.1, 3PAR 10.3/10.5, ISSF 6.17.1.5)
     return '<table class="' + cls + '"><tr><th>Place</th><th>Pos</th><th>Finalist</th><th>Final</th>' + (so ? '<th>Shoot-off</th>' : '') + '<th>Qualification</th></tr>' + f.rows.map(r =>
       '<tr><td>' + (r.dq ? '' : (r.place || '') + (r.out == null && f.state !== 'done' ? ' <span class="mut">(so far)</span>' : '')) + '</td><td>' + esc(r.pos || '') + '</td><td>' + esc(r.name) + '</td><td><b>' +
       (r.dq ? 'DQ' : r.final.toFixed(1)) + '</b> <span class="mut">(' + r.shots + ')</span></td>' + (so ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') +
@@ -1160,9 +1188,9 @@ function finalTable(f, print) {                 // a final's standings (results 
 function finalPanel(d, director) {              // on a final's console: standings, and shoot-offs for medal ties
   const f = d.final;
   if (!f) return '';
-  return '<div class="panel"><h3>' + esc(f.name) + '</h3>' + finalTable(f, false) +
-    (f.kind === 'airgun' && d.state === 'ready' && director ? '<div class="mcbar"><button data-act="mcredraw">Draw the firing points again</button></div>' : '') +
-    (f.shoot_off_needed.length ? '<div class="warnbox">Tied for a medal place: a one-shot shoot-off, 50 seconds (CMP 3PAR 10.2.9 n). ' +
+  return '<div class="panel"><div class="row"><h3>' + esc(f.name) + '</h3><a href="' + tvUrl({kind: 'board', matches: [d.id]}) + '" target="_blank" rel="noopener">TV board for this final</a></div>' + finalTable(f, false) +
+    (f.draw && d.state === 'ready' && director ? '<div class="mcbar"><button data-act="mcredraw">Draw the firing points again</button></div>' : '') +
+    (f.shoot_off_needed.length ? '<div class="warnbox">Tied for ' + (f.tie_places === 3 ? 'a medal place' : 'a place') + ': a one-shot shoot-off, ' + esc(f.so_s) + ' seconds (' + esc(f.so_rule) + '). ' +
       (director ? f.shoot_off_needed.map(g => '<button class="pri" data-act="mcshootoff" data-lanes="' + g.join(',') + '">Shoot-off: firing points ' + g.join(', ') + '</button>').join(' ') : 'The match director starts it.') + '</div>' : '') + '</div>';
 }
 function officialPanel(d, director) {         // provisional -> posted (protest time) -> official
@@ -1240,6 +1268,13 @@ function mcCompPage(mc) {
       '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') : '') + '</div>';
   return h + finalsPanel(c, mc, director);
 }
+const FINAL_TEXT = {                             // what each final is, for the match director choosing one
+  standard: '10 shots standing, each on command (LOAD, 5 s, START, 50 s or until all have fired), added to the qualification score. Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).',
+  sfz_standing: '24 shots standing, starting from zero: 2 series of 5 in 250 s, then single shots in 50 s, each stopped when all have fired. The lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides 1st and 2nd; every tie is shot off at once. Firing points by random draw.',
+  sfz_3p: '35 shots, starting from zero: 10 kneeling in 400 s, 5 minutes changeover and sighting, 10 prone in 300 s, 7 minutes changeover and sighting, 2 × 5 standing in 250 s, after which 8th and 7th are out; single shots 31-35 decide 6th to 3rd, then 1st and 2nd. Every tie is shot off at once. Firing points by random draw.',
+  airgun: '24 shots: 2 series of 5 in 250 s, then single shots in 50 s; the lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides 1st and 2nd. The final alone decides; every tie is shot off at once. Firing points by random draw (10.1.2).',
+  issf: '24 shots, starting from zero: 2 series of 5 in 250 s, then 14 single shots in 50 s, each stopped when all have fired; the lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides gold and silver; ties are shot off at once. Firing points by random draw (6.17.1.2).',
+  nra: '10 shots standing, each on LOAD, ATTENTION 3-2-1, START, 75 s (STOP when all have fired), added to the qualification score; every tie is shot off shot for shot. Finalists on firing points 1, 2, 3 … by qualification rank (7.1.2 k).'};
 function finalsPanel(c, mc, director) {         // the finals of the competition's rulebook (rulebooks.py: finals)
   const fin = mc.fin || {}, free = (mc.targets || []).filter(t => !t.in_match), picked = free.filter(t => (fin.devs || {})[t.device_id]);
   const classes = [...new Set(c.competitors.map(p => p.class || ''))].sort();
@@ -1247,16 +1282,13 @@ function finalsPanel(c, mc, director) {         // the finals of the competition
   const n = fin.n != null ? fin.n : Math.min(8, picked.length);
   let h = '<div class="panel mcform"><h3>Finals</h3>' + ((c.finals || []).length ? '<table class="t">' + c.finals.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + esc(f.state) + '</td>' +
     '<td><button data-act="mcopen" data-id="' + f.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No final yet.</p>');
-  const kinds = (c.rb || {}).finals || [];
-  if (!kinds.length) return h + '<p class="mut">The ' + esc((c.rb || {}).name || '') + ' finals are not built yet.</p></div>';
+  const allowed = c.finals_allowed || [], kinds = allowed.map(x => x.kind);
+  if (!kinds.length) return h + '<p class="mut">No final of the ' + esc((c.rb || {}).name || '') + ' rules is built for this event yet.</p></div>';
   if (!director) return h + '</div>';
-  const kind = kinds.includes(fin.kind) ? fin.kind : kinds[0];
-  h += '<h4>New final</h4>' + (kinds.length > 1 ? '<p class="mut">' + esc(c.rb.title) + ': each final follows its own rulebook.</p>' : '') + '<div class="seg">' +
-    (kinds.includes('airgun') ? '<button data-act="mcfinkind" data-v="airgun" class="' + (kind === 'airgun' ? 'sel' : '') + '">Air Gun Final (CMP AG 10.2)</button>' : '') +
-    (kinds.includes('standard') ? '<button data-act="mcfinkind" data-v="standard" class="' + (kind === 'standard' ? 'sel' : '') + '">Standard Final (CMP 3PAR 10.4)</button>' : '') + '</div>' +
-    (kind === 'airgun' ? '<p class="mut">24 shots: 2 series of 5 in 250 s, then single shots in 50 s; the lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides 1st and 2nd. ' +
-      'The final alone decides; every tie is shot off at once. Firing points by random draw (10.1.2).</p>'
-      : '<p class="mut">10 shots standing, each on command (LOAD, 5 s, START, 50 s), added to the qualification score. Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).</p>') +
+  const kind = kinds.includes(fin.kind) ? fin.kind : kinds[0], fk = allowed.find(x => x.kind === kind);
+  h += '<h4>New final</h4>' + (c.rb && c.rb.book === 'NONE' ? '<p class="mut">No rulebook: each final follows its own rulebook.</p>' : '') + '<div class="seg">' +
+    allowed.map(x => '<button data-act="mcfinkind" data-v="' + esc(x.kind) + '" class="' + (kind === x.kind ? 'sel' : '') + '">' + esc(x.name) + '</button>').join('') + '</div>' +
+    '<p class="mut">' + esc(FINAL_TEXT[kind] || '') + '</p>' +
     '<div class="mcbar">' + (classes.length > 1 || classes[0] ? '<label>Class <select data-fin="cls">' + classes.map(k => '<option value="' + esc(k) + '"' + ((fin.cls || classes[0]) === k ? ' selected' : '') + '>' + esc(k || 'no class') + '</option>').join('') + '</select></label>' : '') +
     '<label>Finalists <input type="number" min="1" max="8" style="width:60px" data-fin="n" value="' + esc(n) + '"></label>' +
     '<label>Commands <select data-fin="paced"><option value="officer"' + (fin.paced !== 'spoken' ? ' selected' : '') + '>Range officer reads them (Next for each LOAD)</option>' +
@@ -1264,7 +1296,7 @@ function finalsPanel(c, mc, director) {         // the finals of the competition
     '<div>Targets, in order A, B, C …: ' + (free.length ? free.map(t => '<label style="margin-right:10px"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('')
       : '<span class="bad">no free target</span>') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcfinal"' + (picked.length ? '' : ' disabled') + '>Create the final</button></div>' +
-    (done.length && kind === 'standard' ? '<h4>Final for all athletes (CMP 3PAR 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
+    (done.length && fk.relay ? '<h4>Final for all athletes (CMP 3PAR 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
       done.map(r => '<button data-act="mcfinalrelay" data-id="' + r.match_id + '">Final for relay ' + esc(r.relay) + '</button>').join('') + '</div>' : '');
   return h + '</div>';
 }
@@ -1893,9 +1925,11 @@ async function matchAct(el, a) {
   if (a === 'mcfinal' || a === 'mcfinalrelay') {
     const fin = mc.fin || {}, free = (mc.targets || []).filter(t => !t.in_match).filter(t => (fin.devs || {})[t.device_id]).map(t => t.device_id);
     const classes = [...new Set(mc.comp.competitors.map(p => p.class || ''))].sort();
+    const allowed = mc.comp.finals_allowed || [], kind = (allowed.find(x => x.kind === fin.kind) || allowed[0] || {}).kind;
     const body = a === 'mcfinalrelay' ? {kind: 'standard', for_relay: +el.dataset.id, paced: fin.paced || 'officer'}
-      : {kind: fin.kind || 'airgun', devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length), paced: fin.paced || 'officer'};
-    if (!confirm(a === 'mcfinalrelay' ? 'Create the Standard Final for everyone on this relay?' : 'Create the ' + (body.kind === 'airgun' ? 'Air Gun' : 'Standard') + ' Final for the top ' + body.n + '?')) return;
+      : {kind: kind, devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length), paced: fin.paced || 'officer'};
+    const name = (allowed.find(x => x.kind === body.kind) || {}).name || 'final';
+    if (!confirm(a === 'mcfinalrelay' ? 'Create the Standard Final for everyone on this relay?' : 'Create the ' + name + ' for the top ' + body.n + '?')) return;
     const res = await matchCall('/competitions/' + mc.copen + '/finals', body);
     if (show(res)) { mc.comp = res.data; mc.fin = {}; toast('Final created: open its console to run it'); }
     return refresh();
@@ -2218,7 +2252,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

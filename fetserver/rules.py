@@ -155,7 +155,8 @@ _TOO_MANY = {rb.ISSF: ("ISSF 6.11.5", "Too many shots: the extra shots are annul
                       "Annul the highest-value record shot instead if that is not this one.")}
 _PAUSED = {rb.ISSF: ("ISSF 6.11.1.3 a", "A shot after a STOP is scored as a miss.", "miss", None),
            rb.PAR: ("CMP 3PAR 7.17.3", "A shot fired by mistake after an emergency STOP: a warning; a match shot counts (more shots after that: misses).", "count", None)}
-SHOOT_OFF_RULE = {rb.AG: "CMP AG 10.3.5", rb.PAR: "CMP 3PAR 10.2.9 n"}
+SHOOT_OFF_RULE = {rb.AG: "CMP AG 10.3.5", rb.PAR: "CMP 3PAR 10.2.9 n", rb.ISSF: "ISSF 6.17.2 h", rb.NRA: "NRA 7.1.2 q"}
+NOT_FIRING_RULE = {rb.ISSF: "ISSF 6.17.1.14 m"}     # a finalist not in the shoot-off (or out) who fires: nullified, no penalty
 
 
 def guidance(code, kind, stream: str, book: str) -> dict:
@@ -183,8 +184,10 @@ def guidance(code, kind, stream: str, book: str) -> dict:
                "moving": "Fired while the shooter was moving to another target (their time was stopped).",
                "record_in_sight": "A record shot during sighting time: sighting time is for sighters.",
                "waiting": "Fired before this shooter's part of the match on this relay began: it does not count.",
-               "not_in_shoot_off": "Fired during a shoot-off this finalist is not part of" + (f" ({so})" if so else "") + ": it does not count.",
-               "eliminated": "Fired after this finalist was eliminated: it does not count."}.get(code, "The match director decides.")
+               "not_in_shoot_off": "Fired during a shoot-off this finalist is not part of" + (f" ({so})" if so else "") + ": it does not count"
+                                   + (f", no penalty ({NOT_FIRING_RULE[book]})." if book in NOT_FIRING_RULE else "."),
+               "eliminated": "Fired after this finalist was eliminated: it does not count"
+                             + (f", no penalty ({NOT_FIRING_RULE[book]})." if book in NOT_FIRING_RULE else ".")}.get(code, "The match director decides.")
         rule, text, suggest, todo = None, why, ("annul" if rec else "ignore"), None
     elif book not in table:                            # the book does not cover it
         rule, text, suggest, todo = None, rb.director(book), None, None

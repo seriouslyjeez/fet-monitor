@@ -89,8 +89,12 @@ class StandardFinal(FinalCase):
                 self.cc.create_final(self.cid, "standard", bad["devices"], "md", n=bad["n"])
         with self.assertRaises(MatchError):
             self.final(cls="Junior")
-        with self.assertRaises(MatchError):
-            self.cc.create_final(self.cid, "sfz_standing", ["lane-5"], "md")
+        with self.assertRaises(MatchError) as ctx:
+            self.cc.create_final(self.cid, "sfz_3p", ["lane-5"], "md")          # this event has no kneeling or prone
+        self.assertIn("follows a 3x10 or 3x20 event", str(ctx.exception))
+        for kind in ("bogus", None, "sfz_standing"):
+            with self.assertRaises(MatchError, msg=kind):
+                self.cc.create_final(self.cid, kind, ["lane-5"], "md", for_relay=self.r1 if kind else None)
         r2 = self.cc.add_relay(self.cid, [{"device_id": "lane-5", "competitor_id": self.cc.save_competitor(self.cid, {"family": "Eve"})}], "md")
         with self.assertRaises(MatchError) as ctx:
             self.cc.create_final(self.cid, "standard", None, "md", for_relay=r2)   # not finished

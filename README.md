@@ -94,9 +94,12 @@ record crossfires (rulebook scoring), give penalties with a rule reference (expl
 disqualify (rule and second official). Results, score cards, TV boards and CSV show DQ, penalties and changed shots.
 **Official results**: preliminary results are posted (protest time: 10 minutes, NRA as set), then made official
 once every flagged shot is decided and every protest settled; a range incident report is printable per match; each flagged shot shows the rulebook rule, a link and the suggested decision. **CMP 7.18**: a shooter
-whose target fails can finish the match on a later relay (or a new one); the results join both parts. **CMP
-Air Gun Final** (CMP Air Rifle and Air Pistol Rules 2026, 10.2: draw, eliminations, automatic shoot-offs) and the 3PAR
-**Standard Final** (10.4: for the top of a class, or for everyone on a relay); spoken or read by the range officer.
+whose target fails can finish the match on a later relay (or a new one); the results join both parts. **Finals**,
+each by its own rulebook: the **ISSF** 10 m Air Rifle Final (6.17.2), the **CMP Air Gun Final** (Air Gun Rules 10.2),
+the 3PAR **Standard Final** (10.4: for the top of a class, or for everyone on a relay) and **Standing** and
+**Three-Position Start-from-Zero** finals (10.5, 10.3), and the **NRA** final (7.1.2). Draws, eliminations and
+shoot-offs as each rulebook says; spoken or read by the range officer; a **finals TV board** shows places, last shots,
+eliminations, shoot-offs and medals live.
 Built-in **AR60** format from the CMP Air Gun Rules.
 **Deleting** (Match Control, match director; tick several at once): *Delete selected* removes matches and competitions
 (with their relays and competitor lists) from Match Control; their results stay on the Results page as a saved copy,
@@ -276,10 +279,10 @@ backup from /var/backups/fet-monitor in that case.
 | GET /match/results; POST /match/results/delete, /match/results/restore | Match Control (director to change) | `{keys: [...]}`: results off / back on the Results page (a saved copy is deleted for good) |
 | GET /match/matches/<n>/shots/<fp>; POST /match/matches/<n>/corrections; POST /match/matches/<n>/corrections/<id>/settle, /void | Match Control (review/protest: officer; the rest: director) | A firing point's shots with their corrections; `{kind, lane, shot_id, data}`; settle `{outcome, penalty, note}` |
 | GET /match/matches/<n>/incidents; POST /match/matches/<n>/official; POST /match/matches/<n>/later-relay | Match Control (official: director) | the range incident report; `{action: post\|make\|reopen, override}`; `{from, to_match (null: a new relay), to}` (CMP 7.18) |
-| POST /match/competitions/<n>/finals; POST /match/matches/<n>/shoot-off | Match Control (director) | `{kind: airgun\|standard, devices, cls, n, paced}` or `{kind: standard, for_relay}`; `{lanes: [fp, fp]}` (Standard Final) |
+| POST /match/competitions/<n>/finals; POST /match/matches/<n>/shoot-off | Match Control (director) | `{kind: standard\|sfz_standing\|sfz_3p\|airgun\|issf\|nra, devices, cls, n, paced}` (only the finals of the competition's rulebook and event) or `{kind: standard, for_relay}`; `{lanes: [fp, fp]}` (Standard and NRA finals; the others shoot off by themselves) |
 | POST /match/delete | Match Control (director) | `{matches: [ids], competitions: [ids]}`: delete from Match Control, keeping a saved copy of the results; all or nothing |
 | POST /match/competitions/<n>/competitors/<id>/move | Match Control (director) | `{match_id, device_id}` before that relay starts (`match_id` null: off the relay) |
-| GET /board?m=<n,n> | anyone | Scoreboard data for those matches (default: the current ones) |
+| GET /board?m=<n,n> | anyone | Scoreboard data for those matches (default: the current ones); a final also has `final`: its standings with each finalist's `last` shot, `shots_done`/`shots_total`, `next_out` ({after, places}), `shoot_off` (firing points now in one) |
 | GET, POST /match/competitions; GET, POST /match/competitions/<n>; POST /match/competitions/<n>/competitors[/<id>[/delete]], /relays; POST /match/competitions/<n>/competitors/import | Match Control (director to change) | Competitions, competitors, relays (`{lanes: [{device_id, competitor_id}]}`); import takes a raw CSV body (Family, Given, Class, Team; header optional; all or nothing; max 256 KB) |
 | GET /competitions; GET /results; GET /results/<key>[?shots=1]; GET /results/<key>.csv, /results/<key>-teams.csv | anyone | Competition list (TV set-up); every result; one result by class with teams (key: `c<n>` competition, `m<n>` single match, `a<n>` saved copy; a plain number = competition); CSV (UTF-8 with BOM, formula-like cells kept as text) |
 | GET /board?c=<n,n> | anyone | Scoreboard data for competitions (also `m=` for single matches) |

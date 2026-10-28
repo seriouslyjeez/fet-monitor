@@ -96,7 +96,7 @@ PROC = {
         "double_load": "6.11.2.4 b", "not_upheld": "6.16.5.2 c", "shot_protest": "6.16.5.2", "disturbance": "6.11.7",
         "crossfire": "6.11.6", "sighter_crossfire": "6.11.6.3",
         "penalty_example": "6.12.6.1 a", "dq": "6.12.6", "late": "6.11.4", "protest_min": (10, "6.16.5.1"),
-        "incident": "6.10.4 h", "best_count": None, "finals": (),
+        "incident": "6.10.4 h", "best_count": None, "finals": ("issf",),
         "malfunction": "6.13.4", "malfunction_allowable": "6.13.2.1", "range": "6.10.9.1, 6.11.3.2",
     },
     AG: {
@@ -118,7 +118,7 @@ PROC = {
         "double_load": "7.17.11", "not_upheld": "8.4 c", "shot_protest": "8.4", "disturbance": None,
         "crossfire": "7.17.9", "sighter_crossfire": None,
         "penalty_example": "7.22.1", "dq": "7.22", "late": "7.20", "protest_min": (10, "8.2"),
-        "incident": "6.5 (Range Incident Form)", "best_count": "3.2.2 c", "finals": ("standard",),
+        "incident": "6.5 (Range Incident Form)", "best_count": "3.2.2 c", "finals": ("standard", "sfz_standing", "sfz_3p"),
         "malfunction": "7.19.1", "malfunction_allowable": None, "range": "7.18.4",
     },
     NRA: {
@@ -129,7 +129,7 @@ PROC = {
         "double_load": None, "not_upheld": None, "shot_protest": None, "disturbance": None,
         "crossfire": "10.10.4", "sighter_crossfire": "10.10.4 a",
         "penalty_example": "9.30", "dq": "9.30", "late": None, "protest_min": (None, "16.1 b"),
-        "incident": "Range Officer's Notation", "best_count": None, "finals": (),
+        "incident": "Range Officer's Notation", "best_count": None, "finals": ("nra",),
         "malfunction": "9.5", "malfunction_allowable": None, "range": "9.2 b, 10.3.2",
     },
     NONE: {
@@ -140,11 +140,10 @@ PROC = {
         "double_load": None, "not_upheld": None, "shot_protest": None, "disturbance": None,
         "crossfire": None, "sighter_crossfire": None,
         "penalty_example": None, "dq": None, "late": None, "protest_min": (None, None),
-        "incident": None, "best_count": None, "finals": ("standard", "airgun"),     # a final keeps its own book's rules
+        "incident": None, "best_count": None, "finals": ("standard", "sfz_standing", "sfz_3p", "airgun", "issf", "nra"),   # each by its own book
         "malfunction": None, "malfunction_allowable": None, "range": None,
     },
 }
-FINAL_NAMES = {"standard": "CMP Standard Final (3PAR 10.4)", "airgun": "CMP Air Gun Final (Air Gun 10.2)"}
 
 
 def rule(book: str, key: str) -> Optional[str]:

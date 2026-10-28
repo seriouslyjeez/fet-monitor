@@ -212,13 +212,15 @@ class FinalsByBook(MatchCase):
 
     def test_a_final_only_from_its_book(self):
         cc = self.core.competitions
-        for book, kind in ((rb.PAR, "airgun"), (rb.AG, "standard"), (rb.ISSF, "standard"), (rb.ISSF, "airgun"), (rb.NRA, "standard")):
+        for book, kind in ((rb.PAR, "airgun"), (rb.PAR, "issf"), (rb.AG, "standard"), (rb.AG, "sfz_standing"), (rb.ISSF, "standard"),
+                           (rb.ISSF, "airgun"), (rb.ISSF, "nra"), (rb.NRA, "standard"), (rb.NRA, "issf")):
             with self.assertRaises(MatchError, msg=(book, kind)) as cm:
                 cc.create_final(self.comp(book), kind, ["lane-1"], "md")
             self.assertIn("rules have no", str(cm.exception))
-        self.assertEqual(rb.finals(rb.PAR), ("standard",))
-        self.assertEqual(rb.finals(rb.AG), ("airgun",))
-        for book, kind in ((rb.AG, "airgun"), (rb.PAR, "standard"), (rb.NONE, "airgun"), (rb.NONE, "standard")):   # allowed: on to the next check
+        self.assertEqual(rb.finals(rb.PAR), ("standard", "sfz_standing", "sfz_3p"))
+        self.assertEqual([rb.finals(b) for b in (rb.AG, rb.ISSF, rb.NRA)], [("airgun",), ("issf",), ("nra",)])
+        for book, kind in ((rb.AG, "airgun"), (rb.PAR, "standard"), (rb.PAR, "sfz_standing"), (rb.ISSF, "issf"), (rb.NRA, "nra"),
+                           (rb.NONE, "airgun"), (rb.NONE, "standard"), (rb.NONE, "issf")):   # allowed: on to the next check
             with self.assertRaises(MatchError, msg=(book, kind)) as cm:
                 cc.create_final(self.comp(book), kind, ["lane-1"], "md")
             self.assertNotIn("rules have no", str(cm.exception))          # refused later: no competitors yet

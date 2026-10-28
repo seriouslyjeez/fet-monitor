@@ -255,7 +255,7 @@ class Matches:
 
     def _finish_phase(self, c, m, now: int, how: str) -> None:
         self._log(c, m["id"], now, "phase_end", m["phase"], None, {"how": how})
-        if m["final_kind"] in ("airgun", "sfz_standing", "sfz_3p"):    # a final with eliminations: decide a place
+        if m["final_kind"] and mf.FINAL_KINDS[m["final_kind"]]["elim"]:    # a final with eliminations: decide a place
             self._decide_place(c, m, now)
             m = self._row(c, m["id"])
         fmt = json.loads(m["format_json"])
@@ -337,10 +337,10 @@ class Matches:
         return out
 
     def _decide_place(self, c, m, now: int) -> None:
-        """After a deciding shot (a phase with "out": that place) or a shoot-off for it: the lowest finalist takes
-        that place and is eliminated (after the last shot, 1st and 2nd are decided); a tie inserts a one-shot
-        shoot-off for the tied right after (CMP Air Gun 10.3.5), repeated until broken. A place that does not exist
-        (fewer finalists) is skipped."""
+        """After a deciding shot (a phase with "out": that place, or a list of places, lowest first) or a shoot-off
+        for it: the lowest finalist takes that place and is eliminated (after the last shot, 1st and 2nd are decided);
+        a tie inserts a one-shot shoot-off for the tied right after (the final's own rule: CMP AG 10.3.5, CMP 3PAR
+        10.2.9 n, ISSF 6.17.2 h), repeated until broken. A place that does not exist (fewer finalists) is skipped."""
         fmt = json.loads(m["format_json"])
         p = fmt["phases"][m["phase"]]
         if p["kind"] != "record":
@@ -348,29 +348,33 @@ class Matches:
         rnd = m["phase"] if p.get("out") else p.get("round")
         if rnd is None or (p.get("lanes") is not None and p.get("round") is None):
             return
-        place = fmt["phases"][rnd]["out"]
-        active = [ln for ln in self._lanes(c, m["id"]) if ln["out_place"] is None and ln["series_id"] is not None]
-        if len(active) != place:
-            return
+        kind = mf.FINAL_KINDS[m["final_kind"]]
+        outs = fmt["phases"][rnd]["out"]
         sc = self.final_scores(c, m)
         key = lambda ln: (sc[ln["lane"]]["total"], sc[ln["lane"]]["rounds"].get(rnd, []))
-        low = min(key(ln) for ln in active)
-        bottom = [ln for ln in active if key(ln) == low]
-        if len(bottom) > 1:                              # tied: a shoot-off for them, now
-            n = 1 + sum(1 for x in fmt["phases"] if x.get("lanes") is not None and x["kind"] == "record")
-            fmt["phases"][m["phase"] + 1:m["phase"] + 1] = mf.shoot_off_phases(sorted(ln["lane"] for ln in bottom), n, "10.3.5", rnd)
-            if len(fmt["phases"]) > mf.MAX_PHASES:       # never jam the clock: the match director decides by hand
-                self._log(c, m["id"], now, "shoot_off_limit", m["phase"], None, {"lanes": sorted(ln["lane"] for ln in bottom), "place": place})
+        for place in (outs if isinstance(outs, list) else [outs]):
+            active = [ln for ln in self._lanes(c, m["id"]) if ln["out_place"] is None and ln["series_id"] is not None]
+            if len(active) != place:
+                continue
+            low = min(key(ln) for ln in active)
+            bottom = [ln for ln in active if key(ln) == low]
+            if len(bottom) > 1:                          # tied: a shoot-off for them, now
+                lanes = sorted(ln["lane"] for ln in bottom)
+                n = 1 + sum(1 for x in fmt["phases"] if x.get("lanes") is not None and x["kind"] == "record")
+                so = mf.shoot_off_phases(lanes, n, kind["so_rule"], rnd, kind["so_s"], kind.get("attention", False))
+                fmt["phases"][m["phase"] + 1:m["phase"] + 1] = so
+                if len(fmt["phases"]) > mf.MAX_PHASES:   # never jam the clock: the match director decides by hand
+                    self._log(c, m["id"], now, "shoot_off_limit", m["phase"], None, {"lanes": lanes, "place": place})
+                    return
+                c.execute("UPDATE matches SET format_json=? WHERE id=?", (json.dumps(fmt), m["id"]))
+                self._log(c, m["id"], now, "shoot_off", m["phase"] + len(so), None, {"lanes": lanes, "place": place, "auto": True})
                 return
-            c.execute("UPDATE matches SET format_json=? WHERE id=?", (json.dumps(fmt), m["id"]))
-            self._log(c, m["id"], now, "shoot_off", m["phase"] + 2, None, {"lanes": sorted(ln["lane"] for ln in bottom), "place": place, "auto": True})
-            return
-        out = bottom[0]
-        decided = [(out, place)] + ([(next(ln for ln in active if ln is not out), 1)] if place == 2 else [])
-        for ln, pl in decided:
-            c.execute("UPDATE match_lanes SET out_place=?, out_ms=? WHERE match_id=? AND device_id=?", (pl, now, m["id"], ln["device_id"]))
-            self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl})
-            self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
+            out = bottom[0]
+            decided = [(out, place)] + ([(next(ln for ln in active if ln is not out), 1)] if place == 2 else [])
+            for ln, pl in decided:
+                c.execute("UPDATE match_lanes SET out_place=?, out_ms=? WHERE match_id=? AND device_id=?", (pl, now, m["id"], ln["device_id"]))
+                self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl})
+                self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
 
     def _all_fired(self, c, m) -> bool:
         """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 3PAR 10.4.6 c)."""
@@ -387,13 +391,16 @@ class Matches:
                                              (ln["series_id"], start)).fetchone()[0] >= p["shots"] for ln in lanes)
 
     def shoot_off(self, mid: int, lanes: List[int], by: str) -> None:
-        """A tie-breaking shot for the tied firing points of a final (CMP 3PAR 10.2.9 n), after the final's last shot: the
-        match runs again for that one shot. Repeated until the tie is broken."""
+        """A tie-breaking shot for the tied firing points of a final that is added to the qualification (CMP 3PAR 10.2.9 n,
+        NRA 7.1.2 q), after the final's last shot: the match runs again for that one shot. Repeated until the tie is
+        broken. (Finals with eliminations insert their shoot-offs themselves.)"""
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
             if not m["final_kind"]:
                 raise MatchError("shoot-offs are for finals")
+            if mf.FINAL_KINDS[m["final_kind"]]["elim"]:
+                raise MatchError("this final shoots off its ties by itself, at once")
             if m["state"] != "done":
                 raise MatchError("a shoot-off comes after the final's last shot")
             self.not_official(m)
@@ -401,13 +408,15 @@ class Matches:
             if not isinstance(lanes, list) or len(set(lanes)) < 2 or not set(lanes) <= have:
                 raise MatchError("choose at least two firing points of this final")
             fmt = json.loads(m["format_json"])
+            kind = mf.FINAL_KINDS[m["final_kind"]]
             n = 1 + sum(1 for p in fmt["phases"] if p.get("lanes") is not None and p["kind"] == "record")
-            fmt["phases"] += mf.shoot_off_phases(sorted(set(lanes)), n)
+            so = mf.shoot_off_phases(sorted(set(lanes)), n, kind["so_rule"], None, kind["so_s"], kind.get("attention", False))
+            fmt["phases"] += so
             if len(fmt["phases"]) > mf.MAX_PHASES:
                 raise MatchError("too many shoot-offs")
             c.execute("UPDATE matches SET format_json=? WHERE id=?", (json.dumps(fmt), mid))
-            self._log(c, mid, now, "shoot_off", len(fmt["phases"]) - 2, None, {"lanes": sorted(set(lanes)), "by": by})
-            self._enter(c, self._row(c, mid), len(fmt["phases"]) - 2, now)
+            self._log(c, mid, now, "shoot_off", len(fmt["phases"]) - len(so), None, {"lanes": sorted(set(lanes)), "by": by})
+            self._enter(c, self._row(c, mid), len(fmt["phases"]) - len(so), now)
         self._pub(mid)
 
     def _lane_tick(self, c, mid, now: int) -> int:
@@ -1326,10 +1335,34 @@ class Matches:
         out = []
         for mid in ids[:20]:
             try:
-                out.append(self.results(int(mid)))
+                r = self.results(int(mid))
+                m = self._row(c, int(mid))
+                if m["final_kind"]:
+                    r["final"] = self.final_board(m)
+                out.append(r)
             except (MatchError, ValueError):
                 continue
         return out
+
+    def final_board(self, m) -> Optional[dict]:
+        """A final on the TV board: its standings (the competition's results), where the final is (shot k of n), the
+        next decision, and who is in a shoot-off now."""
+        view = self._final_view(m)
+        if view is None:
+            return None
+        fmt = json.loads(m["format_json"])
+        main = [(i, p) for i, p in enumerate(fmt["phases"]) if p["kind"] == "record" and p.get("lanes") is None]
+        cur = m["phase"]
+        fired = sum(p["shots"] for i, p in main if m["state"] == "done" or i < cur)       # the shots of the phases before this one
+        p = fmt["phases"][cur] if 0 <= cur < len(fmt["phases"]) else {}
+        nxt = next(((i, q) for i, q in main if i >= cur and q.get("out")), None) if m["state"] in ACTIVE else None
+        if m["state"] in ACTIVE and p.get("round") is not None:      # a shoot-off: the decision it settles
+            nxt = (p["round"], fmt["phases"][p["round"]])
+        upto = sum(q["shots"] for i, q in main if nxt and i <= nxt[0])
+        return dict(view, shots_done=fired, shots_total=sum(q["shots"] for _, q in main),
+                    now=p.get("label") if m["state"] in ACTIVE else None,
+                    shoot_off=p.get("lanes") if m["state"] in ACTIVE and p.get("lanes") else None,
+                    next_out={"after": upto, "places": nxt[1]["out"] if isinstance(nxt[1]["out"], list) else [nxt[1]["out"]]} if nxt else None)
 
 
 def rules_of(fmt: dict) -> str:
