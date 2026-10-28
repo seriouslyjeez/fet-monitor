@@ -22,7 +22,8 @@ KINDS = {"setup", "sight", "pause", "record", "stage", "changeover"}
 FIRE_KINDS = {"sight", "record", "stage"}
 SCORING = {"decimal", "integer"}
 POSITIONS = {"", "standing", "prone", "kneeling", "sitting"}
-MAX_PHASES = 40
+MAX_PHASES = 80                  # a final with its single shots and shoot-offs needs more than a qualification
+FINALS = ("standard", "sfz_standing", "sfz_3p")
 MAX_SECONDS = 4 * 3600
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
@@ -172,6 +173,8 @@ def validate(fmt) -> dict:
            "rulebook": str(fmt.get("rulebook") or "Custom")[:20], "edition": str(fmt.get("edition") or "")[:120],
            "scoring": fmt.get("scoring") or "decimal", "notes": str(fmt.get("notes") or "")[:1000],
            "team_size": fmt.get("team_size", 4), "tie_rules": fmt.get("tie_rules") or "ISSF", "phases": []}
+    if fmt.get("final") in FINALS:
+        out["final"] = fmt["final"]
     if out["id"] and not ID_RE.match(out["id"]):
         raise ValueError("format id: lowercase letters, digits and dashes")
     if not out["name"]:
@@ -212,6 +215,11 @@ def validate(fmt) -> dict:
                               "position": pos, "warnings": sorted(warns, key=lambda w: -w["at"]),
                               "start": str(p.get("start") or "")[:200], "end": str(p.get("end") or "")[:200],
                               "rule": str(p.get("rule") or "")[:60]})
+        for flag in ("nohold", "early"):           # finals: no hold for START after LOAD; the shot ends when all have fired
+            if p.get(flag) is True:
+                out["phases"][-1][flag] = True
+        if isinstance(p.get("lanes"), list) and all(isinstance(x, int) and not isinstance(x, bool) for x in p["lanes"]):
+            out["phases"][-1]["lanes"] = sorted(set(p["lanes"]))   # a shoot-off: only these firing points fire
     if not any(p["kind"] in ("record", "stage") for p in out["phases"]):
         raise ValueError("a format needs at least one record or stage phase")
     return out
@@ -219,3 +227,29 @@ def validate(fmt) -> dict:
 
 def builtin_list() -> List[dict]:
     return [copy.deepcopy(f) for f in BUILTIN.values()]
+
+
+def cmp_standard_final() -> dict:
+    """CMP Standard Final (10.4): 2 minutes to take positions, 5 minutes preparation and sighting (30 s warning), a
+    30-second pause for the targets (10.2.9 b), then 10 shots standing, each on command: LOAD, 5 seconds, START,
+    50 seconds or until everyone has fired, STOP (10.4.6)."""
+    phases = [P("setup", "Take your positions", 0, 120, rule="10.4.4", start="Take your positions."),
+              P("sight", "Preparation and sighting", 5, position="standing", warnings=[(30, "Thirty seconds")], rule="10.4.5",
+                start="Preparation and sighting. Time limit five minutes. Start.", end="Stop. Unload."),
+              P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b")]
+    for k in range(1, 11):
+        phases.append(P("pause", "Shot %d: load" % k, 0, 5, rule="10.4.6",
+                        start="For the %s competition shot. Load." % ("first" if k == 1 else "next")))
+        phases.append(dict(P("record", "Shot %d" % k, 0, 50, shots=1, position="standing", rule="10.4.6", start="Start.", end="Stop."),
+                           nohold=True, early=True))
+    return validate({"id": "cmp-final-standard", "name": "CMP Standard Final", "rulebook": "CMP", "tie_rules": "CMP",
+                     "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "final": "standard",
+                     "notes": "Added to the qualification score (10.4.3); ties for 1st-3rd shot off (10.2.9 n).", "phases": phases})
+
+
+def shoot_off_phases(lanes, n: int) -> list:
+    """One tie-breaking shot for the tied firing points (CMP 10.2.9 n): LOAD, 5 seconds, START, 50 seconds."""
+    return [dict(P("pause", "Shoot-off %d: load" % n, 0, 5, rule="10.2.9 n",
+                   start="These commands are for the tied athletes only, for your tie-breaking shot. Load."), lanes=list(lanes)),
+            dict(P("record", "Shoot-off %d" % n, 0, 50, shots=1, position="standing", rule="10.2.9 n", start="Start.", end="Stop."),
+                 nohold=True, early=True, lanes=list(lanes))]

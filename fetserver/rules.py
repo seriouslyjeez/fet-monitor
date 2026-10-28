@@ -135,7 +135,8 @@ def guidance(code, kind, stream: str, book: str) -> dict:
         why = {"restarted": "The match director restarted this part of the match: shots from before the restart normally do not count.",
                "moving": "Fired while the shooter was moving to another target (their time was stopped).",
                "record_in_sight": "A record shot during sighting time: sighting time is for sighters.",
-               "waiting": "Fired before this shooter's part of the match on this relay began (CMP 7.18): it does not count."}.get(code, "The match director decides.")
+               "waiting": "Fired before this shooter's part of the match on this relay began (CMP 7.18): it does not count.",
+               "not_in_shoot_off": "Fired during a shoot-off this finalist is not part of (CMP 10.2.9 n): it does not count."}.get(code, "The match director decides.")
         rule, text, suggest, todo = None, why, ("annul" if rec else "ignore"), None
     else:
         rule, text, suggest, todo = table[book]

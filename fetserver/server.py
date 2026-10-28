@@ -23,9 +23,9 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off)|/flags/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
-COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
+COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
 MAX_CSV = 256 * 1024
 RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$")   # c competition, m match, a frozen copy
@@ -205,6 +205,10 @@ class Handler(BaseHTTPRequestHandler):
                     cc.remove_competitor(cid, int(pid))
                 elif method == "POST" and sub == "competitors":
                     cc.save_competitor(cid, payload, int(pid) if pid else None)
+                elif method == "POST" and sub == "finals" and not pid:     # CMP 10: a final for the top of a class, or for a relay
+                    fid = cc.create_final(cid, str(payload.get("kind", "")), payload.get("devices"), who, payload.get("cls"), payload.get("n"),
+                                          payload.get("for_relay"))
+                    log.info("Match Control: %s created final match %d in competition %d", who, fid, cid)
                 elif method == "POST" and sub == "relays" and not pid:
                     mid = cc.add_relay(cid, payload.get("lanes"), who)
                     log.info("Match Control: %s added relay match %d to competition %d", who, mid, cid)
@@ -268,6 +272,11 @@ class Handler(BaseHTTPRequestHandler):
                         need_director()                    # before the start it is setting up: the match director's
                     mc.move(mid, payload.get("from"), payload.get("to"), who)
                     log.warning("Match Control: %s moved %s to %s in match %d", who, payload.get("from"), payload.get("to"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "shoot-off":     # a tie-breaking shot in a final (CMP 10.2.9 n)
+                    need_director()
+                    mc.shoot_off(mid, payload.get("lanes"), who)
+                    log.warning("Match Control: %s started a shoot-off for %s in match %d", who, payload.get("lanes"), mid)
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "late":          # a late arrival joins (ISSF 6.11.4)
                     if payload.get("competitor_id") is not None:

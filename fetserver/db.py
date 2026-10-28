@@ -345,6 +345,15 @@ MIGRATIONS = [
     ALTER TABLE matches ADD COLUMN protest_until_ms INTEGER;
     ALTER TABLE competitions ADD COLUMN challenge_min INTEGER;
     """,
+    """
+    -- Finals (CMP 10): a final is a match of a competition with final_kind set ('standard', 'sfz_standing', 'sfz_3p');
+    -- final_for: the relay it follows ("Final for All Athletes", CMP 10.1.2 a), else NULL; final_class: the class it is
+    -- for. It is not a relay: its shots never count in the qualification. match_lanes.final_pos: A, B, C ...
+    ALTER TABLE matches ADD COLUMN final_kind TEXT;
+    ALTER TABLE matches ADD COLUMN final_for INTEGER;
+    ALTER TABLE matches ADD COLUMN final_class TEXT;
+    ALTER TABLE match_lanes ADD COLUMN final_pos TEXT;
+    """,
 ]
 
 

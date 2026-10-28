@@ -748,3 +748,24 @@ console.log('OK');
   assert(lateSheet({detail: Object.assign({}, rd, {competition_id: null}), latep: {}, targets: D.mtargets}).includes('data-latename'), 'a single match: a name');
   console.log('phase G OK');
 }
+
+// finals: the competition panel, the console's standings and shoot-off, the results table
+{
+  const {finalsPanel, finalPanel, finalTable} = X;
+  const comp = {competitors: [{class: 'Sporter'}, {class: 'Precision'}], relays: [{match_id: 4, relay: 1, state: 'done'}, {match_id: 5, relay: 2, state: 'running'}], finals: []};
+  const p = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}, {device_id: 't2', name: '<b>L2</b>', in_match: true}], fin: {}}, true);
+  assert(p.includes('data-fintgt="t1"') && !p.includes('data-fintgt="t2"') && p.includes('value="Precision"') && /data-act="mcfinal" disabled/.test(p), 'free targets, classes; nothing picked yet');
+  assert(p.includes('data-act="mcfinalrelay" data-id="4"') && !p.includes('data-id="5"'), 'a final for a finished relay only');
+  assert(!finalsPanel(comp, {targets: []}, false).includes('mcfinal'), 'officers see the list only');
+  const f = {name: 'L - final', shoot_off_needed: [[1, 2]], rows: [
+    {place: 1, tied: true, pos: 'A', name: '<i>AMES</i>', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},
+    {place: 1, tied: true, pos: 'B', name: 'BELL', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},
+    {place: null, tied: false, pos: 'C', name: 'COLE', qual: 200, final: 0, shots: 0, total: 200, shoot_off: [], dq: {rule: 'x'}, counts: true},
+    {place: 4, tied: false, pos: 'D', name: 'DUNN', qual: 150, final: 90, shots: 10, total: 240, shoot_off: [], dq: null, counts: false}]};
+  const t = finalTable(f, false);
+  assert(t.includes('1=') && t.includes('&lt;i&gt;AMES') && t.includes('<b>DQ</b>') && t.includes('For information') && t.indexOf('DUNN') > t.indexOf('For information'));
+  const cp = finalPanel({final: f}, true);
+  assert(cp.includes('data-act="mcshootoff" data-lanes="1,2"') && !finalPanel({final: f}, false).includes('mcshootoff'), 'the director starts the shoot-off');
+  assert(finalPanel({final: null}, true) === '');
+  console.log('finals OK');
+}

@@ -10,6 +10,7 @@ have exactly team_size members. Teams that do not qualify are listed, unranked, 
 from __future__ import annotations
 
 import json
+from functools import cmp_to_key
 from typing import Dict, List, Optional
 
 from . import matchformats as mf
@@ -189,7 +190,7 @@ class Competitions:
             raise MatchError("a relay needs at least one target")
         competitors = {r["id"]: r for r in c.execute("SELECT * FROM competitors WHERE competition_id=?", (cid,))}
         taken = {r["competitor_id"] for r in c.execute("""SELECT l.competitor_id FROM match_lanes l JOIN matches m ON m.id=l.match_id
-                                                          WHERE m.competition_id=? AND m.state!='aborted' AND l.competitor_id IS NOT NULL""", (cid,))}
+                                                          WHERE m.competition_id=? AND m.state!='aborted' AND l.competitor_id IS NOT NULL AND m.final_kind IS NULL""", (cid,))}
         out, seen = [], set()
         for ln in lanes:
             pid = ln.get("competitor_id") if isinstance(ln, dict) else None
@@ -216,7 +217,7 @@ class Competitions:
             if person is None:
                 raise MatchError("unknown competitor")
             cur = c.execute("""SELECT l.*, m.state, m.relay FROM match_lanes l JOIN matches m ON m.id=l.match_id
-                               WHERE l.competitor_id=? AND m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL""", (competitor_id, cid)).fetchone()
+                               WHERE l.competitor_id=? AND m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL AND m.final_kind IS NULL""", (competitor_id, cid)).fetchone()
             if cur is not None and cur["state"] != "ready":
                 raise MatchError(f"relay {cur['relay']} has started: move this shooter on its console (Move)")
             if match_id is None:
@@ -331,10 +332,136 @@ class Competitions:
         if p is None:
             raise MatchError("unknown competitor")
         if c.execute("""SELECT 1 FROM match_lanes l JOIN matches x ON x.id=l.match_id WHERE l.competitor_id=? AND x.state!='aborted'
-                        AND l.left_ms IS NULL""", (competitor_id,)).fetchone():
+                        AND l.left_ms IS NULL AND x.final_kind IS NULL""", (competitor_id,)).fetchone():
             raise MatchError(f"{display_name(p)} is already on a relay")
         self.matches.add_late(mid, device_id, display_name(p), by, competitor_id)
         self._pub(m["competition_id"])
+
+    # ------------------------------------------------------------------------------------------- finals (CMP 10)
+    def create_final(self, cid: int, kind: str, devices: List[str], by: str, cls: Optional[str] = None, n: Optional[int] = None,
+                     for_relay: Optional[int] = None) -> int:
+        """A final. Standard (CMP 10.4): the top n of the class (n up to 8, at most one per target) on the targets given,
+        best qualifier on the first (point A, 10.4.1). for_relay: "Final for All Athletes" (10.1.2 a), everyone of
+        that finished relay on their own target. The final is a match of the competition (officer-paced: the range
+        officer gives LOAD for every shot)."""
+        if kind != "standard":
+            raise MatchError("this final is not built yet")
+        c = self.db.conn()
+        comp = self._row(c, cid)
+        fmt = mf.cmp_standard_final()
+        if for_relay is not None:
+            r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
+            if r is None or r["state"] != "done":
+                raise MatchError("a relay's final comes after that relay has finished")
+            if c.execute("SELECT 1 FROM matches WHERE final_for=? AND state!='aborted'", (for_relay,)).fetchone():
+                raise MatchError("that relay has its final already")
+            lanes = [{"device_id": l["device_id"], "competitor": l["competitor"], "competitor_id": l["competitor_id"]}
+                     for l in c.execute("SELECT * FROM match_lanes WHERE match_id=? AND left_ms IS NULL AND competitor_id IS NOT NULL ORDER BY lane", (for_relay,))]
+            name = f"{comp['name']} - relay {r['relay']} final"
+        else:
+            if not isinstance(devices, list) or not devices or len(set(devices)) != len(devices):
+                raise MatchError("choose the targets for the final, in order (A, B, C ...)")
+            want = min(8, len(devices)) if n is None else n
+            if not isinstance(want, int) or isinstance(want, bool) or not 1 <= want <= min(8, len(devices)):
+                raise MatchError("finalists: 1 to 8, at most one per target")
+            res = self.results(cid)
+            group = next((x for x in res["classes"] if x["name"] == (cls or "")), None)
+            if group is None:
+                raise MatchError("no such class")
+            ranked = [e for e in group["individuals"] if e["fired"] and not e.get("dq")]
+            if len(ranked) < want:
+                raise MatchError(f"only {len(ranked)} competitors have a score")
+            lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, ranked[:want])]
+            name = f"{comp['name']} - final" + (f" ({cls})" if cls else "")
+        mid = self.matches.create(name, None, lanes, by, paced="officer", fmt=fmt, competition_id=cid, relay=None)
+        with self.db.write() as w:
+            w.execute("UPDATE matches SET final_kind=?, final_for=?, final_class=? WHERE id=?", (kind, for_relay, cls or None, mid))
+            for i, l in enumerate(w.execute("SELECT device_id FROM match_lanes WHERE match_id=? ORDER BY lane", (mid,)).fetchall()):
+                w.execute("UPDATE match_lanes SET final_pos=? WHERE match_id=? AND device_id=?", (chr(65 + i), mid, l["device_id"]))
+        self._pub(cid)
+        return mid
+
+    def _finals(self, c, comp, finals, classes, decimal: bool, with_shots: bool) -> List[dict]:
+        """Each final's standings. Standard (CMP 10.4.3): qualification + final; ties for places 1-3 by shoot-off
+        (10.2.9 n), the others by the final score, then the final's shots by CMP 8.6.1 e. A relay's "final for all"
+        (10.1.2 a) lists everyone, but only the class's top 8 qualifiers count (counts=True); the "all" table ranks them."""
+        qual = {e["id"]: e for cl in classes for e in cl["individuals"]}
+        top8 = {e["id"] for cl in classes for e in cl["individuals"][:8] if e["fired"] and not e.get("dq")}
+        out, pooled = [], []
+        for m in finals:
+            if m["state"] == "aborted":
+                continue
+            fmt = json.loads(m["format_json"])
+            wins = self.matches.windows(c, m["id"])
+            off_phases = {i for i, p in enumerate(fmt["phases"]) if p.get("lanes") is not None}
+            flags = {f["shot_id"]: f for f in (self.matches.flags(c, m) if m["state"] != "ready" else [])}
+            rows = []
+            for ln in self.matches._lanes(c, m["id"]):
+                shots, x = self.matches.counted_row(c, m, ln, flags)
+                phase_of = lambda t: next((w["phase"] for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
+                main = [s for s in shots if phase_of(s["t"]) not in off_phases]
+                off = [s["tenths"] for s in shots if phase_of(s["t"]) in off_phases]
+                q = qual.get(ln["competitor_id"], {})
+                ft = sum(s["tenths"] if decimal else s["ring"] * 10 for s in main) / 10.0
+                row = {"pos": ln["final_pos"], "lane": ln["lane"], "device_id": ln["device_id"], "id": ln["competitor_id"], "name": ln["competitor"] or "",
+                       "family": q.get("family", ""), "cls": q.get("cls", ""), "qual": q.get("total"), "final": ft, "shots": len(main),
+                       "total": round((q.get("total") or 0) + ft, 1), "shoot_off": [v / 10.0 for v in off], "dq": x["dq"],
+                       "counts": m["final_for"] is None or ln["competitor_id"] in top8, "summary": ranking.summary(main)}
+                if with_shots:
+                    row["shot_list"] = main
+                rows.append(row)
+            entry = {"match_id": m["id"], "name": m["name"], "kind": m["final_kind"], "cls": m["final_class"] or "", "for_relay": m["final_for"],
+                     "state": m["state"], "official_ms": m["official_ms"], "rows": self._rank_final(rows)}
+            entry["shoot_off_needed"] = self._ties_for_medals(entry["rows"]) if m["state"] == "done" and m["final_kind"] == "standard" else []
+            out.append(entry)
+            if m["final_for"] is not None:
+                pooled += [r for r in rows if r["counts"]]
+        if pooled:                                       # Final for All Athletes: the top 8 of each class, ranked together
+            for cls in sorted({r["cls"] for r in pooled}):
+                out.append({"match_id": None, "name": "Final for all athletes" + (f" ({cls})" if cls else ""), "kind": "standard_all", "cls": cls,
+                            "for_relay": None, "state": None, "official_ms": None, "shoot_off_needed": [],
+                            "rows": self._rank_final([dict(r) for r in pooled if r["cls"] == cls], shoot_offs=False)})
+        for f in out:
+            for r in f["rows"]:
+                r.pop("summary", None)
+        return out
+
+    @staticmethod
+    def _rank_final(rows: List[dict], shoot_offs: bool = True) -> List[dict]:
+        """Places by total (CMP 10.4.3). A tie that reaches into places 1-3 stays tied until a shoot-off breaks it
+        (10.2.9 n); other ties: the final score, then the final's shots by CMP 8.6.1 e (8.6.2 b). Without shoot-offs
+        (the pooled final for all athletes) every tie goes by the final score first (10.4.8 c)."""
+        cmp = ranking._cmp
+        live = sorted([r for r in rows if not r["dq"]], key=cmp_to_key(lambda a, b: cmp((b["total"], b["shoot_off"]), (a["total"], a["shoot_off"]))))
+        out, i = [], 0
+        while i < len(live):
+            j = i
+            while j + 1 < len(live) and cmp((live[j + 1]["total"], live[j + 1]["shoot_off"]), (live[i]["total"], live[i]["shoot_off"])) == 0:
+                j += 1
+            group, place = live[i:j + 1], i + 1
+            if len(group) > 1 and (place > 3 or not shoot_offs):
+                key = lambda r: (r["final"], ranking.sort_key(r["summary"], "CMP", True))
+                group.sort(key=cmp_to_key(lambda a, b: cmp(key(b), key(a))))
+                for k, r in enumerate(group):
+                    same = k > 0 and cmp(key(group[k - 1]), key(r)) == 0
+                    r["place"] = group[k - 1]["place"] if same else place + k
+                for k, r in enumerate(group):
+                    r["tied"] = any(x is not r and x["place"] == r["place"] for x in group)
+            else:
+                for r in group:
+                    r["place"], r["tied"] = place, len(group) > 1
+            out += group
+            i = j + 1
+        return out + [dict(r, place=None, tied=False) for r in rows if r["dq"]]
+
+    @staticmethod
+    def _ties_for_medals(rows: List[dict]) -> List[List[int]]:
+        """Groups of firing points tied on total (and any shoot-off so far) for places 1-3 (CMP 10.2.9 n)."""
+        groups: Dict[tuple, List[int]] = {}
+        for r in rows:
+            if r["place"] is not None and r["place"] <= 3:
+                groups.setdefault((r["total"], tuple(r["shoot_off"])), []).append(r["lane"])
+        return [sorted(v) for v in groups.values() if len(v) > 1]
 
     def _check_free(self, c, device_id: str) -> None:
         if c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone() is None:
@@ -355,7 +482,7 @@ class Competitions:
         out = []
         for r in c.execute("SELECT * FROM competitions ORDER BY id DESC LIMIT 100"):
             fmt = json.loads(r["format_json"])
-            relays = [dict(x) for x in c.execute("SELECT id, relay, state FROM matches WHERE competition_id=? ORDER BY relay", (r["id"],))]
+            relays = [dict(x) for x in c.execute("SELECT id, relay, state FROM matches WHERE competition_id=? AND final_kind IS NULL ORDER BY relay", (r["id"],))]
             n = c.execute("SELECT COUNT(*) FROM competitors WHERE competition_id=?", (r["id"],)).fetchone()[0]
             out.append({"id": r["id"], "name": r["name"], "format_name": fmt["name"], "competitors": n, "relays": relays,
                         "active": any(x["state"] in ACTIVE for x in relays),
@@ -369,7 +496,7 @@ class Competitions:
         fmt = json.loads(r["format_json"])
         lanes = {l["competitor_id"]: l for l in c.execute(
             """SELECT l.*, m.relay, m.state FROM match_lanes l JOIN matches m ON m.id=l.match_id
-               WHERE m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL""", (cid,))}
+               WHERE m.competition_id=? AND m.state!='aborted' AND l.left_ms IS NULL AND m.final_kind IS NULL""", (cid,))}
         people = []
         for p in c.execute("SELECT * FROM competitors WHERE competition_id=? ORDER BY family COLLATE NOCASE, given COLLATE NOCASE", (cid,)):
             ln = lanes.get(p["id"])
@@ -379,11 +506,13 @@ class Competitions:
         relays = [{"match_id": m["id"], "relay": m["relay"], "state": m["state"], "name": m["name"],
                    "lanes": [{"device_id": l["device_id"], "lane": l["lane"], "competitor": l["competitor"], "competitor_id": l["competitor_id"]}
                              for l in c.execute("SELECT * FROM match_lanes WHERE match_id=? ORDER BY lane", (m["id"],))]}
-                  for m in c.execute("SELECT * FROM matches WHERE competition_id=? ORDER BY relay", (cid,)).fetchall()]
+                  for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NULL ORDER BY relay", (cid,)).fetchall()]
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
                 "challenge_min": r["challenge_min"] if r["challenge_min"] is not None else 30,
                 "paced": r["paced"], "tie_rules": rules_of(fmt), "record_shots": mf.record_shots(fmt),
-                "competitors": people, "relays": relays}
+                "competitors": people, "relays": relays,
+                "finals": [{"match_id": m["id"], "kind": m["final_kind"], "cls": m["final_class"], "for_relay": m["final_for"], "state": m["state"], "name": m["name"]}
+                           for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NOT NULL ORDER BY id", (cid,))]}
 
     def results(self, cid: int, with_shots: bool = False) -> dict:
         """Individuals and teams per class, ranked with the format's tie-break rules, from every relay not aborted."""
@@ -394,7 +523,11 @@ class Competitions:
         people = {p["id"]: p for p in c.execute("SELECT * FROM competitors WHERE competition_id=?", (cid,))}
         found: Dict[int, dict] = {}
         relays = []
+        finals = []
         for m in c.execute("SELECT * FROM matches WHERE competition_id=? ORDER BY relay", (cid,)).fetchall():
+            if m["final_kind"]:                          # a final never counts in the qualification
+                finals.append(m)
+                continue
             relays.append({"match_id": m["id"], "relay": m["relay"], "state": m["state"], "clock": self.matches._clock(m, self.core.now_ms())})
             if m["state"] == "aborted":
                 continue
@@ -434,7 +567,8 @@ class Competitions:
             out_classes.append({"name": cls, "individuals": ranked, "teams": teams})
         return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
-                "relays": relays, "classes": out_classes, "official_ms": self._official(c, cid), **self._posted(c, cid)}
+                "relays": relays, "classes": out_classes, "finals": self._finals(c, comp, finals, out_classes, decimal, with_shots),
+                "official_ms": self._official(c, cid), **self._posted(c, cid)}
 
     @staticmethod
     def _official(c, cid):

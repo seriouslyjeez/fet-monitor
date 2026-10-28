@@ -49,6 +49,38 @@ MATCH START: not a match shot, 2-point penalty on the first competition shot (6.
 
 Announcer comments (15-20 s) between series and shots: the RO paces those. ISSF notes the timings are guidelines.
 
+## CMP finals (Rule 10; the Standard Final is built, Start-from-Zero next)
+
+The top 8 of the qualification event (3x10, 3x20, 40 or 60 standing) fire a Final on 8 adjacent firing points,
+labelled A-H (10.2.2, 10.2.3); decimal scoring (10.2.8); a count-down clock per shot (10.2.2).
+
+| Final | Course of fire | Firing points | Ranking | Ties |
+|---|---|---|---|---|
+| Standard (10.4), after any event | 2 min to take positions; 5 min preparation and sighting (30 s warning); then 10 shots standing, each on command: LOAD, 5 s, START, 50 s or all fired, STOP | by qualification rank, best on point A (10.4.1) | qualification + final total (10.4.3) | places 1-3: one-shot shoot-offs, 50 s (10.2.9 n); 4-7: final score first, then 8.6.1 (8.6.2) |
+| Standing Start-from-Zero (10.5, ISSF style), after 60 standing | 5 min preparation and sighting; 2 series of 5 shots in 250 s; then single shots in 50 s; after shot 12 the 8th place is eliminated, then one more every 2 shots; shot 24 decides 1st/2nd | random draw (10.3.1 via 10.2 / the ISSF script) | the final only (qualification does not carry over) | elimination ties: one-shot shoot-offs until broken (10.5.4 f, 10.2.9 n) |
+| Three-position Start-from-Zero (10.3), after 3x10 or 3x20 | 30 s preparation; 5 min sighting kneeling; 10 shots kneeling in 400 s; 7 min changeover and sighting; 10 prone in 300 s; 7 min changeover and sighting; 5 + 5 standing in 250 s each (then 8th and 7th eliminated); single shots 31-35 in 50 s, eliminating 6th, 5th, 4th, 3rd; shot 35 decides 1st/2nd | random draw (10.3.1) | the final only | as above |
+
+Rules for every final (10.2.9): a shot before LOAD/START or after STOP is a miss for that shot; discharge before
+the preparation time: 2 points off the first final shot; an early STOP gives the athlete a new full time for that
+shot; a malfunction not their fault: 1 minute to repair, then a new full time (one per final); a target failure: move,
+2 minutes of sighters, then the missing shot(s) while the others wait; all targets fail: qualification plus the final
+shots fired so far; a score protest immediately, before the next shot's commands. A finalist who does not appear
+is last (10.2.4). Options (10.1.2): a Standard Final for everyone at the end of each relay (only the top 8 of the
+qualification count), daily finals, or a points system for aggregates.
+
+How FeT Monitor runs the Standard Final (competition page, *Finals*): choose the class, the targets (in order: A, B,
+C ...) and the number of finalists (default: one per target, at most 8; fewer than 8 when the range has fewer
+targets); the top qualifiers are placed best on A. Or, after a relay finishes, *Final for relay N* (10.1.2 a):
+everyone of that relay on their own target; the standings of all relay finals together count only the top 8
+qualifiers of each class (the rest are listed for information). The final is officer-paced: the range officer
+presses Next for LOAD, START follows 5 seconds later, and the shot ends after 50 seconds or as soon as every finalist
+has fired. Ties for places 1-3: the console offers a one-shot shoot-off for the tied firing points (50 s, repeated
+until broken); places 4-7: the final score, then the final's shots by 8.6.1 e. The final never counts in the
+qualification results.
+
+Note: 10.3.2 c says "400/300/150 seconds" for the series, but the course of fire in 10.3.1 gives 250 s for each
+5-shot standing series (as ISSF); 250 s is used here.
+
 ## CMP 3x10 (5.3.2) and 3x20 (5.3.3), kneeling-prone-standing order
 
 | Stage | 3x10 | 3x20 | Warnings |
