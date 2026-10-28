@@ -145,3 +145,19 @@ class FinalForAllTopEight(FinalCase):
         pooled = next(f for f in res["finals"] if f["kind"] == "standard_all")
         self.assertNotIn("Z4", [r["name"] for r in pooled["rows"]])
         self.assertEqual([r["relay"] for r in self.cc.list()[0]["relays"]], [1, 2], "a final is not listed as a relay")
+
+
+class SpokenFinal(FinalCase):
+    def test_spoken_final_runs_by_itself_with_time_for_scores(self):
+        mid = self.final(n=2, devices=("lane-5", "lane-4"), paced="spoken")
+        d = self.m.detail(mid)
+        self.assertEqual(d["clock"]["paced"], "spoken")
+        labels = [p["label"] for p in d["format"]["phases"]]
+        self.assertEqual(labels[3:8], ["Shot 1: load", "Shot 1", "Scores after shot 1", "Shot 2: load", "Shot 2"])
+        self.assertEqual(sum(1 for x in labels if x.startswith("Scores after")), 9)
+        self.m.start(mid, "md")
+        self.assertEqual(self.m.detail(mid)["state"], "running", "no holds")
+        with self.assertRaises(MatchError):
+            self.final(n=1, devices=("lane-3",), paced="loud")
+        self.assertEqual(sum(1 for p in self.m.detail(self.final(n=1, devices=("lane-3",)))["format"]["phases"] if p["label"].startswith("Scores")), 0,
+                         "officer-paced (default): the range officer takes the time")

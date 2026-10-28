@@ -207,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                     cc.save_competitor(cid, payload, int(pid) if pid else None)
                 elif method == "POST" and sub == "finals" and not pid:     # CMP 10: a final for the top of a class, or for a relay
                     fid = cc.create_final(cid, str(payload.get("kind", "")), payload.get("devices"), who, payload.get("cls"), payload.get("n"),
-                                          payload.get("for_relay"))
+                                          payload.get("for_relay"), payload.get("paced") or "officer")
                     log.info("Match Control: %s created final match %d in competition %d", who, fid, cid)
                 elif method == "POST" and sub == "relays" and not pid:
                     mid = cc.add_relay(cid, payload.get("lanes"), who)

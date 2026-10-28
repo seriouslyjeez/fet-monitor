@@ -229,7 +229,10 @@ def builtin_list() -> List[dict]:
     return [copy.deepcopy(f) for f in BUILTIN.values()]
 
 
-def cmp_standard_final() -> dict:
+COMMENTARY_S = 20                # spoken finals: time for the scores and commentary before the next LOAD (10.4.6 d)
+
+
+def cmp_standard_final(spoken: bool = False) -> dict:
     """CMP Standard Final (10.4): 2 minutes to take positions, 5 minutes preparation and sighting (30 s warning), a
     30-second pause for the targets (10.2.9 b), then 10 shots standing, each on command: LOAD, 5 seconds, START,
     50 seconds or until everyone has fired, STOP (10.4.6)."""
@@ -238,6 +241,8 @@ def cmp_standard_final() -> dict:
                 start="Preparation and sighting. Time limit five minutes. Start.", end="Stop. Unload."),
               P("pause", "Targets to match fire", 0, 30, rule="10.2.9 b")]
     for k in range(1, 11):
+        if spoken and k > 1:                     # the range officer is not there to wait for: a pause for the scores
+            phases.append(P("pause", "Scores after shot %d" % (k - 1), 0, COMMENTARY_S, rule="10.4.6 d"))
         phases.append(P("pause", "Shot %d: load" % k, 0, 5, rule="10.4.6",
                         start="For the %s competition shot. Load." % ("first" if k == 1 else "next")))
         phases.append(dict(P("record", "Shot %d" % k, 0, 50, shots=1, position="standing", rule="10.4.6", start="Start.", end="Stop."),

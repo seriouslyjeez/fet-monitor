@@ -9,6 +9,12 @@ Sources (downloaded 2026-10-26):
   USA Shooting applies ISSF rules for these events (its 2025 rule extract for NCAA quotes the same 6.11.1).
 - **CMP** National Standard Three-Position Air Rifle Rules, 16th edition, valid October 2026 to September 2028:
   5.3, 7.5 to 7.11, 10. (Also the rulebook NFHS / high-school 3-position air rifle uses.)
+- **CMP Air Rifle and Air Pistol Competition Rules**, 5th edition 2026 (effective 1 March 2026; downloaded 2026-10-28
+  from https://thecmp.org/competitions/cmp-competitions-rulebooks/, which the user names as authoritative for CMP),
+  with the CMP Range Officer scripts "60-shot event on electronic targets" (7 Jan 2025) and "Air gun final on EST"
+  (20 Feb 2026). This is the book for CMP 10 m air rifle events (AR60); the National Standard 3PAR rules above are the
+  book for three-position air rifle. Its numbering differs: e.g. 10.3.1 = loading before LOAD, 10.3.2 = firing
+  before START.
 - **NRA** Precision Air Rifle Rules, 2025: 7.1, 8.1 to 8.5, 9.2. NRA Sporter Air Rifle Position Rules (file
   without a printed year: to confirm the edition).
 
@@ -80,6 +86,23 @@ qualification results.
 
 Note: 10.3.2 c says "400/300/150 seconds" for the series, but the course of fire in 10.3.1 gives 250 s for each
 5-shot standing series (as ISSF); 250 s is used here.
+
+## CMP Air Rifle and Air Pistol Rules (5th ed. 2026): AR60 and the Air Gun Final (not built yet)
+
+- AR60 on electronic targets (6.4.1 b, script): call to the line at least 15 minutes; 15 minutes preparation and
+  sighting (30 s warning, 7.9.1); then straight on to 60 record shots in 75 minutes (90 on target carriers), warnings
+  at 10 and 5 minutes (7.9.2). Ties (8.5.1 b): last 10-shot series, then the one before ..., then shot by shot from
+  the last. Teams of 2, 3 or 4 as the program says (6.4.6).
+- Air Gun Final (6.4.2, 10.2): the top 8 by random draw (10.1.2); take positions 30 s (rifle); preparation and
+  sighting 5 min (30 s warning); a pause of up to 30 s for the targets; 2 series of 5 shots in 250 s; then single
+  shots in 50 s; the lowest is eliminated after shots 12, 14, 16, 18, 20, 22; shot 24 decides 1st and 2nd. Every tie
+  (an elimination, or 1st/2nd) is shot off (10.3.5, 8.5.2), shot by shot. The final decides the places (10.1.1; a
+  point system is an option). Special regulations 10.3.1-10.3.9: loading before LOAD (warning, then 2 points), a shot
+  between LOAD and START or after STOP is a miss, dry firing between shots 1 point off the next shot, early STOP
+  (a new 50 s per unfired shot), malfunction (1 minute, then a new 50 s per unfired shot; once per final), a shot that
+  does not register (protest at once; refire), target failure (move; 2 minutes of sighters), delay over 5 minutes
+  (2 minutes of sighters for everyone).
+- Note: the rule gives a shoot-off shot 50 s (10.3.5); the Air Gun final script says "after 30 seconds: STOP".
 
 ## CMP 3x10 (5.3.2) and 3x20 (5.3.3), kneeling-prone-standing order
 

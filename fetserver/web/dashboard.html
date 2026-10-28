@@ -1206,7 +1206,9 @@ function finalsPanel(c, mc, director) {         // CMP 10: Standard Final for th
   h += '<h4>Standard Final (CMP 10.4)</h4><p class="mut">10 shots standing, each on command (LOAD, 5 s, START, 50 s), added to the qualification score. ' +
     'Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).</p>' +
     '<div class="mcbar">' + (classes.length > 1 || classes[0] ? '<label>Class <select data-fin="cls">' + classes.map(k => '<option value="' + esc(k) + '"' + ((fin.cls || classes[0]) === k ? ' selected' : '') + '>' + esc(k || 'no class') + '</option>').join('') + '</select></label>' : '') +
-    '<label>Finalists <input type="number" min="1" max="8" style="width:60px" data-fin="n" value="' + esc(n) + '"></label></div>' +
+    '<label>Finalists <input type="number" min="1" max="8" style="width:60px" data-fin="n" value="' + esc(n) + '"></label>' +
+    '<label>Commands <select data-fin="paced"><option value="officer"' + (fin.paced !== 'spoken' ? ' selected' : '') + '>Range officer reads them (Next for each LOAD)</option>' +
+      '<option value="spoken"' + (fin.paced === 'spoken' ? ' selected' : '') + '>Spoken by the console (20 s for scores before each LOAD)</option></select></label></div>' +
     '<div>Targets, in order A, B, C …: ' + (free.length ? free.map(t => '<label style="margin-right:10px"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('')
       : '<span class="bad">no free target</span>') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcfinal"' + (picked.length ? '' : ' disabled') + '>Create the final</button></div>' +
@@ -1826,8 +1828,8 @@ async function matchAct(el, a) {
   if (a === 'mcfinal' || a === 'mcfinalrelay') {
     const fin = mc.fin || {}, free = (mc.targets || []).filter(t => !t.in_match).filter(t => (fin.devs || {})[t.device_id]).map(t => t.device_id);
     const classes = [...new Set(mc.comp.competitors.map(p => p.class || ''))].sort();
-    const body = a === 'mcfinalrelay' ? {kind: 'standard', for_relay: +el.dataset.id}
-      : {kind: 'standard', devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length)};
+    const body = a === 'mcfinalrelay' ? {kind: 'standard', for_relay: +el.dataset.id, paced: fin.paced || 'officer'}
+      : {kind: 'standard', devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length), paced: fin.paced || 'officer'};
     if (!confirm(a === 'mcfinalrelay' ? 'Create the Standard Final for everyone on this relay?' : 'Create the Standard Final for the top ' + body.n + '?')) return;
     const res = await matchCall('/competitions/' + mc.copen + '/finals', body);
     if (show(res)) { mc.comp = res.data; mc.fin = {}; toast('Final created: open its console to run it'); }

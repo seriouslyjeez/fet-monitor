@@ -339,16 +339,19 @@ class Competitions:
 
     # ------------------------------------------------------------------------------------------- finals (CMP 10)
     def create_final(self, cid: int, kind: str, devices: List[str], by: str, cls: Optional[str] = None, n: Optional[int] = None,
-                     for_relay: Optional[int] = None) -> int:
+                     for_relay: Optional[int] = None, paced: str = "officer") -> int:
         """A final. Standard (CMP 10.4): the top n of the class (n up to 8, at most one per target) on the targets given,
         best qualifier on the first (point A, 10.4.1). for_relay: "Final for All Athletes" (10.1.2 a), everyone of
-        that finished relay on their own target. The final is a match of the competition (officer-paced: the range
-        officer gives LOAD for every shot)."""
+        that finished relay on their own target. The final is a match of the competition; paced "officer" (default:
+        the range officer gives LOAD for every shot) or "spoken" (the console speaks the commands, with a pause for the
+        scores before each LOAD)."""
         if kind != "standard":
             raise MatchError("this final is not built yet")
+        if paced not in ("officer", "spoken"):
+            raise MatchError("a final's commands: officer (the range officer reads them) or spoken")
         c = self.db.conn()
         comp = self._row(c, cid)
-        fmt = mf.cmp_standard_final()
+        fmt = mf.cmp_standard_final(spoken=paced == "spoken")
         if for_relay is not None:
             r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
             if r is None or r["state"] != "done":
@@ -373,7 +376,7 @@ class Competitions:
                 raise MatchError(f"only {len(ranked)} competitors have a score")
             lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, ranked[:want])]
             name = f"{comp['name']} - final" + (f" ({cls})" if cls else "")
-        mid = self.matches.create(name, None, lanes, by, paced="officer", fmt=fmt, competition_id=cid, relay=None)
+        mid = self.matches.create(name, None, lanes, by, paced=paced, fmt=fmt, competition_id=cid, relay=None)
         with self.db.write() as w:
             w.execute("UPDATE matches SET final_kind=?, final_for=?, final_class=? WHERE id=?", (kind, for_relay, cls or None, mid))
             for i, l in enumerate(w.execute("SELECT device_id FROM match_lanes WHERE match_id=? ORDER BY lane", (mid,)).fetchall()):
