@@ -1,4 +1,12 @@
-# FeT Monitor (v0.6.28: Match Control (beta) with competitions, corrections and official results; signed updates from GitHub; firmware updates from the Pi; Range Control; scoring screens, phone layout, dark mode; ammo test, sight adjustment; ESP-01 firmware included)
+# FeT Monitor (v0.6.28)
+
+- Match Control (beta): competitions, corrections and official results
+- Signed updates from GitHub
+- Firmware updates from the Pi
+- Range Control
+- Scoring screens, phone layout, dark mode
+- Ammo test, sight adjustment
+- ESP-01 firmware included
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
