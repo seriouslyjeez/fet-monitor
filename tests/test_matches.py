@@ -235,6 +235,19 @@ class Flags(MatchCase):
         with self.assertRaises(MatchError):
             self.m.command(mid, "start_record", "x", device_id="lane-2")
 
+    def test_decided_shots_are_marked_in_the_counted_shots(self):
+        fid = self.custom([("setup", 60, 0), ("record", 60, 3)])
+        mid = self.m.create("C", fid, [{"device_id": "lane-1"}], "dir")
+        self.m.start(mid, "ro")
+        self.at(5); self.shoot()                                  # a sighter during setup: flagged
+        self.at(70); self.shoot(); self.shoot()
+        sid = self.m.detail(mid)["flags"][0]["shot_id"]
+        c = self.core.db.conn()
+        counted = lambda: self.m.counted(c, self.m._row(c, mid), self.m._lanes(c, mid)[0], {f["shot_id"]: f for f in self.m.detail(mid)["flags"]})
+        self.assertEqual([s["decision"] for s in counted()], [None, None])
+        self.m.decide(mid, sid, "penalty2_first", "md")
+        self.assertEqual([s["decision"] for s in counted()], ["penalty2_first", None], "the penalised first record shot shows as decided")
+
     def test_decisions(self):
         fid = self.custom([("setup", 60, 0), ("record", 60, 1)])
         mid = self.m.create("C", fid, [{"device_id": "lane-1"}], "dir")

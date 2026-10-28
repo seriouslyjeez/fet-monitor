@@ -4,18 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FeT Monitor</title>
+<script id="early-theme">try { const th = localStorage.getItem('fet_theme'); if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; } catch (e) {}</script>
 <style>
-:root{--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea;--last:#e11d48}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185}}
+:root{color-scheme:light;--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea;--last:#e11d48;--link:#1d4ed8;--on-accent:#fff}
+/* dark: follows the system unless the viewer chose (header toggle sets data-theme on <html>) */
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}
+a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thickness:2px}
+#theme{margin-left:8px;padding:3px 9px;font-size:13px}
 *{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
-header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:#fff}
+header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:var(--on-accent)}
 #live{margin-left:auto;font-size:12px;color:var(--mut)}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
-.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:#fff;white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
+.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:var(--on-accent);white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
 button,input,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
-button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-color:var(--accent)}button.sel{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
+button{cursor:pointer}button.pri{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button.sel{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
 .face{display:block;width:100%;height:auto;border-radius:6px}
 /* all targets */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
@@ -29,12 +34,27 @@ button{cursor:pointer}button.pri{background:var(--accent);color:#fff;border-colo
 .grprow{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px}.grp{border:1px solid var(--line);border-radius:6px;padding:1px 2px;text-align:center;line-height:1.15;min-width:0}
 .grp b{display:block;font-size:13px}.grp small{display:block;color:var(--mut);font-size:10.5px}.grp.part{border-style:dashed}
 .shotrow{display:grid;gap:2px}.cell{min-width:0;text-align:center;font-size:12px;padding:3px 0;border-radius:4px;background:var(--bg);min-height:23px;font-variant-numeric:tabular-nums}
-.cell.x{background:var(--accent);color:#fff;font-weight:700}.cell.m{color:var(--bad);font-weight:700}.cell.e{opacity:.5}
+.cell.x{background:var(--accent);color:var(--on-accent);font-weight:700}.cell.m{color:var(--bad);font-weight:700}.cell.e{opacity:.5}
 /* single target */
-.shoot{display:grid;grid-template-columns:minmax(300px,1.5fr) minmax(290px,1fr);gap:14px;align-items:start}@media (max-width:820px){.shoot{grid-template-columns:1fr}}
+/* shooter screen: the face alone on the left, as large a square as the window allows; the right column is as tall */
+.shoot{--face:min(calc(100vh - 64px),calc(min(100vw,1500px) - 380px));display:grid;grid-template-columns:var(--face) minmax(330px,1fr);gap:14px;align-items:start}
+.shoot .left .face{width:var(--face);height:var(--face);max-width:none}
+.shoot .right{display:flex;flex-direction:column;gap:10px;height:var(--face);min-height:440px}
+.shoot .right>*{margin:0}.shoot .right .grow{flex:1 1 auto;min-height:90px;overflow:auto}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap}.topbar .zoombar{margin:0;gap:2px}.topbar .zoombar button{min-width:30px;padding:4px 7px}
+.exitbar{display:flex;justify-content:flex-end;margin-top:auto}.exitbar button{padding:9px 18px}
+@media (max-width:820px){.shoot{--face:min(calc(100vw - 24px),calc(100vh - 64px));grid-template-columns:1fr}.shoot .right{height:auto;min-height:0}}
+/* holding a target: only the shooter screen */
+body.rangemode header,body.rangemode #ver{display:none}body.rangemode main{max-width:none;padding:8px}
+body.rangemode .shoot{--face:min(calc(100vh - 16px),calc(100vw - 370px))}
+/* phone: one card, a menu for the rest */
+.phone .face{width:100%;height:auto;margin:6px 0}.phone .row{gap:8px}.menubtn{font-size:20px;padding:4px 12px;line-height:1}
+.pmenu{display:flex;flex-direction:column;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;margin:6px 0}
+.pmenu>button,.pmenu>a{text-align:left;padding:10px 12px}.pmenu .zoombar button{min-width:30px;padding:4px 7px}
+.pscore{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}.pscore .v{font-size:40px;font-weight:800;line-height:1}
 .zoombar{display:flex;gap:3px;align-items:center;margin-bottom:6px;flex-wrap:wrap}.zoombar span{font-size:13px;color:var(--mut);margin-right:4px}
 .zoombar button{padding:4px 9px;min-width:34px;font-size:14px}
-.left .face{width:min(100%,calc(100vh - 160px));margin:0 auto}
+
 .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pager button{min-width:44px;font-weight:700;font-size:16px}.pager span{min-width:150px;text-align:center}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
 .panel h3{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
@@ -73,8 +93,9 @@ button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#
 .mcbanner .mcclock{font-size:44px}.phlist{font-size:13px}.phlist td{height:auto}.phlist tr.cur td{background:var(--hi);font-weight:700}
 .mcform input[type=text],.mcform input[type=number],.mcform select{max-width:100%}.mcform .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 /* print pages (result sheets, score cards): plain, black on white, page breaks between cards */
-body.print header,body.print #ver{display:none}body.print main{max-width:900px;padding:10px}
-.sheetpage{background:#fff;color:#111}.sheetpage h1{font-size:22px;margin:0 0 2px}.sheetpage h2{font-size:17px;margin:14px 0 4px}
+body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:10px auto 0;padding:0 10px}#printbar[hidden]{display:none}
+@media (max-width:600px){header{flex-wrap:wrap;gap:4px 8px;padding:6px 8px}header a{padding:3px 6px}#live{display:none}#theme{margin-left:auto}}body.print main{max-width:900px;padding:10px}
+.sheetpage{background:#fff;color:#111}.sheetpage a{color:#1d4ed8}.sheetpage .mut{color:#555}.sheetpage h1{font-size:22px;margin:0 0 2px}.sheetpage h2{font-size:17px;margin:14px 0 4px}
 .sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
 .scard .faces{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}.scard .faces svg{width:100%;height:auto}
@@ -95,7 +116,8 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button></header>
+<div id="printbar" class="noprint mcbar" hidden><button class="pri" data-act="print">Print</button><span id="printinfo" class="mut"></span></div>
 <main id="app"></main>
 <div id="overlay"></div>
 <div id="toast"></div>
@@ -287,21 +309,23 @@ function resultsPage(res) {
     '<div class="mcbar"><a href="#/print/results/' + k + '" target="_blank" rel="noopener">Print results</a> · <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Print score cards</a> · ' +
     '<a href="' + API + '/results/' + k + '.csv">CSV</a>' + (teams ? ' · <a href="' + API + '/results/' + k + '-teams.csv">Teams CSV</a>' : '') + '</div>' + resultsTables(res, false) + '</div>';
 }
-function printResults(res) {
+// Print pages: the Print button is outside #app (#printbar), so a redraw never takes it away mid-click
+function printResults(res, at) {
   if (!res) return '<p>Loading…</p>';
   if (res.missing) return '<p>These results were deleted.</p>';
-  return '<div class="sheetpage"><div class="noprint mcbar"><button onclick="window.print()">Print</button></div><h1>' + esc(res.name) + '</h1><div>' + esc(res.format_name) + ' · ' +
-    esc(new Date().toLocaleString()) + '</div>' + resultsTables(res, true) + '</div>';
+  return '<div class="sheetpage"><h1>' + esc(res.name) + '</h1><div>' + esc(res.format_name) + ' · ' +
+    esc((at || new Date()).toLocaleString()) + '</div>' + resultsTables(res, true) + '</div>';
 }
 function scoreCards(res, only) {
   if (!res) return '<p>Loading…</p>';
   if (res.missing) return '<p>These results were deleted.</p>';
   const all = [];
   res.classes.forEach(cl => cl.individuals.forEach(e => { if (!only || e.id === +only) all.push([cl, e]); }));
-  return '<div class="sheetpage"><div class="noprint mcbar"><button onclick="window.print()">Print</button> <span class="mut">' + all.length + ' score card' + (all.length === 1 ? '' : 's') + '</span></div>' + all.map(([cl, e]) => {
+  return '<div class="sheetpage" data-cards="' + all.length + '">' + all.map(([cl, e]) => {
     const shots = e.shot_list || [], groups = [];
     for (let i = 0; i < shots.length; i += 10) groups.push(shots.slice(i, i + 10));
-    const val = s => (s.miss ? '0' : res.scoring === 'decimal' ? (s.tenths / 10).toFixed(1) : String(s.ring)) + (s.inner ? '*' : '') + (s.decision && s.decision !== 'count' ? '†' : '');
+    const val = s => (s.miss ? '0' : res.scoring === 'decimal' ? (s.tenths / 10).toFixed(1) : String(s.ring)) + (s.inner ? '*' : '') + (s.decision ? '†' : '');
+    const notes = [shots.some(s => s.inner) ? '* inner ten' : '', shots.some(s => s.decision) ? '† decided by the match director' : ''].filter(Boolean);
     return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
       (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
       '<div style="margin:6px 0"><b>Total ' + fmtScore(res, e.total) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + e.x + ' · place ' + (e.fired ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' +
@@ -309,7 +333,7 @@ function scoreCards(res, only) {
       groups.map((g, gi) => '<tr><td>' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</td>' + Array.from({length: 10}, (_, i) => '<td>' + (g[i] ? val(g[i]) : '') + '</td>').join('') + '<td><b>' + fmtScore(res, e.series[gi]) + '</b></td></tr>').join('') + '</table>' +
       '<div class="faces">' + groups.map((g, gi) => '<div><div class="mut">Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</div>' +
         faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), {half: halfFor('auto', g.filter(s => s.x_mm != null), 2.25), pellet: 4.5, color: '#2563eb', noLast: true}) + '</div>').join('') + '</div>' +
-      '<div class="mut">* inner ten · † decided by the match director</div><div class="sign"><div>Competitor</div><div>Scorer / match director</div></div></div>';
+      (notes.length ? '<div class="mut">' + notes.join(' · ') + '</div>' : '') + '<div class="sign"><div>Competitor</div><div>Scorer / match director</div></div></div>';
   }).join('') + '</div>';
 }
 
@@ -341,7 +365,7 @@ function tvConfig(targets, S) {
       ((cfg.matches || []).includes(b.id) ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') : '<p class="mut">No current matches.</p>') + '</div>';
   }
   const url = tvUrl(Object.assign({kind: kind}, cfg));
-  return h + '</div><div class="mcbar"><a class="pri" style="padding:8px 14px;border-radius:8px;background:var(--accent);color:#fff;text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener">Open the display</a>' +
+  return h + '</div><div class="mcbar"><a class="pri" style="padding:8px 14px;border-radius:8px;background:var(--accent);color:var(--on-accent);text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener">Open the display</a>' +
     '<span class="mut">Bookmark that page on the TV: it remembers the choice. Address: ' + esc(location.origin + '/' + url) + '</span></div></div>';
 }
 function tvClock(b) {
@@ -399,7 +423,7 @@ function reviewPager(v, ammo) {
     b('step-', '&lt;', 'Back one shot', k <= 1) + '<span class="num">Shot ' + k + ' of ' + full + targetNote + '</span>' +
     b('step+', '&gt;', 'Forward one shot', k >= full) + b('page+', '&gt;&gt;', ammo ? 'Forward ten shots' : 'Forward one target', reviewShot(k, ps, full, 'page+') === k) + '</div>';
 }
-function shotsTable(v) {
+function shotsTable(v, grow) {
   const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length;
   let rows = '';
   for (let i = 0; i < n; i++) {                                      // filled from the top; empty rows keep the layout still
@@ -408,7 +432,7 @@ function shotsTable(v) {
                 '</td><td>' + (s.miss ? '0' : s.ring) + '</td></tr>' : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
   }
   const first = v.bull_shots.length ? v.bull_shots[0].n : null, last = v.bull_shots.length ? v.bull_shots[v.bull_shots.length - 1].n : null;
-  return '<div class="panel"><h3>' + (first ? 'Shots ' + first + (last > first ? '–' + last : '') : 'Shots') + '</h3><table class="t"><tr><th>#</th><th>Score</th><th>Int</th></tr>' + rows + '</table></div>';
+  return '<div class="panel' + (grow ? ' grow' : '') + '"><h3>' + (first ? 'Shots ' + first + (last > first ? '–' + last : '') : 'Shots') + '</h3><table class="t"><tr><th>#</th><th>Score</th><th>Int</th></tr>' + rows + '</table></div>';
 }
 function aggRow(label, a) {
   return '<tr><td>' + label + '</td><td><b>' + dec(a.decimal) + '</b></td><td>' + a.integer + '</td><td>' + a.x + '</td></tr>';
@@ -436,14 +460,14 @@ function ammoPanel(t, v) {
     row('Centre vs first shot', none ? '–' : 'x ' + mm2(a.center_x_mm) + ', y ' + mm2(a.center_y_mm) + ' mm') +
     (a.misses ? row('Misses', a.misses) : '') + '</table></div>';
 }
-function ammoTable(v) {
+function ammoTable(v, grow) {
   let rows = '';
   for (let i = v.bull_shots.length - 1; i >= 0; i--) {                // newest first, so the latest shot is always in view
     const s = v.bull_shots[i], first = i === 0;
     rows += '<tr class="' + (i === v.bull_shots.length - 1 ? 'last' : '') + '"><td>' + esc(s.n) + '</td>' +
       (s.miss ? '<td colspan="2"><span class="miss">miss</span></td>' : '<td>' + (first ? 'first shot' : mm2(s.x_mm) + ', ' + mm2(s.y_mm)) + '</td><td>' + dec(s.decimal) + '</td>') + '</tr>';
   }
-  return '<div class="panel"><h3>Shots (mm from the first shot)</h3><div class="scroll"><table class="t"><tr><th>#</th><th>Position</th><th>Score</th></tr>' + rows + '</table></div></div>';
+  return '<div class="panel' + (grow ? ' grow' : '') + '"><h3>Shots (mm from the first shot)</h3><div class="scroll"><table class="t"><tr><th>#</th><th>Position</th><th>Score</th></tr>' + rows + '</table></div></div>';
 }
 function zoomBar(zoom) {
   const opts = ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto'];
@@ -463,7 +487,10 @@ function infoPanel(t, v, mode, S) {
     '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
 }
+const themeLabel = () => typeof document !== 'undefined' && isDark() ? 'Light' : 'Dark';
+const exitButton = '<button class="danger" data-act="exitrange">Exit</button>';
 function shooterView(t, S) {
+  if (S.phone) return phoneView(t, S);
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
   const ammo = v.kind === 'ammo' && !!v.ammo;
   const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
@@ -473,9 +500,35 @@ function shooterView(t, S) {
     ' <button data-act="rback">Back to live</button></div>' : '';
   const pager = reviewing ? reviewPager(v, ammo) : '';
   const mb = reviewing ? '' : matchBanner(t.match, t, S);
-  return '<div class="shoot"><div class="left">' + mb + zoomBar(S.zoom) +
-    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + pager + '</div>' +
-    '<div class="right">' + banner + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v) : shotsTable(v) + lastPanel(v)) + '</div></div>';
+  const mine = t.lease && t.lease.mine;
+  return '<div class="shoot"><div class="left">' +
+    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + '</div>' +
+    '<div class="right"><div class="topbar">' + zoomBar(S.zoom) + (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '</div>' +
+    mb + banner + pager + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v, true) : shotsTable(v, true) + lastPanel(v)) +
+    (mine ? '<div class="exitbar">' + exitButton + '</div>' : '') + '</div></div>';
+}
+// A phone: the card of All targets, larger, with a menu for everything else
+function phoneView(t, S) {
+  const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view, L = t.lease || {};
+  const ammo = v.kind === 'ammo' && !!v.ammo;
+  const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
+  const dia = ammo ? v.ammo.diameter_mm : t.calibre_x10 / 10, half = halfFor(S.zoom, v.bull_shots, dia / 2, ammo ? 9 : undefined);
+  const last = v.last_shot;
+  const menu = S.menu ? '<div class="pmenu">' +
+    (L.mine ? '<button data-act="exitrange">Exit (release control)</button>' : '<button class="pri" data-act="menugear">Take control</button>') +
+    (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN ? '<button data-act="sight">Adjust sights</button>' : '') +
+    '<button data-act="menureview">Review</button><button data-act="menugear">Settings</button>' + zoomBar(S.zoom) +
+    '<button data-act="theme">' + themeLabel() + ' mode</button>' + (L.mine ? '' : '<a href="#/">All targets</a>') + '</div>' : '';
+  return '<div class="phone"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b><span>' + badge(mode) +
+    ' <button class="menubtn" data-act="menu" aria-label="Menu" aria-expanded="' + !!S.menu + '">☰</button></span></div>' + menu +
+    (reviewing ? '<div class="banner">Reviewing from ' + esc(when(v.started)) + ' <button data-act="rback">Back to live</button></div>' + reviewPager(v, ammo) : matchBanner(t.match, t, S)) +
+    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) +
+    '<div class="who">' + esc(v.shooter || t.shooter || '–') + (L.held_by && !L.mine ? ' <span class="mut">· controlled by ' + esc(L.held_by) + '</span>' : '') + '</div>' +
+    (ammo ? '<div class="pscore"><span class="v">' + (v.ammo.shots ? v.ammo.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm group</span><span class="mut">' + v.count + ' shots</span></div>'
+      : '<div class="pscore"><span class="v">' + (last ? (last.miss ? 'M' : dec(last.decimal)) : '–') + '</span>' + (last && last.inner ? '<span class="xbig">X</span>' : '') +
+        '<span class="mut">' + (last ? 'shot ' + esc(last.n) : 'no shots yet') + '</span></div>' +
+        '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
+        '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div>') + '</div>';
 }
 
 // ---- Gear overlay ----
@@ -487,6 +540,7 @@ function statusUrl(ip) {
   return null;
 }
 function overlayView(t, S, name) {
+  if (S.gear === 'review') return '<div class="sheet"><div class="row"><h2>' + esc(t.name) + ': review</h2><button data-act="gearclose">Close</button></div>' + reviewList(S) + '</div>';
   const L = t.lease, st = t.settings, who = esc(name || '');
   let h = '<div class="sheet"><div class="row"><h2>' + esc(t.name) + ' settings</h2><button data-act="gearclose">Close</button></div>';
   h += '<section><h4>Control</h4>';
@@ -521,14 +575,16 @@ function overlayView(t, S, name) {
          '<label for="f_tm">Total shots, match</label><input id="f_tm" type="number" min="1" max="1000" value="' + st.total_match + '"></div>' +
          '<p class="mut">Applies to the current series and to new ones.</p><button data-act="savesettings">Save</button></details></section>');
   }
-  h += '<section><h4>Review</h4>' + (S.seriesList.length ? S.seriesList.map(g => {
+  return h + reviewList(S) + '</div>';
+}
+function reviewList(S) {                         // past series of this target (gear sheet, and Review in the phone menu)
+  return '<section><h4>Review</h4>' + ((S.seriesList || []).length ? S.seriesList.map(g => {
     const a = g.kind === 'match' ? g.scored : g.scored;
     if (g.kind === 'ammo' && g.ammo) return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ammo test · ' + (g.label ? esc(g.label) : '<span class="mut">no label</span>') + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots' +
       (g.ammo.shots ? ' · <b>' + g.ammo.size_mm.toFixed(2) + ' mm</b>' : '') + (g.open ? ' · live' : '') + '</button>';
     return '<button class="rev" data-act="review" data-sid="' + g.id + '">' + esc(when(g.started)) + ' · ' + esc(g.kind) + ' · ' + esc(g.shooter || '–') + ' · ' + a.shots + ' shots · <b>' + dec(a.decimal) + '</b>' +
       (g.kind === 'match' && g.sighter.shots ? ' <span class="mut">(+' + g.sighter.shots + ' sighters)</span>' : '') + (g.open ? ' · live' : '') + '</button>';
-  }).join('') : '<p class="mut">No series yet.</p>') + '</section></div>';
-  return h;
+  }).join('') : '<p class="mut">No series yet.</p>') + '</section>';
 }
 
 // ---- Sight adjustment (practice only, for whoever is in control) ----
@@ -992,6 +1048,12 @@ function matchUsersPanel(users, msg) {          // Range Control: who may use Ma
 const S = {targets: [], review: null, reviewView: null, seriesList: [], gear: false, adv: false, zoom: 'auto', sse: false, busy: false, again: false,
            sight: null, cpr: CPR_DEFAULT, marks: {}};
 let CID;
+// Light or dark: the viewer's choice (kept in this browser), else the system's
+const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark'
+  : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+function themeButton() { const b = document.getElementById('theme'); if (b) b.textContent = isDark() ? 'Light' : 'Dark'; }
+function themeChanged() { themeButton(); if (S.targets) { drawn = null; render(true); } }   // the screen's own buttons too
+function setTheme(th) { document.documentElement.dataset.theme = th; store('fet_theme', th); themeChanged(); }
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
 function clientId() {
   CID = store('fet_cid') || Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('');
@@ -1024,6 +1086,7 @@ const route = () => {
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
+  if (S.printing) return;                   // no requests while the print dialog is coming (Safari waits for them)
   if (S.busy) { S.again = true; return; }
   S.busy = true;
   try {
@@ -1103,6 +1166,12 @@ async function refresh() {
   if (S.again) { S.again = false; refresh(); }
 }
 
+let drawn = null;                          // the page as last drawn (only render() writes #app)
+function setApp(app, html) {               // only when something changed: a redraw between press and release loses a click
+  if (html === drawn) return;
+  app.innerHTML = html;
+  drawn = html;
+}
 function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
   document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print ? '' : 'on';
@@ -1112,12 +1181,22 @@ function render(force) {                  // force: a structural change (e.g. an
   const ae = document.activeElement;
   if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') return;   // never redraw under typing
   document.body.classList.toggle('tv', !!r.tv);
+  S.phone = !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches);
+  document.body.classList.toggle('rangemode', !!(r.id && t && t.lease && t.lease.mine));   // holding a target: only its screen
   document.body.classList.toggle('print', !!r.print);
   document.getElementById('nav-results').className = r.results ? 'on' : '';
-  if (r.print) { app.innerHTML = r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res); return; }
-  if (r.results) { app.innerHTML = r.cid ? resultsPage(S.res) : resultsIndex(S.resList); return; }
-  if (r.tv) { app.innerHTML = r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params); return; }
-  app.innerHTML = r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S);
+  const bar = document.getElementById('printbar');
+  if (bar) bar.hidden = !r.print;
+  if (r.print) {
+    S.printAt = S.printAt || new Date();          // the time on the sheet: when the page was opened (a ticking clock would redraw it)
+    setApp(app, r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res, S.printAt));
+    const n = r.print === 'cards' && app.firstElementChild ? app.firstElementChild.dataset.cards : null;
+    document.getElementById('printinfo').textContent = n != null ? ' ' + n + ' score card' + (n === '1' ? '' : 's') : '';
+    return;
+  }
+  if (r.results) { setApp(app, r.cid ? resultsPage(S.res) : resultsIndex(S.resList)); return; }
+  if (r.tv) { setApp(app, r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params)); return; }
+  setApp(app, r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S));
   renderOverlay(t);
 }
 function renderOverlay(t) {
@@ -1166,6 +1245,10 @@ async function act(el) {
     S.marks = m; store('fet_sight_marks', JSON.stringify(m));
     S.sight = null; return render();
   }
+  if (a === 'theme') return setTheme(isDark() ? 'light' : 'dark');
+  if (a === 'menu') { S.menu = !S.menu; return render(true); }
+  if (a === 'menugear' || a === 'menureview') { S.menu = false; S.gear = a === 'menureview' ? 'review' : true; return refresh(); }
+  if (a === 'print') return printNow();
   if (a === 'gearclose') { S.gear = false; return render(); }
   if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
@@ -1185,6 +1268,12 @@ async function act(el) {
     return render();
   }
   if (!id) return;
+  if (a === 'exitrange') {                       // leave the shooter screen: release the target
+    if (!confirm('Are you sure you want to exit?')) return;
+    S.menu = false;
+    await post('/targets/' + id + '/control/release', {});
+    return refresh();
+  }
   if (a === 'take' || a === 'takeover') {
     const name = (val('who') || store('fet_name') || '').trim();
     if (!name) return toast('Enter your name first');
@@ -1597,6 +1686,9 @@ function reviewMove(move) {
 }
 function boot() {
   clientId();
+  themeButton();
+  try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeChanged); } catch (e) {}
+  try { window.matchMedia('(max-width: 600px)').addEventListener('change', () => { drawn = null; render(true); }); } catch (e) {}
   S.zoom = store('fet_zoom') || 'auto';
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
@@ -1663,26 +1755,42 @@ function boot() {
     if (parseCpr(S.cpr) != null) store('fet_cpr', S.cpr);
     sightRedraw(current());
   });
-  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) act(el); });
+  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) { drawn = null; act(el); } });   // after an action: redraw all
+  document.addEventListener('change', () => { drawn = null; }, true);     // a choice the server refuses is put back by the next redraw
   document.addEventListener('keydown', e => {                    // review with the arrow keys: left/right = one shot, up/down or PageUp/PageDown = one target
     if (!S.review || S.gear || S.sight || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
     const m = {ArrowLeft: 'step-', ArrowRight: 'step+', ArrowUp: 'page-', PageUp: 'page-', ArrowDown: 'page+', PageDown: 'page+'}[e.key];
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; } refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
-  let pending;
-  try {
-    const es = new EventSource(API + '/stream');
-    es.onopen = () => { S.sse = true; };
-    es.onmessage = () => { clearTimeout(pending); pending = setTimeout(refresh, 150); };
-    es.onerror = () => { S.sse = false; };
-  } catch (e) { S.sse = false; }
+  openStream();
+  window.addEventListener('afterprint', endPrint);
   setInterval(refresh, 5000);
   setInterval(renew, 20000);
   refresh();
 }
+let pendingRefresh;
+function openStream() {                    // live updates: every change on the server triggers a refresh
+  if (S.es) return;
+  try {
+    const es = S.es = new EventSource(API + '/stream');
+    es.onopen = () => { S.sse = true; };
+    es.onmessage = () => { clearTimeout(pendingRefresh); pendingRefresh = setTimeout(refresh, 150); };
+    es.onerror = () => { S.sse = false; };
+  } catch (e) { S.sse = false; S.es = null; }
+}
+// Safari holds window.print() back until no request is open, and the live stream never ends: close it first (and let
+// a refresh in flight finish), print, and open it again after the print dialog (afterprint; else after 10 s or on leaving)
+async function printNow() {
+  S.printing = true;
+  if (S.es) { S.es.close(); S.es = null; S.sse = false; }
+  for (let i = 0; i < 40 && S.busy; i++) await new Promise(r => setTimeout(r, 50));
+  window.print();
+  setTimeout(endPrint, 10000);
+}
+function endPrint() { if (S.printing) { S.printing = false; openStream(); refresh(); } }
 function renew() {                                               // keep the control claim alive while we hold it
   const t = current();
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});

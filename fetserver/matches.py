@@ -810,7 +810,8 @@ class Matches:
             if "miss_first" in pens:
                 first.update(tenths=0, ring=0, inner=False)
             n = pens.count("penalty2_first")
-            first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n)
+            first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n,
+                         decision=first["decision"] or ("miss_first" if "miss_first" in pens else "penalty2_first"))   # shown as decided
         return out
 
     @staticmethod

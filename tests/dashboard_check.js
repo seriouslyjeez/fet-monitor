@@ -95,7 +95,15 @@ const asOther = t => Object.assign({}, t, {lease: {held_by: 'Bob <b>Mallory</b>'
 const page = pageOf(asMine(recordT));
 const iInfo = page.indexOf('class="title"'), iShots = page.indexOf('<h3>Shots'), iLast = page.indexOf('<h3>Last shot');
 assert(iInfo > 0 && iInfo < iShots && iShots < iLast, 'order: info, shots, last shot');
-assert(page.indexOf('class="zoombar"') < page.indexOf('<svg'), 'zoom bar sits above the target');
+{ const left = page.slice(page.indexOf('<div class="left">') + 18, page.indexOf('<div class="right">'));
+  assert(/^<svg class="face"[\s\S]*<\/svg><\/div>$/.test(left), 'the left side is the target face and nothing else');
+  const right = page.slice(page.indexOf('<div class="right">'));
+  assert(right.indexOf('<div class="topbar"><div class="zoombar">') === 19, 'zoom buttons at the top of the right side');
+  assert(right.includes('class="panel grow"'), 'the shots table takes the spare height');
+  assert(page.includes('data-act="exitrange"') && page.includes('data-act="theme"'), 'holding the target: Exit and the theme button on the screen');
+  const notMine = pageOf(Object.assign({}, recordT, {lease: {held_by: null, mine: false}}));
+  assert(!notMine.includes('exitrange') && !notMine.includes('data-act="theme"'), 'not holding it: no Exit (the header has the theme button)');
+  assert(page.lastIndexOf('<div class="exitbar">') > page.indexOf('<h3>Last shot'), 'Exit at the bottom of the right side'); }
 // --- 2. zoom bar: Off, 1..9, Auto in that order
 const zb = page.match(/<div class="zoombar">([\s\S]*?)<\/div>/)[1];
 assert.deepStrictEqual([...zb.matchAll(/data-z="([^"]+)"/g)].map(m => m[1]), ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto']);
@@ -467,7 +475,10 @@ assert.strictEqual(count(cards, /class="scard"/g), 3, 'one card per competitor')
 assert.strictEqual(count(scoreCards(C, String(C.classes[1].individuals[0].id)), /class="scard"/g), 1, 'a single competitor\'s card');
 const amesCard = scoreCards(C, String(C.classes[1].individuals.find(e => e.family === 'Ames').id));
 assert(amesCard.includes('<td>1–10</td>') && amesCard.includes('<td>11–12</td>') && count(amesCard, /class="face"/g) === 2 && amesCard.includes('Scorer / match director'));
-assert(printResults(C).includes('window.print()') && printResults(C).includes('&lt;b&gt;League'));
+assert(printResults(C).includes('&lt;b&gt;League'));
+{ const at = new Date(2026, 9, 27, 21, 5, 7);
+  assert.strictEqual(printResults(C, at), printResults(C, at), 'the same data and time: the same sheet (no redraw)');
+  assert(printResults(C, at).includes(esc(at.toLocaleString())), 'the time the page was opened'); }
 const tb2 = tvCompBoard(C);
 assert(tb2.includes('data-clock="tv-c' + C.id + '-') && tb2.includes('<h2>Junior</h2>') && tb2.includes('<h2>Open</h2>'));
 assert(tvBoard([], [C]).includes('Junior'), 'the TV board shows competitions');
@@ -579,4 +590,31 @@ console.log('OK');
   const ro = mcList(Object.assign({}, base, {status: {user: 'ro', role: 'officer'}}));
   assert(!ro.includes('data-msel') && !ro.includes('mcresdel') && !ro.includes('<h3>Results</h3>'), 'officers do not delete');
   console.log('delete OK');
+}
+
+// score cards: every shot the match director decided is marked †, and the legend only appears when one is
+{
+  const one = JSON.parse(JSON.stringify(D.comp)), e = one.classes[1].individuals.find(x => x.family === 'Ames');
+  const plain = scoreCards(one, String(e.id));
+  assert(!plain.includes('†') && !plain.includes('decided by the match director'), 'no decisions: no dagger, no legend');
+  e.shot_list[2].decision = 'count'; e.shot_list[5].decision = 'penalty2_first';
+  const marked = scoreCards(one, String(e.id));
+  assert.strictEqual(count(marked, /†<\/td>/g), 2, 'counted-after-a-flag and a sighter penalty are both marked');
+  assert(marked.includes('† decided by the match director'));
+  e.shot_list.forEach(s => { s.inner = false; s.decision = null; });
+  assert(!scoreCards(one, String(e.id)).includes('* inner ten'), 'no inner tens: no * legend');
+}
+
+// a phone: one card with a menu
+{
+  const ph = (t, extra) => shooterView(t, state(Object.assign({phone: true}, extra || {})));
+  const closed = ph(recordT);
+  assert(closed.startsWith('<div class="phone">') && closed.includes('data-act="menu"') && closed.includes('<svg class="face"') && !closed.includes('class="pmenu"'));
+  assert(!closed.includes('<div class="shoot">') && !closed.includes('<h3>Shots'), 'not the desktop layout');
+  const open = ph(Object.assign({}, recordT, {lease: {held_by: null, mine: false}}), {menu: true});
+  assert(open.includes('data-act="menugear">Take control') && open.includes('data-act="menureview"') && open.includes('class="zoombar"') && open.includes('href="#/"'), 'menu: take control, review, zoom, all targets');
+  const mineMenu = ph(asMine(recordT), {menu: true});
+  assert(mineMenu.includes('data-act="exitrange">Exit (release control)') && !mineMenu.includes('Take control') && !mineMenu.includes('href="#/"'), 'holding it: Exit, no way out but Exit');
+  assert(ph(ammoT).includes('mm group'), 'an ammo test shows the group size');
+  console.log('phone OK');
 }
