@@ -18,7 +18,7 @@ OS_RELEASE="$R/etc/os-release"
 SYSTEMD_RUN="$R/run/systemd/system"
 OLD_DATA="$R/var/lib/freetarget"
 SETUP_DIR="$R/var/lib/fet-setup"
-UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service fet-setup.service fet-system.path fet-system.service)
+UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service fet-setup.service fet-system.path fet-system.service fet-os-update.service fet-os-update.timer)
 PACKAGES=(fetserver fetsetup)
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -165,7 +165,7 @@ preflight() {
 # ---------------------------------------------------------------------------------------------- uninstall
 uninstall() {
   step "Stopping and removing the service"
-  systemctl disable --now fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path >/dev/null 2>&1 || true
+  systemctl disable --now fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path fet-os-update.timer >/dev/null 2>&1 || true
   local u
   for u in "${UNITS[@]}"; do rm -f "$UNIT_DIR/$u"; done
   rm -f "$AVAHI_DIR/fet-monitor.service"
@@ -267,11 +267,12 @@ install_units() {
   for u in "${UNITS[@]}"; do install -m 0644 "$HERE/deploy/$u" "$UNIT_DIR/$u"; done
   if [ -d "$AVAHI_DIR" ]; then install -m 0644 "$HERE/deploy/fet-monitor.avahi.service" "$AVAHI_DIR/fet-monitor.service"; fi
   [ "$IMAGE" -eq 1 ] || systemctl daemon-reload            # a chroot has no running systemd; enable still works
-  systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path >/dev/null 2>&1
+  systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path fet-os-update.timer >/dev/null 2>&1
   info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup),"
   info "fet-monitor-update.path (installs signed updates requested from Range Control),"
   info "fet-setup.service (setup network on first start, or when the Pi finds no network),"
-  info "fet-system.path (applies Range Control's System page: network, name, time, SSH, restart)"
+  info "fet-system.path (applies Range Control's System page: network, name, time, SSH, restart),"
+  info "fet-os-update.timer (nightly Raspberry Pi OS update when the range is quiet; restarts if needed)"
 }
 
 device_token() {

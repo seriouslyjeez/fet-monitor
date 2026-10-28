@@ -661,7 +661,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._rulebook_file(rf.group(1))
         if url.path == "/api/v1/health":
             return self._send(200, {"ok": True, "version": __version__, "time": iso(core.now_ms()),
-                                    "event_conflicts": core.conflict_count()})
+                                    "event_conflicts": core.conflict_count(), "activity": core.activity()})
         if url.path == "/api/v1/board":                # public scoreboard (read only, like the target pages)
             try:
                 ids = [int(x) for x in q.get("m", [""])[0].split(",") if x.strip()]

@@ -7,5 +7,5 @@ Description=FeT Monitor: apply a System request from Range Control
 Type=oneshot
 WorkingDirectory=/opt/fet-monitor
 ExecStart=/usr/bin/python3 -m fetsetup system
-TimeoutStartSec=300
+TimeoutStartSec=4200
 PrivateTmp=true

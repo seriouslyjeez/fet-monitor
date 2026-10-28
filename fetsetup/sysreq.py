@@ -20,12 +20,13 @@ from typing import Callable, Optional
 
 from . import config
 from .config import SetupError
+from .osupdate import OsUpdate, quiet
 from .system import System, SystemError_
 
 log = logging.getLogger("fetsetup")
 REQ_DIR = Path("/var/lib/fet-monitor/system")
 LAST_GOOD = Path("/var/lib/fet-setup/network.json")
-ACTIONS = ("network", "hostname", "timezone", "clock", "country", "ssh", "admin", "restart", "shutdown")
+ACTIONS = ("network", "hostname", "timezone", "clock", "country", "ssh", "admin", "restart", "shutdown", "os_update")
 
 
 def save_last_good(net: dict, path: Path = LAST_GOOD) -> None:
@@ -45,8 +46,9 @@ def load_last_good(path: Path = LAST_GOOD) -> Optional[dict]:
 
 class Helper:
     def __init__(self, system: System, req_dir: Path = REQ_DIR, last_good: Path = LAST_GOOD,
-                 sleep: Callable[[float], None] = time.sleep, now: Callable[[], float] = time.time):
+                 sleep: Callable[[float], None] = time.sleep, now: Callable[[], float] = time.time, os_update: Optional[OsUpdate] = None):
         self.sys, self.dir, self.last_good, self.sleep, self.now = system, Path(req_dir), Path(last_good), sleep, now
+        self.os = os_update or OsUpdate(system)
 
     def status(self, state: str, action: str, message: str) -> None:
         tmp = self.dir / "status.json.tmp"
@@ -129,6 +131,14 @@ class Helper:
                 raise SetupError(f"admin password: at least {config.MIN_ADMIN_PASSWORD} characters")
             s.set_admin(user, pw)
             return f"admin login {user} set"
+        if action == "os_update":              # on request: refused during a match; it never restarts by itself
+            ok, why = quiet(self.os.activity(), False)
+            if not ok:
+                raise SetupError(f"not now: {why}")
+            res = self.os.update("button")
+            if not res["ok"]:
+                raise SetupError(res["message"])
+            return res["message"] + ("; restart the Pi to finish (Restart)" if self.os.flag.exists() else "")
         if action in ("restart", "shutdown"):
             return "restarting" if action == "restart" else "shutting down: wait 20 seconds before unplugging"
         return self.network(config.check_network(req.get("network")))

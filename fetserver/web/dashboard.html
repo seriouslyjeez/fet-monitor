@@ -763,8 +763,21 @@ function systemPanel(v, rc) {                   // Range Control: the Pi itself 
     '<h4>Access</h4><div class="bulk"><span>SSH is <b>' + (f.ssh ? 'on' : 'off') + '</b></span><button data-act="rcsys" data-a="ssh" data-on="' + (f.ssh ? '0' : '1') + '"' + dis + '>Turn SSH ' + (f.ssh ? 'off' : 'on') + '</button></div>' +
     '<div class="bulk"><label>Admin login <input id="sy_user" size="12" autocapitalize="none" value="' + val('sy_user') + '"></label> <label>New password <input id="sy_upw" type="password" autocomplete="new-password" value="' + val('sy_upw') + '"></label>' +
     '<button data-act="rcsys" data-a="admin"' + dis + '>Set</button></div>' +
+    osPart(v.os || {}, dis) +
     '<h4>Power</h4><div class="bulk"><button data-act="rcsys" data-a="restart"' + dis + '>Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown"' + dis + '>Shut down</button></div>' +
     '<p class="mut">Shut down before unplugging the Pi: pulling the power can damage the SD card.</p>' + (rc.sysMsg ? '<p class="bad">' + esc(rc.sysMsg) + '</p>' : '') + '</div>';
+}
+function osPart(os, dis) {                       // the Pi's own software (fetsetup/osupdate.py)
+  const last = os.last_ok_ms ? 'Last updated <b>' + esc(when(new Date(os.last_ok_ms).toISOString())) + '</b>' +
+    (os.age_days != null ? ' (' + (os.age_days === 0 ? 'today' : os.age_days + ' day' + (os.age_days === 1 ? '' : 's') + ' ago') + ')' : '') + '.'
+    : 'Not updated on this Pi yet: it updates itself at night, or press <b>Update the Pi now</b>.';
+  return '<h4>Software</h4><p>' + last + '</p>' +
+    (os.result && os.result !== 'ok' ? '<p class="' + (os.result === 'failed' ? 'bad' : 'mut') + '">Last attempt: ' + esc(os.message || os.result) + '</p>' : '') +
+    (os.old ? '<p class="bad"><b>Not updated for ' + esc(os.age_days) + ' days.</b> Connect the Pi to a network with internet (cable or club WiFi) and press Update the Pi now.</p>' : '') +
+    (os.reboot_required ? '<p class="bad"><b>Restart needed</b> to finish an update (Restart the Pi, below).</p>' : '') +
+    '<div class="bulk"><button data-act="rcsys" data-a="os_update"' + dis + '>Update the Pi now</button></div>' +
+    '<p class="mut">Every night at about 04:00 the Pi updates itself when no match is running and no shot arrived for 30 minutes, and restarts if an update needs it. ' +
+    'Update now never restarts by itself and is refused during a match. It needs internet and can take several minutes.</p>';
 }
 function sysRequest(a, el) {                    // the request for one System button, from the fields; null to stop
   const val = id => (document.getElementById(id) || {}).value || '';
@@ -773,6 +786,7 @@ function sysRequest(a, el) {                    // the request for one System bu
   if (a === 'clock') return {action: a, clock_ms: Date.now()};
   if (a === 'ssh') return {action: a, on: el.dataset.on === '1'};
   if (a === 'admin') return {action: a, user: val('sy_user'), password: val('sy_upw')};
+  if (a === 'os_update') return confirm('Update the Pi\'s software now? It can take several minutes; FeT Monitor keeps running.') ? {action: a} : null;
   if (a === 'restart') return confirm('Restart the Pi now? FeT Monitor is back in about a minute; running matches keep their clock.') ? {action: a} : null;
   if (a === 'shutdown') return confirm('Shut the Pi down now? It stays off until it is unplugged and plugged in again.') ? {action: a} : null;
   const n = (S.rc.sysf || {}).network || {mode: 'wifi'};
@@ -2323,7 +2337,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {systemPanel, sysRequest, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

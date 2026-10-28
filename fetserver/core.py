@@ -975,6 +975,14 @@ class Core:
             })
         return out
 
+    def activity(self) -> dict:
+        """Is the range in use? Matches running now and when the last shot arrived (the nightly Pi update waits for a
+        quiet range)."""
+        c = self.db.conn()
+        running = c.execute("SELECT COUNT(*) FROM matches WHERE state IN ('running','paused','holding','overtime')").fetchone()[0]
+        last = c.execute("SELECT recv_ms FROM events WHERE type='shot' ORDER BY id DESC LIMIT 1").fetchone()
+        return {"matches_running": running, "last_shot_ms": last[0] if last else None, "now_ms": self.now_ms()}
+
     def conflict_count(self) -> int:
         return self.db.conn().execute("SELECT COUNT(*) FROM event_conflicts").fetchone()[0]
 

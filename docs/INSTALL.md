@@ -99,6 +99,10 @@ For each target (its WiFi bridge must already have FeT Monitor firmware; see `fi
   `FeTMonitor-Setup-XXXX` comes back for the network settings only (passwords and logins are not changed there).
 - **Updates:** Range Control → *Check for updates* → *Install*. The database is backed up first; if the new version
   does not start, the previous one comes back by itself.
+- **The Pi's own software** (Raspberry Pi OS) updates itself every night at about 04:00 when no match is running and
+  no shot arrived for 30 minutes, and restarts if an update needs it. *This Pi* shows when it was last updated and
+  has **Update the Pi now**. A Pi on its own range network has no internet: connect it to the club network now and
+  then (cable or club WiFi) and press Update the Pi now; the page warns after 30 days without an update.
 
 ## 8. Rulebooks on the Pi
 

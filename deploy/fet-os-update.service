@@ -1,0 +1,14 @@
+[Unit]
+Description=FeT Monitor: nightly Raspberry Pi OS update (only when the range is quiet)
+# python3 -m fetsetup osupdate: apt-get update + full-upgrade when no match is running and no shot arrived in the last
+# 30 minutes, then a restart if an update needs one. The result is shown in Range Control -> This Pi.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fet-monitor
+ExecStart=/usr/bin/python3 -m fetsetup osupdate
+TimeoutStartSec=4200
+Nice=10
+IOSchedulingClass=idle

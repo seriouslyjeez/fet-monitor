@@ -207,7 +207,7 @@ class Installer(InstallerBase):
         for u in ("fet-monitor.service", "fet-monitor-backup.service", "fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor-update.service"):
             self.assertTrue((self.root / "etc/systemd/system" / u).exists(), u)
         state = json.loads((self.root / ".systemd.json").read_text())
-        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor.service", "fet-setup.service", "fet-system.path"])
+        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor.service", "fet-os-update.timer", "fet-setup.service", "fet-system.path"])
         self.assertEqual(self.mode("var/lib/fet-monitor/system"), 0o750)
         self.assertTrue((self.root / "etc/systemd/system/fet-setup.service").exists())
         self.assertTrue((self.root / "opt/fet-monitor/fetsetup/portal.py").exists() and (self.root / "opt/fet-monitor/fetsetup/web/setup.html").exists())

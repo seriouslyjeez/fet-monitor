@@ -870,6 +870,13 @@ console.log('OK');
   const fixed = systemPanel(v, {sysf: {network: {mode: 'cable', fixed: true}}});
   assert(fixed.includes('id="sy_ip"') && fixed.includes('id="sy_gw"') && !fixed.includes('id="sy_psk"'), 'cable with a fixed address');
   assert.strictEqual(systemPanel(null, {}), '');
+  const {osPart} = X;
+  assert(osPart({}, '').includes('Not updated on this Pi yet') && !osPart({}, '').includes('class="bad"'), 'never updated: a note');
+  const o = osPart({last_ok_ms: Date.now() - 31 * 86400000, age_days: 31, old: true, reboot_required: true, result: 'failed', message: 'no internet: <x>'}, '');
+  assert(o.includes('31 days ago') && o.includes('Not updated for 31 days') && o.includes('Restart needed') && o.includes('Last attempt: no internet: &lt;x&gt;'), 'old, restart needed, failed attempt');
+  const t = osPart({last_ok_ms: Date.now(), age_days: 0, old: false, result: 'skipped', message: 'skipped tonight: a match is running'}, '');
+  assert(t.includes('(today)') && t.includes('class="mut">Last attempt: skipped tonight') && !t.includes('Restart needed'), 'today; a skipped night is not an error');
+  assert(osPart({}, ' disabled').includes('data-a="os_update" disabled'), 'no helper: disabled');
   const typed = systemPanel(v, {sysf: {network: {mode: 'wifi'}, vals: {sy_ssid: '<b>Club</b>', sy_psk: 'a"b', sy_host: 'new-name', sy_tz: 'UTC'}}});
   assert(typed.includes('value="a&quot;b"') && typed.includes('value="new-name"') && typed.includes('<option selected>UTC</option>') && typed.includes('<option selected>&lt;b&gt;Club'),
     'typed values come back after a redraw (escaped)');

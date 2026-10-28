@@ -98,3 +98,12 @@ The image (a spare SD card):
 - [ ] Fallback: unplug the cable (cable setup) and restart: after ~3 minutes the setup network appears with the
       network settings only; plug the cable back in: it closes by itself.
 - [ ] Two cards from the same image get different device tokens; SSH is off until switched on.
+
+Keeping the Pi's software up to date:
+- [ ] *This Pi → Update the Pi now* (with internet): "N packages updated" (several minutes on a Zero 2 W); FeT
+      Monitor keeps answering meanwhile; during a running match it is refused.
+- [ ] Without internet (own range network): "no internet: could not reach the update servers".
+- [ ] After a kernel update the page says *Restart needed*; *Restart the Pi* clears it.
+- [ ] Nightly: `systemctl list-timers fet-os-update.timer` shows ~04:00; the next morning *This Pi* shows last night's
+      update (or "skipped tonight: ..." if a match ran); `journalctl -u fet-os-update` has the details; the Pi
+      restarted only if an update needed it.
