@@ -113,6 +113,8 @@ STUBS = {
     "runuser": '#!/bin/sh\necho "runuser $*" >> "$FETM_ROOT/.calls.log"\nshift 3\nexec "$@"\n',
     "journalctl": '#!/bin/sh\ncat "$FETM_ROOT/.server.log" 2>/dev/null\n',
     "ip": '#!/bin/sh\necho "1.1.1.1 via 192.168.7.1 dev wlan0 src 192.168.7.42 uid 0"\n',
+    "getent": '#!/bin/sh\n[ "$1 $2" = "group dialout" ] && { echo "dialout:x:20:"; exit 0; }\nexit 2\n',
+    "usermod": '#!/bin/sh\necho "usermod $*" >> "$FETM_ROOT/.calls.log"\n',
 }
 
 OS_RELEASE = {
@@ -218,6 +220,7 @@ class Installer(InstallerBase):
         self.assertTrue(self.get("/api/v1/health")["ok"])
         self.assertIn("useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin fet-monitor", self.calls())
         self.assertIn("runuser -u fet-monitor -- python3 -m fetserver set-password", self.calls())
+        self.assertIn("usermod -a -G dialout fet-monitor", self.calls(), "the flash station needs the USB serial ports")
         self.assertTrue((self.root / "opt/fet-monitor/NOTICE").exists())
         # a shot arrives; then re-run (upgrade): token, password and data kept, code replaced, no password prompt
         self.shoot(tok, 1)

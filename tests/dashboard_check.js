@@ -882,3 +882,24 @@ console.log('OK');
     'typed values come back after a redraw (escaped)');
   console.log('system OK');
 }
+
+// Range Control: the flash station
+{
+  const {flashPanel} = X;
+  const port = {port: '/dev/ttyUSB0', adapter: 'CH340', product: 'USB Serial', hint: 'adapter'};
+  const f = {ports: [port, {port: '/dev/ttyACM0', adapter: '', product: 'Arduino Mega 2560', hint: 'arduino'}],
+    probes: {'/dev/ttyUSB0': {label: 'ESP-01 (1 MB flash), not FeT Bridge (first install)', first_install: true, same: false, offer: {sha256: 'ab', version: '0.2.2'}},
+             '/dev/ttyACM0': {label: 'Arduino Mega 2560', offer: null, why_not: 'not offered <yet>'}},
+    job: null, backups: [{name: '84f3eb123456-20261028-120000.bin', size: 1048576}]};
+  const h = flashPanel(f, {});
+  assert(h.includes('data-act="rcflashgo" data-port="/dev/ttyUSB0" data-sha="ab"') && h.includes('Install FeT Bridge 0.2.2') && h.includes('original firmware is saved first'), 'first install offered');
+  assert(h.includes('not offered &lt;yet&gt;') && count(h, /rcflashgo/g) === 1, 'the Mega: identified, nothing to install');
+  assert(h.includes('data-name="84f3eb123456-20261028-120000.bin"') && h.includes('1024 KB'), 'saved originals listed');
+  const run = flashPanel(Object.assign({}, f, {job: {state: 'running', port: '/dev/ttyUSB0', version: '0.2.2', step: 'writing', percent: 60}}), {});
+  assert(run.includes('writing 60 %') && run.includes('width:60%') && /rcflashgo[^>]*disabled/.test(run) && /rcflashid[^>]*disabled/.test(run), 'while flashing: progress; nothing else starts');
+  const fail = flashPanel(Object.assign({}, f, {job: {state: 'failed', port: '/dev/ttyUSB0', version: '0.2.2', message: 'a different device is plugged in now'}}), {flashMsg: 'x'});
+  assert(fail.includes('warnbox') && fail.includes('a different device'), 'a failure shows');
+  assert(flashPanel({ports: [], probes: {}, job: null, backups: []}, {}).includes('No USB serial device'), 'nothing plugged in');
+  assert.strictEqual(flashPanel(null, {}), '');
+  console.log('flash OK');
+}

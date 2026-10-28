@@ -107,3 +107,16 @@ Keeping the Pi's software up to date:
 - [ ] Nightly: `systemctl list-timers fet-os-update.timer` shows ~04:00; the next morning *This Pi* shows last night's
       update (or "skipped tonight: ..." if a match ran); `journalctl -u fet-os-update` has the details; the Pi
       restarted only if an update needed it.
+
+## Flash station (Range Control → Flash a device)
+- [ ] `groups fet-monitor` lists `dialout` after installing; `esptool version` and `avrdude -?` work (apt install
+      esptool avrdude on a manual install; the image has them).
+- [ ] An ESP-01S on its USB programmer (PROG / UART position if it has a switch): the port appears within ~5 s;
+      *Identify* says "ESP-01 / ESP-01S (1 MB or 4 MB flash), FeT Bridge 0.2.x" (about 20 s: it reads 512 KB).
+- [ ] *Install FeT Bridge* on a FeT Bridge module: write + verify; the module then works in its target.
+- [ ] A module with its original (AT) firmware: *first install*: the original is saved (download it from the page:
+      1 MB / 4 MB), the chip is erased, written, verified; the target's portal appears on first start.
+- [ ] Swap the module between *Identify* and *Install*: refused ("a different device").
+- [ ] A programmer WITHOUT PROG mode set: *Identify* explains the switch.
+- [ ] The target's Arduino Mega by USB: identified as a Mega (no flashing); it keeps running afterwards.
+- [ ] On a Pi Zero 2 W: the ESP-01 has enough power from the USB port (otherwise note the powered hub).

@@ -4,3 +4,5 @@ network-manager
 dnsmasq-base
 rfkill
 iw
+esptool
+avrdude

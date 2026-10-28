@@ -104,6 +104,15 @@ For each target (its WiFi bridge must already have FeT Monitor firmware; see `fi
   has **Update the Pi now**. A Pi on its own range network has no internet: connect it to the club network now and
   then (cable or club WiFi) and press Update the Pi now; the page warns after 30 days without an update.
 
+## 7a. Flashing FeT Bridge from the Pi
+
+A new FeT Bridge (an ESP-01 or ESP-01S) can get its firmware from the Pi itself: put it on a USB programmer (if the
+programmer has a switch, set it to PROG or UART), plug it into a USB port of the Pi, open **Range Control → Flash a
+device**, press **Identify**, then **Install FeT Bridge**. The Pi uses the newest FeT Bridge image it has for that
+module's flash size (*Check GitHub for FeT Bridge firmware* first if it has none). The first time, the module's
+original firmware is saved (you can download it from the same page) and the chip is erased. The target's Arduino
+Mega and the ESP32 (version 5/6) boards are recognised but not flashed here yet.
+
 ## 8. Rulebooks on the Pi
 
 Each match follows one rulebook, and the Pi keeps a copy of each one FeT Monitor uses (ISSF, USA Shooting, CMP Air

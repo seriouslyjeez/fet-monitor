@@ -22,6 +22,8 @@ from .releases import ReleaseError, Updates, fetch_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
 from .rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
+from .flashstation import FlashError, FlashStation
+FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-\d{6}\.bin)$")
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -487,6 +489,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, view)
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
+        if path == "/api/v1/admin/flash" and method == "GET":            # the flash station (flashstation.py)
+            return self._send(200, self.server.flash.view())
+        if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start") and method == "POST":
+            try:
+                if path.endswith("identify"):
+                    return self._send(200, self.server.flash.identify(str(payload.get("port", ""))))
+                job = self.server.flash.start_flash(str(payload.get("port", "")), str(payload.get("sha256", "")), "Range Control")
+            except FlashError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: flashing FeT Bridge %s on %s", self.client_address[0], job["version"], job["port"])
+            return self._send(202, job)
+        fb = FLASH_BACKUP_RE.match(path)
+        if fb and method == "GET":
+            p = self.server.flash.backup_path(fb.group(1))
+            if p is None:
+                raise NotFound("no such backup")
+            data = p.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", f'attachment; filename="{fb.group(1)}"')
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if path == "/api/v1/admin/system" and method == "GET":           # the Pi itself (appliance.py)
             return self._send(200, self.server.appliance.view())
         if path == "/api/v1/admin/system" and method == "POST":
@@ -815,8 +842,9 @@ class FetHTTPServer(ThreadingHTTPServer):
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
-                 rulebooks: RulebookFiles = None, appliance: Appliance = None):
+                 rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None):
         super().__init__(addr, Handler)
+        self.flash = flash if flash is not None else FlashStation(firmware if firmware is not None else FirmwareStore(None), None)
         self.appliance = appliance if appliance is not None else Appliance(None)
         self.rulebooks = rulebooks if rulebooks is not None else RulebookFiles(None)
         self.core = core
@@ -844,5 +872,5 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
                 firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
-                appliance: Appliance = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance)
+                appliance: Appliance = None, flash: FlashStation = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash)

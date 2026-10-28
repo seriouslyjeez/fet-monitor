@@ -222,6 +222,9 @@ create_user_and_dirs() {
     useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin "$SVC_USER"
     info "created system user $SVC_USER (no login)"
   fi
+  if getent group dialout >/dev/null 2>&1; then         # the flash station: USB serial ports (no root needed)
+    usermod -a -G dialout "$SVC_USER" 2>/dev/null || true
+  fi
   mkdir -p "$CODE_DIR" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update" "$DATA_DIR/system"
   chown root:root "$CODE_DIR"
   chmod 0755 "$CODE_DIR"
