@@ -1,6 +1,8 @@
-# FeT Monitor (v0.6.28)
+# FeT Monitor (v0.6.29)
 
 - Match Control (beta): competitions, corrections and official results
+- Finals by the rulebook (ISSF, CMP Air Gun, CMP 3PAR, NRA) and a finals TV board
+- One rulebook per match; rulebooks stored on the Pi
 - Signed updates from GitHub
 - Firmware updates from the Pi
 - Range Control
