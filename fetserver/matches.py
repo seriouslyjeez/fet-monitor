@@ -38,7 +38,9 @@ MOVE_EXTRA_S = {"ISSF": 300, "CMP": 120, "NRA": 0}
 REJOIN_EXTRA_MS = 120_000          # CMP 7.18.3: the time left when interrupted plus 2 minutes, on the later relay   # extra time after a move to another target, by tie-break rule set
 PACING = ("spoken", "officer", "auto")   # spoken: the console speaks every command (default); officer: the range officer
 # reads them and the clock waits for Next at every phase; auto: phases follow each other with no commands at all
-DECISIONS = ("count", "annul", "miss", "penalty2")                 # for a flagged RECORD shot
+DECISIONS = ("count", "annul", "miss", "penalty2", "annul_penalty2")   # for a flagged RECORD shot; the last: too many
+# shots, annulled and 2 points off the lowest shot of the first series (ISSF 6.11.5, CMP 7.17.8 a)
+TOO_MANY_RULE = {"ISSF": "ISSF 6.11.5", "CMP": "CMP 7.17.8", "NRA": "too many shots"}
 SIGHTER_DECISIONS = ("ignore", "penalty2_first", "miss_first")    # for a flagged SIGHTING shot: it never becomes a record
 # shot, but rules punish some of them on the first record shot (e.g. ISSF 6.11.1.1 h, k)
 MAX_LANES = 100
@@ -924,6 +926,10 @@ class Matches:
             n = pens.count("penalty2_first")
             first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n,
                          decision=first["decision"] or ("miss_first" if "miss_first" in pens else "penalty2_first"))   # shown as decided
+        for p in self._decision_penalties(m, ln, flags):   # too many shots: 2 points off the LOWEST shot of the first series
+            for x in sorted(out[:10], key=lambda y: (y["tenths"], y["t"]))[:1]:
+                x.update(tenths=max(0, x["tenths"] - 20), ring=max(0, x["ring"] - 2), inner=False)
+                x.setdefault("penalties", []).append(p["rule"])
         for p in eff["penalties"]:                     # whole points off its shot, or off the first series (its best shot,
             if p["shot_id"] is not None:                # so the whole deduction applies: ISSF 6.11.6.3, 6.12.6.1 a)
                 hit = [y for y in out if y["id"] == p["shot_id"]]
@@ -933,6 +939,13 @@ class Matches:
                 x.update(tenths=max(0, x["tenths"] - 10 * p["points"]), ring=max(0, x["ring"] - p["points"]), inner=False)
                 x.setdefault("penalties", []).append(p["rule"])
         return out
+
+    @staticmethod
+    def _decision_penalties(m, ln, flags: Dict[int, dict]) -> List[dict]:
+        """2 points for each record shot the director annulled as one too many (decision annul_penalty2)."""
+        rule = TOO_MANY_RULE.get(rules_of(json.loads(m["format_json"])), "too many shots")
+        return [{"points": 2, "rule": rule, "note": "shot %s: one too many" % f["n"], "shot_id": None}
+                for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "scored" and f["decision"] == "annul_penalty2"]
 
     def counted_row(self, c, m, ln, flags: Dict[int, dict]) -> tuple:
         """(counted shots, extras) for a results row. Disqualified: no shots (their values are cleared). extras: dq,
@@ -950,7 +963,7 @@ class Matches:
         dq = dict(eff["dq"], text=lookup_text(eff["dq"]["rule"], book)) if eff["dq"] else None
         extras = {"dq": dq, "removed": sorted(removed, key=lambda x: x["n"] or 0),
                   "penalties": [{"points": p["points"], "rule": p["rule"], "note": p["note"], "text": lookup_text(p["rule"], book)}
-                                for p in eff["penalties"]]}
+                                for p in self._decision_penalties(m, ln, flags) + eff["penalties"]]}
         return ([] if eff["dq"] else shots), extras
 
     @staticmethod

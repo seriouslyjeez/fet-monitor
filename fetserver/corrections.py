@@ -25,10 +25,15 @@ from typing import Dict, List, Optional
 from .matches import MatchError, rules_of
 from .scoring import is_inner_ten
 
-KINDS = ("review", "protest", "override", "annul", "added", "crossfire", "penalty", "dq")
-OPEN_KINDS = ("review", "protest")
+KINDS = ("review", "protest", "override", "annul", "added", "crossfire", "penalty", "dq", "not_registered", "disturbance", "double_load")
+OPEN_KINDS = ("review", "protest", "not_registered", "disturbance")      # open until the match director settles them
 OFFICER_KINDS = OPEN_KINDS                     # what a range officer may record; everything else is the director's
-OUTCOMES = ("upheld", "not_upheld", "withdrawn")
+OUTCOMES_OF = {"review": ("upheld", "not_upheld", "withdrawn"), "protest": ("upheld", "not_upheld", "withdrawn"),
+               "disturbance": ("justified", "not_justified"),                      # ISSF 6.11.7
+               "not_registered": ("found", "not_found", "withdrawn")}             # ISSF 6.10.9.3, CMP 8.4 a
+OUTCOMES = tuple(sorted({o for v in OUTCOMES_OF.values() for o in v}))
+NOT_REGISTERED_RULE = {"ISSF": "ISSF 6.10.9.3", "CMP": "CMP 8.4 a", "NRA": "ISSF 6.10.9.3"}
+DOUBLE_LOAD_RULE = {"ISSF": "ISSF 6.11.2.4 b", "CMP": "CMP 7.17.11", "NRA": "CMP 7.17.11"}
 NOT_UPHELD_RULE = {"ISSF": "ISSF 6.16.5.2 c", "CMP": "CMP 8.4 c"}      # 2 points off a protested shot not upheld
 SIGHTER_CROSSFIRE_RULE = {"ISSF": "ISSF 6.11.6.3", "NRA": "NRA 10.10.4 a"}
 MAX_TEXT = 300
@@ -84,15 +89,26 @@ class Corrections:
             if ln is None:
                 raise MatchError("no such firing point in this match")
             shot = None
-            if kind in ("review", "protest", "override", "annul", "crossfire") or (kind == "penalty" and shot_id is not None):
+            if kind in ("review", "protest", "override", "annul", "crossfire", "disturbance", "double_load") or (kind == "penalty" and shot_id is not None):
                 shot = c.execute("SELECT * FROM shots WHERE id=?", (shot_id,)).fetchone() if isinstance(shot_id, int) else None
                 if shot is None or ln["series_id"] is None or shot["series_id"] != ln["series_id"]:
                     raise MatchError("that shot is not on this firing point")
-                if kind in ("override", "annul", "crossfire") and self._active(c, mid, shot_id, ("annul", "crossfire")):
+                if kind in ("override", "annul", "crossfire", "double_load") and self._active(c, mid, shot_id, ("annul", "crossfire")):
                     raise MatchError("that shot is already annulled")
             clean = {"note": _text(data.get("note"), "a note")}
-            if kind in ("review", "protest"):
+            if kind in ("review", "protest", "disturbance"):
                 pass
+            elif kind == "not_registered":              # the next record shot is the extra one; settled after the stage
+                if ln["series_id"] is None:
+                    raise MatchError("this firing point has no shots yet")
+                clean["at_ms"] = now
+            elif kind == "double_load":                 # two hits from one loading: the lower one does not count
+                other = data.get("other_shot")
+                o = c.execute("SELECT * FROM shots WHERE id=?", (other,)).fetchone() if isinstance(other, int) and not isinstance(other, bool) else None
+                if o is None or o["series_id"] != ln["series_id"] or other == shot_id or o["stream"] != shot["stream"]:
+                    raise MatchError("choose the other shot of the double load on this firing point")
+                lower = shot if (shot["tenths"], -shot["event_ms"]) < (o["tenths"], -o["event_ms"]) else o
+                clean.update(other_shot=other, annul_shot=lower["id"])
             elif kind == "override":
                 clean.update(shot_value(data), note=_text(data.get("note"), "a reason", need=True))
             elif kind == "annul":
@@ -125,18 +141,25 @@ class Corrections:
         self.matches._pub(mid)
         return cid
 
-    def settle(self, mid: int, corr_id: int, outcome: str, by: str, penalty: Optional[int] = None, note=None) -> None:
-        """A review or protest is settled by the match director. not_upheld with penalty (points) adds that penalty on
-        the shot with the rulebook's rule (ISSF 6.16.5.2 c, CMP 8.4 c)."""
-        if outcome not in OUTCOMES:
-            raise MatchError(f"outcome must be one of {', '.join(OUTCOMES)}")
+    def settle(self, mid: int, corr_id: int, outcome: str, by: str, penalty: Optional[int] = None, note=None, value: Optional[dict] = None) -> None:
+        """An open item is settled by the match director. A protest not upheld with penalty (points) adds that penalty
+        on the shot (ISSF 6.16.5.2 c, CMP 8.4 c). A disturbance found justified annuls the shot, which may be fired
+        again (ISSF 6.11.7). A shot that did not register (ISSF 6.10.9.3, CMP 8.4 a), once the stage is over: found
+        (value: its value) or not found (a miss) takes its place, and the last record shot of that stage, the extra
+        one, is annulled."""
         now = self.core.now_ms()
         with self.db.write() as c:
-            self.matches.not_official(self.matches._row(c, mid))
+            m = self.matches._row(c, mid)
+            self.matches.not_official(m)
             r = self._get(c, mid, corr_id)
             if r["kind"] not in OPEN_KINDS or r["status"] != "open":
-                raise MatchError("only an open review or protest can be settled")
+                raise MatchError("only an open review, protest, disturbance or shot that did not register can be settled")
+            if outcome not in OUTCOMES_OF[r["kind"]]:
+                raise MatchError(f"outcome must be one of {', '.join(OUTCOMES_OF[r['kind']])}")
             data = dict(json.loads(r["data"]), outcome=outcome, settle_note=_text(note, "a note"))
+            if r["kind"] == "not_registered" and outcome in ("found", "not_found"):
+                data.update(shot_value(value or {}) if outcome == "found" else {"tenths": 0, "ring": 0, "inner": False, "miss": True})
+                data["annul_shot"] = self._last_of_stage(c, m, r["lane"], data["at_ms"])
             c.execute("UPDATE shot_corrections SET status='resolved', data=?, resolved_by=?, resolved_ms=? WHERE id=?",
                       (json.dumps(data), by, now, corr_id))
             if penalty:
@@ -187,7 +210,7 @@ class Corrections:
                               "miss": bool(r["is_miss"]), "inner": not r["is_miss"] and is_inner_ten(r["tenths"]), "at_ms": r["event_ms"],
                               "corrections": by_shot.get(r["id"], [])})
         others = [{"lane": l["lane"], "competitor": l["competitor"]} for l in self.matches._lanes(c, mid) if l["lane"] != lane]
-        return {"match_id": mid, "lane": lane, "competitor": ln["competitor"], "shots": shots, "others": others,
+        return {"match_id": mid, "lane": lane, "competitor": ln["competitor"], "device_id": ln["device_id"], "shots": shots, "others": others,
                 "corrections": [x for x in corr if x["shot_id"] is None or x["lane"] != lane], "tie_rules": rules_of(json.loads(m["format_json"]))}
 
     def open_count(self, c, mid: int) -> int:
@@ -203,7 +226,19 @@ class Corrections:
             d = json.loads(r["data"])
             k = r["kind"]
             if r["lane"] == lane:
-                if k in ("annul", "crossfire"):
+                if k == "disturbance" and d.get("outcome") == "justified":
+                    out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": "annul", "from_lane": None, "note": "disturbance (ISSF 6.11.7)"}
+                elif k == "double_load":
+                    out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
+                                                        "note": "double load: the lower shot (%s)" % DOUBLE_LOAD_RULE[rules]}
+                elif k == "not_registered" and d.get("outcome") in ("found", "not_found"):
+                    out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": d["tenths"], "ring": d["ring"], "inner": d["inner"],
+                                         "miss": d["miss"], "added": True, "by": r["resolved_by"],
+                                         "note": "did not register, %s (%s)" % ("found" if d["outcome"] == "found" else "not found: a miss", NOT_REGISTERED_RULE[rules])})
+                    if d.get("annul_shot"):
+                        out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
+                                                            "note": "the extra shot after one that did not register (%s)" % NOT_REGISTERED_RULE[rules]}
+                elif k in ("annul", "crossfire"):
                     out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": k, "from_lane": d.get("from_lane"), "note": d.get("note")}
                 elif k == "override":
                     out["overrides"][r["shot_id"]] = dict(d, id=r["id"])          # the latest wins
@@ -240,6 +275,22 @@ class Corrections:
     @staticmethod
     def _dq(c, mid, lane) -> bool:
         return c.execute("SELECT 1 FROM shot_corrections WHERE match_id=? AND lane=? AND kind='dq' AND status!='void'", (mid, lane)).fetchone() is not None
+
+    def _last_of_stage(self, c, m, lane: int, t: int) -> Optional[int]:
+        """The last record shot of the stage that was running at time t (the extra shot after one that did not
+        register). The stage must be over."""
+        wins = self.matches.windows(c, m["id"])
+        w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
+        if w is None:
+            return None
+        same = [x for x in wins if x["phase"] == w["phase"] and x["attempt"] == w["attempt"]]
+        if any(x["end"] is None for x in same) or (m["state"] in ("running", "paused", "holding") and m["phase"] == w["phase"]):
+            raise MatchError("settle this once the stage is over (the extra shot is the last one of the stage)")
+        ln = c.execute("SELECT series_id FROM match_lanes WHERE match_id=? AND lane=?", (m["id"], lane)).fetchone()
+        end = max(x["end"] for x in same)
+        r = c.execute("SELECT id FROM shots WHERE series_id=? AND stream='scored' AND event_ms>=? AND event_ms<? ORDER BY event_ms DESC, id DESC LIMIT 1",
+                      (ln["series_id"], min(x["start"] for x in same), end)).fetchone()
+        return r["id"] if r else None
 
     @staticmethod
     def _added_at(c, ln, after) -> int:

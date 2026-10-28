@@ -100,7 +100,7 @@ body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
 .scard .faces{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}.scard .faces svg{width:100%;height:auto}
 tr.guide td{border-top:0;padding-top:0}.resstatus{font-weight:700;margin:2px 0}.resstatus.prov{color:var(--m-sighter)}.resstatus.off{color:var(--ok)}.sheetpage tr.guide td{border-top:0;padding-top:0}.resstatus{color:#111}
-.dqbox{border:2px solid #b91c1c;color:#b91c1c;padding:4px 8px;margin:6px 0}.rulenotes{margin:4px 0 8px 18px;padding:0;font-size:13px}
+.warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}.dqbox{border:2px solid #b91c1c;color:#b91c1c;padding:4px 8px;margin:6px 0}.rulenotes{margin:4px 0 8px 18px;padding:0;font-size:13px}
 .sign{display:flex;gap:30px;margin-top:20px}.sign div{flex:1;border-top:1px solid #111;padding-top:3px;font-size:12px}
 @media print{.noprint{display:none!important}body{background:#fff}.scard{border:0}}
 /* TV displays: no header, big type */
@@ -758,7 +758,8 @@ const PHASE_KIND = {setup: 'Set-up (no firing)', sight: 'Sighting', pause: 'Paus
 const PACE = {spoken: ['Spoken commands', 'the console speaks every command and time warning (turn its sound on)'],
   officer: ['Range officer reads them', 'the clock waits for Next at every phase while the commands on screen are read'],
   auto: ['Automatic (no commands)', 'phases follow each other; nothing is spoken or shown to read']};
-const DECISION = {count: 'Count it', annul: 'Annul (not counted)', miss: 'Score as a miss', penalty2: 'Count, 2 points off'};
+const DECISION = {count: 'Count it', annul: 'Annul (not counted)', miss: 'Score as a miss', penalty2: 'Count, 2 points off',
+  annul_penalty2: 'Annul, 2 points off (too many shots)'};
 const SIGHTER_DECISION = {ignore: 'No penalty (it was a sighter)', penalty2_first: '2 points off the first record shot', miss_first: 'First record shot scored as a miss'};
 const decisionsFor = f => (f.stream === 'scored' ? DECISION : SIGHTER_DECISION);
 function fmtClock(ms) {
@@ -957,13 +958,17 @@ function moveSheet(mc) {                         // move a shooter to another ta
 }
 // ---- corrections (corrections.py): the shot list of one firing point, with reviews, protests and the director's tools
 const CORR = {review: 'Under review', protest: 'Protest', override: 'Override', annul: 'Annulled', added: 'Added shot', crossfire: 'Crossfire',
-  penalty: 'Penalty', dq: 'Disqualified'};
-const OUTCOME = {upheld: 'Upheld', not_upheld: 'Not upheld', withdrawn: 'Withdrawn'};
+  penalty: 'Penalty', dq: 'Disqualified', not_registered: 'Did not register', disturbance: 'Disturbance', double_load: 'Double load'};
+const OUTCOME = {upheld: 'Upheld', not_upheld: 'Not upheld', withdrawn: 'Withdrawn', justified: 'Justified', not_justified: 'Not justified',
+  found: 'Found', not_found: 'Not found (a miss)'};
+const OUTCOMES_OF = {review: ['upheld', 'not_upheld', 'withdrawn'], protest: ['upheld', 'not_upheld', 'withdrawn'],
+  disturbance: ['justified', 'not_justified'], not_registered: ['found', 'not_found', 'withdrawn']};
 const NOT_UPHELD = {ISSF: 'ISSF 6.16.5.2 c', CMP: 'CMP 8.4 c'};
 function corrText(x, lanes) {                   // one correction in words
   const d = x.data || {}, v = d.miss ? 'miss' : d.tenths != null ? (d.tenths / 10).toFixed(1) : '';
   const what = x.kind === 'override' ? 'set to ' + v : x.kind === 'added' ? v : x.kind === 'crossfire' ? (d.from_lane ? 'from firing point ' + d.from_lane : 'source unknown') :
-    x.kind === 'penalty' ? '−' + d.points + ' (' + d.rule + ')' : x.kind === 'dq' ? d.rule + ' · second official ' + d.official : x.kind === 'annul' ? (d.rule || '') : '';
+    x.kind === 'penalty' ? '−' + d.points + ' (' + d.rule + ')' : x.kind === 'dq' ? d.rule + ' · second official ' + d.official : x.kind === 'annul' ? (d.rule || '') :
+    x.kind === 'not_registered' ? 'at ' + clock(new Date(d.at_ms).toISOString()) + (d.outcome === 'found' ? ', found: ' + v : '') : '';
   return esc(CORR[x.kind] || x.kind) + (what ? ' ' + esc(what) : '') + (d.note ? ' · ' + esc(d.note) : '') + (d.outcome ? ' · <b>' + esc(OUTCOME[d.outcome]) + '</b>' : '') +
     ' <span class="mut">(' + esc(x.by || '') + (x.status === 'void' ? ', void' : x.status === 'open' ? ', open' : '') + ')</span>';
 }
@@ -977,9 +982,10 @@ function shotSheet(mc) {
     const open = cs.filter(c => c.status === 'open');
     return '<tr' + (gone ? ' class="mut"' : '') + '><td>' + (x.stream === 'scored' ? x.n : 'S' + x.n) + '</td><td>' + (x.miss ? 'miss' : dec(x.decimal) + (x.inner ? '*' : '')) + '</td>' +
       '<td class="mut">' + esc(clock(new Date(x.at_ms).toISOString())) + '</td><td>' + cs.map(c => corrText(c)).join('<br>') + '</td><td><div class="mcbar" style="margin:0">' +
-      (gone ? '' : '<button data-act="mcfix" data-k="review" data-shot="' + x.id + '">Review</button><button data-act="mcfix" data-k="protest" data-shot="' + x.id + '">Protest</button>') +
+      (gone ? '' : '<button data-act="mcfix" data-k="review" data-shot="' + x.id + '">Review</button><button data-act="mcfix" data-k="protest" data-shot="' + x.id + '">Protest</button>' +
+        '<button data-act="mcfix" data-k="disturbance" data-shot="' + x.id + '">Disturbance</button>') +
       (director && !gone ? '<button data-act="mcfix" data-k="override" data-shot="' + x.id + '">Override…</button><button data-act="mcfix" data-k="annul" data-shot="' + x.id + '">Annul…</button>' +
-        '<button data-act="mcfix" data-k="crossfire" data-shot="' + x.id + '">Crossfire…</button>' : '') +
+        '<button data-act="mcfix" data-k="crossfire" data-shot="' + x.id + '">Crossfire…</button><button data-act="mcfix" data-k="double_load" data-shot="' + x.id + '">Double load…</button>' : '') +
       (director ? open.map(c => '<button class="pri" data-act="mcfix" data-k="settle" data-corr="' + c.id + '" data-shot="' + x.id + '">Settle ' + esc(CORR[c.kind].toLowerCase()) + '…</button>').join('') : '') +
       (director ? cs.map(c => '<button data-act="mcvoid" data-corr="' + c.id + '" title="Undo this correction">Void ' + esc(CORR[c.kind].toLowerCase()) + '</button>').join('') : '') + '</div></td></tr>';
   };
@@ -988,6 +994,14 @@ function shotSheet(mc) {
   const valueFields = inp('value', 'number', ' step="0.1" min="0" max="10.9" style="width:90px" placeholder="10.4"') + ' <label><input type="checkbox" data-fxc="miss"' + (f.miss ? ' checked' : '') + '> miss</label>';
   const forms = {
     review: () => 'Mark shot ' + shot.n + ' under review. ' + inp('note', 'text', ' maxlength="300" placeholder="What is being checked" style="width:100%"'),
+    disturbance: () => 'The shooter says they were disturbed firing shot ' + shot.n + '. ' + inp('note', 'text', ' maxlength="300" placeholder="What happened" style="width:100%"') +
+      '<p class="mut">ISSF 6.11.7: if the match director finds it justified, the shot is annulled and may be fired again; if not, it counts, with no penalty.</p>',
+    not_registered: () => 'A shot on this firing point did not register (now). ' + inp('note', 'text', ' maxlength="300" placeholder="What the shooter reports" style="width:100%"') +
+      '<p class="mut">' + (L.tie_rules === 'CMP' ? 'CMP 8.4 a' : 'ISSF 6.10.9.3') + ': the shooter fires one more match shot now. After the stage the match director settles it: ' +
+      'found (its value counts) or not found (a miss); either way the last shot of the stage, the extra one, is annulled. If the extra shot does not register either, move the shooter (ISSF 6.10.9.4).</p>',
+    double_load: () => 'Shot ' + shot.n + ' and <select data-fx="other_shot"><option value="">which other shot?</option>' + L.shots.filter(x => x.stream === shot.stream && x.id !== shot.id)
+      .map(x => '<option value="' + x.id + '"' + (String(f.other_shot) === String(x.id) ? ' selected' : '') + '>' + (x.stream === 'scored' ? '' : 'S') + x.n + ' · ' + (x.miss ? 'miss' : dec(x.decimal)) + '</option>').join('') + '</select> came from one loading.' +
+      '<p class="mut">The lower of the two is annulled (CMP 7.17.11, ISSF 6.11.2.4 b).</p>',
     protest: () => 'Record a protest of shot ' + shot.n + '. ' + inp('note', 'text', ' maxlength="300" placeholder="What the shooter says" style="width:100%"') +
       '<p class="mut">A shot-value protest must be made before the next shot or within 3 minutes of the last one (ISSF 6.16.5.2, CMP 8.4).</p>',
     override: () => 'New value of shot ' + shot.n + ' (fired ' + (shot.miss ? 'miss' : dec(shot.decimal)) + '): ' + valueFields + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:100%"'),
@@ -1001,21 +1015,28 @@ function shotSheet(mc) {
     dq: () => 'Disqualify ' + esc(L.competitor || 'firing point ' + L.lane) + ': rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. CMP 7.22.2 (required)"') + ' second official ' + inp('official', 'text', ' maxlength="60" placeholder="Name (required)"') +
       inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') + '<p class="mut">CMP 7.22: a disqualification is decided by at least two match officials. Scores are cleared and DQ is shown.</p>',
     settle: () => {
-      const c = shot.corrections.find(x => x.id === f.corr) || {}, prot = c.kind === 'protest', zero = shot.miss || shot.decimal === 0;
+      const c = (shot ? shot.corrections : L.corrections).find(x => x.id === f.corr) || {}, prot = c.kind === 'protest', zero = shot ? shot.miss || shot.decimal === 0 : false;
       const rule = NOT_UPHELD[L.tie_rules];
-      return 'Settle the ' + esc(CORR[c.kind] || '').toLowerCase() + ' of shot ' + shot.n + ': ' + ['upheld', 'not_upheld', 'withdrawn'].map(o => '<label><input type="radio" name="fxo" data-fxr="outcome" value="' + o + '"' +
+      return 'Settle: ' + esc(CORR[c.kind] || '').toLowerCase() + (shot ? ' of shot ' + shot.n : '') + ': ' + (OUTCOMES_OF[c.kind] || []).map(o => '<label><input type="radio" name="fxo" data-fxr="outcome" value="' + o + '"' +
         (f.outcome === o ? ' checked' : '') + '> ' + OUTCOME[o] + '</label>').join(' ') +
+        (c.kind === 'not_registered' && f.outcome === 'found' ? '<p>Its value: ' + inp('value', 'number', ' step="0.1" min="0" max="10.9" style="width:90px" placeholder="10.4"') + '</p>' : '') +
+        (c.kind === 'not_registered' ? '<p class="mut">Found or not found: the last shot of that stage (the extra one) is annulled. Settle once the stage is over.</p>' : '') +
         (prot && rule && f.outcome === 'not_upheld' ? '<p><label><input type="checkbox" data-fxc="pen"' + (f.pen !== false && !zero ? ' checked' : '') + '> 2 points off this shot (' + esc(rule) + ')</label>' +
           (zero ? ' <span class="mut">not for a zero or a shot that failed to register</span>' : '') + '</p>' : '') +
         (f.outcome === 'upheld' ? '<p class="mut">Then correct the shot: Override, Annul or Crossfire.</p>' : '') + inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"');
     }};
-  const form = f.kind && forms[f.kind] && (f.kind === 'added' || f.kind === 'penalty' || f.kind === 'dq' || shot) ?
+  const form = f.kind && forms[f.kind] && (['added', 'penalty', 'dq', 'not_registered'].includes(f.kind) || shot || (f.kind === 'settle' && f.corr)) ?
     '<div class="panel" style="margin-top:10px">' + forms[f.kind]() + '<div class="mcbar"><button class="pri" data-act="mcfixgo">Save</button><button data-act="mcfixcancel">Cancel</button></div></div>' : '';
-  const laneCorr = L.corrections.filter(live);
+  const laneCorr = L.corrections.filter(live), openNr = laneCorr.filter(c => c.kind === 'not_registered' && c.status === 'open').length;
   return '<div class="sheet" style="max-width:900px"><div class="row"><h2>Firing point ' + L.lane + (L.competitor ? ' · ' + esc(L.competitor) : '') + '</h2><button data-act="mcshotsclose">Close</button></div>' +
-    (director ? '<div class="mcbar"><button data-act="mcfix" data-k="added">Add a shot…</button><button data-act="mcfix" data-k="penalty">Penalty…</button><button class="danger" data-act="mcfix" data-k="dq">Disqualify…</button></div>' : '') +
+    '<div class="mcbar"><button data-act="mcfix" data-k="not_registered">A shot did not register…</button>' +
+    (director ? '<button data-act="mcfix" data-k="added">Add a shot…</button><button data-act="mcfix" data-k="penalty">Penalty…</button><button class="danger" data-act="mcfix" data-k="dq">Disqualify…</button>' : '') + '</div>' +
+    (openNr >= 2 ? '<div class="warnbox">The extra shot did not register either: move this shooter to another target (ISSF 6.10.9.4); the two shots are fired again there. ' +
+      '<button class="pri" data-act="mcmove" data-id="' + esc(L.device_id) + '">Move…</button></div>' : '') +
     form + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
-    (laneCorr.length ? '<h4>For the whole firing point</h4>' + laneCorr.map(c => '<div>' + corrText(c) + (director && c.lane === L.lane ? ' <button data-act="mcvoid" data-corr="' + c.id + '">Void</button>' : '') + '</div>').join('') : '') +
+    (laneCorr.length ? '<h4>For the whole firing point</h4>' + laneCorr.map(c => '<div>' + corrText(c) +
+      (director && c.status === 'open' ? ' <button class="pri" data-act="mcfix" data-k="settle" data-corr="' + c.id + '">Settle…</button>' : '') +
+      (director && c.lane === L.lane ? ' <button data-act="mcvoid" data-corr="' + c.id + '">Void</button>' : '') + '</div>').join('') : '') +
     '<h4>Shots</h4><div class="scroll" style="max-height:55vh"><table class="t"><tr><th>#</th><th>Value</th><th>Time</th><th>Corrections</th><th></th></tr>' + L.shots.slice().reverse().map(row).join('') + '</table></div>' +
     '<p class="mut">Newest first; S = sighting shot. Range officers mark shots under review or record protests; the match director settles them and corrects scores. Nothing is deleted: a correction can be voided.</p></div>';
 }
@@ -1734,21 +1755,23 @@ async function matchAct(el, a) {
     let res;
     if (f.kind === 'settle') {
       if (!f.outcome) { mc.msg = 'Choose the outcome'; return render(true); }
-      const sh = mc.shotp.data.shots.find(x => x.id === f.shot), c = sh && sh.corrections.find(x => x.id === f.corr);
+      const sh = mc.shotp.data.shots.find(x => x.id === f.shot), c = (sh ? sh.corrections : mc.shotp.data.corrections).find(x => x.id === f.corr);
       const pen = c && c.kind === 'protest' && f.outcome === 'not_upheld' && NOT_UPHELD[mc.shotp.data.tie_rules] && f.pen !== false && !(sh.miss || sh.decimal === 0);
-      res = await matchCall('/matches/' + mc.open + '/corrections/' + f.corr + '/settle', {outcome: f.outcome, penalty: pen ? 2 : undefined, note: f.note || undefined});
+      res = await matchCall('/matches/' + mc.open + '/corrections/' + f.corr + '/settle', {outcome: f.outcome, penalty: pen ? 2 : undefined, note: f.note || undefined,
+        value: f.outcome === 'found' ? {value: num(f.value)} : undefined});
     } else {
       const data = {note: f.note || undefined, rule: f.rule || undefined, official: f.official || undefined};
       if (f.kind === 'override' || f.kind === 'added') Object.assign(data, f.miss ? {miss: true} : {value: num(f.value)});
       if (f.kind === 'added') data.after = num(f.after);
       if (f.kind === 'crossfire') data.from_lane = f.from_lane ? +f.from_lane : null;
       if (f.kind === 'penalty') data.points = num(f.points);
+      if (f.kind === 'double_load') data.other_shot = num(f.other_shot);
       res = await matchCall('/matches/' + mc.open + '/corrections', {kind: f.kind, lane: mc.shotp.lane, shot_id: f.shot || undefined, data: data});
     }
     if (show(res)) { mc.shotp.form = null; toast('Saved'); }
     await loadShots(mc); return refresh();
   }
-  if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.msg = ''; return render(); }
+  if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.shotp = null; mc.msg = ''; return render(); }
   if (a === 'mcmovecancel') { mc.movep = null; mc.msg = ''; return render(); }
   if (a === 'mcmvmode') { mc.movep.mode = el.dataset.v; mc.msg = ''; return render(true); }
   if (a === 'mcmovego') {

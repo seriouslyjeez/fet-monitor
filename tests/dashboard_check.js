@@ -689,3 +689,25 @@ console.log('OK');
   assert(!moveSheet(Object.assign({}, base, {detail: Object.assign({}, d, {competition_id: null}), movep: {from: 'comp-2'}})).includes('CMP 7.18'), 'single matches: no relays');
   console.log('7.18 OK');
 }
+
+// phase E: did not register, disturbance, double load, too many in one step
+{
+  const {shotSheet} = X;
+  const L = JSON.parse(JSON.stringify(D.laneShots));
+  const sheet = (role, extra) => shotSheet({status: {role: role}, shotp: Object.assign({lane: L.lane, data: L}, extra || {})});
+  const o = sheet('officer');
+  assert(o.includes('data-k="not_registered"') && o.includes('data-k="disturbance"') && !o.includes('data-k="double_load"'), 'officer: did not register, disturbance; not double load');
+  assert(sheet('director').includes('data-k="double_load"'));
+  L.corrections = [{id: 70, lane: L.lane, shot_id: null, kind: 'not_registered', status: 'open', data: {at_ms: 0}, by: 'ro'},
+                   {id: 71, lane: L.lane, shot_id: null, kind: 'not_registered', status: 'open', data: {at_ms: 1}, by: 'ro'}];
+  const two = sheet('director');
+  assert(two.includes('did not register either') && two.includes('data-act="mcmove" data-id="' + L.device_id + '"'), 'twice: Move offered right there');
+  assert(two.includes('data-k="settle" data-corr="70"'), 'lane items can be settled');
+  const st = sheet('director', {form: {kind: 'settle', corr: 70, outcome: 'found'}});
+  assert(st.includes('value="found"') && st.includes('value="not_found"') && st.includes('data-fx="value"') && !st.includes('value="upheld"'), 'outcomes of a shot that did not register; a value when found');
+  L.corrections = L.corrections.slice(0, 1);
+  assert(!sheet('director').includes('did not register either'), 'once: no Move yet');
+  const dl = sheet('director', {form: {kind: 'double_load', shot: L.shots[0].id}});
+  assert(dl.includes('data-fx="other_shot"') && !dl.includes('<option value="' + L.shots[0].id + '"'), 'double load: the other shot, not itself');
+  console.log('phase E OK');
+}

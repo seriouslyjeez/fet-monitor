@@ -240,7 +240,8 @@ class Handler(BaseHTTPRequestHandler):
                 if cr.group(2) and method == "POST":
                     need_director()
                     if cr.group(3) == "settle":
-                        core.corrections.settle(mid, int(cr.group(2)), str(payload.get("outcome", "")), who, payload.get("penalty"), payload.get("note"))
+                        core.corrections.settle(mid, int(cr.group(2)), str(payload.get("outcome", "")), who, payload.get("penalty"), payload.get("note"),
+                                                payload.get("value"))
                     else:
                         core.corrections.void(mid, int(cr.group(2)), who)
                     log.warning("Match Control: %s %s correction %s of match %d", who, cr.group(3), cr.group(2), mid)

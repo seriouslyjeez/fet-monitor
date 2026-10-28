@@ -101,10 +101,10 @@ _EXTRA_SIGHTER = {"ISSF": ("ISSF 6.11.1.2 d", "Sighting shots after match firing
                   "CMP": ("CMP 7.15.1", "Unauthorized sighting shots during a match fire stage are scored as misses.", None,
                           "Ignore this shot, then on Shots… add a shot (a miss) after the record shot fired just before it."),
                   "NRA": ("NRA 9.2 d", "A sighting shot after the first record shot (unless the Jury allows it): 2 points off.", "penalty2_first", None)}
-_TOO_MANY = {"ISSF": ("ISSF 6.11.5", "Too many shots: the extra shots are annulled and 2 points are taken off for each one.", "annul",
-                      "Annul this shot, then on Shots… give a 2-point penalty (rule ISSF 6.11.5)."),
-             "CMP": ("CMP 7.17.8", "Too many shots in a position: the extra shots are annulled and 2 points are taken off for each one.", "annul",
-                     "Annul this shot, then on Shots… give a 2-point penalty (rule CMP 7.17.8)."),
+_TOO_MANY = {"ISSF": ("ISSF 6.11.5", "Too many shots: the extra shots are annulled and 2 points are taken off the lowest shot of the first series for each one.",
+                      "annul_penalty2", None),
+             "CMP": ("CMP 7.17.8", "Too many shots in a position: the extra shots are annulled and 2 points are taken off the lowest shot for each one.",
+                     "annul_penalty2", None),
              "NRA": ("NRA 10.10.4 d", "More hits than the program allows, when nobody else can be shown to have fired them: the highest-value hits are nullified.", "annul",
                      "Annul the highest-value record shot instead if that is not this one.")}
 _PAUSED = {"ISSF": ("ISSF 6.11.1.3 a", "A shot after a STOP is scored as a miss.", "miss", None),
@@ -141,6 +141,6 @@ def guidance(code, kind, stream: str, book: str) -> dict:
         rule, text, suggest, todo = table[book]
         if suggest in ("miss_first", "penalty2_first", "ignore") and rec:         # a record shot: the matching record decision
             suggest = {"miss_first": "miss", "penalty2_first": "penalty2", "ignore": "annul"}[suggest]
-        elif suggest in ("miss", "count", "annul", "penalty2") and not rec:
+        elif suggest in ("miss", "count", "annul", "penalty2", "annul_penalty2") and not rec:
             suggest = {"miss": "miss_first", "penalty2": "penalty2_first"}.get(suggest, "ignore")
     return {"rule": rule, "text": text, "suggest": suggest, "todo": todo, "url": RULEBOOK_URL[book]}

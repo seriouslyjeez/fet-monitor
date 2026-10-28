@@ -245,8 +245,8 @@ class DecisionGuidance(CorrCase):
         self.at(200); self.shoot("lane-1")                      # after the end (ISSF 6.11.1.3 a)
         g = {f["why"]: f["guide"] for f in self.m.detail(mid)["flags"]}
         self.assertEqual((g["during setup 0 (no firing)"]["rule"], g["during setup 0 (no firing)"]["suggest"]), ("ISSF 6.11.1.1 h", "miss_first"))
-        self.assertEqual((g["more than 1 record shots in record 1"]["rule"], g["more than 1 record shots in record 1"]["suggest"]), ("ISSF 6.11.5", "annul"))
-        self.assertIn("2-point penalty", g["more than 1 record shots in record 1"]["todo"])
+        self.assertEqual((g["more than 1 record shots in record 1"]["rule"], g["more than 1 record shots in record 1"]["suggest"]), ("ISSF 6.11.5", "annul_penalty2"))
+        self.assertIn("2 points", g["more than 1 record shots in record 1"]["text"])
         self.assertEqual((g["after the end"]["rule"], g["after the end"]["suggest"]), ("ISSF 6.11.1.3 a", "ignore"))
         self.assertEqual(g["after the end"]["url"], "https://issf-sports.org/rules")
 
@@ -263,10 +263,81 @@ class DecisionGuidance(CorrCase):
                  (("restarted", "record", "scored", "ISSF"), (None, "annul")),
                  (("moving", "record", "sighter", "CMP"), (None, "ignore")),
                  (("before_start", None, "scored", "ISSF"), ("ISSF 6.11.1.1 h", "miss")),
-                 (("too_many", "record", "scored", "Custom"), ("ISSF 6.11.5", "annul"))]
+                 (("too_many", "record", "scored", "Custom"), ("ISSF 6.11.5", "annul_penalty2")),
+                 (("too_many", "record", "scored", "NRA"), ("NRA 10.10.4 d", "annul"))]
         for args, (rule, suggest) in cases:
             g = guidance(*args)
             self.assertEqual((g["rule"], g["suggest"]), (rule, suggest), args)
             self.assertTrue(g["text"])
             if suggest is None and rule:
                 self.assertTrue(g["todo"], args)
+
+
+class PhaseE(CorrCase):
+    def test_too_many_in_one_step(self):
+        mid = self.match([("record", 600, 12)])
+        self.at(10)
+        for x in ("0.00", "1.00", "2.00") + ("0.50",) * 10:        # the lowest of the first series is shot 3
+            self.shoot("lane-1", x)
+        flag = self.m.detail(mid)["flags"][0]
+        self.assertEqual((flag["n"], flag["guide"]["suggest"]), (13, "annul_penalty2"))
+        fired = [round(x["decimal"] * 10) for x in self.shots(mid, 1)]
+        self.m.decide(mid, flag["shot_id"], "annul_penalty2", "md")
+        c = self.counted(mid, 1)
+        low = min(range(10), key=lambda i: fired[i])
+        self.assertEqual(low, 2)
+        self.assertEqual((len(c), c[low]["tenths"], c[low]["penalties"]), (12, fired[low] - 20, ["ISSF 6.11.5"]), "annulled, 2 off the lowest of the first series")
+        self.assertEqual(self.row(mid, 1)["penalties"][0]["rule"], "ISSF 6.11.5")
+
+    def test_did_not_register(self):
+        mid = self.match([("record", 100, 3), ("record", 100, 2)])
+        self.at(10); self.shoot("lane-1", "1.00")
+        self.at(20)
+        nr = self.cc.add(mid, "not_registered", 1, "ro", False, None, {"note": "shooter heard nothing"})
+        for t in (30, 40):
+            self.at(t); self.shoot("lane-1", "2.00")               # the extra shot, then the last one: 3 registered
+        self.assertEqual(self.flags(mid), [])
+        with self.assertRaises(MatchError):
+            self.cc.settle(mid, nr, "found", "md", value={"value": 10.5})      # the stage is not over
+        self.at(150)
+        with self.assertRaises(MatchError):
+            self.cc.settle(mid, nr, "found", "md", value={"value": 12})
+        self.cc.settle(mid, nr, "found", "md", value={"value": 10.5})
+        c = self.counted(mid, 1)
+        self.assertEqual([(x["n"], x["tenths"]) for x in c], [(1, c[0]["tenths"]), (None, 105), (2, c[2]["tenths"])],
+                         "the found shot in its place, the last shot of the stage (the extra one) annulled")
+        self.assertEqual(self.row(mid, 1)["removed"][0]["n"], 3)
+        self.assertEqual(self.flags(mid), [])
+
+    def test_did_not_register_not_found_and_twice(self):
+        mid = self.match([("record", 100, 2)])
+        self.at(10)
+        a = self.cc.add(mid, "not_registered", 1, "ro", False, None, {})
+        b = self.cc.add(mid, "not_registered", 1, "ro", False, None, {})       # the extra did not register either (6.10.9.4)
+        for t in (20, 30):
+            self.at(t); self.shoot("lane-1")
+        self.at(200)
+        self.cc.settle(mid, a, "not_found", "md")
+        self.cc.settle(mid, b, "withdrawn", "md")
+        c = self.counted(mid, 1)
+        self.assertEqual([(x["miss"], bool(x.get("added"))) for x in c], [(True, True), (False, False)], "a miss in its place; the last shot annulled")
+
+    def test_disturbance_and_double_load(self):
+        mid = self.match([("record", 600, 3)])
+        self.at(10)
+        for x in ("1.00", "3.00", "0.50", "0.20"):
+            self.shoot("lane-1", x)
+        s1, s2, s3, s4 = self.shots(mid, 1)
+        d = self.cc.add(mid, "disturbance", 1, "ro", False, s1["id"], {"note": "flash"})
+        with self.assertRaises(MatchError):
+            self.cc.settle(mid, d, "upheld", "md")                # not an outcome of a disturbance
+        self.cc.settle(mid, d, "justified", "md")
+        self.assertEqual([x["n"] for x in self.counted(mid, 1)], [2, 3, 4], "annulled; one more shot allowed")
+        self.assertEqual(self.flags(mid), [])
+        with self.assertRaises(MatchError):
+            self.cc.add(mid, "double_load", 1, "ro", False, s2["id"], {"other_shot": s3["id"]})   # director only
+        self.cc.add(mid, "double_load", 1, "md", True, s3["id"], {"other_shot": s2["id"]})   # picked from the higher one
+        self.assertEqual([x["n"] for x in self.counted(mid, 1)], [3, 4], "the lower of the two (shot 2, 3 mm out) annulled")
+        for other in (s4["id"], 999, None):                    # itself, unknown, missing
+            with self.assertRaises(MatchError, msg=other):
+                self.cc.add(mid, "double_load", 1, "md", True, s4["id"], {"other_shot": other})

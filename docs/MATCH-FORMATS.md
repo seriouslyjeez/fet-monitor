@@ -136,6 +136,14 @@ How FeT Monitor does it (Match Control console, *Shots…* on a firing point; fe
   shot, add a shot (marked "added by the match director"), record a crossfire (from a firing point, or unknown),
   give a penalty (a rule reference is required) or disqualify (a rule reference and a second official, CMP 7.22);
 - a penalty without a shot comes off the first series (its best shot, so the whole deduction applies);
+- *too many shots* in one step: "Annul, 2 points off" annuls the extra shot and takes 2 points off the lowest shot of
+  the first series (ISSF 6.11.5, CMP 7.17.8 a); NRA: annul the highest-value hit (10.10.4 d);
+- *a shot did not register* (range officer or match director; ISSF 6.10.9.3, CMP 8.4 a): the shooter fires one more
+  match shot; after the stage the match director settles it: found (its value is entered and counts) or not found
+  (a miss); either way the last shot of that stage, the extra one, is annulled. Marked twice (the extra did not
+  register either), the console offers Move (ISSF 6.10.9.4);
+- *disturbance* (ISSF 6.11.7): justified, the shot is annulled and may be fired again; not justified, it counts;
+- *double load* (CMP 7.17.11, ISSF 6.11.2.4 b): the lower of the two shots is annulled;
 - nothing is deleted: every correction is kept with who and when, and can be voided;
 - common rule references are explained in plain words on the results and score cards (fetserver/rules.py).
 
