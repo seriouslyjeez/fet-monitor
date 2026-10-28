@@ -311,7 +311,7 @@ function resultsTables(res, print) {
       cl.teams.map(t => '<tr><td>' + (t.place ? t.place + (t.tied ? '=' : '') : '–') + '</td><td>' + esc(t.name) + '</td><td>' + (t.place ? esc(t.counting.join(', ')) : '<span class="mut">' + esc(t.reason || '') + ': ' + esc(t.members.join(', ')) + '</span>') +
         '</td><td><b>' + (t.place ? fmtScore(res, t.total) : '') + '</b></td><td>' + (t.place ? t.x : '') + '</td></tr>').join('') + '</table>' : '')).join('') +
     (res.finals || []).map(f => '<h2>' + esc(f.name) + '</h2>' + finalTable(f, print)).join('') +
-    ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director; −n penalty points; DQ disqualified.</p>';
+    ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.book_name && res.book_name !== 'No rulebook' ? res.book_name : res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director; −n penalty points; DQ disqualified.</p>';
 }
 const statusLine = res => '<div class="resstatus ' + (res.official_ms ? 'off' : 'prov') + '">' + (res.official_ms ? 'Official results · ' + esc(new Date(res.official_ms).toLocaleString())
   : res.results_posted_ms ? 'Preliminary results' + (protestLeft(res.protest_until_ms) ? ' · protests until ' + esc(hhmm(res.protest_until_ms)) : ' · protest time over') : 'Provisional results') + '</div>';
@@ -324,7 +324,7 @@ function resultsPage(res) {
     '<div class="mcbar"><a href="#/print/results/' + k + '" target="_blank" rel="noopener">Print results</a> · <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Print score cards</a> · ' +
     '<a href="' + API + '/results/' + k + '.csv">CSV</a>' + (teams ? ' · <a href="' + API + '/results/' + k + '-teams.csv">Teams CSV</a>' : '') + '</div>' + resultsTables(res, false) + '</div>';
 }
-// The Range Incident Report (ISSF 6.10.4 h, CMP 6.5 Range Incident Form, NRA Range Officer's Notation): from the server's
+// The Range Incident Report (ISSF 6.10.4 h, CMP 3PAR 6.5 / CMP AG RIF, NRA Range Officer's Notation): from the server's
 // match log, flags and corrections; printable, and a CSV made here
 function incidentReport(r) {
   if (!r) return '<p>Loading…</p>';
@@ -367,7 +367,7 @@ function scoreCards(res, only) {
       ((e.removed || []).length ? '<div class="mut">Not counted: ' + e.removed.map(r => 'shot ' + r.n + ' (' + esc(r.why) + ')').join(', ') + '</div>' : '') +
       ((e.penalties || []).length ? '<div class="mut">Penalties: ' + e.penalties.map(p => '−' + p.points + ' ' + esc(p.rule) + (p.text ? ' (' + esc(p.text) + ')' : '') + (p.note ? ' · ' + esc(p.note) : '')).join('; ') + '</div>' : '');
     return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
-      (e.moved_from ? ' · relay ' + esc(e.moved_from.relay) + ', firing point ' + esc(e.moved_from.lane) + ', then (CMP 7.18)' : '') +
+      (e.moved_from ? ' · relay ' + esc(e.moved_from.relay) + ', firing point ' + esc(e.moved_from.lane) + ', then' : '') +
       (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
       '<div style="margin:6px 0"><b>Total ' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + (e.dq ? '–' : e.x) + ' · place ' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' + extra +
       '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
@@ -824,12 +824,12 @@ function phaseTable(fmt, cur, editable, times) {
 }
 function mcNew(mc) {
   const d = mc.draft || {}, f = (mc.formats || []).find(x => x.id === d.format_id) || null, books = {};
-  (mc.formats || []).forEach(x => { (books[x.rulebook] = books[x.rulebook] || []).push(x); });
+  (mc.formats || []).forEach(x => { (books[x.book_name] = books[x.book_name] || []).push(x); });
   const lanes = mc.targets || [];
   let h = '<div class="panel mcform"><div class="row"><span class="title">New match</span><button data-act="mcback">Back</button></div><div class="grid">' +
     '<label for="mcname">Name</label><input type="text" id="mcname" data-mcd="name" maxlength="80" value="' + esc(d.name || '') + '" placeholder="e.g. Club league, round 3">' +
     '<label for="mcfmt">Format</label><select id="mcfmt" data-mcd="format_id"><option value="">Choose…</option>' +
-    Object.keys(books).map(b => '<optgroup label="' + esc(b) + '">' + books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</optgroup>').join('') +
+    Object.keys(books).map(b => '<optgroup label="' + esc(b) + '">' + books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name + (x.builtin ? '' : ' (custom)')) + '</option>').join('') + '</optgroup>').join('') +
     '</select></div>';
   if (f) h += '<p class="mut">' + esc(f.edition || '') + (f.notes ? ' · ' + esc(f.notes) : '') + ' · ' + esc(f.scoring) + ' scoring</p>' + phaseTable(f, -1, true, d.times) +
     '<p class="mut">Times come from the rulebook; change one only where the rules allow it (it is marked as modified).</p>';
@@ -844,13 +844,22 @@ function mcNew(mc) {
     '<button data-act="mcpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' + esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>';
   return h + '<div class="mcbar"><button class="pri" data-act="mccreate">Create match</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
 }
+function bookChoices(mc) {                       // [book id, name]: the books of the standard formats, then none
+  const seen = {};
+  (mc.formats || []).filter(x => x.builtin).forEach(x => { seen[x.book] = x.book_name; });
+  return Object.keys(seen).map(k => [k, seen[k]]).concat([['NONE', 'No rulebook (the match director decides)']]);
+}
 function mcFormatEditor(mc) {
   const f = mc.fdraft || {name: '', scoring: 'decimal', team_size: 4, phases: []};
   const kinds = ['setup', 'sight', 'pause', 'record', 'stage', 'changeover'], positions = ['', 'standing', 'prone', 'kneeling', 'sitting'];
   return '<div class="panel mcform"><div class="row"><span class="title">Design your own match</span><button data-act="mcback">Back</button></div><div class="grid">' +
     '<label>Name</label><input type="text" data-mcf="name" maxlength="80" value="' + esc(f.name) + '">' +
     '<label>Scoring</label><select data-mcf="scoring">' + ['decimal', 'integer'].map(x => '<option' + (f.scoring === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' +
-    '<label>Team size</label><input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '"></div>' +
+    '<label>Team size</label><input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '">' +
+    '<label>Rulebook</label><select data-mcf="book"><option value="">Choose…</option>' + bookChoices(mc).map(([k, n]) => '<option value="' + esc(k) + '"' + (f.book === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>' +
+    (f.book === 'NONE' ? '<label>Ties broken like</label><select data-mcf="tie_rules">' + ['ISSF', 'CMP', 'NRA'].map(x => '<option' + ((f.tie_rules || 'ISSF') === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' : '') + '</div>' +
+    '<p class="mut">' + (f.book === 'NONE' ? 'No rulebook: no rule is cited, nothing is suggested, and the match director decides every irregularity, extra time and protest time.'
+      : 'The match follows this rulebook only: its procedures, rule references, tie-breaks and finals.') + '</p>' +
     '<table class="t phlist" style="margin-top:8px"><tr><th>#</th><th>Kind</th><th>Label</th><th>Min</th><th>Shots</th><th>Position</th><th>Warnings (min before end)</th><th></th></tr>' +
     f.phases.map((p, i) => '<tr><td>' + (i + 1) + '</td><td><select data-mcp="' + i + ':kind">' + kinds.map(k => '<option value="' + k + '"' + (p.kind === k ? ' selected' : '') + '>' + esc(PHASE_KIND[k]) + '</option>').join('') + '</select></td>' +
       '<td><input type="text" maxlength="80" data-mcp="' + i + ':label" value="' + esc(p.label || '') + '"></td>' +
@@ -914,7 +923,7 @@ function mcConsole(mc) {
       ' · switch to ' + ['spoken', 'officer', 'auto'].filter(k => k !== c.paced).map(k => '<button data-act="mccmd" data-a="pacing" data-v="' + k + '">' + esc(PACE[k][0]) + '</button>').join(' ') + '</div>' : '') + '</div>' +
     '<div class="mcclock' + (st === 'paused' ? ' paused' : '') + '" data-clock="console">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>' +
     '<div class="mcbar">' + (st === 'ready' ? '<button class="pri" data-act="mcstart">Start match</button>' : '') +
-    (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button><button class="danger" data-act="mccmd" data-a="interrupt" title="Target failure, power, safety: the rulebook extra time and sighters when it ends">Range interruption</button>' : '') +
+    (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button><button class="danger" data-act="mccmd" data-a="interrupt" title="Target failure, power, safety: the time is given back when it ends, with the rulebook\'s extra time and sighters">Range interruption</button>' : '') +
     (st === 'paused' ? (d.interrupted ? '<button class="pri" data-act="mccmd" data-a="interrupt_end">Interruption ended</button>' : '<button class="pri" data-act="mccmd" data-a="resume">Resume clock</button>') : '') +
     (live ? '<button data-act="mclate">Late arrival…</button>' : '') +
     (st === 'running' || st === 'paused' ? '<button data-act="mccmd" data-a="extra" data-s="60">+1 min</button><button data-act="mccmd" data-a="extra" data-s="300">+5 min</button>' : '') +
@@ -935,7 +944,7 @@ function mcConsole(mc) {
 function laneTime(l, d) {                       // a shooter's own clock (moved, interrupted, ...), or the match's
   if (!l.own) return '';
   if (l.own === 'moving' && l.stop) return '<div class="mut"><b>' + (l.stop === 'interrupt' ? 'Interrupted' : 'Rifle being repaired') + '</b> · ' + fmtClock(l.own_remaining_ms) + ' kept</div>';
-  if (l.own === 'left' || l.own === 'waiting') return '<div class="mut">' + esc(l.relay_note || '') + '</div>';   // CMP 7.18
+  if (l.own === 'left' || l.own === 'waiting') return '<div class="mut">' + esc(l.relay_note || '') + '</div>';   // finishing on a later relay
   const c = l.own === 'moving' ? '<b>Moving</b> · ' + fmtClock(l.own_remaining_ms) + ' kept'
     : '<span data-lends="' + (l.own_ends_at_ms || '') + '">' + fmtClock(l.own_remaining_ms) + '</span> ' + (l.own === 'own' ? esc(l.own_label) + ', own time' : 'own time');
   return '<div class="mut">' + c + (l.own_ends_at_ms == null && l.own !== 'moving' ? ' (paused)' : '') + '</div>';
@@ -953,7 +962,7 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
       (l.own === 'moving' && !l.stop ? '<label class="mut">extra <input type="number" min="0" max="60" step="0.5" style="width:56px" id="rdy_' + esc(l.device_id) + '" value="' + mins + '"> min</label>' +
         '<button class="pri" data-act="mclready" data-id="' + esc(l.device_id) + '">Shooter ready</button>' : '') +
       (l.own === 'moving' && l.stop ? '<button class="pri" data-act="mclint" data-a="interrupt_end" data-id="' + esc(l.device_id) + '">' + (l.stop === 'interrupt' ? 'Interruption ended' : 'Repaired') + '</button>' : '') +
-      (live && c.kind !== 'pause' && l.own !== 'moving' && l.own !== 'left' && l.own !== 'waiting' && st === 'running' ? '<button data-act="mclint" data-a="interrupt" data-id="' + esc(l.device_id) + '" title="This shooter\'s time stops (ISSF 6.11.3, CMP 7.18, NRA 9.2 b)">Interruption</button>' +
+      (live && c.kind !== 'pause' && l.own !== 'moving' && l.own !== 'left' && l.own !== 'waiting' && st === 'running' ? '<button data-act="mclint" data-a="interrupt" data-id="' + esc(l.device_id) + '" title="' + esc((d.rb || {}).interrupt || '') + '">Interruption</button>' +
         '<button data-act="mclint" data-a="malfunction" data-id="' + esc(l.device_id) + '">Malfunction…</button>' : '') +
       (l.sighting && l.own !== 'moving' ? '<span class="mut">sighting</span><button data-act="mclrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') +
       ((live || (ot && l.own)) && l.own !== 'moving' ? '<button data-act="mclextra" data-id="' + esc(l.device_id) + '" title="Extra time for this shooter only">+1 min</button>' : '') +
@@ -961,10 +970,7 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
       (st !== 'ready' ? '<button data-act="mcshots" data-lane="' + l.lane + '">Shots…</button>' : '') + '</div></td></tr>';
   }).join('') + '</table></div>';
 }
-const MOVE_RULE = {ISSF: 'ISSF 6.10.9.2 and 6.11.3.2: their time stops while they move; when they are ready they get 5 minutes extra and unlimited sighting shots before they go on with record.',
-  CMP: 'CMP 7.18.3: they get the time they had left plus 2 minutes, and unlimited sighting shots before they go on with record.',
-  NRA: 'NRA 9.2 b and 10.3.2: they get the time they lost (their time stops while they move) and unlimited sighting shots before they go on with record.'};
-function lateSheet(mc) {                         // a late arrival joins the running match (ISSF 6.11.4)
+function lateSheet(mc) {                         // a late arrival joins the running match (rulebooks.py: late)
   const d = mc.detail, lp = mc.latep, free = (mc.targets || []).filter(t => !t.in_match);
   const people = lp.people ? lp.people.filter(p => !p.relay) : null;
   return '<div class="sheet"><div class="row"><h2>Late arrival</h2><button data-act="mclatecancel">Cancel</button></div>' +
@@ -973,7 +979,7 @@ function lateSheet(mc) {                         // a late arrival joins the run
       : '<p>Name: <input type="text" data-latename maxlength="60" value="' + esc(lp.name || '') + '"></p>') +
     '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</label>').join('')
       : '<p class="bad">No free target.</p>') +
-    '<p class="mut">ISSF 6.11.4: a late shooter may start but gets no extra time; after the preparation and sighting time they may still fire sighters within their time, then Start record.</p>' +
+    '<p class="mut">' + esc((d.rb || {}).late || '') + '</p>' +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '<div class="mcbar"><button class="pri" data-act="mclatego"' + (free.length ? '' : ' disabled') + '>Add to the match</button></div></div>';
 }
 function moveSheet(mc) {                         // move a shooter to another target (a target failed)
@@ -984,14 +990,14 @@ function moveSheet(mc) {                         // move a shooter to another ta
   const later = comp ? comp.relays.filter(r => r.state === 'ready' && r.relay > d.relay) : [], toRelay = mv.mode === 'relay';
   return '<div class="sheet"><div class="row"><h2>Move ' + esc(l.competitor || 'firing point ' + l.lane) + '</h2><button data-act="mcmovecancel">Cancel</button></div>' +
     (comp ? '<div class="seg"><button data-act="mcmvmode" data-v="target" class="' + (toRelay ? '' : 'sel') + '">Another target, this relay</button>' +
-      '<button data-act="mcmvmode" data-v="relay" class="' + (toRelay ? 'sel' : '') + '">Finish on a later relay (CMP 7.18)</button></div>' : '') +
+      '<button data-act="mcmvmode" data-v="relay" class="' + (toRelay ? 'sel' : '') + '">Finish on a later relay' + ((d.rb || {}).later_relay ? ' (' + esc(d.rb.later_relay) + ')' : '') + '</button></div>' : '') +
     (toRelay ? '<p>Relay: <select data-mvrel><option value="">a new relay</option>' + later.map(r => '<option value="' + r.id + '"' + (String(mv.rel) === String(r.id) ? ' selected' : '') + '>Relay ' + esc(r.relay) + ' (not started)</option>').join('') + '</select></p>' +
-      '<p class="mut">CMP 7.18: their shots so far stay on this relay. On the later relay they wait until this stage, then have the time they have left now plus 2 minutes, unlimited sighters, and only the record shots they still owe; then the rest of the match. The results join both parts.</p>' : '') +
+      '<p class="mut">' + esc((d.rb || {}).later_relay_text || '') + '</p>' : '') +
     '<p>From <b>' + esc(l.target) + '</b> to:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="mvto" value="' + esc(t.device_id) + '"' +
       (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
       : '<p class="bad">No free target: every other target is in a match.</p>') +
-    (toRelay ? '' : '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc(MOVE_RULE[d.tie_rules] || MOVE_RULE.ISSF) +
-      ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there. ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).'
+    (toRelay ? '' : '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc((d.rb || {}).move || '') +
+      ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there.' + ((d.rb || {}).book === 'ISSF' ? ' ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).' : '')
       : 'The match has not started: only the target changes.') + '</p>') + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
     '<div class="mcbar"><button class="pri" data-act="mcmovego"' + (free.length ? '' : ' disabled') + '>' + (toRelay ? 'Send to the later relay' : 'Move' + (started ? ' and stop their time' : '')) + '</button></div></div>';
 }
@@ -1002,7 +1008,6 @@ const OUTCOME = {upheld: 'Upheld', not_upheld: 'Not upheld', withdrawn: 'Withdra
   found: 'Found', not_found: 'Not found (a miss)'};
 const OUTCOMES_OF = {review: ['upheld', 'not_upheld', 'withdrawn'], protest: ['upheld', 'not_upheld', 'withdrawn'],
   disturbance: ['justified', 'not_justified'], not_registered: ['found', 'not_found', 'withdrawn']};
-const NOT_UPHELD = {ISSF: 'ISSF 6.16.5.2 c', CMP: 'CMP 8.4 c'};
 function corrText(x, lanes) {                   // one correction in words
   const d = x.data || {}, v = d.miss ? 'miss' : d.tenths != null ? (d.tenths / 10).toFixed(1) : '';
   const what = x.kind === 'override' ? 'set to ' + v : x.kind === 'added' ? v : x.kind === 'crossfire' ? (d.from_lane ? 'from firing point ' + d.from_lane : 'source unknown') :
@@ -1014,7 +1019,7 @@ function corrText(x, lanes) {                   // one correction in words
 function shotSheet(mc) {
   const sp = mc.shotp, L = sp.data, director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
   if (!L) return '<div class="sheet"><p class="mut">Loading…</p></div>';
-  const f = sp.form || {}, rec = L.shots.filter(x => x.stream === 'scored');
+  const f = sp.form || {}, rec = L.shots.filter(x => x.stream === 'scored'), R = L.rb || {};
   const live = x => x.status !== 'void';
   const row = x => {
     const cs = x.corrections.filter(live), gone = cs.some(c => c.kind === 'annul' || c.kind === 'crossfire');
@@ -1034,28 +1039,27 @@ function shotSheet(mc) {
   const forms = {
     review: () => 'Mark shot ' + shot.n + ' under review. ' + inp('note', 'text', ' maxlength="300" placeholder="What is being checked" style="width:100%"'),
     disturbance: () => 'The shooter says they were disturbed firing shot ' + shot.n + '. ' + inp('note', 'text', ' maxlength="300" placeholder="What happened" style="width:100%"') +
-      '<p class="mut">ISSF 6.11.7: if the match director finds it justified, the shot is annulled and may be fired again; if not, it counts, with no penalty.</p>',
+      '<p class="mut">' + esc(R.disturbance || '') + '</p>',
     not_registered: () => 'A shot on this firing point did not register (now). ' + inp('note', 'text', ' maxlength="300" placeholder="What the shooter reports" style="width:100%"') +
-      '<p class="mut">' + (L.tie_rules === 'CMP' ? 'CMP 8.4 a' : 'ISSF 6.10.9.3') + ': the shooter fires one more match shot now. After the stage the match director settles it: ' +
-      'found (its value counts) or not found (a miss); either way the last shot of the stage, the extra one, is annulled. If the extra shot does not register either, move the shooter (ISSF 6.10.9.4).</p>',
+      '<p class="mut">' + esc(R.not_registered || '') + ' If the extra shot does not register either, move the shooter.</p>',
     double_load: () => 'Shot ' + shot.n + ' and <select data-fx="other_shot"><option value="">which other shot?</option>' + L.shots.filter(x => x.stream === shot.stream && x.id !== shot.id)
       .map(x => '<option value="' + x.id + '"' + (String(f.other_shot) === String(x.id) ? ' selected' : '') + '>' + (x.stream === 'scored' ? '' : 'S') + x.n + ' · ' + (x.miss ? 'miss' : dec(x.decimal)) + '</option>').join('') + '</select> came from one loading.' +
-      '<p class="mut">The lower of the two is annulled (CMP 7.17.11, ISSF 6.11.2.4 b).</p>',
+      '<p class="mut">' + esc(R.double_load || '') + '</p>',
     protest: () => 'Record a protest of shot ' + shot.n + '. ' + inp('note', 'text', ' maxlength="300" placeholder="What the shooter says" style="width:100%"') +
-      '<p class="mut">A shot-value protest must be made before the next shot or within 3 minutes of the last one (ISSF 6.16.5.2, CMP 8.4).</p>',
+      '<p class="mut">' + esc(R.shot_protest || '') + '</p>',
     override: () => 'New value of shot ' + shot.n + ' (fired ' + (shot.miss ? 'miss' : dec(shot.decimal)) + '): ' + valueFields + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:100%"'),
-    annul: () => 'Annul shot ' + shot.n + ': ' + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:60%"') + ' ' + inp('rule', 'text', ' maxlength="60" placeholder="Rule, e.g. ISSF 6.11.6.7" style="width:35%"'),
+    annul: () => 'Annul shot ' + shot.n + ': ' + inp('note', 'text', ' maxlength="300" placeholder="Reason (required)" style="width:60%"') + ' ' + inp('rule', 'text', ' maxlength="60" placeholder="Rule (optional)" style="width:35%"'),
     crossfire: () => 'Shot ' + shot.n + ' was fired by: <select data-fx="from_lane"><option value="">unknown</option>' + L.others.map(o => '<option value="' + o.lane + '"' + (String(f.from_lane) === String(o.lane) ? ' selected' : '') + '>Firing point ' + o.lane + (o.competitor ? ' · ' + esc(o.competitor) : '') + '</option>').join('') + '</select>' +
-      '<p class="mut">It is annulled here. A record shot is scored as a miss for the firing point that fired it; a sighter on a record target costs that firing point 2 points (ISSF 6.11.6, CMP 7.17.9, NRA 10.10.4).</p>',
+      '<p class="mut">' + esc(R.crossfire || '') + '</p>',
     added: () => 'Added shot: ' + valueFields + ' after <select data-fx="after"><option value="">the last shot</option>' + rec.map(x => '<option value="' + x.n + '"' + (String(f.after) === String(x.n) ? ' selected' : '') + '>record shot ' + x.n + '</option>').join('') + '</select>' +
       inp('note', 'text', ' maxlength="300" placeholder="Reason (required), e.g. failed to register" style="width:100%"') + '<p class="mut">Shown as added by the match director on the results and score cards.</p>',
-    penalty: () => 'Penalty: ' + inp('points', 'number', ' min="1" max="100" style="width:70px"') + ' points · rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. CMP 7.22.1 (required)"') + inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') +
+    penalty: () => 'Penalty: ' + inp('points', 'number', ' min="1" max="100" style="width:70px"') + ' points · rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. ' + esc(R.penalty_example || '') + ' (required)"') + inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') +
       '<p class="mut">Taken off the first series. Common rules are explained on the results.</p>',
-    dq: () => 'Disqualify ' + esc(L.competitor || 'firing point ' + L.lane) + ': rule ' + inp('rule', 'text', ' maxlength="60" placeholder="e.g. CMP 7.22.2 (required)"') + ' second official ' + inp('official', 'text', ' maxlength="60" placeholder="Name (required)"') +
-      inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') + '<p class="mut">CMP 7.22: a disqualification is decided by at least two match officials. Scores are cleared and DQ is shown.</p>',
+    dq: () => 'Disqualify ' + esc(L.competitor || 'firing point ' + L.lane) + ': rule ' + inp('rule', 'text', ' maxlength="60" placeholder="' + esc(R.dq_rule ? 'e.g. ' + R.dq_rule + ' ' : '') + '(required)"') + ' second official ' + inp('official', 'text', ' maxlength="60" placeholder="Name (required)"') +
+      inp('note', 'text', ' maxlength="300" placeholder="Note" style="width:100%"') + '<p class="mut">' + esc(R.dq || '') + '</p>',
     settle: () => {
       const c = (shot ? shot.corrections : L.corrections).find(x => x.id === f.corr) || {}, prot = c.kind === 'protest', zero = shot ? shot.miss || shot.decimal === 0 : false;
-      const rule = NOT_UPHELD[L.tie_rules];
+      const rule = R.not_upheld;
       return 'Settle: ' + esc(CORR[c.kind] || '').toLowerCase() + (shot ? ' of shot ' + shot.n : '') + ': ' + (OUTCOMES_OF[c.kind] || []).map(o => '<label><input type="radio" name="fxo" data-fxr="outcome" value="' + o + '"' +
         (f.outcome === o ? ' checked' : '') + '> ' + OUTCOME[o] + '</label>').join(' ') +
         (c.kind === 'not_registered' && f.outcome === 'found' ? '<p>Its value: ' + inp('value', 'number', ' step="0.1" min="0" max="10.9" style="width:90px" placeholder="10.4"') + '</p>' : '') +
@@ -1070,7 +1074,7 @@ function shotSheet(mc) {
   return '<div class="sheet" style="max-width:900px"><div class="row"><h2>Firing point ' + L.lane + (L.competitor ? ' · ' + esc(L.competitor) : '') + '</h2><button data-act="mcshotsclose">Close</button></div>' +
     '<div class="mcbar"><button data-act="mcfix" data-k="not_registered">A shot did not register…</button>' +
     (director ? '<button data-act="mcfix" data-k="added">Add a shot…</button><button data-act="mcfix" data-k="penalty">Penalty…</button><button class="danger" data-act="mcfix" data-k="dq">Disqualify…</button>' : '') + '</div>' +
-    (openNr >= 2 ? '<div class="warnbox">The extra shot did not register either: move this shooter to another target (ISSF 6.10.9.4); the two shots are fired again there. ' +
+    (openNr >= 2 ? '<div class="warnbox">' + esc(R.not_registered_move || '') + ' ' +
       '<button class="pri" data-act="mcmove" data-id="' + esc(L.device_id) + '">Move…</button></div>' : '') +
     form + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
     (laneCorr.length ? '<h4>For the whole firing point</h4>' + laneCorr.map(c => '<div>' + corrText(c) +
@@ -1117,14 +1121,14 @@ function finalTable(f, print) {                 // a final's standings (results 
     '</td><td>' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut">(' + r.shots + ')</span></td><td><b>' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</b></td>' + (so ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>';
   const head = '<tr><th>Place</th><th>Pos</th><th>Finalist</th><th>Qualification</th><th>Final</th><th>Total</th>' + (so ? '<th>Shoot-off</th>' : '') + '</tr>';
   return '<table class="' + cls + '">' + head + rows.map(line).join('') + '</table>' +
-    (info.length ? '<p class="mut">For information (not in the top 8 qualifiers, CMP 10.1.2 a):</p><table class="' + cls + '">' + head + info.map(line).join('') + '</table>' : '');
+    (info.length ? '<p class="mut">For information (not in the top 8 qualifiers, CMP 3PAR 10.1.2 a):</p><table class="' + cls + '">' + head + info.map(line).join('') + '</table>' : '');
 }
 function finalPanel(d, director) {              // on a final's console: standings, and shoot-offs for medal ties
   const f = d.final;
   if (!f) return '';
   return '<div class="panel"><h3>' + esc(f.name) + '</h3>' + finalTable(f, false) +
     (f.kind === 'airgun' && d.state === 'ready' && director ? '<div class="mcbar"><button data-act="mcredraw">Draw the firing points again</button></div>' : '') +
-    (f.shoot_off_needed.length ? '<div class="warnbox">Tied for a medal place: a one-shot shoot-off, 50 seconds (CMP 10.2.9 n). ' +
+    (f.shoot_off_needed.length ? '<div class="warnbox">Tied for a medal place: a one-shot shoot-off, 50 seconds (CMP 3PAR 10.2.9 n). ' +
       (director ? f.shoot_off_needed.map(g => '<button class="pri" data-act="mcshootoff" data-lanes="' + g.join(',') + '">Shoot-off: firing points ' + g.join(', ') + '</button>').join(' ') : 'The match director starts it.') + '</div>' : '') + '</div>';
 }
 function officialPanel(d, director) {         // provisional -> posted (protest time) -> official
@@ -1133,7 +1137,7 @@ function officialPanel(d, director) {         // provisional -> posted (protest 
   if (d.official_ms) return '<div class="panel"><h3>Results: official</h3><p>Made official ' + esc(new Date(d.official_ms).toLocaleString()) + ' by ' + esc(d.official_by || '') +
     '. Nothing can be changed until they are reopened.</p><div class="mcbar">' + (director ? '<button data-act="mcofficial" data-a="reopen">Reopen the results</button>' : '') + report + '</div></div>';
   const todo = d.open_items || [], posted = d.results_posted_ms, left = protestLeft(d.protest_until_ms);
-  const rule = d.tie_rules === 'NRA' ? 'NRA 16.1 b: the challenge time set for the competition' : 'ISSF 6.16.5.1, CMP 8.2: 10 minutes';
+  const rule = (d.rb || {}).protest_time || '';
   return '<div class="panel"><h3>Results: ' + (posted ? 'preliminary, posted ' + esc(hhmm(posted)) : 'provisional') + '</h3>' +
     (todo.length ? '<p>Before they can be made official: ' + todo.map(esc).join('; ') + '.</p>' : '<p>Everything is settled.</p>') +
     (posted ? '<p>' + (left ? '<b>Protest time until ' + esc(hhmm(d.protest_until_ms)) + '</b> (' + left + ' min left; ' + esc(rule) + ').' : 'The protest time is over.') + '</p>'
@@ -1157,15 +1161,15 @@ function correctionsPanel(d, director) {        // mistakes happen: the match di
 const PACE_KEYS = ['spoken', 'officer', 'auto'];
 function mcCompNew(mc) {
   const d = mc.cdraft || {}, f = (mc.formats || []).find(x => x.id === d.format_id) || null, books = {};
-  (mc.formats || []).forEach(x => { (books[x.rulebook] = books[x.rulebook] || []).push(x); });
+  (mc.formats || []).forEach(x => { (books[x.book_name] = books[x.book_name] || []).push(x); });
   const pc = d.paced || 'spoken', size = d.team_size != null ? d.team_size : (f ? f.team_size : 4);
   return '<div class="panel mcform"><div class="row"><span class="title">New competition</span><button data-act="mcback">Back</button></div><div class="grid">' +
     '<label>Name</label><input type="text" data-mcx="name" maxlength="80" value="' + esc(d.name || '') + '" placeholder="e.g. Winter league 2026">' +
     '<label>Format</label><select data-mcx="format_id"><option value="">Choose…</option>' + Object.keys(books).map(b => '<optgroup label="' + esc(b) + '">' +
-      books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</optgroup>').join('') + '</select>' +
+      books[b].map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.format_id ? ' selected' : '') + '>' + esc(x.name + (x.builtin ? '' : ' (custom)')) + '</option>').join('') + '</optgroup>').join('') + '</select>' +
     '<label>Team size</label><input type="number" min="1" max="10" data-mcx="team_size" value="' + esc(size) + '">' +
-    '<label>Best count</label><label style="font-weight:400"><input type="checkbox" data-mcxc="best_count"' + (d.best_count ? ' checked' : '') + '> a team may have more members; its best ' + esc(size) + ' count (CMP 3.2.2 c)</label></div>' +
-    (f ? '<p class="mut">' + esc(f.edition || '') + ' · ' + esc(f.scoring) + ' scoring · ties: ' + esc(f.tie_rules || 'ISSF') + ' rules · rulebook team size ' + esc(f.team_size) + '</p>' + phaseTable(f, -1, true, d.times) : '') +
+    '<label>Best count</label><label style="font-weight:400"><input type="checkbox" data-mcxc="best_count"' + (d.best_count ? ' checked' : '') + '> a team may have more members; its best ' + esc(size) + ' count' + (f && f.book === 'CMP-3PAR' ? ' (CMP 3PAR 3.2.2 c)' : '') + '</label></div>' +
+    (f ? '<p class="mut">' + esc(f.edition || '') + ' · ' + esc(f.scoring) + ' scoring · ' + esc(f.book_name || '') + (f.book === 'NONE' ? ' (ties: ' + esc(f.tie_rules) + ' method)' : '') + ' · team size ' + esc(f.team_size) + '</p>' + phaseTable(f, -1, true, d.times) : '') +
     '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + PACE_KEYS.map(k => '<button data-act="mccpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' +
       esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcccreate">Create competition</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
@@ -1176,13 +1180,13 @@ function mcCompPage(mc) {
   const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
   const free = c.competitors.filter(p => !p.relay), rd = mc.rdraft || {};
   let h = '<div class="panel mcform"><div class="row"><span class="title">' + esc(c.name) + '</span><button data-act="mcback">All matches</button></div>' +
-    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ties: ' + esc(c.tie_rules) + ' rules · teams of ' + c.team_size +
+    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ' + esc((c.rb || {}).name || '') + ' rules · teams of ' + c.team_size +
     (c.best_count ? ' (best ' + c.team_size + ' count)' : '') + ' · commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</div>' +
     '<div class="mcbar"><a href="#/results/' + c.id + '">Results</a> · <a href="#/print/results/' + c.id + '" target="_blank" rel="noopener">Print results</a> · ' +
     '<a href="#/print/cards/' + c.id + '" target="_blank" rel="noopener">Print score cards</a> · <a href="' + API + '/results/' + c.id + '.csv">CSV</a> · <a href="' + API + '/results/' + c.id + '-teams.csv">Teams CSV</a></div>' +
     (director ? '<div class="mcbar"><label>Team size <input type="number" min="1" max="10" style="width:60px" id="cteam" value="' + c.team_size + '"></label>' +
       '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label>' +
-      (c.tie_rules === 'NRA' ? '<label title="NRA 16.1 b: set by the match">Challenge time <input type="number" min="1" max="1440" style="width:70px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
+      ((c.rb || {}).challenge ? '<label title="' + esc(c.rb.protest_time) + '">Challenge time <input type="number" min="1" max="1440" style="width:70px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
       '<button data-act="mccsave">Save settings</button></div>' : '') + '</div>';
   h += '<div class="panel mcform"><h3>Competitors (' + c.competitors.length + ')</h3><table class="t"><tr><th>Family name</th><th>Given name</th><th>Class</th><th>Team</th><th>Relay · FP</th><th></th></tr>' +
     c.competitors.map(p => '<tr>' + ['family', 'given', 'class', 'team'].map(k => '<td>' + esc(p[k] || '') + '</td>').join('') +
@@ -1202,17 +1206,20 @@ function mcCompPage(mc) {
       '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') : '') + '</div>';
   return h + finalsPanel(c, mc, director);
 }
-function finalsPanel(c, mc, director) {         // CMP 10: Standard Final for the top of a class, or for each relay (10.1.2 a)
+function finalsPanel(c, mc, director) {         // the finals of the competition's rulebook (rulebooks.py: finals)
   const fin = mc.fin || {}, free = (mc.targets || []).filter(t => !t.in_match), picked = free.filter(t => (fin.devs || {})[t.device_id]);
   const classes = [...new Set(c.competitors.map(p => p.class || ''))].sort();
   const done = c.relays.filter(r => r.state === 'done' && !(c.finals || []).some(f => f.for_relay === r.match_id && f.state !== 'aborted'));
   const n = fin.n != null ? fin.n : Math.min(8, picked.length);
   let h = '<div class="panel mcform"><h3>Finals</h3>' + ((c.finals || []).length ? '<table class="t">' + c.finals.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + esc(f.state) + '</td>' +
     '<td><button data-act="mcopen" data-id="' + f.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No final yet.</p>');
+  const kinds = (c.rb || {}).finals || [];
+  if (!kinds.length) return h + '<p class="mut">The ' + esc((c.rb || {}).name || '') + ' finals are not built yet.</p></div>';
   if (!director) return h + '</div>';
-  const kind = fin.kind || 'airgun';
-  h += '<h4>New final</h4><div class="seg"><button data-act="mcfinkind" data-v="airgun" class="' + (kind === 'airgun' ? 'sel' : '') + '">Air Gun Final (CMP Air Gun 10.2)</button>' +
-    '<button data-act="mcfinkind" data-v="standard" class="' + (kind === 'standard' ? 'sel' : '') + '">Standard Final (3PAR 10.4)</button></div>' +
+  const kind = kinds.includes(fin.kind) ? fin.kind : kinds[0];
+  h += '<h4>New final</h4>' + (kinds.length > 1 ? '<p class="mut">' + esc(c.rb.title) + ': each final follows its own rulebook.</p>' : '') + '<div class="seg">' +
+    (kinds.includes('airgun') ? '<button data-act="mcfinkind" data-v="airgun" class="' + (kind === 'airgun' ? 'sel' : '') + '">Air Gun Final (CMP AG 10.2)</button>' : '') +
+    (kinds.includes('standard') ? '<button data-act="mcfinkind" data-v="standard" class="' + (kind === 'standard' ? 'sel' : '') + '">Standard Final (CMP 3PAR 10.4)</button>' : '') + '</div>' +
     (kind === 'airgun' ? '<p class="mut">24 shots: 2 series of 5 in 250 s, then single shots in 50 s; the lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides 1st and 2nd. ' +
       'The final alone decides; every tie is shot off at once. Firing points by random draw (10.1.2).</p>'
       : '<p class="mut">10 shots standing, each on command (LOAD, 5 s, START, 50 s), added to the qualification score. Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).</p>') +
@@ -1223,7 +1230,7 @@ function finalsPanel(c, mc, director) {         // CMP 10: Standard Final for th
     '<div>Targets, in order A, B, C …: ' + (free.length ? free.map(t => '<label style="margin-right:10px"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('')
       : '<span class="bad">no free target</span>') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcfinal"' + (picked.length ? '' : ' disabled') + '>Create the final</button></div>' +
-    (done.length && kind === 'standard' ? '<h4>Final for all athletes (CMP 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
+    (done.length && kind === 'standard' ? '<h4>Final for all athletes (CMP 3PAR 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
       done.map(r => '<button data-act="mcfinalrelay" data-id="' + r.match_id + '">Final for relay ' + esc(r.relay) + '</button>').join('') + '</div>' : '');
   return h + '</div>';
 }
@@ -1708,7 +1715,7 @@ async function matchAct(el, a) {
   if (a === 'mcfedit') {
     const f = (mc.formats || []).find(x => x.id === el.dataset.id);
     if (!f) return;
-    mc.fdraft = {id: f.id, name: f.name, scoring: f.scoring, team_size: f.team_size, phases: f.phases.map(p => ({kind: p.kind, label: p.label, minutes: p.seconds / 60,
+    mc.fdraft = {id: f.id, name: f.name, scoring: f.scoring, team_size: f.team_size, book: f.book_named ? f.book : '', tie_rules: f.tie_rules, phases: f.phases.map(p => ({kind: p.kind, label: p.label, minutes: p.seconds / 60,
       shots: p.shots, position: p.position, warn: p.warnings.map(w => w.at / 60).join(', ')}))};
     mc.view = 'format'; mc.msg = ''; return render();
   }
@@ -1720,7 +1727,7 @@ async function matchAct(el, a) {
       shots: p.kind === 'record' || p.kind === 'stage' ? (+p.shots || 0) : 0, position: p.position || '',
       warnings: String(p.warn || '').split(/[ ,;]+/).filter(Boolean).map(x => ({at: Math.round(parseFloat(x) * 60), say: (+x === 1 ? 'One minute' : x + ' minutes') + ' remaining'})),
       start: (p.label || PHASE_KIND[p.kind]) + '. Start.', end: 'Stop.'}));
-    const res = await matchCall('/formats', {format: {id: f.id, name: f.name, scoring: f.scoring, team_size: +f.team_size, phases: phases}});
+    const res = await matchCall('/formats', {format: {id: f.id, name: f.name, scoring: f.scoring, team_size: +f.team_size, book: f.book || null, tie_rules: f.tie_rules, phases: phases}});
     if (show(res)) { mc.view = 'list'; toast('Format saved'); }
     return refresh();
   }
@@ -1880,7 +1887,7 @@ async function matchAct(el, a) {
     if (f.kind === 'settle') {
       if (!f.outcome) { mc.msg = 'Choose the outcome'; return render(true); }
       const sh = mc.shotp.data.shots.find(x => x.id === f.shot), c = (sh ? sh.corrections : mc.shotp.data.corrections).find(x => x.id === f.corr);
-      const pen = c && c.kind === 'protest' && f.outcome === 'not_upheld' && NOT_UPHELD[mc.shotp.data.tie_rules] && f.pen !== false && !(sh.miss || sh.decimal === 0);
+      const pen = c && c.kind === 'protest' && f.outcome === 'not_upheld' && (mc.shotp.data.rb || {}).not_upheld && f.pen !== false && !(sh.miss || sh.decimal === 0);
       res = await matchCall('/matches/' + mc.open + '/corrections/' + f.corr + '/settle', {outcome: f.outcome, penalty: pen ? 2 : undefined, note: f.note || undefined,
         value: f.outcome === 'found' ? {value: num(f.value)} : undefined});
     } else {
@@ -1920,7 +1927,7 @@ async function matchAct(el, a) {
     return refresh();
   }
   if (a === 'mcshootoff') {
-    if (!confirm('Start a tie-breaking shot for firing points ' + el.dataset.lanes + ' (CMP 10.2.9 n)?')) return;
+    if (!confirm('Start a tie-breaking shot for firing points ' + el.dataset.lanes + ' (CMP 3PAR 10.2.9 n)?')) return;
     if (!show(await matchCall('/matches/' + mc.open + '/shoot-off', {lanes: el.dataset.lanes.split(',').map(Number)}))) toast(mc.msg);
     return refresh();
   }
@@ -1929,7 +1936,7 @@ async function matchAct(el, a) {
     const pick = document.querySelector('input[name="mvto"]:checked'), mv = mc.movep;
     if (!pick) { mc.msg = 'Choose the target to move to'; return render(true); }
     if (mv.mode === 'relay') {
-      if (!confirm('Send this shooter to ' + (mv.rel ? 'that relay' : 'a new relay') + ' to finish the match (CMP 7.18)?')) return;
+      if (!confirm('Send this shooter to ' + (mv.rel ? 'that relay' : 'a new relay') + ' to finish the match' + (((mc.detail || {}).rb || {}).later_relay ? ' (' + mc.detail.rb.later_relay + ')' : '') + '?')) return;
       const res = await matchCall('/matches/' + mc.open + '/later-relay', {from: mv.from, to_match: mv.rel ? +mv.rel : null, to: pick.value});
       if (show(res)) { mc.movep = null; toast('Sent to the later relay'); }
       return refresh();
@@ -1940,9 +1947,9 @@ async function matchAct(el, a) {
   if (a === 'mclint') {                          // one shooter: interruption, its end, a malfunction
     const k = el.dataset.a, d = mc.detail, body = {device_id: el.dataset.id, action: k};
     if (k === 'malfunction') {
-      if (d.tie_rules === 'ISSF') body.seconds = confirm('Is it an ALLOWABLE malfunction (ISSF 6.13.2.1)? OK: yes, sighters allowed after the repair. Cancel: no (no sighters). No extra time either way (6.13.4).') ? 1 : 0;
-      else if (!confirm(d.tie_rules === 'NRA' ? 'Disabled rifle (NRA 9.5): the shooter\'s time stops until you press Repaired; then the time that remained and sighters.'
-        : 'Malfunction (CMP 7.19.1): sighters on request; 2 minutes extra if it happened after the 5-minute warning. Continue?')) return;
+      const R = d.rb || {};                      // rulebooks.py: ask (ISSF allowable, no rulebook: sighters?) or confirm
+      if (R.malfunction === 'ask_allowable' || R.book === 'NONE') body.seconds = confirm(R.malfunction_text) ? 1 : 0;
+      else if (!confirm(R.malfunction_text)) return;
     }
     const res = await matchCall('/matches/' + mc.open + '/lane', body);
     if (!show(res)) toast(mc.msg);
@@ -1961,7 +1968,7 @@ async function matchAct(el, a) {
     const action = a === 'mcrecord' ? 'start_record' : el.dataset.a;
     if (el.dataset.ot && !confirm('End the moved shooters\' own time now? The match then finishes.')) return;
     if (action === 'abort' && !confirm('Stop the whole match now? This cannot be undone.')) return;
-    if (action === 'interrupt' && !confirm('Interrupt the whole range now? Every clock stops. When it ends, the time is given back; over 5 minutes the rulebook adds extra time and sighters.')) return;
+    if (action === 'interrupt' && !confirm(((mc.detail || {}).rb || {}).range_interrupt || 'Interrupt the whole range now?')) return;
     if (action === 'next' && !el.dataset.ot && !confirm('End this phase now and go to the next one?')) return;
     if (action === 'pacing' && !confirm('Switch the commands to "' + PACE[el.dataset.v][0] + '"?\n\n' + PACE[el.dataset.v][1] + ' (from the next phase on).')) return;
     const res = await matchCall('/matches/' + mc.open + '/command', {action: action, seconds: el.dataset.s ? +el.dataset.s : undefined, device_id: el.dataset.id, paced: el.dataset.v});
@@ -2057,7 +2064,7 @@ function boot() {
     if (el.dataset.mcd) { mc.draft[el.dataset.mcd] = el.value; if (el.dataset.mcd === 'format_id') { mc.draft.times = {}; render(true); } }
     if (el.dataset.mcc) { (mc.draft.lanes[el.dataset.mcc] = mc.draft.lanes[el.dataset.mcc] || {}).competitor = el.value; }
     if (el.dataset.mct != null && el.dataset.mct !== undefined) { const dd = mc.view === 'cnew' ? (mc.cdraft = mc.cdraft || {}) : mc.draft; dd.times = dd.times || {}; dd.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
-    if (el.dataset.mcf) mc.fdraft[el.dataset.mcf] = el.value;
+    if (el.dataset.mcf) { mc.fdraft[el.dataset.mcf] = el.value; if (el.dataset.mcf === 'book') render(true); }
     if (el.dataset.pe && mc.editp) mc.editp[el.dataset.pe] = el.value;
     if (el.dataset.latename !== undefined && mc.latep) mc.latep.name = el.value;
     if (el.dataset.fx && mc.shotp && mc.shotp.form && el.tagName === 'INPUT') mc.shotp.form[el.dataset.fx] = el.value;

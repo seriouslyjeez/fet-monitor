@@ -131,7 +131,7 @@ class Moves(MatchCase):
         self.assertEqual((self.lane(mid, "lane-3")["own"], self.mode("lane-3")), ("", "record"))
 
     def test_rulebook_extra_time(self):
-        for fid, extra in (("cmp-3x20", 120), ("nra-3x20", 0), ("issf-ar60", 300)):
+        for fid, extra in (("cmp-3x20", 120), ("cmp-ag-ar60", 120), ("nra-3x20", 300), ("issf-ar60", 300)):
             mid = self.m.create(fid, fid, [{"device_id": "lane-1"}], "dir")
             self.m.start(mid, "dir")
             self.assertEqual(self.m.detail(mid)["move_extra_s"], extra, fid)

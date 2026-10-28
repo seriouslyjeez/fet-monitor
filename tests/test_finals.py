@@ -6,12 +6,14 @@ from tests.test_matches import MatchCase
 
 
 class FinalCase(MatchCase):
+    BOOK = "CMP-3PAR"                 # the qualification's rulebook: its finals only
+
     def setUp(self):
         super().setUp()
         for d in ("lane-3", "lane-4", "lane-5"):
             self.core.handle_heartbeat({"device_id": d, "boot_count": 1, "uptime_ms": 0})
         self.cc = self.core.competitions
-        fid = self.m.save_format({"name": "Q", "tie_rules": "CMP", "phases": [{"kind": "record", "label": "R", "seconds": 100, "shots": 2}]}, "md")["id"]
+        fid = self.m.save_format({"name": "Q", "book": self.BOOK, "phases": [{"kind": "record", "label": "R", "seconds": 100, "shots": 2}]}, "md")["id"]
         self.cid = self.cc.create("League", fid, "md")
         self.ids = [self.cc.save_competitor(self.cid, {"family": f}) for f in ("Ames", "Bell", "Cole", "Dunn")]
         self.r1 = self.cc.add_relay(self.cid, [{"device_id": f"lane-{i + 1}", "competitor_id": p} for i, p in enumerate(self.ids)], "md")
@@ -164,6 +166,8 @@ class SpokenFinal(FinalCase):
 
 
 class AirGunFinal(FinalCase):
+    BOOK = "CMP-AG"
+
     """CMP Air Gun Final (Air Rifle and Air Pistol Rules 2026, 10.2): draw, 2 x 5 shots, 14 single shots, the
     lowest out after shots 12..22 (only places that exist), shot 24 decides 1st/2nd, every tie shot off (10.3.5)."""
     def drive(self, mid, x_of, until=None):
@@ -259,6 +263,8 @@ class AirGunFinal(FinalCase):
 
 
 class Draw(FinalCase):
+    BOOK = "CMP-AG"
+
     def test_the_draw_shuffles(self):
         import random
         orig = random.SystemRandom.shuffle

@@ -4,16 +4,16 @@ itself is never changed, and the results show the original and the corrected val
 Kinds (per firing point, the lane number, which stays the same when a shooter is moved to another target):
   review, protest  a shot is questioned (range officer or match director); open until the match director settles it:
                    upheld (then corrects the shot), not upheld (a protest of a shot value: 2 points off that shot,
-                   ISSF 6.16.5.2 c / CMP 8.4 c, suggested and confirmed by the director) or withdrawn.
+                   ISSF 6.16.5.2 c, CMP AG 8.2.3 c, CMP 3PAR 8.4 c, suggested and confirmed by the director) or withdrawn.
   override         a shot's value replaced (original kept and shown).
   annul            a shot does not count (e.g. a disclaimed shot the range officer confirmed, ISSF 6.11.6.7).
   added            a shot added by the match director (no position on the target).
-  crossfire        a shot on this firing point fired by another (ISSF 6.11.6, CMP 7.17.9, NRA 10.10.4): annulled here;
+  crossfire        a shot on this firing point fired by another (ISSF 6.11.6, CMP AG 7.11.9, CMP 3PAR 7.17.9, NRA 10.10.4): annulled here;
                    the firing point that fired it gets a record miss at that moment, or, if it was sighting then and the
                    shot hit a record target, 2 points off its first series (ISSF 6.11.6.3, NRA 10.10.4 a). Source
                    unknown: annulled here only.
   penalty          points off (a rule reference required), from a given shot or from the first record shot onward.
-  dq               disqualified (a rule reference and a second official, CMP 7.22): no score, no place.
+  dq               disqualified (a rule reference and a second official, CMP 3PAR 7.22, CMP AG 9.2 c): no score, no place.
 Any correction can be voided (kept, marked void) by the match director.
 """
 from __future__ import annotations
@@ -23,6 +23,7 @@ import math
 from typing import Dict, List, Optional
 
 from .matches import MatchError, rules_of
+from . import rulebooks as rb
 from .scoring import is_inner_ten
 
 KINDS = ("review", "protest", "override", "annul", "added", "crossfire", "penalty", "dq", "not_registered", "disturbance", "double_load")
@@ -30,12 +31,8 @@ OPEN_KINDS = ("review", "protest", "not_registered", "disturbance")      # open 
 OFFICER_KINDS = OPEN_KINDS                     # what a range officer may record; everything else is the director's
 OUTCOMES_OF = {"review": ("upheld", "not_upheld", "withdrawn"), "protest": ("upheld", "not_upheld", "withdrawn"),
                "disturbance": ("justified", "not_justified"),                      # ISSF 6.11.7
-               "not_registered": ("found", "not_found", "withdrawn")}             # ISSF 6.10.9.3, CMP 8.4 a
+               "not_registered": ("found", "not_found", "withdrawn")}             # ISSF 6.10.9.3, CMP AG 8.2.3 a, CMP 3PAR 8.4 a, NRA 10.10.5 d
 OUTCOMES = tuple(sorted({o for v in OUTCOMES_OF.values() for o in v}))
-NOT_REGISTERED_RULE = {"ISSF": "ISSF 6.10.9.3", "CMP": "CMP 8.4 a", "NRA": "ISSF 6.10.9.3"}
-DOUBLE_LOAD_RULE = {"ISSF": "ISSF 6.11.2.4 b", "CMP": "CMP 7.17.11", "NRA": "CMP 7.17.11"}
-NOT_UPHELD_RULE = {"ISSF": "ISSF 6.16.5.2 c", "CMP": "CMP 8.4 c"}      # 2 points off a protested shot not upheld
-SIGHTER_CROSSFIRE_RULE = {"ISSF": "ISSF 6.11.6.3", "NRA": "NRA 10.10.4 a"}
 MAX_TEXT = 300
 
 
@@ -167,7 +164,7 @@ class Corrections:
                     raise MatchError("a penalty comes only with a protest that is not upheld")
                 if not isinstance(penalty, int) or isinstance(penalty, bool) or not 1 <= penalty <= 100:
                     raise MatchError("a penalty is 1 to 100 points")
-                rule = NOT_UPHELD_RULE.get(rules_of(json.loads(self.matches._row(c, mid)["format_json"])), "protest not upheld")
+                rule = rb.rule(rb.book_of(json.loads(self.matches._row(c, mid)["format_json"])), "not_upheld") or "protest not upheld"
                 c.execute("INSERT INTO shot_corrections (match_id, lane, shot_id, kind, status, data, created_by, created_ms) VALUES (?,?,?,?,?,?,?,?)",
                           (mid, r["lane"], r["shot_id"], "penalty", "done", json.dumps({"points": penalty, "rule": rule, "note": "protest not upheld", "protest": corr_id}), by, now))
         self.matches._pub(mid)
@@ -211,7 +208,8 @@ class Corrections:
                               "corrections": by_shot.get(r["id"], [])})
         others = [{"lane": l["lane"], "competitor": l["competitor"]} for l in self.matches._lanes(c, mid) if l["lane"] != lane]
         return {"match_id": mid, "lane": lane, "competitor": ln["competitor"], "device_id": ln["device_id"], "shots": shots, "others": others,
-                "corrections": [x for x in corr if x["shot_id"] is None or x["lane"] != lane], "tie_rules": rules_of(json.loads(m["format_json"]))}
+                "corrections": [x for x in corr if x["shot_id"] is None or x["lane"] != lane], "tie_rules": rules_of(json.loads(m["format_json"])),
+                "rb": rb.texts(rb.book_of(json.loads(m["format_json"])))}
 
     def open_count(self, c, mid: int) -> int:
         return c.execute("SELECT COUNT(*) FROM shot_corrections WHERE match_id=? AND status='open'", (mid,)).fetchone()[0]
@@ -220,24 +218,25 @@ class Corrections:
         """What the corrections do to one firing point: annulled shot ids, overrides by shot id, added shots (incl.
         crossfire misses), penalties, disqualification, and the corrections that touch it (for display)."""
         mid = m["id"]
-        rules = rules_of(json.loads(m["format_json"]))
+        book = rb.book_of(json.loads(m["format_json"]))
+        say = lambda key: rb.rule(book, key) or "the match director decides"
         out = {"annulled": {}, "overrides": {}, "added": [], "penalties": [], "dq": None}
         for r in c.execute("SELECT * FROM shot_corrections WHERE match_id=? AND status!='void' ORDER BY id", (mid,)):
             d = json.loads(r["data"])
             k = r["kind"]
             if r["lane"] == lane:
                 if k == "disturbance" and d.get("outcome") == "justified":
-                    out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": "annul", "from_lane": None, "note": "disturbance (ISSF 6.11.7)"}
+                    out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": "annul", "from_lane": None, "note": "disturbance (%s)" % say("disturbance")}
                 elif k == "double_load":
                     out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
-                                                        "note": "double load: the lower shot (%s)" % DOUBLE_LOAD_RULE[rules]}
+                                                        "note": "double load: the lower shot (%s)" % say("double_load")}
                 elif k == "not_registered" and d.get("outcome") in ("found", "not_found"):
                     out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": d["tenths"], "ring": d["ring"], "inner": d["inner"],
                                          "miss": d["miss"], "added": True, "by": r["resolved_by"],
-                                         "note": "did not register, %s (%s)" % ("found" if d["outcome"] == "found" else "not found: a miss", NOT_REGISTERED_RULE[rules])})
+                                         "note": "did not register, %s (%s)" % ("found" if d["outcome"] == "found" else "not found: a miss", say("not_registered"))})
                     if d.get("annul_shot"):
                         out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
-                                                            "note": "the extra shot after one that did not register (%s)" % NOT_REGISTERED_RULE[rules]}
+                                                            "note": "the extra shot after one that did not register (%s)" % say("not_registered")}
                 elif k in ("annul", "crossfire"):
                     out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": k, "from_lane": d.get("from_lane"), "note": d.get("note")}
                 elif k == "override":
@@ -253,8 +252,8 @@ class Corrections:
                 if d.get("firer_stream") == "scored":
                     out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": 0, "ring": 0, "inner": False, "miss": True,
                                          "crossfire_to": r["lane"], "note": "crossfire onto firing point %d" % r["lane"]})
-                elif d.get("hit_stream") == "scored" and rules in SIGHTER_CROSSFIRE_RULE:
-                    out["penalties"].append({"corr": r["id"], "points": 2, "rule": SIGHTER_CROSSFIRE_RULE[rules],
+                elif d.get("hit_stream") == "scored" and rb.rule(book, "sighter_crossfire"):
+                    out["penalties"].append({"corr": r["id"], "points": 2, "rule": rb.rule(book, "sighter_crossfire"),
                                              "note": "sighter crossfired onto the record target of firing point %d" % r["lane"], "shot_id": None})
         return out
 

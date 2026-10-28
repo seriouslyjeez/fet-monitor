@@ -29,7 +29,7 @@ class CompCase(unittest.TestCase):
         self.seq = {}
         for i in range(1, 7):
             self.core.handle_heartbeat({"device_id": f"lane-{i}", "boot_count": 1, "uptime_ms": 0})
-        self.fid = self.m.save_format({"name": "Two", "scoring": "decimal", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 2}]}, "md")["id"]
+        self.fid = self.m.save_format({"name": "Two", "book": "ISSF", "scoring": "decimal", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 2}]}, "md")["id"]
 
     def at(self, s):
         self.clock.t = BASE + int(s * 1000)
@@ -149,7 +149,7 @@ class Results(CompCase):
 
 class IntegerPenalty(CompCase):
     def test_two_points_off_in_whole_rings(self):
-        fid = self.m.save_format({"name": "Int", "scoring": "integer", "tie_rules": "CMP", "phases": [
+        fid = self.m.save_format({"name": "Int", "book": "CMP-3PAR", "scoring": "integer", "phases": [
             {"kind": "setup", "label": "S", "seconds": 10}, {"kind": "record", "label": "R", "seconds": 600, "shots": 2}]}, "md")["id"]
         cid = self.cc.create("I", fid, "md")
         a = self.person(cid, "Ames")

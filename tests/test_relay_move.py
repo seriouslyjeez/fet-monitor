@@ -1,19 +1,22 @@
-"""CMP 7.18: a shooter whose target fails finishes the match on a later relay: their shots so far stay, they wait until
+"""CMP 3PAR 7.18 (CMP AG 7.12): a shooter whose target fails finishes the match on a later relay: their shots so far stay, they wait until
 the stage they left, then have the time they had left plus 2 minutes (7.18.3) and sighters first, and only the record
 shots still owed; the results join both parts."""
 from fetserver.matches import MatchError
-from tests.test_matches import MatchCase
+from tests.test_matches import MatchCase, tiny
 
 FORMAT = [("sight", 100, 0), ("record", 300, 4), ("changeover", 60, 0), ("sight", 100, 0), ("record", 300, 4)]
 
 
 class LaterRelay(MatchCase):
+    BOOK = "CMP-3PAR"
+
     def setUp(self):
         super().setUp()
         for d in ("lane-3", "lane-4"):
             self.core.handle_heartbeat({"device_id": d, "boot_count": 1, "uptime_ms": 0})
         self.cc = self.core.competitions
-        self.cid = self.cc.create("League", self.custom(FORMAT), "md")
+        fid = self.m.save_format(dict(tiny(FORMAT), name="Two stages", book=self.BOOK), "md")["id"]
+        self.cid = self.cc.create("League", fid, "md")
         self.ames = self.cc.save_competitor(self.cid, {"family": "Ames"})
         self.bell = self.cc.save_competitor(self.cid, {"family": "Bell"})
         self.r1 = self.cc.add_relay(self.cid, [{"device_id": "lane-1", "competitor_id": self.ames}, {"device_id": "lane-2", "competitor_id": self.bell}], "md")
@@ -50,7 +53,7 @@ class LaterRelay(MatchCase):
         for t in (1020, 1030, 1040):
             self.at(t); self.shoot("lane-3")                   # two owed, one too many
         whys = [f[3] for f in self.flags(r2)]
-        self.assertEqual(whys, ["before this shooter rejoins at record 1 (CMP 7.18)", "more than 4 record shots in record 1"])
+        self.assertEqual(whys, ["before this shooter rejoins at record 1", "more than 4 record shots in record 1"])
         self.assertEqual(self.entry("Ames")["shots"], 4, "2 on relay 1 + 2 on relay 2 (the extra waits for a decision)")
         self.assertEqual(self.entry("Ames")["moved_from"], {"relay": 1, "lane": 1})
         self.at(1310)                                           # the match's record stage ended at 1300; theirs at 1320
@@ -81,7 +84,7 @@ class LaterRelay(MatchCase):
         self.at(1131)
         self.assertEqual(self.mode("lane-3"), "sighter", "their time ended at 1130")
         self.at(1140); self.shoot("lane-3")
-        self.assertEqual([f[3] for f in self.flags(r2)], ["after this shooter's own time (CMP 7.18.3)"])
+        self.assertEqual([f[3] for f in self.flags(r2)], ["after this shooter's own time"])
         self.at(1301)
         self.assertEqual(self.m.detail(r2)["clock"]["phase"], 2, "the relay goes on as usual")
 
@@ -106,3 +109,27 @@ class LaterRelay(MatchCase):
         self.m.start(solo, "md")
         with self.assertRaises(MatchError):
             self.cc.finish_on_later_relay(solo, "lane-5", None, "lane-4", "md")         # not a competition
+
+
+class LaterRelayOtherBooks(MatchCase):
+    """Only the CMP books cover finishing on a later relay: elsewhere it stays available, the match director decides
+    (no extra time, no rule cited); the time left is still kept."""
+    def test_no_extra_time_without_the_rule(self):
+        from fetserver.rulebooks import later_relay
+        self.assertEqual([later_relay(b) for b in ("CMP-3PAR", "CMP-AG", "ISSF", "NRA", "NONE")],
+                         [(120_000, "CMP 3PAR 7.18, 7.18.3"), (120_000, "CMP AG 7.12, 7.12.2"), (0, None), (0, None), (0, None)])
+        self.core.handle_heartbeat({"device_id": "lane-3", "boot_count": 1, "uptime_ms": 0})
+        cc = self.core.competitions
+        cid = cc.create("League", self.m.save_format(dict(tiny(FORMAT), name="Two stages", book="ISSF"), "md")["id"], "md")
+        ames = cc.save_competitor(cid, {"family": "Ames"})
+        r1 = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": ames}], "md")
+        self.m.start(r1, "md")
+        self.at(200)                                            # 200 s of the record stage left
+        r2 = cc.finish_on_later_relay(r1, "lane-1", None, "lane-3", "md")
+        self.at(900)
+        self.m.start(r2, "md")
+        self.at(1000)
+        self.assertEqual(self.m.detail(r2)["lanes"][0]["own_remaining_ms"], 200_000, "the time left, nothing added")
+        rows = [r for r in self.m.incidents(r1)["rows"] if r["what"] == "Sent to a later relay"]
+        self.assertEqual([r["rule"] for r in rows], [""])
+

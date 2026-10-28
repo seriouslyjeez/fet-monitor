@@ -23,7 +23,7 @@ class Clock:
 
 def tiny(kind_list):
     """A custom format from (kind, seconds, shots) tuples."""
-    return {"name": "Tiny", "phases": [{"kind": k, "label": f"{k} {i}", "seconds": s, "shots": n} for i, (k, s, n) in enumerate(kind_list)]}
+    return {"name": "Tiny", "book": "ISSF", "phases": [{"kind": k, "label": f"{k} {i}", "seconds": s, "shots": n} for i, (k, s, n) in enumerate(kind_list)]}
 
 
 class MatchCase(unittest.TestCase):
@@ -74,6 +74,10 @@ class Formats(MatchCase):
         self.assertEqual(record_shots(BUILTIN["nra-3x40"]), 120)
 
     def test_custom_formats_are_checked(self):
+        for book in (None, "CMP", "Custom"):                                       # a custom format names its rulebook (or NONE)
+            with self.assertRaises(MatchError) as cm:
+                self.m.save_format({"name": "x", "book": book, "phases": [{"kind": "record", "seconds": 60, "shots": 1}]}, "dir")
+            self.assertIn("rulebook", str(cm.exception))
         for bad, why in (({"name": "x", "phases": []}, "1 to"), ({"name": "", "phases": [{"kind": "record", "seconds": 60, "shots": 1}]}, "name"),
                          ({"name": "x", "phases": [{"kind": "fly", "seconds": 60}]}, "kind"),
                          ({"name": "x", "phases": [{"kind": "sight", "seconds": 60}]}, "at least one record"),
@@ -81,7 +85,7 @@ class Formats(MatchCase):
                          ({"name": "x", "phases": [{"kind": "record", "seconds": 60, "shots": 0}]}, "record shots"),
                          ({"name": "x", "phases": [{"kind": "record", "seconds": 60, "shots": 5, "warnings": [{"at": 90}]}]}, "inside")):
             with self.assertRaises(MatchError) as cm:
-                self.m.save_format(bad, "dir")
+                self.m.save_format(dict(bad, book="ISSF"), "dir")
             self.assertIn(why, str(cm.exception))
         fid = self.custom([("sight", 60, 0), ("record", 120, 10)], name="Club night 10")
         self.assertEqual(fid, "custom-club-night-10")

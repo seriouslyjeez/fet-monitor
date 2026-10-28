@@ -18,6 +18,8 @@ import copy
 import re
 from typing import Optional, Dict, List
 
+from . import rulebooks as rb
+
 KINDS = {"setup", "sight", "pause", "record", "stage", "changeover"}
 FIRE_KINDS = {"sight", "record", "stage"}
 SCORING = {"decimal", "integer"}
@@ -35,7 +37,7 @@ def P(kind, label, minutes=0, seconds=0, *, shots=0, position="", warnings=(), s
 
 def _issf_qual():
     return {
-        "id": "issf-ar60", "name": "10m Air Rifle 60 shots (ISSF / USA Shooting qualification)", "rulebook": "ISSF", "tie_rules": "ISSF",
+        "id": "issf-ar60", "name": "10m Air Rifle 60 shots (ISSF / USA Shooting qualification)", "book": "ISSF", "rulebook": "ISSF", "tie_rules": "ISSF",
         "edition": "ISSF Rule Book 2026 (third print, eff. 19 Oct 2026)", "scoring": "decimal", "team_size": 3,
         "notes": "Range personnel switch the targets to match after the preparation and sighting time (6.10.4 b).",
         "phases": [
@@ -54,7 +56,7 @@ def _cmp_3p(n):
     rule = "5.3.2" if n == 10 else "5.3.3"
     w_s, w_r = [(30, "Thirty seconds")], [(300, "Five minutes remaining"), (120, "Two minutes remaining")]
     return {
-        "id": f"cmp-3x{n}", "name": f"3x{n} Three-Position Air Rifle (CMP / NFHS National Standard)", "rulebook": "CMP", "tie_rules": "CMP",
+        "id": f"cmp-3x{n}", "name": f"3x{n} Three-Position Air Rifle (CMP / NFHS National Standard)", "book": "CMP-3PAR", "rulebook": "CMP 3PAR", "tie_rules": "CMP",
         "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "integer", "team_size": 4,
         "notes": "Kneeling, prone, standing. Scored in whole rings or tenths as the program announces (5.3.1 e). "
                  "For inexperienced 3x10 athletes the first preparation and sighting may be 15 or 20 minutes (5.3.1 d).",
@@ -82,7 +84,7 @@ def _cmp_3p(n):
 
 def _cmp_standing60():
     return {
-        "id": "cmp-s60", "name": "60 shots standing (CMP National Standard)", "rulebook": "CMP", "tie_rules": "CMP",
+        "id": "cmp-s60", "name": "60 shots standing (CMP National Standard)", "book": "CMP-3PAR", "rulebook": "CMP 3PAR", "tie_rules": "CMP",
         "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "team_size": 4,
         "notes": "Decimal scoring should be used with electronic targets (5.3.1 e).",
         "phases": [
@@ -97,19 +99,25 @@ def _cmp_standing60():
 
 
 def _cmp_standing3x20():
-    w_s, w_r = [(30, "Thirty seconds")], [(300, "Five minutes remaining"), (120, "Two minutes remaining")]
-    phases = [P("setup", "Call to the line", 5, rule="7.6", start="You may move your rifles and equipment to the firing line."),
-              P("sight", "Preparation and sighting", 8, position="standing", warnings=w_s, rule="5.3.4, 7.8",
-                start="Preparation and sighting stage. Time limit eight minutes. Start.", end="Stop.")]
+    """3PAR 5.3.4 'STANDING EVENT -- 3X20 SHOTS' with the commands of the CMP 60-shot standing script: take your
+    positions (at least 5 minutes), 8 minutes preparation and sighting, record; after each record stage the targets are
+    changed (with electronic targets: none to change), TAKE YOUR POSITIONS 30 seconds, a 5-minute standing sighting
+    stage, record."""
+    w_s, w_r = [(30, "Thirty seconds")], [(300, "Five minutes"), (120, "Two minutes")]
+    phases = [P("setup", "Take your positions", 5, rule="script", start="You may uncase and handle your rifles. Take your positions."),
+              P("sight", "Preparation and sighting", 8, position="standing", warnings=w_s, rule="5.3.4",
+                start="Preparation and sighting time. Time limit 8 minutes. Start.", end="Sighting shots. Stop.")]
     for i in range(3):
         if i:
-            phases.append(P("sight", "Sighting", 5, position="standing", warnings=w_s, rule="5.3.4, 7.11",
-                            start="Standing sighting stage. Time limit five minutes. Start.", end="Stop."))
-        phases.append(P("pause", "Targets to match fire", 0, 30, rule="7.8"))
-        phases.append(P("record", f"Standing match fire {i + 1} of 3", 25, shots=20, position="standing", warnings=w_r,
-                        rule="5.3.4, 7.9", start="Standing match fire. 20 shots in a time limit of 25 minutes. Start.",
+            phases.append(P("changeover", "Take your positions", 0, 30, rule="script",
+                            start="Take your positions. Your standing position sighting stage will begin in 30 seconds."))
+            phases.append(P("sight", "Standing sighting", 5, position="standing", warnings=w_s, rule="5.3.4",
+                            start="Standing position sighting stage. Time limit five minutes. Start.", end="Sighting shots. Stop."))
+        phases.append(P("pause", "Targets to match fire", 0, 30, rule="script"))     # electronic targets: reset to record
+        phases.append(P("record", f"Standing record fire {i + 1} of 3", 25, shots=20, position="standing", warnings=w_r,
+                        rule="5.3.4", start=("Standing record fire. " if i == 0 else "") + "20 shots in a time limit of 25 minutes. Start.",
                         end="Stop. Unload."))
-    return {"id": "cmp-s3x20", "name": "60 shots standing in three 20-shot stages (CMP, paper-target style)", "rulebook": "CMP", "tie_rules": "CMP",
+    return {"id": "cmp-s3x20", "name": "60 shots standing in three 20-shot stages (CMP, paper-target style)", "book": "CMP-3PAR", "rulebook": "CMP 3PAR", "tie_rules": "CMP",
             "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "team_size": 4,
             "notes": "Rule 5.3.4 'STANDING EVENT -- 3X20 SHOTS': the 60-shot standing event fired in three 20-shot record "
                      "stages, as on paper targets. With electronic targets the 60-shot event may be fired without "
@@ -136,7 +144,7 @@ def _nra_3p(n):
             phases.append(P("changeover", f"Position change to {pos}", 15, rule="8.2 b",
                             start=f"Position change. Fifteen minutes to change to {pos}."))
         phases.append(_nra_stage(pos, n, i == 0))
-    return {"id": f"nra-3x{n}", "name": f"3x{n} Precision Air Rifle (NRA)", "rulebook": "NRA", "tie_rules": "NRA",
+    return {"id": f"nra-3x{n}", "name": f"3x{n} Precision Air Rifle (NRA)", "book": "NRA", "rulebook": "NRA", "tie_rules": "NRA",
             "edition": "NRA Precision Air Rifle Rules 2025", "scoring": "integer", "team_size": 4,
             "notes": "Prone, standing, kneeling (7.1). One clock per position: sighting time plus record time (8.1); "
                      "sighters until the shooter starts record, then record only (9.2 a). Position change: 15 minutes "
@@ -145,13 +153,13 @@ def _nra_3p(n):
 
 
 def _nra_standing(n):
-    return {"id": f"nra-s{n}", "name": f"{n} shots standing (NRA Precision Air Rifle)", "rulebook": "NRA", "tie_rules": "NRA",
+    return {"id": f"nra-s{n}", "name": f"{n} shots standing (NRA Precision Air Rifle)", "book": "NRA", "rulebook": "NRA", "tie_rules": "NRA",
             "edition": "NRA Precision Air Rifle Rules 2025", "scoring": "integer", "team_size": 4,
             "notes": "One clock: 8 minutes sighting plus record time (8.1, 8.2 a); sighters until the shooter starts record.",
             "phases": [_nra_stage("standing", n, True)]}
 
 
-AG_EDITION = "CMP Air Rifle and Air Pistol Competition Rules, 5th ed. (2026)"
+AG_EDITION = rb.AG_EDITION
 
 
 def _ag_ar60():
@@ -159,7 +167,7 @@ def _ag_ar60():
     preparation and sighting (30 s warning, 7.9.1), straight on to 60 record shots in 75 minutes (10 and 5 minute
     warnings, 7.9.2)."""
     return {
-        "id": "cmp-ag-ar60", "name": "10m Air Rifle 60 (AR60, CMP Air Gun Rules)", "rulebook": "CMP Air Gun", "tie_rules": "CMP",
+        "id": "cmp-ag-ar60", "name": "10m Air Rifle 60 (AR60, CMP Air Gun Rules)", "book": "CMP-AG", "rulebook": "CMP Air Gun", "tie_rules": "CMP",
         "edition": AG_EDITION, "scoring": "decimal", "team_size": 4,
         "notes": "Electronic targets (6.4.1 b). Target carriers: 90 minutes record fire (6.4.1 d), set the time when creating the match. "
                  "Ties: last 10-shot series, then shot by shot from the last (8.5.1 b). Teams of 2, 3 or 4 as the program says (6.4.6).",
@@ -197,6 +205,11 @@ def validate(fmt) -> dict:
            "rulebook": str(fmt.get("rulebook") or "Custom")[:20], "edition": str(fmt.get("edition") or "")[:120],
            "scoring": fmt.get("scoring") or "decimal", "notes": str(fmt.get("notes") or "")[:1000],
            "team_size": fmt.get("team_size", 4), "tie_rules": fmt.get("tie_rules") or "ISSF", "phases": []}
+    book = fmt.get("book") if "book" in fmt else rb.LEGACY.get(fmt.get("rulebook"), rb.NONE)     # formats saved before books
+    if book not in rb.BOOKS:
+        raise ValueError("rulebook: one of " + ", ".join(rb.BOOKS))
+    out["book"] = book
+    out["tie_rules"] = rb.BOOKS[book]["tie"] or out["tie_rules"]          # a book's formats break ties by that book
     if fmt.get("final") in FINALS:
         out["final"] = fmt["final"]
     if out["id"] and not ID_RE.match(out["id"]):
@@ -274,7 +287,7 @@ def cmp_standard_final(spoken: bool = False) -> dict:
                         start="For the %s competition shot. Load." % ("first" if k == 1 else "next")))
         phases.append(dict(P("record", "Shot %d" % k, 0, 50, shots=1, position="standing", rule="10.4.6", start="Start.", end="Stop."),
                            nohold=True, early=True))
-    return validate({"id": "cmp-final-standard", "name": "CMP Standard Final", "rulebook": "CMP", "tie_rules": "CMP",
+    return validate({"id": "cmp-final-standard", "name": "CMP Standard Final", "book": "CMP-3PAR", "rulebook": "CMP 3PAR", "tie_rules": "CMP",
                      "edition": "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)", "scoring": "decimal", "final": "standard",
                      "notes": "Added to the qualification score (10.4.3); ties for 1st-3rd shot off (10.2.9 n).", "phases": phases})
 
@@ -317,6 +330,6 @@ def cmp_airgun_final(spoken: bool = False) -> dict:
         if n in AIRGUN_OUT:
             ph["out"] = AIRGUN_OUT[n]
         phases.append(ph)
-    return validate({"id": "cmp-final-airgun", "name": "CMP Air Gun Final", "rulebook": "CMP Air Gun", "tie_rules": "CMP", "edition": AG_EDITION,
+    return validate({"id": "cmp-final-airgun", "name": "CMP Air Gun Final", "book": "CMP-AG", "rulebook": "CMP Air Gun", "tie_rules": "CMP", "edition": AG_EDITION,
                      "scoring": "decimal", "final": "airgun", "notes": "The final alone decides the places (10.1.1); every tie is shot off (10.3.5).",
                      "phases": phases})

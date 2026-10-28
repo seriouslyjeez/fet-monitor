@@ -11,10 +11,10 @@ start of every phase until the range officer, having read the command shown, pre
 phase after phase with no commands at all. Restarts (director): the
 match goes back to a phase; shots fired in the parts that were restarted stay, flagged for a decision.
 
-Moving a shooter to another target during a match (ISSF 6.10.9.2 / 6.11.3.2, CMP 7.18.3, NRA 9.2 b / 10.3.2): the
+Moving a shooter to another target during a match (ISSF 6.10.9.2 / 6.11.3.2, CMP AG 7.12.2, CMP 3PAR 7.18.3, NRA 10.10.5 c): the
 lane's series goes with them to the new target (their shots so far stay theirs), their own time stands still from the
-move until the range officer says they are ready, they then get the rulebook's extra time (ISSF 5 min, CMP 2 min, NRA
-none: the time lost is already given back by the stopped clock) and unlimited sighters until they start record again.
+move until the range officer says they are ready, they then get their rulebook's extra time (rulebooks.move_extra: ISSF and NRA 5 min,
+the CMP books 2 min, none without a rulebook) and unlimited sighters until they start record again.
 When the match's phase ends before their own time does, they finish it on their own clock ("own" phase) while the
 match goes on; a match whose time is over while someone is still finishing is in state 'overtime'.
 
@@ -29,18 +29,17 @@ from typing import Dict, List, Optional
 from . import matchformats as mf
 from . import ranking
 from .rules import guidance, lookup_text
+from . import rulebooks as rb
+from .rulebooks import interruption_time, range_interruption   # noqa: F401 (tests and callers use them from here)
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
 ACTIVE = ("ready", "running", "paused", "holding", "overtime")
 LIVE = ("running", "paused", "holding")
 ACTIVE_SQL = "('ready','running','paused','holding','overtime')"
-MOVE_EXTRA_S = {"ISSF": 300, "CMP": 120, "NRA": 0}
-REJOIN_EXTRA_MS = 120_000          # CMP 7.18.3: the time left when interrupted plus 2 minutes, on the later relay   # extra time after a move to another target, by tie-break rule set
 PACING = ("spoken", "officer", "auto")   # spoken: the console speaks every command (default); officer: the range officer
 # reads them and the clock waits for Next at every phase; auto: phases follow each other with no commands at all
 DECISIONS = ("count", "annul", "miss", "penalty2", "annul_penalty2")   # for a flagged RECORD shot; the last: too many
-# shots, annulled and 2 points off the lowest shot of the first series (ISSF 6.11.5, CMP 7.17.8 a)
-TOO_MANY_RULE = {"ISSF": "ISSF 6.11.5", "CMP": "CMP 7.17.8", "NRA": "too many shots"}
+# shots, annulled and 2 points off the lowest shot of the first series (ISSF 6.11.5, CMP AG 7.11.8, CMP 3PAR 7.17.8 a)
 SIGHTER_DECISIONS = ("ignore", "penalty2_first", "miss_first")    # for a flagged SIGHTING shot: it never becomes a record
 # shot, but rules punish some of them on the first record shot (e.g. ISSF 6.11.1.1 h, k)
 MAX_LANES = 100
@@ -90,10 +89,11 @@ class Matches:
 
     # ------------------------------------------------------------------------------------------- formats
     def formats(self) -> List[dict]:
+        """Every format, with its rulebook (custom formats saved before rulebooks were named: NONE, until edited)."""
         out = [dict(f, builtin=True) for f in mf.builtin_list()]
         for r in self.db.conn().execute("SELECT json FROM match_formats ORDER BY id"):
             out.append(dict(json.loads(r["json"]), builtin=False))
-        return out
+        return [dict(f, book=rb.book_of(f), book_name=rb.BOOKS[rb.book_of(f)]["name"], book_named="book" in f) for f in out]
 
     def format(self, fid: str) -> Optional[dict]:
         if fid in mf.BUILTIN:
@@ -103,7 +103,9 @@ class Matches:
 
     def save_format(self, fmt, by: str) -> dict:
         try:
-            clean = mf.validate(dict(fmt or {}, rulebook="Custom"))
+            if not isinstance(fmt, dict) or fmt.get("book") not in rb.BOOKS:
+                raise ValueError("choose the format's rulebook (or No rulebook): " + ", ".join(rb.BOOKS))
+            clean = mf.validate(dict(fmt, rulebook="Custom"))
         except ValueError as exc:
             raise MatchError(str(exc))
         if not clean["id"]:
@@ -133,7 +135,7 @@ class Matches:
     def create(self, name, fmt_id, lanes, by: str, override: Optional[dict] = None, paced: str = "spoken",
                fmt: Optional[dict] = None, competition_id: Optional[int] = None, relay: Optional[int] = None) -> int:
         """A match in state 'ready'. lanes: [{"device_id", "competitor"}] in firing-point order. override: a full format
-        (e.g. the standard one with a longer first sighting period, CMP 5.3.1 d); it is marked as modified."""
+        (e.g. the standard one with a longer first sighting period, CMP 3PAR 5.3.1 d); it is marked as modified."""
         if not isinstance(name, str) or not name.strip():
             raise MatchError("the match needs a name")
         base = fmt if fmt is not None else (self.format(fmt_id) if isinstance(fmt_id, str) else None)   # fmt: a competition's own
@@ -142,7 +144,7 @@ class Matches:
         fmt = base
         if override is not None:
             try:
-                fmt = mf.validate(dict(override, id=base["id"], rulebook=base["rulebook"], edition=base.get("edition", "")))
+                fmt = mf.validate(dict(override, id=base["id"], rulebook=base["rulebook"], book=rb.book_of(base), edition=base.get("edition", "")))
             except ValueError as exc:
                 raise MatchError(str(exc))
             if [(p["kind"], p["seconds"], p["shots"]) for p in fmt["phases"]] != [(p["kind"], p["seconds"], p["shots"]) for p in base["phases"]]:
@@ -195,7 +197,7 @@ class Matches:
 
     def _set_modes(self, c, m, mode: str, now: int, only: Optional[str] = None, everyone: bool = False) -> None:
         """Switch the lanes' targets; a lane on its own clock (moved shooter) is left alone unless named or everyone.
-        A lane that left for a later relay (CMP 7.18) is never switched; one that rejoins at a later phase stays in
+        A lane that left for a later relay (CMP 3PAR 7.18, CMP AG 7.12) is never switched; one that rejoins at a later phase stays in
         sighting until then."""
         cur = c.execute("SELECT phase, format_json FROM matches WHERE id=?", (m["id"],)).fetchone()
         phase = cur["phase"]
@@ -243,7 +245,7 @@ class Matches:
         c.execute("UPDATE match_lanes SET extra_ms=0, sighting=0 WHERE match_id=? AND own_phase IS NULL AND moving_since_ms IS NULL",
                   (m["id"],))
         c.execute("UPDATE match_lanes SET extra_ms=?, sighting=? WHERE match_id=? AND start_phase=? AND from_match IS NOT NULL",
-                  ((REJOIN_EXTRA_MS - p["seconds"] * 1000), 1 if p["kind"] in ("record", "stage") else 0, m["id"], i))
+                  ((rb.later_relay(rb.book_of(fmt))[0] - p["seconds"] * 1000), 1 if p["kind"] in ("record", "stage") else 0, m["id"], i))
         c.execute("UPDATE match_lanes SET extra_ms=extra_ms+carry_ms WHERE match_id=? AND start_phase=? AND from_match IS NOT NULL", (m["id"], i))
         self._log(c, m["id"], now, "phase_start", i, None, {"hold": True} if hold else None)
         if hold:
@@ -371,7 +373,7 @@ class Matches:
             self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
 
     def _all_fired(self, c, m) -> bool:
-        """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 10.4.6 c)."""
+        """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 3PAR 10.4.6 c)."""
         fmt = json.loads(m["format_json"])
         p = fmt["phases"][m["phase"]]
         if not p.get("early") or p["kind"] != "record":
@@ -385,7 +387,7 @@ class Matches:
                                              (ln["series_id"], start)).fetchone()[0] >= p["shots"] for ln in lanes)
 
     def shoot_off(self, mid: int, lanes: List[int], by: str) -> None:
-        """A tie-breaking shot for the tied firing points of a final (CMP 10.2.9 n), after the final's last shot: the
+        """A tie-breaking shot for the tied firing points of a final (CMP 3PAR 10.2.9 n), after the final's last shot: the
         match runs again for that one shot. Repeated until the tie is broken."""
         now = self.core.now_ms()
         with self.db.write() as c:
@@ -416,7 +418,7 @@ class Matches:
         for ln in self._lanes(c, mid):
             if ln["own_phase"] is None and ln["moving_since_ms"] is None and ln["extra_ms"] < 0 and m0["state"] == "running":
                 rem = self.remaining_ms(m0, now) + ln["extra_ms"]
-                if rem <= 0:                            # less time than the match (CMP 7.18.3): this shooter stops now
+                if rem <= 0:                            # less time than the match (CMP 3PAR 7.18.3, CMP AG 7.12.2): this shooter stops now
                     end = now + rem
                     c.execute("UPDATE match_lanes SET own_phase=?, own_left_ms=0, own_since_ms=NULL, extra_ms=0, sighting=0 "
                               "WHERE match_id=? AND device_id=?", (m0["phase"], mid, ln["device_id"]))
@@ -509,7 +511,7 @@ class Matches:
                 if m["state"] != "paused" or last is None or not json.loads(last["data"] or "{}").get("interruption"):
                     raise MatchError("the range is not interrupted")
                 lost = (now - last["at_ms"]) // 1000
-                extra, sighters, rule = range_interruption(rules_of(fmt), lost)
+                extra, sighters, rule = range_interruption(rb.book_of(fmt), lost)
                 c.execute("UPDATE matches SET state='running', phase_started_ms=?, phase_extra_ms=phase_extra_ms+? WHERE id=?", (now, extra * 1000, mid))
                 self._lanes_resume(c, mid, now)
                 self._log(c, mid, now, "resume", m["phase"], None, {"by": by, "interruption": True, "lost_s": lost, "extra_s": extra, "sighters": sighters, "rule": rule})
@@ -666,8 +668,8 @@ class Matches:
         self._pub(mid)
 
     def add_late(self, mid: int, device_id: str, competitor: Optional[str], by: str, competitor_id: Optional[int] = None) -> None:
-        """A shooter who arrives late joins the running match on a free target, with no extra time (ISSF 6.11.4);
-        after the preparation and sighting time they may still fire sighters, within their time."""
+        """A shooter who arrives late joins the running match on a free target, with no extra time (ISSF 6.11.4,
+        CMP AG 7.14, CMP 3PAR 7.20); after the preparation and sighting time they may still fire sighters, within their time."""
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
@@ -680,7 +682,7 @@ class Matches:
             if other:
                 raise MatchError(f"that target is in the match '{other}'")
             fmt = json.loads(m["format_json"])
-            p = fmt["phases"][m["phase"]]
+            p, late = fmt["phases"][m["phase"]], rb.rule(rb.book_of(fmt), "late")
             lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (mid,)).fetchone()[0] or 0) + 1
             name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
             c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
@@ -690,9 +692,9 @@ class Matches:
             sid = self.core._set_mode_in(c, device_id, "sighter", self._session(m, ln), now, new_series=True)
             c.execute("UPDATE series SET total=? WHERE id=?", (mf.record_shots(fmt), sid))
             c.execute("UPDATE match_lanes SET series_id=?, sighting=? WHERE match_id=? AND device_id=?", (sid, 1 if sighting else 0, mid, device_id))
-            self._log(c, mid, now, "late", m["phase"], device_id, {"competitor": name, "by": by, "rule": "ISSF 6.11.4"})
+            self._log(c, mid, now, "late", m["phase"], device_id, {"competitor": name, "by": by, "rule": late})
             if sighting:
-                self._log(c, mid, now, "sighters", m["phase"], device_id, {"rule": "ISSF 6.11.4"})
+                self._log(c, mid, now, "sighters", m["phase"], device_id, {"rule": late})
         self._pub(mid)
 
     def _resume_lane(self, c, m, ln, p, left: int, sighters: bool, now: int) -> None:
@@ -732,14 +734,14 @@ class Matches:
                 if ln["moving_since_ms"] is None:
                     raise MatchError("this shooter is not moving")
                 if seconds is None:
-                    seconds = MOVE_EXTRA_S[rules_of(fmt)]
+                    seconds = rb.move_extra(rb.book_of(fmt))[0]
                 if not isinstance(seconds, int) or isinstance(seconds, bool) or not 0 <= seconds <= 3600:
                     raise MatchError("extra time: 0 to 3600 seconds")
                 left = ln["moving_left_ms"] + seconds * 1000
                 self._resume_lane(c, m, ln, p, left, True, now)
                 self._log(c, mid, now, "lane_ready", phase, device_id, {"extra_s": seconds, "left_ms": left, "by": by})
-            elif action in ("interrupt", "malfunction") and (action == "interrupt" or rules_of(fmt) == "NRA"):
-                # the shooter's time stops: an interruption (ISSF 6.11.3, CMP 7.18, NRA 9.2 b), or an NRA disabled rifle (9.5)
+            elif action in ("interrupt", "malfunction") and (action == "interrupt" or rb.book_of(fmt) == rb.NRA):
+                # the shooter's time stops: an interruption (ISSF 6.11.3, CMP AG 7.12, CMP 3PAR 7.18, NRA 9.2 b), or an NRA disabled rifle (9.5)
                 if ln["moving_since_ms"] is not None:
                     raise MatchError("this shooter's time is already stopped")
                 if m["state"] not in LIVE or m["state"] == "holding":
@@ -752,23 +754,20 @@ class Matches:
                     raise MatchError("this shooter is not interrupted")
                 reason = self._stop_reason(c, mid, device_id)
                 lost = (now - ln["moving_since_ms"]) // 1000
-                left, sighters, rule = interruption_time(rules_of(fmt), reason, ln["moving_left_ms"], lost)
+                left, sighters, rule = interruption_time(rb.book_of(fmt), reason, ln["moving_left_ms"], lost)
                 self._resume_lane(c, m, ln, p, left, sighters, now)
                 self._log(c, mid, now, "interrupt_end", phase, device_id, {"reason": reason, "lost_s": lost, "left_ms": left, "sighters": sighters, "rule": rule, "by": by})
                 if sighters:
                     self._log(c, mid, now, "sighters", phase, device_id, {"rule": rule})
-            elif action == "malfunction":                # ISSF 6.13.4, CMP 7.19.1: the clock keeps running
-                book = rules_of(fmt)
-                allowable = seconds == 1                 # ISSF: sighters only for an allowable malfunction (the RO ticks it)
-                sighters = book == "CMP" or allowable
-                extra = 120 if book == "CMP" and self.lane_left_ms(m, ln, now) <= 300_000 else 0     # after the 5-minute warning
+            elif action == "malfunction":                # the clock keeps running (rulebooks.malfunction)
+                allowable = seconds == 1                 # the range officer allows sighters (ISSF 6.13.2.1; no rulebook)
+                sighters, extra, rule = rb.malfunction(rb.book_of(fmt), self.lane_left_ms(m, ln, now), allowable)
                 if extra:
                     col = "own_left_ms" if ln["own_phase"] is not None else "extra_ms"
                     c.execute(f"UPDATE match_lanes SET {col}={col}+? WHERE match_id=? AND device_id=?", (extra * 1000, mid, device_id))
                 if sighters and p["kind"] in ("record", "stage"):
                     c.execute("UPDATE match_lanes SET sighting=1 WHERE match_id=? AND device_id=?", (mid, device_id))
                     self._set_modes(c, m, "sighter", now, only=device_id)
-                rule = "CMP 7.19.1" if book == "CMP" else "ISSF 6.13.4"
                 self._log(c, mid, now, "malfunction", phase, device_id, {"allowable": allowable, "sighters": sighters, "extra_s": extra, "rule": rule, "by": by})
                 if sighters:
                     self._log(c, mid, now, "sighters", phase, device_id, {"rule": rule})
@@ -818,10 +817,11 @@ class Matches:
         return out
 
     def protest_minutes(self, c, m) -> int:
-        """The protest time after preliminary results: 10 minutes (ISSF 6.16.5.1, CMP 8.2); NRA: the challenge time
-        the match sets (16.1 b), per competition, 30 minutes if not set."""
-        if rules_of(json.loads(m["format_json"])) != "NRA":
-            return 10
+        """The protest time after preliminary results: 10 minutes (ISSF 6.16.5.1, CMP AG 8.1.9, CMP 3PAR 8.2); NRA (16.1 b)
+        and no rulebook: the challenge time set per competition, 30 minutes if not set."""
+        mins = rb.protest_minutes(rb.book_of(json.loads(m["format_json"])))
+        if mins is not None:
+            return mins
         r = c.execute("SELECT challenge_min FROM competitions WHERE id=?", (m["competition_id"],)).fetchone() if m["competition_id"] else None
         return r["challenge_min"] if r and r["challenge_min"] is not None else 30
 
@@ -938,7 +938,7 @@ class Matches:
             stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
             moving, own = _lane_spans(log, devs, wins)
 
-            def sighting_ok(ph, a_start, t):          # after a move, or rejoining from an earlier relay (CMP 7.18.3):
+            def sighting_ok(ph, a_start, t):          # after a move, or rejoining from an earlier relay (CMP 3PAR 7.18.3, CMP AG 7.12.2):
                 rejoin = [a_start] if ph == ln["start_phase"] and ln["from_match"] is not None else []   # unlimited sighters
                 ready = max([at for q, at in readies if q == ph and a_start <= at <= t] + rejoin, default=None)   # until record starts
                 return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
@@ -971,9 +971,9 @@ class Matches:
                 elif w["superseded"]:
                     why, code = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted", "restarted"
                 elif w["phase"] < ln["start_phase"]:
-                    why, code = f"before this shooter rejoins at {fmt['phases'][ln['start_phase']]['label'].lower()} (CMP 7.18)", "waiting"
+                    why, code = f"before this shooter rejoins at {fmt['phases'][ln['start_phase']]['label'].lower()}", "waiting"
                 elif any(ph == w["phase"] and at <= t and at >= attempt_start[(w["phase"], w["attempt"])] for ph, at in stops):
-                    why, code = "after this shooter's own time (CMP 7.18.3)", "after_own_time"
+                    why, code = "after this shooter's own time", "after_own_time"
                 elif ln["out_place"] is not None and t >= ln["out_ms"] and ln["out_place"] > 1:
                     why, code = "after being eliminated", "eliminated"
                 elif fmt["phases"][w["phase"]].get("lanes") is not None and ln["lane"] not in fmt["phases"][w["phase"]]["lanes"]:
@@ -997,14 +997,14 @@ class Matches:
                         why, code = "a sighting shot after record started", "sighter_after_record"
                     elif rec:
                         key = (w["phase"], w["attempt"])
-                        counted[key] = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0) + 1   # CMP 7.18: shots already fired
+                        counted[key] = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0) + 1   # a later relay: shots already fired
                         if counted[key] > p["shots"]:
                             why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
                 if why and s["id"] is not None:
                     out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
                                 "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
                                 "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"],
-                                "guide": guidance(code, kind, s["stream"], rules_of(fmt))})
+                                "guide": guidance(code, kind, s["stream"], rb.book_of(fmt))})
         return out
 
     def _clock(self, m, now: int) -> dict:
@@ -1051,7 +1051,7 @@ class Matches:
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
-                "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
+                "move_extra_s": rb.move_extra(rb.book_of(fmt))[0], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)),
                 "interrupted": m["state"] == "paused" and bool(json.loads((c.execute("SELECT data FROM match_log WHERE match_id=? AND kind='pause' "
                                                                                      "ORDER BY id DESC LIMIT 1", (mid,)).fetchone() or {"data": "{}"})["data"] or "{}").get("interruption")),
                 "flags": self.flags(c, m) if m["state"] != "ready" else [],
@@ -1062,7 +1062,7 @@ class Matches:
     LOG_TEXT = {"start": "Match started", "end": "Match finished", "abort": "Match stopped", "pause": "Clock paused", "resume": "Clock resumed",
                 "restart": "Restarted", "extra": "Extra time for everyone", "pacing": "Commands changed", "move": "Shooter moved to another target",
                 "lane_ready": "Moved shooter ready", "lane_extra": "Extra time for this shooter", "lane_stop": "Shooter's own time ended",
-                "left_relay": "Sent to a later relay (CMP 7.18)", "shoot_off": "Shoot-off", "place": "Place decided", "joins_relay": "Joins from an earlier relay (CMP 7.18)",
+                "left_relay": "Sent to a later relay", "shoot_off": "Shoot-off", "place": "Place decided", "joins_relay": "Joins from an earlier relay",
                 "posted": "Preliminary results posted", "official": "Results made official", "reopen": "Official results reopened",
                 "interrupt": "Shooter's time stopped", "interrupt_end": "Shooter's time runs again", "malfunction": "Malfunction",
                 "late": "Late arrival joined", "sighters": "Sighters allowed"}
@@ -1073,7 +1073,7 @@ class Matches:
              "justified": "justified", "not_justified": "not justified", "found": "found", "not_found": "not found (a miss)"}
 
     def incidents(self, mid: int) -> dict:
-        """The Range Incident Report (ISSF 6.10.4 h, CMP 6.5, NRA Range Officer's Notation): every irregularity,
+        """The Range Incident Report (ISSF 6.10.4 h, CMP 3PAR 6.5, CMP AG 7.11 RIF, NRA Range Officer's Notation): every irregularity,
         decision, correction, move, interruption and extra time of the match, in time order, with who did it."""
         c = self.db.conn()
         m = self._row(c, mid)
@@ -1085,7 +1085,7 @@ class Matches:
                 lane_of[d] = ln["lane"]
             who_of[ln["lane"]] = ln["competitor"] or ""
         label = lambda i: fmt["phases"][i]["label"] if i is not None and 0 <= i < len(fmt["phases"]) else ""
-        rows = []
+        rows, later = [], rb.later_relay(rb.book_of(fmt))[1]
         for r in c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (mid,)):
             k = r["kind"]
             if k not in self.LOG_TEXT:
@@ -1097,7 +1097,7 @@ class Matches:
                       "left_relay": "%s record shots fired, %s s left" % (d.get("shots"), (d.get("left_ms") or 0) // 1000)}.get(k, label(r["phase"]) if k in ("pause", "resume") else "")
             lane = lane_of.get(r["device_id"]) if r["device_id"] else None
             rows.append({"at_ms": r["at_ms"], "lane": lane, "competitor": who_of.get(lane, ""), "what": self.LOG_TEXT[k], "detail": detail,
-                         "rule": "CMP 7.18" if k in ("left_relay", "joins_relay") else "", "by": d.get("by", "")})
+                         "rule": (later or "") if k in ("left_relay", "joins_relay") else d.get("rule") or "", "by": d.get("by", "")})
         decided = {r["shot_id"]: r for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (mid,))}
         if m["state"] != "ready":
             for f in self.flags(c, m):
@@ -1121,7 +1121,7 @@ class Matches:
                          "what": x["kind"].replace("_", " ").capitalize() + (" · %s shot %s" % ("record" if shot["stream"] == "scored" else "sighting", shot["series_no"]) if shot else ""),
                          "detail": detail, "rule": d.get("rule") or "", "by": x["by"] or ""})
         rows.sort(key=lambda r: r["at_ms"])
-        return {"match_id": mid, "name": m["name"], "format_name": fmt["name"], "rulebook": rules_of(fmt), "started_ms": m["started_ms"],
+        return {"match_id": mid, "name": m["name"], "format_name": fmt["name"], "rulebook": rb.BOOKS[rb.book_of(fmt)]["name"], "started_ms": m["started_ms"],
                 "ended_ms": m["ended_ms"], "official_ms": m["official_ms"], "rows": rows}
 
     def lane_clock(self, c, m, ln, now: int) -> dict:
@@ -1129,7 +1129,7 @@ class Matches:
         range officer presses Ready), "own" (finishing their phase after the match went on), "extra" (more time than the
         match in this phase) or "" (the match clock). moved_from: the targets they left, oldest first."""
         fmt = json.loads(m["format_json"])
-        if ln["left_ms"] is not None or (ln["start_phase"] > m["phase"] and m["state"] in LIVE):   # CMP 7.18
+        if ln["left_ms"] is not None or (ln["start_phase"] > m["phase"] and m["state"] in LIVE):   # a later relay
             left = ln["left_ms"] is not None
             relay = c.execute("SELECT relay FROM matches WHERE id=?", (ln["to_match"] if left else ln["from_match"],)).fetchone()
             return {"own": "left" if left else "waiting", "own_label": fmt["phases"][ln["start_phase"]]["label"] if not left else None,
@@ -1181,7 +1181,7 @@ class Matches:
                       "in_record": self._switched(c, r["id"], r["phase"], device_id) if r["phase"] >= 0 else False})
         ln = self._lane(c, r["id"], device_id)
         lc = self.lane_clock(c, r, ln, now)
-        if lc["own"] == "waiting":                      # CMP 7.18: rejoining at a later phase
+        if lc["own"] == "waiting":                      # a later relay: rejoining at a later phase
             clock.update(state="paused", label="Waiting: you start at " + lc["own_label"], remaining_ms=0, ends_at_ms=None, kind=None)
         elif lc["own"] == "moving":
             clock.update(state="paused", label={"interrupt": "Interrupted", "malfunction": "Rifle being repaired"}.get(lc["stop"], "Moving to another target") + ": your time is stopped", remaining_ms=lc["own_remaining_ms"],
@@ -1259,7 +1259,7 @@ class Matches:
     @staticmethod
     def _decision_penalties(m, ln, flags: Dict[int, dict]) -> List[dict]:
         """2 points for each record shot the director annulled as one too many (decision annul_penalty2)."""
-        rule = TOO_MANY_RULE.get(rules_of(json.loads(m["format_json"])), "too many shots")
+        rule = rb.rule(rb.book_of(json.loads(m["format_json"])), "too_many") or "too many shots"
         return [{"points": 2, "rule": rule, "note": "shot %s: one too many" % f["n"], "shot_id": None}
                 for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "scored" and f["decision"] == "annul_penalty2"]
 
@@ -1275,7 +1275,7 @@ class Matches:
                 why = ("crossfire from firing point %d" % a["from_lane"] if a["from_lane"] else "crossfire (source unknown)") \
                     if a["kind"] == "crossfire" else (a["note"] or "annulled")
                 removed.append({"n": r["series_no"], "tenths": 0 if r["is_miss"] else r["tenths"], "why": why})
-        book = rules_of(json.loads(m["format_json"]))
+        book = rb.book_of(json.loads(m["format_json"]))
         dq = dict(eff["dq"], text=lookup_text(eff["dq"]["rule"], book)) if eff["dq"] else None
         extras = {"dq": dq, "removed": sorted(removed, key=lambda x: x["n"] or 0),
                   "penalties": [{"points": p["points"], "rule": p["rule"], "note": p["note"], "text": lookup_text(p["rule"], book)}
@@ -1309,7 +1309,7 @@ class Matches:
         rows = ranking.rank(entries, rules, decimal)
         for r in rows:
             r.pop("summary", None)
-        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
+        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules, "book_name": rb.BOOKS[rb.book_of(fmt)]["name"],
                 "record_shots": mf.record_shots(fmt), "state": m["state"], "clock": self._clock(m, self.core.now_ms()),
                 "provisional_ranking": False, "rows": rows, "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"]}
@@ -1333,9 +1333,8 @@ class Matches:
 
 
 def rules_of(fmt: dict) -> str:
-    """A format's tie-break rules (older stored formats have none: use their rulebook's, ISSF for custom ones)."""
-    r = fmt.get("tie_rules") or {"ISSF": "ISSF", "CMP": "CMP", "NRA": "NRA"}.get(fmt.get("rulebook"), "ISSF")
-    return r if r in ranking.RULES else "ISSF"
+    """A format's tie-break rules: its rulebook's (rulebooks.tie_of)."""
+    return rb.tie_of(fmt)
 
 
 def is_inner(tenths: int) -> bool:
@@ -1393,32 +1392,3 @@ def _lane_spans(log, devs, wins):
     for o in own:
         o["superseded"] = any(rid > o["start_id"] and to <= o["phase"] for to, rid in restarts)
     return moving, own
-
-
-def interruption_time(book: str, reason: str, left_ms: int, lost_s: int) -> tuple:
-    """(time left, sighters?, rule) for a shooter whose interruption (or NRA disabled rifle) ended after lost_s seconds;
-    left_ms: what they had left when it began (their clock stood still since).
-    ISSF 6.11.3.1: over 3 minutes, the time lost (in the last 5 minutes: the time left + 1 minute); up to 3 minutes the
-    time lost is not given back; 6.11.3.2: over 5 minutes, + 5 minutes and unlimited sighters.
-    CMP 7.18.1-2: the time lost; over 5 minutes + 2 minutes and unlimited sighters.
-    NRA 9.2 b: over 3 minutes equal time, over 5 unlimited sighters; 9.5 (disabled rifle): the time that remained, sighters."""
-    if reason == "malfunction":                              # only NRA stops the clock for a malfunction
-        return left_ms, True, "NRA 9.5"
-    if book == "CMP":
-        return (left_ms + 120_000, True, "CMP 7.18.2") if lost_s > 300 else (left_ms, False, "CMP 7.18.1")
-    if book == "NRA":
-        back = left_ms if lost_s > 180 else max(0, left_ms - lost_s * 1000)
-        return back, lost_s > 300, "NRA 9.2 b"
-    if lost_s <= 180:
-        return max(0, left_ms - lost_s * 1000), False, "ISSF 6.11.3.1"
-    back = left_ms + (60_000 if left_ms <= 300_000 else 0)
-    return (back + 300_000, True, "ISSF 6.11.3.2") if lost_s > 300 else (back, False, "ISSF 6.11.3.1")
-
-
-def range_interruption(book: str, lost_s: int) -> tuple:
-    """(extra seconds, sighters?, rule) for the whole range after an interruption of lost_s seconds (the clock was
-    stopped, so the time lost is given back): ISSF 6.10.9.1 / 6.11.3.2 over 5 minutes + 5 minutes and sighters;
-    CMP 7.18.4 over 5 minutes + 2 minutes and sighters; NRA 9.2 b over 5 minutes sighters."""
-    if lost_s <= 300:
-        return 0, False, {"ISSF": "ISSF 6.11.3.1", "CMP": "CMP 7.18.4", "NRA": "NRA 9.2 b"}[book]
-    return {"ISSF": (300, True, "ISSF 6.10.9.1, 6.11.3.2"), "CMP": (120, True, "CMP 7.18.4"), "NRA": (0, True, "NRA 9.2 b")}[book]

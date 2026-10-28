@@ -74,7 +74,7 @@ class MatchHttpBase(unittest.TestCase):
         return st, cookie
 
     def fmt(self, who="md"):
-        st, f, _ = self.req("POST", "/api/v1/match/formats", {"format": {"name": "Quick", "phases": [
+        st, f, _ = self.req("POST", "/api/v1/match/formats", {"format": {"name": "Quick", "book": "ISSF", "phases": [
             {"kind": "sight", "label": "Sighting", "seconds": 60}, {"kind": "stage", "label": "Stage", "seconds": 120, "shots": 2}]}}, who)
         self.assertEqual(st, 200, f)
         return f["id"]

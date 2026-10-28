@@ -174,13 +174,18 @@ class ReviewsPenaltiesDq(CorrCase):
 class RuleText(CorrCase):
     def test_references_become_text(self):
         from fetserver.rules import explain
-        for ref, book, want in (("ISSF 6.11.6.3", "CMP", "2 points off the firer's first series"), ("6.11.6.3", "ISSF", "first series"),
-                                ("issf 6.12.6.1a", "CMP", "Open rule violation"), ("ISSF 6.12.6.1 (b)", "CMP", "concealed"),
-                                ("Rule 7.22.2", "CMP", "two match officials"), ("USAS 6.16.5.2 c", "NRA", "not upheld"),
+        for ref, book, want in (("ISSF 6.11.6.3", "CMP-3PAR", "2 points off the firer's first series"), ("6.11.6.3", "ISSF", "first series"),
+                                ("issf 6.12.6.1a", "CMP-3PAR", "Open rule violation"), ("ISSF 6.12.6.1 (b)", "CMP-AG", "concealed"),
+                                ("Rule 7.22.2", "CMP-3PAR", "two match officials"), ("USAS 6.16.5.2 c", "NRA", "not upheld"),
+                                ("CMP 3PAR 7.22.2", "ISSF", "two match officials"), ("CMP 7.11.8", "CMP-AG", "first 10-shot series"),
+                                ("CMP 7.22.2", "NRA", "two match officials"), ("CMP AG 9.2 c", "ISSF", "Disqualification"),
+                                ("cmp air gun 7.11.4", "NONE", "Double loading"), ("7.12.2", "CMP-AG", "plus 2 minutes"),
                                 ("NRA 10.10.4 a", "ISSF", "crossfired"), ("6.11.6.3 b", "ISSF", "first series")):
             self.assertIn(want, explain(ref, book)["text"] or "", ref)
         for ref in ("ISSF 99.1", "local rule 4", "", None, "6.12.6.1 z"):
             self.assertIsNone(explain(ref, "ISSF")["text"], ref)
+        for ref, book in (("7.22.2", "CMP-AG"), ("7.11.8", "CMP-3PAR"), ("6.11.5", "NONE")):    # never looked up in another book
+            self.assertIsNone(explain(ref, book)["text"], ref)
 
 
 class TeamWithADisqualifiedMember(CorrCase):
@@ -257,18 +262,30 @@ class DecisionGuidance(CorrCase):
 
     def test_each_rulebook(self):
         from fetserver.rules import guidance
-        cases = [(("before_cmd", "record", "sighter", "CMP"), ("CMP 7.17.2", "penalty2_first")),
-                 (("before_cmd", "sight", "sighter", "CMP"), ("CMP 7.17.1", "miss_first")),
+        cases = [(("before_cmd", "record", "sighter", "CMP-3PAR"), ("CMP 3PAR 7.17.2", "penalty2_first")),
+                 (("before_cmd", "sight", "sighter", "CMP-3PAR"), ("CMP 3PAR 7.17.1", "miss_first")),
+                 (("before_cmd", "record", "sighter", "CMP-AG"), ("CMP AG 7.11.2", "miss_first")),
+                 (("before_cmd", "record", "scored", "CMP-AG"), ("CMP AG 7.11.2", "miss")),
+                 (("before_cmd", "sight", "sighter", "CMP-AG"), ("CMP AG 7.11.1", None)),
+                 (("after_end", None, "scored", "CMP-AG"), ("CMP AG 7.11.3", "annul")),
+                 (("after_end", None, "sighter", "CMP-AG"), ("CMP AG 7.11.3", "ignore")),
+                 (("no_fire", "changeover", "sighter", "CMP-AG"), ("CMP AG 7.11.3", "ignore")),
+                 (("too_many", "record", "scored", "CMP-AG"), ("CMP AG 7.11.8", "annul_penalty2")),
+                 (("sighter_in_record", "record", "sighter", "CMP-AG"), (None, None)),
+                 (("paused", "record", "scored", "CMP-AG"), (None, None)),
+                 (("paused", "record", "scored", "NRA"), (None, None)),
+                 (("too_many", "record", "scored", "NONE"), (None, None)),
+                 (("before_start", None, "scored", "NONE"), (None, None)),
                  (("before_start", None, "sighter", "NRA"), ("NRA 14.5", None)),
                  (("sighter_after_record", "stage", "sighter", "NRA"), ("NRA 9.2 d", "penalty2_first")),
                  (("sighter_in_record", "record", "sighter", "ISSF"), ("ISSF 6.11.1.2 d", None)),
-                 (("paused", "record", "scored", "CMP"), ("CMP 7.17.3", "count")),
+                 (("paused", "record", "scored", "CMP-3PAR"), ("CMP 3PAR 7.17.3", "count")),
                  (("after_end", None, "scored", "ISSF"), ("ISSF 6.11.1.3 a", "miss")),
-                 (("no_fire", "changeover", "sighter", "CMP"), ("CMP 7.17.2", None)),
+                 (("no_fire", "changeover", "sighter", "CMP-3PAR"), ("CMP 3PAR 7.17.2", None)),
                  (("restarted", "record", "scored", "ISSF"), (None, "annul")),
-                 (("moving", "record", "sighter", "CMP"), (None, "ignore")),
+                 (("moving", "record", "sighter", "CMP-3PAR"), (None, "ignore")),
                  (("before_start", None, "scored", "ISSF"), ("ISSF 6.11.1.1 h", "miss")),
-                 (("too_many", "record", "scored", "Custom"), ("ISSF 6.11.5", "annul_penalty2")),
+                 (("too_many", "record", "scored", "CMP"), ("CMP 3PAR 7.17.8", "annul_penalty2")),     # an old format's "CMP": 3PAR
                  (("too_many", "record", "scored", "NRA"), ("NRA 10.10.4 d", "annul"))]
         for args, (rule, suggest) in cases:
             g = guidance(*args)

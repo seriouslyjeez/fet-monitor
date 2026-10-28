@@ -640,7 +640,7 @@ console.log('OK');
   assert(o.includes('data-k="protest"') && !o.includes('data-k="override"') && !o.includes('mcvoid') && !o.includes('data-k="dq"'), 'officer: mark only');
   assert(dsh.includes('data-k="override"') && dsh.includes('data-k="crossfire"') && dsh.includes('data-k="dq"') && dsh.includes('data-k="settle"'), 'director: all tools, settle');
   const settle = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'settle', shot: L.shots.find(x => x.corrections.length).id, corr: L.shots.find(x => x.corrections.length).corrections[0].id, outcome: 'not_upheld'}}}));
-  assert(settle.includes('2 points off this shot (CMP 8.4 c)') || settle.includes('2 points off this shot (ISSF 6.16.5.2 c)'), 'not upheld: the -2 suggested with the rule');
+  assert(settle.includes('2 points off this shot (ISSF 6.16.5.2 c)'), 'not upheld: the -2 suggested with the rule');
   const cf = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'crossfire', shot: L.shots[0].id}}}));
   assert(cf.includes('<option value="">unknown</option>') && cf.includes('Firing point 1') && !cf.includes('<option value="2"'), 'crossfire: the other firing points or unknown');
   console.log('corrections OK');
@@ -651,8 +651,8 @@ console.log('OK');
   const {officialPanel} = X;
   const prov = officialPanel({state: 'done', open_items: ['1 flagged shot not decided'], ended_ms: 0}, true);
   assert(prov.includes('Results: provisional') && prov.includes('1 flagged shot not decided') && prov.includes('data-a="post"') && !prov.includes('data-a="make"'), 'post first');
-  const now = Date.now(), running = officialPanel({state: 'done', open_items: [], results_posted_ms: now, protest_until_ms: now + 5 * 60000, tie_rules: 'CMP'}, true);
-  assert(running.includes('Protest time until') && running.includes('data-a="override"') && !running.includes('data-a="make"') && running.includes('CMP 8.2'), 'during the protest time: only the override');
+  const now = Date.now(), running = officialPanel({state: 'done', open_items: [], results_posted_ms: now, protest_until_ms: now + 5 * 60000, rb: {protest_time: 'CMP 3PAR 8.2: 10 minutes'}}, true);
+  assert(running.includes('Protest time until') && running.includes('data-a="override"') && !running.includes('data-a="make"') && running.includes('CMP 3PAR 8.2'), 'during the protest time: only the override');
   const over = officialPanel({state: 'done', open_items: [], results_posted_ms: now - 20 * 60000, protest_until_ms: now - 60000}, true);
   assert(over.includes('The protest time is over') && /data-a="make">/.test(over), 'afterwards: make official');
   assert(/data-a="make" disabled/.test(officialPanel({state: 'done', open_items: ['x'], results_posted_ms: 1, protest_until_ms: 2}, true)), 'still open items: disabled');
@@ -678,19 +678,20 @@ console.log('OK');
   console.log('guidance OK');
 }
 
-// CMP 7.18: the results say where the shooter started and finished; the move window offers the later relay
+// a later relay (CMP 3PAR 7.18): the results say where the shooter started and finished; the move window offers the later relay
 {
   const {moveSheet} = X;
   const one = JSON.parse(JSON.stringify(C)), e = one.classes[0].individuals[0];
   e.moved_from = {relay: 1, lane: 3}; e.relay = 2; e.lane = 1;
-  assert(resultsPage(one).includes('1 · 3 → 2 · 1') && scoreCards(one, String(e.id)).includes('firing point 3, then (CMP 7.18)'));
-  const d = Object.assign({}, D.ready, {competition_id: 5, relay: 1});
+  assert(resultsPage(one).includes('1 · 3 → 2 · 1') && scoreCards(one, String(e.id)).includes('firing point 3, then'));
+  const d = Object.assign({}, D.ready, {competition_id: 5, relay: 1, rb: {later_relay: 'CMP 3PAR 7.18, 7.18.3', later_relay_text: 'CMP 3PAR 7.18, 7.18.3: their shots so far stay'}});
   const comps = [{id: 5, relays: [{id: 1, relay: 1, state: 'running'}, {id: 9, relay: 2, state: 'ready'}, {id: 10, relay: 3, state: 'running'}]}];
   const base = {detail: d, targets: D.mtargets, comps: comps};
   const plain = moveSheet(Object.assign({}, base, {movep: {from: 'comp-2'}}));
-  assert(plain.includes('Finish on a later relay (CMP 7.18)') && !plain.includes('data-mvrel'), 'the choice is offered');
+  assert(plain.includes('Finish on a later relay (CMP 3PAR 7.18, 7.18.3)') && !plain.includes('data-mvrel'), 'the choice is offered');
+  assert(moveSheet(Object.assign({}, base, {detail: Object.assign({}, d, {rb: {later_relay: null}}), movep: {from: 'comp-2'}})).includes('Finish on a later relay</button>'), 'other books: offered, no rule cited');
   const rel = moveSheet(Object.assign({}, base, {movep: {from: 'comp-2', mode: 'relay'}}));
-  assert(rel.includes('<option value="">a new relay</option>') && rel.includes('value="9"') && !rel.includes('value="10"') && rel.includes('Send to the later relay'), 'later relays that have not started, or a new one');
+  assert(rel.includes('<option value="">a new relay</option>') && rel.includes('value="9"') && !rel.includes('value="10"') && rel.includes('Send to the later relay') && rel.includes('CMP 3PAR 7.18, 7.18.3: their shots'), 'later relays that have not started, or a new one');
   assert(!moveSheet(Object.assign({}, base, {detail: Object.assign({}, d, {competition_id: null}), movep: {from: 'comp-2'}})).includes('CMP 7.18'), 'single matches: no relays');
   console.log('7.18 OK');
 }
@@ -752,12 +753,17 @@ console.log('OK');
 // finals: the competition panel, the console's standings and shoot-off, the results table
 {
   const {finalsPanel, finalPanel, finalTable} = X;
-  const comp = {competitors: [{class: 'Sporter'}, {class: 'Precision'}], relays: [{match_id: 4, relay: 1, state: 'done'}, {match_id: 5, relay: 2, state: 'running'}], finals: []};
+  const comp = {competitors: [{class: 'Sporter'}, {class: 'Precision'}], relays: [{match_id: 4, relay: 1, state: 'done'}, {match_id: 5, relay: 2, state: 'running'}], finals: [],
+    rb: {name: 'CMP Air Gun', title: 'CMP AG', finals: ['airgun']}};
   const p = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}, {device_id: 't2', name: '<b>L2</b>', in_match: true}], fin: {}}, true);
   assert(p.includes('data-fintgt="t1"') && !p.includes('data-fintgt="t2"') && p.includes('value="Precision"') && /data-act="mcfinal" disabled/.test(p), 'free targets, classes; nothing picked yet');
-  assert(!p.includes('mcfinalrelay') && p.includes('random draw'), 'the Air Gun Final (default): no relay finals; a draw');
-  const ps = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}], fin: {kind: 'standard'}}, true);
+  assert(!p.includes('mcfinalrelay') && p.includes('random draw') && !p.includes('data-v="standard"'), 'Air Gun rules: only its final; no relay finals; a draw');
+  const issf = finalsPanel(Object.assign({}, comp, {rb: {name: 'ISSF', finals: []}}), {targets: [], fin: {}}, true);
+  assert(issf.includes('ISSF finals are not built yet') && !issf.includes('mcfinkind'), 'a book without a built final offers none');
+  const par = Object.assign({}, comp, {rb: {name: 'CMP 3PAR', finals: ['standard']}});
+  const ps = finalsPanel(par, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}], fin: {kind: 'airgun'}}, true);
   assert(ps.includes('data-act="mcfinalrelay" data-id="4"') && !ps.includes('data-id="5"'), 'Standard: a final for a finished relay only');
+  assert(!ps.includes('data-v="airgun"') && ps.includes('Standard Final (CMP 3PAR 10.4)'), '3PAR rules: the Standard Final only, even if another was picked');
   assert(!finalsPanel(comp, {targets: []}, false).includes('mcfinal'), 'officers see the list only');
   const f = {name: 'L - final', shoot_off_needed: [[1, 2]], rows: [
     {place: 1, tied: true, pos: 'A', name: '<i>AMES</i>', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},

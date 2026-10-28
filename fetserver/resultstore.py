@@ -20,6 +20,7 @@ from typing import Dict, List
 from . import matchformats as mf
 from . import ranking
 from .matches import LIVE, MatchError, rules_of
+from . import rulebooks as rb
 
 KEY_RE = re.compile(r"^([cma]?)(\d{1,9})$")
 MAX_DELETE = 200
@@ -82,7 +83,7 @@ class ResultStore:
         ranked = ranking.rank(rows, rules, decimal)
         for e in ranked:
             e.pop("summary", None)
-        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
+        return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules, "book_name": rb.BOOKS[rb.book_of(fmt)]["name"],
                 "record_shots": mf.record_shots(fmt), "team_size": 0, "best_count": False,
                 "relays": [{"match_id": mid, "relay": None, "state": m["state"], "clock": self.matches._clock(m, self.core.now_ms())}],
                 "classes": [{"name": "", "individuals": ranked, "teams": []}], "official_ms": m["official_ms"],

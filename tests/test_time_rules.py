@@ -1,5 +1,5 @@
-"""Time rules: interruptions of one shooter or the whole range (ISSF 6.11.3, 6.10.9.1; CMP 7.18.1-4; NRA 9.2 b),
-malfunctions (ISSF 6.13.4, CMP 7.19.1, NRA 9.5) and late arrival (ISSF 6.11.4)."""
+"""Time rules: interruptions of one shooter or the whole range (ISSF 6.11.3, 6.10.9.1; CMP 3PAR 7.18.1-4; CMP AG 7.12;
+NRA 9.2 b, 10.3.2), malfunctions (ISSF 6.13.4, CMP 3PAR 7.19.1, CMP AG 7.13, NRA 9.5) and late arrival (ISSF 6.11.4)."""
 from fetserver.matches import MatchError, interruption_time, range_interruption
 from tests.test_matches import MatchCase
 
@@ -11,17 +11,34 @@ class Rules(MatchCase):
                  (("ISSF", "interrupt", L, 200), (L, False, "ISSF 6.11.3.1")),               # the time lost
                  (("ISSF", "interrupt", 240_000, 200), (300_000, False, "ISSF 6.11.3.1")),   # in the last 5 min: + 1 min
                  (("ISSF", "interrupt", L, 400), (L + 300_000, True, "ISSF 6.11.3.2")),
-                 (("CMP", "interrupt", L, 100), (L, False, "CMP 7.18.1")),
-                 (("CMP", "interrupt", L, 400), (L + 120_000, True, "CMP 7.18.2")),
+                 (("CMP-3PAR", "interrupt", L, 100), (L, False, "CMP 3PAR 7.18.1")),       # under 5 minutes: the time lost
+                 (("CMP-3PAR", "interrupt", L, 400), (L + 120_000, True, "CMP 3PAR 7.18.2")),
+                 (("CMP-AG", "interrupt", L, 60), (L - 60_000, False, "CMP AG 7.12.1")),     # up to 1 minute: not given back
+                 (("CMP-AG", "interrupt", L, 61), (L, False, "CMP AG 7.12.1")),
+                 (("CMP-AG", "interrupt", L, 300), (L, False, "CMP AG 7.12.1")),
+                 (("CMP-AG", "interrupt", L, 301), (L + 120_000, True, "CMP AG 7.12.2")),
+                 (("NONE", "interrupt", L, 400), (L, False, None)),                        # the match director decides the rest
                  (("NRA", "interrupt", L, 100), (L - 100_000, False, "NRA 9.2 b")),
                  (("NRA", "interrupt", L, 400), (L, True, "NRA 9.2 b")),
                  (("NRA", "malfunction", L, 900), (L, True, "NRA 9.5"))]
         for args, want in cases:
             self.assertEqual(interruption_time(*args), want, args)
         self.assertEqual(range_interruption("ISSF", 400), (300, True, "ISSF 6.10.9.1, 6.11.3.2"))
-        self.assertEqual(range_interruption("CMP", 400), (120, True, "CMP 7.18.4"))
-        self.assertEqual(range_interruption("NRA", 400), (0, True, "NRA 9.2 b"))
-        self.assertEqual(range_interruption("CMP", 200)[:2], (0, False))
+        self.assertEqual(range_interruption("CMP-3PAR", 400), (120, True, "CMP 3PAR 7.18.4"))
+        self.assertEqual(range_interruption("CMP-AG", 301), (120, True, "CMP AG 7.12.3"))
+        self.assertEqual(range_interruption("CMP-AG", 300), (0, False, "CMP AG 7.12.3"))
+        self.assertEqual(range_interruption("NRA", 400), (0, True, "NRA 10.3.2"))
+        self.assertEqual(range_interruption("NONE", 400), (0, False, None))
+        self.assertEqual(range_interruption("CMP-3PAR", 200)[:2], (0, False))
+
+    def test_malfunction_by_rulebook(self):
+        from fetserver.rulebooks import malfunction
+        self.assertEqual(malfunction("CMP-AG", 300_000, False), (True, 120, "CMP AG 7.13"))          # the last 5 minutes
+        self.assertEqual(malfunction("CMP-AG", 300_001, False), (True, 0, "CMP AG 7.13"))
+        self.assertEqual(malfunction("CMP-3PAR", 100_000, False), (True, 120, "CMP 3PAR 7.19.1"))
+        self.assertEqual(malfunction("ISSF", 100_000, False), (False, 0, "ISSF 6.13.4"))
+        self.assertEqual(malfunction("ISSF", 100_000, True), (True, 0, "ISSF 6.13.4"))
+        self.assertEqual(malfunction("NONE", 100_000, True), (True, 0, None))
 
 
 class OneShooter(MatchCase):
@@ -79,8 +96,8 @@ class Malfunctions(MatchCase):
         return mid, next(l for l in self.m.detail(mid)["lanes"])
 
     def test_cmp_two_minutes_after_the_five_minute_warning(self):
-        mid, ln = self.run_one(self.m.save_format({"name": "CMPish", "tie_rules": "CMP", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 5}]}, "d")["id"], 400)
-        self.assertEqual((ln["own"], ln["sighting"]), ("extra", True), "200 s left: +2 min (7.19.1), sighters on request")
+        mid, ln = self.run_one(self.m.save_format({"name": "CMPish", "book": "CMP-3PAR", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 5}]}, "d")["id"], 400)
+        self.assertEqual((ln["own"], ln["sighting"]), ("extra", True), "200 s left: +2 min (3PAR 7.19.1), sighters on request")
         self.assertEqual(ln["own_remaining_ms"], 320_000)
 
     def test_nra_disabled_rifle_stops_the_clock(self):

@@ -3,7 +3,7 @@ relays. Each relay is a match (matches.py: its own clock and lanes); results and
 not aborted, ranked per class with the format's tie-break rules (ranking.py).
 
 Teams: competitors with the same team name (within a class). The team size comes from the format's rulebook (ISSF 3,
-6.11.10; CMP 4, 3.2; NRA set by the program, 4 suggested) and can be changed. With best_count on (CMP 3.2.2 c,
+6.11.10; CMP 3PAR 4, 3.2; CMP AG 2-4, 6.4.6; NRA set by the program, 4 suggested) and can be changed. With best_count on (CMP 3PAR 3.2.2 c,
 "Best-Four-Count Teams"), a team may have more members and its best `team_size` scores count; otherwise a team must
 have exactly team_size members. Teams that do not qualify are listed, unranked, with the reason.
 """
@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 from . import matchformats as mf
 from . import ranking
 from .matches import ACTIVE, PACING, MatchError, own_clock, rules_of
+from . import rulebooks as rb
 
 MAX_COMPETITORS = 500
 
@@ -51,7 +52,7 @@ class Competitions:
         fmt = base
         if override is not None:
             try:
-                fmt = mf.validate(dict(override, id=base["id"], rulebook=base["rulebook"], edition=base.get("edition", ""),
+                fmt = mf.validate(dict(override, id=base["id"], rulebook=base["rulebook"], book=rb.book_of(base), edition=base.get("edition", ""),
                                        tie_rules=rules_of(base)))
             except ValueError as exc:
                 raise MatchError(str(exc))
@@ -259,10 +260,11 @@ class Competitions:
         self.matches._pub(match_id)
 
     def finish_on_later_relay(self, mid: int, device_id: str, to_match, to_device: str, by: str) -> int:
-        """CMP 7.18: a shooter whose target failed finishes the match on a later relay. Their shots so far stay on this
-        relay; on the later one (to_match: a relay that has not started, or None for a new relay) they wait until the
-        phase they left, then get the time they had left there plus 2 minutes (7.18.3), sighters first, and only the
-        record shots still to fire. Returns the later relay's match id."""
+        """A shooter whose target failed finishes the match on a later relay (CMP 3PAR 7.18, CMP AG 7.12; other books do
+        not cover it: the match director decides). Their shots so far stay on this relay; on the later one (to_match: a
+        relay that has not started, or None for a new relay) they wait until the phase they left, then get the time they
+        had left there plus the book's extra time (rulebooks.later_relay: 2 minutes in the CMP books, else none),
+        sighters first, and only the record shots still to fire. Returns the later relay's match id."""
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self.matches._row(c, mid)
@@ -338,10 +340,10 @@ class Competitions:
         self.matches.add_late(mid, device_id, display_name(p), by, competitor_id)
         self._pub(m["competition_id"])
 
-    # ------------------------------------------------------------------------------------------- finals (CMP 10)
+    # ------------------------------------------------------------------------------------------- finals (CMP 3PAR 10, CMP AG 10)
     def create_final(self, cid: int, kind: str, devices: List[str], by: str, cls: Optional[str] = None, n: Optional[int] = None,
                      for_relay: Optional[int] = None, paced: str = "officer") -> int:
-        """A final. Standard (CMP 10.4): the top n of the class (n up to 8, at most one per target) on the targets given,
+        """A final, only one its competition's rulebook has (rulebooks.finals). Standard (CMP 3PAR 10.4): the top n of the class (n up to 8, at most one per target) on the targets given,
         best qualifier on the first (point A, 10.4.1). for_relay: "Final for All Athletes" (10.1.2 a), everyone of
         that finished relay on their own target. The final is a match of the competition; paced "officer" (default:
         the range officer gives LOAD for every shot) or "spoken" (the console speaks the commands, with a pause for the
@@ -354,6 +356,9 @@ class Competitions:
             raise MatchError("a final's commands: officer (the range officer reads them) or spoken")
         c = self.db.conn()
         comp = self._row(c, cid)
+        book = rb.book_of(json.loads(comp["format_json"]))
+        if kind not in rb.finals(book):                  # a final belongs to its book (no rulebook: any final, by its own book)
+            raise MatchError(f"the {rb.BOOKS[book]['name']} rules have no {rb.FINAL_NAMES[kind]}" if book != rb.NONE else "unknown final")
         fmt = mf.cmp_standard_final(spoken=paced == "spoken") if kind == "standard" else mf.cmp_airgun_final(spoken=paced == "spoken")
         if for_relay is not None:
             r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
@@ -545,7 +550,7 @@ class Competitions:
                   for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NULL ORDER BY relay", (cid,)).fetchall()]
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
                 "challenge_min": r["challenge_min"] if r["challenge_min"] is not None else 30,
-                "paced": r["paced"], "tie_rules": rules_of(fmt), "record_shots": mf.record_shots(fmt),
+                "paced": r["paced"], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)), "record_shots": mf.record_shots(fmt),
                 "competitors": people, "relays": relays,
                 "finals": [{"match_id": m["id"], "kind": m["final_kind"], "cls": m["final_class"], "for_relay": m["final_for"], "state": m["state"], "name": m["name"]}
                            for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NOT NULL ORDER BY id", (cid,))]}
@@ -576,7 +581,7 @@ class Competitions:
                     prev = found.get(ln["competitor_id"])
                     if prev is None:
                         found[ln["competitor_id"]] = part
-                    else:                                # finished on a later relay (CMP 7.18): both parts, in firing order
+                    else:                                # finished on a later relay: both parts, in firing order
                         first, later = (prev, part) if ln["from_match"] is not None else (part, prev)
                         found[ln["competitor_id"]] = {"shots": first["shots"] + later["shots"], "relay": later["relay"], "lane": later["lane"],
                                                       "device_id": later["device_id"], "pending": first["pending"] + later["pending"],
@@ -601,7 +606,7 @@ class Competitions:
             for e in ranked:
                 e.pop("summary", None)
             out_classes.append({"name": cls, "individuals": ranked, "teams": teams})
-        return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
+        return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules, "book_name": rb.BOOKS[rb.book_of(fmt)]["name"],
                 "record_shots": mf.record_shots(fmt), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
                 "relays": relays, "classes": out_classes, "finals": self._finals(c, comp, finals, out_classes, decimal, with_shots),
                 "official_ms": self._official(c, cid), **self._posted(c, cid)}

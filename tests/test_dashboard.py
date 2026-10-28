@@ -78,7 +78,7 @@ class DashboardLogic(unittest.TestCase):
             for did in ("comp-1", "comp-2", "comp-3"):
                 hb(did, did)
             cc = core.competitions
-            fid = core.matches.save_format({"name": "Comp", "scoring": "decimal", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 12}]}, "md")["id"]
+            fid = core.matches.save_format({"name": "Comp", "book": "ISSF", "scoring": "decimal", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 12}]}, "md")["id"]
             cid = cc.create("<b>League</b>", fid, "md", team_size=2)
             ids = [cc.save_competitor(cid, {"family": f, "given": g, "class": k, "team": t}) for f, g, k, t in
                    (("Ames", "<i>Al</i>", "Open", "Red"), ("Brown", "Bo", "Open", "Red"), ("Cole", "Cy", "Junior", "Blue"))]
