@@ -5,6 +5,7 @@
 #include <LittleFS.h>
 #include "src/core/bridge.h"
 #include "src/core/config.h"
+#include "src/core/provision.h"
 #include "src/platform/build_config.h"
 #include "src/platform/platform.h"
 #include "src/platform/portal.h"
@@ -23,6 +24,7 @@ static WifiNet* g_net = nullptr;
 static fet::Bridge* g_bridge = nullptr;
 static Portal* g_portal = nullptr;
 static fet::QuickBoot* g_quick = nullptr;
+static fet::Provision* g_prov = nullptr;        // settings from the Pi's flash station, first minute only
 static std::string g_id;
 static bool g_otaStarted = false;
 
@@ -76,6 +78,7 @@ void setup() {
   g_bridge = new fet::Bridge(g_fs, *g_net, g_uart, g_hooks, info, cap, FET_LOG_SEGMENT_BYTES);
   FET_STAGE(6);
   g_bridge->begin(nowMs());
+  g_prov = new fet::Provision(g_fs, g_uart, g_hooks, g_id, FET_FW_VERSION);
   FET_STAGE(7);
 
   bool openPortal = wantPortal || !g_cfg.wifiConfigured() || g_hooks.portalWanted;
@@ -102,7 +105,9 @@ void loop() {
   if (!g_hold.bytes.empty()) {
     std::string b;
     b.swap(g_hold.bytes);
-    for (size_t i = 0; i < b.size(); i++) g_bridge->onByte((uint8_t)b[i], now);
+    std::string pass;                                     // a provisioning line never reaches the bridge
+    for (size_t i = 0; i < b.size(); i++) g_prov->feed((uint8_t)b[i], now, pass);
+    for (size_t i = 0; i < pass.size(); i++) g_bridge->onByte((uint8_t)pass[i], now);
   }
 
   static bool announced = false;

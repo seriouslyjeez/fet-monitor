@@ -131,4 +131,6 @@ void QuickBoot::tick(uint64_t now) {
   }
 }
 
+void QuickBoot::forget(Fs& fs) { fs.writeAtomic("/qb.cnt", "0"); }
+
 }  // namespace fet

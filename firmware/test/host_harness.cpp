@@ -16,6 +16,7 @@
 #include "../fet_bridge/src/core/config.h"
 #include "../fet_bridge/src/core/jmini.h"
 #include "../fet_bridge/src/core/httpparse.h"
+#include "../fet_bridge/src/core/provision.h"
 #include "../fet_bridge/src/core/sha256.h"
 
 using namespace fet;
@@ -148,6 +149,7 @@ int main() {
   BridgeInfo info{"fet-test01", "Test Lane", "fw-test"};
   size_t cap = 90000;
   std::unique_ptr<Bridge> br;
+  std::unique_ptr<Provision> prov;
   uint64_t t = 0;
   std::string line;
   while (std::getline(std::cin, line)) {
@@ -155,7 +157,15 @@ int main() {
     std::string rest; std::getline(is, rest); if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
     if (cmd == "cfg") { std::istringstream a(rest); std::string tok; a >> net.port >> tok; net.token = tok; }
     else if (cmd == "cap") cap = (size_t)atol(rest.c_str());
-    else if (cmd == "boot") { br.reset(); t = 0; br.reset(new Bridge(fs, net, uart, hooks, info, cap)); br->begin(t); }
+    else if (cmd == "boot") { br.reset(); t = 0; br.reset(new Bridge(fs, net, uart, hooks, info, cap)); br->begin(t);
+                              prov.reset(new Provision(fs, uart, hooks, info.deviceId, info.fwVersion)); }
+    else if (cmd == "at") t = (uint64_t)atol(rest.c_str());
+    else if (cmd == "prov") { std::string d = unescape(rest), pass; for (unsigned char c : d) { t += 1; prov->feed(c, t, pass); }
+                              for (unsigned char c : pass) br->onByte(c, t); }
+    else if (cmd == "provpass") { std::string d = unescape(rest), pass; for (unsigned char c : d) { t += 1; prov->feed(c, t, pass); }
+                                  std::cout << escape(pass) << "\n"; }   // exactly what Provision hands on, bridge untouched
+    else if (cmd == "config") { std::string v; std::cout << (fs.read("/config.json", v) ? escape(v) : std::string("none")) << "\n"; }
+    else if (cmd == "uartclear") uart.log.clear();
     else if (cmd == "uart") { std::string d = unescape(rest); for (unsigned char c : d) { t += 1; br->onByte(c, t); } }
     else if (cmd == "tick") { long ms = atol(rest.c_str()); for (long k = 0; k < ms; k += 50) { t += 50; br->tick(t); if (hooks.erases) net.up = false; } }   // an erased unit no longer reports
     else if (cmd == "wipe") { fs.files.clear(); }

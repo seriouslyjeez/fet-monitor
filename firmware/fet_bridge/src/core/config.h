@@ -35,6 +35,7 @@ class QuickBoot {
   explicit QuickBoot(Fs& fs) : fs_(fs) {}
   bool onBoot();                    // true when this is the 3rd quick boot in a row (and the counter is reset)
   void tick(uint64_t now);
+  static void forget(Fs& fs);       // a deliberate restart (new settings) is not a power cycle
  private:
   Fs& fs_;
   bool armed_ = false;

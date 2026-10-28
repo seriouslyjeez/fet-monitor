@@ -136,3 +136,19 @@ bridge reports the result first, then formats LittleFS (settings, server token, 
 the SDK's WiFi area (`ESP.eraseConfig()`) and restarts unconfigured, i.e. into the open setup portal. The server
 refuses it for targets older than 0.2.2. Unverified on hardware (the host harness runs the same core logic).
 
+
+### FeT Bridge firmware 0.3.0: settings over USB (flash station)
+
+For the first 60 s after start the bridge listens on its serial port for one-line settings from the Pi's flash
+station, so a freshly flashed module can be configured without its setup WiFi:
+
+    FETCFG HELLO                                  ->  FETCFG HELLO <device id> <firmware version>
+    FETCFG <settings JSON as hex> <crc32, 8 hex>  ->  FETCFG OK <device id>   (then it restarts with them)
+                                                      FETCFG ERROR <reason>   (nothing is changed)
+
+The settings are the same JSON as the setup page saves (`ssid`, `pass`, `host`, `port`, `token`, `name`, optional
+`ip`/`gw`/`mask`) and pass the same checks. A provisioning line never reaches the shot log; every other byte (the
+Arduino's output) passes on unchanged and in order. Hex keeps braces out of the line and replies never contain any, so
+nothing here can look like a command to the Arduino. The settings restart does not count towards the "3 quick power
+cycles" portal trigger (opening a serial port can reset a module on an auto-reset programmer). Tested in the host
+harness only; unverified on hardware.

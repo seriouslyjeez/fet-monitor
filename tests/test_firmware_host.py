@@ -1,5 +1,6 @@
 """Runs the real firmware core (C++) on this machine against the real server.
 Skipped if g++ is not installed. Faults (power cuts, torn flash writes, lost replies, outages) are injected by the harness."""
+import binascii
 import json
 import os
 import shutil
@@ -452,6 +453,136 @@ class FirmwareHost(unittest.TestCase):
         self.assertTrue(self.h.run("qboot").startswith("normal 1"))      # counter was reset
         self.assertEqual(self.h.run("qtick 9000"), "0")                   # stable for 8 s clears it
         self.assertEqual(self.h.run("qtick 2000"), "1")                   # too soon: stays
+
+    # ---- serial provisioning (flash station "flash and configure")
+    SETTINGS = {"ssid": "club", "pass": "password1", "host": "10.0.0.5", "port": 8080, "token": "abc", "name": "Lane-7"}
+
+    def settings_line(self, obj=None, raw=None, crc=None):
+        body = (raw if raw is not None else json.dumps(obj or self.SETTINGS)).encode()
+        c = binascii.crc32(body) if crc is None else crc
+        return "FETCFG %s %08x\n" % (body.hex(), c)
+
+    def prov(self, text):
+        self.h.run("prov " + esc(text))
+
+    def replies(self):
+        return [l for l in self.h.run("uartlog").replace("\\n", "\n").split("\n") if l.startswith("FETCFG")]
+
+    def test_prov_hello(self):
+        self.h.run("uartclear")
+        self.prov("FETCFG HELLO\n")
+        self.assertEqual(self.replies(), ["FETCFG HELLO fet-test01 fw-test"])
+        self.assertEqual(self.h.flags()["reboots"], 0)
+
+    def test_prov_saves_settings_and_restarts(self):
+        self.h.run("uartclear")
+        self.prov(self.settings_line())
+        self.assertEqual(self.replies(), ["FETCFG OK fet-test01"])
+        saved = json.loads(self.h.run("config").replace("\\n", "\n"))
+        for k, v in self.SETTINGS.items():
+            self.assertEqual(saved[k], v, k)
+        self.assertEqual(self.h.flags()["reboots"], 1)
+        self.tick(3000)
+        self.assertEqual(self.events(), [], "the settings line (with the WiFi password) never becomes an event")
+
+    def test_prov_restart_is_not_a_quick_power_cycle(self):
+        self.assertTrue(self.h.run("qboot").startswith("normal 1"))      # flashed, started
+        self.assertTrue(self.h.run("qboot").startswith("normal 2"))      # e.g. the port opened with DTR: a reset
+        self.prov(self.settings_line())
+        self.assertEqual(self.h.flags()["reboots"], 1)
+        self.assertTrue(self.h.run("qboot").startswith("normal 1"), "the settings restart must not open the portal")
+
+    def test_prov_hex_in_either_case_and_crlf(self):
+        line = self.settings_line().rstrip("\n")
+        head, crc = line.rsplit(" ", 1)
+        self.h.run("uartclear")
+        self.prov("FETCFG " + head[7:].upper() + " " + crc.upper() + "\r\n")
+        self.assertEqual(self.replies(), ["FETCFG OK fet-test01"])
+
+    def test_prov_rejects_and_keeps_old_settings(self):
+        before = self.h.run("config")
+        good = self.settings_line()
+        cases = [
+            (self.settings_line(crc=binascii.crc32(json.dumps(self.SETTINGS).encode()) ^ 1), "checksum"),
+            (self.settings_line(raw="{nope"), "not valid JSON"),
+            (self.settings_line(dict(self.SETTINGS, port=0)), "Server port must be"),
+            ("FETCFG " + good.split()[1] + " 1234567z\n", "not a settings line"),
+            ("FETCFG zz " + good.split()[2] + "\n", "not a settings line"),
+            ("FETCFG abc 00000000\n", "not a settings line"),            # odd hex length
+            ("FETCFG " + good.split()[1] + " 1234\n", "not a settings line"),
+            ("FETCFG " + good.split()[1] + "\n", "not a settings line"),
+            ("FETCFG " + "a" * 3000 + "\n", "too long"),
+        ]
+        for line, why in cases:
+            self.h.run("uartclear")
+            self.prov(line)
+            r = self.replies()
+            self.assertEqual(len(r), 1, (line[:40], r))
+            self.assertTrue(r[0].startswith("FETCFG ERROR") and why in r[0], (line[:40], r))
+            self.assertNotIn("{", r[0])
+            self.assertNotIn("}", r[0])
+        self.assertEqual(self.h.run("config"), before)
+        self.assertEqual(self.h.flags()["reboots"], 0)
+        self.tick(3000)
+        self.assertEqual(self.events(), [])
+
+    def passed(self, text):
+        return self.h.run("provpass " + esc(text)).replace("\\x0d", "\r").replace("\\n", "\n")
+
+    def test_prov_passes_everything_else_byte_for_byte(self):
+        mixed = ["freETarget 4.3.0\r\n", "FETCH\n", "FET\n", "FETCFG\n", "FETCFGx\n", "F\n", "\n", "xFETCFG HELLO\n",
+                 "FFETCFG HELLO\n", "a FETCFG HELLO b\n"]
+        self.h.run("uartclear")
+        self.assertEqual(self.passed("".join(mixed)), "".join(mixed))
+        self.assertEqual(self.replies(), [])
+        self.assertEqual(self.passed("FETCFG HELLO\n"), "")
+        self.assertEqual(self.passed("one\nFETCFG HELLO\ntwo\n"), "one\ntwo\n")
+        self.assertEqual(self.replies(), ["FETCFG HELLO fet-test01 fw-test"] * 2)
+
+    def test_prov_arduino_lines_pass_unchanged_and_in_order(self):
+        self.h.run("uartclear")
+        self.prov('freETarget "4.3.0"\n' + self.shot(1) + "\nFETCFG HELLO\nFETCH\nFET\n" + self.shot(2) + "\n")
+        self.assertEqual(self.replies(), ["FETCFG HELLO fet-test01 fw-test"])
+        self.tick(3000)
+        types = [e[2] for e in self.events()]
+        self.assertEqual(types, ["arduino_boot", "shot", "shot"])
+        self.assertEqual(self.h.flags()["reboots"], 0)
+        c = self.core.db.conn()
+        raws = [r[0] for r in c.execute("SELECT raw FROM events WHERE type='shot' ORDER BY id")]
+        self.assertEqual(raws, [self.shot(1), self.shot(2)])
+
+    def test_prov_a_prefix_mid_line_is_not_a_command(self):
+        self.h.run("uartclear")
+        self.prov("xFETCFG HELLO\n")
+        self.assertEqual(self.replies(), [])
+
+    def test_prov_window_closes_after_a_minute(self):
+        self.h.run("at 59000")
+        self.h.run("uartclear")
+        self.prov("FETCFG HELLO\n")
+        self.assertEqual(len(self.replies()), 1)
+        self.h.run("at 59999")                             # the next byte arrives at 60000: closed
+        self.h.run("uartclear")
+        self.prov("FETCFG HELLO\n" + self.settings_line())
+        self.assertEqual(self.replies(), [])
+        self.assertEqual(self.h.flags()["reboots"], 0)
+        # one byte per ms: the prefix's last byte decides; at 60000 ms it is too late
+        self.h.run("at 59992")
+        self.assertEqual(self.passed("FETCFG HELLO\n"), "")
+        self.h.run("at 59993")
+        self.assertEqual(self.passed("FETCFG HELLO\n"), "FETCFG HELLO\n")
+
+    def test_prov_held_prefix_flushes_when_the_window_closes(self):
+        self.h.run("at 59990")
+        self.assertEqual(self.passed("FET"), "")           # held: may still become FETCFG
+        self.h.run("at 61000")
+        self.assertEqual(self.passed("CH x\n"), "FETCH x\n")
+        self.h.run("at 59990")
+        self.assertEqual(self.passed("FETCFG HEL"), "")    # a line begun in the window is finished as a command
+        self.h.run("at 61000")
+        self.h.run("uartclear")
+        self.assertEqual(self.passed("LO\nnext\n"), "next\n")
+        self.assertEqual(self.replies(), ["FETCFG HELLO fet-test01 fw-test"])
 
 
 if __name__ == "__main__":
