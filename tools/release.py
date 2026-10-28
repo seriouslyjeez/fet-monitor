@@ -3,9 +3,12 @@
 
     python3 tools/release.py server [--notes NOTES.md] [--publish]
     python3 tools/release.py firmware 0.2.2 [--notes NOTES.md] [--publish]
+    python3 tools/release.py image 0.6.30 [--publish]
 
 server   : the server archive from the committed tree (tools/make_release.py) -> dist/server-<ver>/
 firmware : the collected images dist/firmware/fet-bridge-<ver>-*.bin (tools/collect_firmware.py) -> dist/fw-<ver>/
+image    : the SD card image GitHub Actions built for server release v<ver> (.github/workflows/image.yml): downloads it
+           and its IMAGE-SHA256SUMS, checks the hash here, signs -> IMAGE-SHA256SUMS.sig, uploads that (with --publish)
 
 Each folder gets SHA256SUMS and SHA256SUMS.sig (ssh-keygen -Y sign with your release key; it asks for the key's
 passphrase), and the signature is checked against fetserver/release_signers before anything is published. Without
@@ -38,7 +41,7 @@ def sums_for(folder: Path, names) -> Path:
 
 
 def sign(sums: Path, key: Path) -> None:
-    sig = sums.with_name("SHA256SUMS.sig")
+    sig = sums.with_name(sums.name + ".sig")
     if sig.exists():
         sig.unlink()
     print(f"Signing {sums} with {key} (enter the key's passphrase):")
@@ -82,14 +85,48 @@ def firmware(args) -> tuple:
     return folder, [i.name for i in images], f"fw-{v}", f"FeT Bridge firmware {v}"
 
 
+def image(a) -> int:
+    """Sign the image the workflow attached to release v<version>, after checking its hash on this computer."""
+    if not a.version or not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
+        sys.exit("image: give the server version, e.g. 0.6.30")
+    tag, name = f"v{a.version}", f"fet-monitor-{a.version}-pi.img.xz"
+    folder = ROOT / "dist" / f"image-{a.version}"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    print(f"Downloading {name} and IMAGE-SHA256SUMS from {tag} (the image is large)...")
+    subprocess.run(["gh", "release", "download", tag, "-p", name, "-p", "IMAGE-SHA256SUMS", "-D", str(folder)], check=True)
+    sums = folder / "IMAGE-SHA256SUMS"
+    listed = parse_sums(sums.read_bytes())
+    if set(listed) != {name}:
+        sys.exit(f"IMAGE-SHA256SUMS should list exactly {name}; it lists {sorted(listed)}")
+    h = hashlib.sha256()
+    with open(folder / name, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if h.hexdigest() != listed[name]:
+        sys.exit(f"{name}: its SHA-256 here does not match IMAGE-SHA256SUMS: not signed")
+    sign(sums, Path(a.key))
+    cmd = ["gh", "release", "upload", tag, str(sums.with_name(sums.name + ".sig")), "--clobber"]
+    print("\nChecked and signed. Upload with:\n  " + " ".join(cmd))
+    if a.publish and input(f"\nUpload the image signature to {tag} now? Type yes: ").strip() == "yes":
+        subprocess.run(cmd, check=True)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("kind", choices=["server", "firmware"])
-    ap.add_argument("version", nargs="?", help="firmware version (firmware only)")
+    ap.add_argument("kind", choices=["server", "firmware", "image"])
+    ap.add_argument("version", nargs="?", help="firmware version (firmware), server version (image)")
     ap.add_argument("--notes", help="release notes (Markdown); shown in Range Control before updating")
     ap.add_argument("--key", default=str(KEY))
     ap.add_argument("--publish", action="store_true", help="run gh release create (asks first)")
     a = ap.parse_args()
+    if a.kind == "image":
+        try:
+            return image(a)
+        except (ReleaseError, subprocess.CalledProcessError) as exc:
+            print(f"not signed: {exc}", file=sys.stderr)
+            return 1
     try:
         folder, names, tag, title = (server if a.kind == "server" else firmware)(a)
         sums = sums_for(folder, names)

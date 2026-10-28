@@ -1,0 +1,71 @@
+# The FeT Monitor SD card image: Raspberry Pi OS Lite (Trixie, 64-bit) with FeT Monitor installed, SSH off, and the
+# setup network on first start. Built from the SIGNED server release of the same tag (the signature is checked first),
+# so the image contains exactly the code that was signed. Attached to that release as fet-monitor-<ver>-pi.img.xz with
+# IMAGE-SHA256SUMS; `python3 tools/release.py image <ver>` (the release key's owner) adds IMAGE-SHA256SUMS.sig.
+name: SD card image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Server release tag to build the image for (e.g. v0.6.30)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  image:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Download and check the signed server release
+        run: |
+          V="${TAG#v}"
+          mkdir -p rel && cd rel
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p "fet-monitor-$V.tar.gz" -p SHA256SUMS -p SHA256SUMS.sig
+          ssh-keygen -Y verify -f ../fetserver/release_signers -I release@fet-monitor -n fet-monitor-release \
+            -s SHA256SUMS.sig < SHA256SUMS
+          sha256sum -c --ignore-missing SHA256SUMS
+          grep -q " fet-monitor-$V.tar.gz\$" SHA256SUMS
+          mkdir -p ../image/stage-fet/00-fet/files/fet-monitor
+          tar -xzf "fet-monitor-$V.tar.gz" -C ../image/stage-fet/00-fet/files/fet-monitor --strip-components 1
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+
+      - name: Build the image (pi-gen)
+        id: build
+        uses: usimd/pi-gen-action@v1
+        with:
+          image-name: fet-monitor-${{ env.VERSION }}-pi
+          release: trixie
+          pi-gen-version: arm64
+          stage-list: stage0 stage1 stage2 ./image/stage-fet
+          hostname: fetmonitor
+          username: fetimage                 # locked (no password): the setup page creates the admin login
+          password: ""
+          disable-first-boot-user-rename: 1
+          enable-ssh: 0
+          enable-cloud-init: 0
+          locale: en_US.UTF-8
+          timezone: Etc/UTC
+          keyboard-keymap: us
+          keyboard-layout: English (US)
+          compression: xz
+          increase-runner-disk-size: true
+
+      - name: Attach to the release
+        run: |
+          mkdir -p out
+          cp "${{ steps.build.outputs.image-path }}" "out/fet-monitor-$VERSION-pi.img.xz"
+          (cd out && sha256sum "fet-monitor-$VERSION-pi.img.xz" > IMAGE-SHA256SUMS && cat IMAGE-SHA256SUMS)
+          gh release upload "$TAG" out/fet-monitor-$VERSION-pi.img.xz out/IMAGE-SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

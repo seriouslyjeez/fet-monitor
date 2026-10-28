@@ -135,8 +135,15 @@ class System:
     def _delete(self, name: str) -> None:
         self.run(["nmcli", "connection", "delete", name], check=False)
 
+    def radio_on(self) -> None:
+        """A new Raspberry Pi OS card keeps WiFi blocked (rfkill) until a country is set: the setup network has to
+        start before anyone has chosen one (any country allows channels 1-11 on 2.4 GHz)."""
+        self.run(["rfkill", "unblock", "wifi"], check=False)
+        self.run(["nmcli", "radio", "wifi", "on"], check=False)
+
     def hotspot_on(self, ssid: str) -> None:
         """The open setup network on wlan0 at SETUP_IP, with every DNS name pointing at it (captive portal)."""
+        self.radio_on()
         self._delete("fet-setup")
         conf = self.path(CATCH_ALL)
         conf.parent.mkdir(parents=True, exist_ok=True)
@@ -184,6 +191,7 @@ class System:
         """Join the club WiFi for a moment (the setup AP must be down): {"ok": True, "lease": {...}} or
         {"ok": False, "why": reason}. The trial connection is removed afterwards."""
         self._delete("fet-test")
+        self.radio_on()
         try:
             self.run(["nmcli", "connection", "add", "type", "wifi", "ifname", WIFI, "con-name", "fet-test", "autoconnect", "no",
                       "ssid", ssid, "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", psk])
@@ -202,6 +210,7 @@ class System:
         for name in ("fet-wifi", "fet-eth", "fet-range"):
             self._delete(name)
         if mode != "cable":                      # one radio: other saved WiFi networks must not take it over
+            self.radio_on()
             for line in self.run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"], check=False).splitlines():
                 f = split_terse(line)
                 if len(f) >= 2 and f[1] == "802-11-wireless" and f[0] not in OURS:

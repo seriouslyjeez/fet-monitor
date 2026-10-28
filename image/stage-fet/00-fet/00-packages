@@ -1,0 +1,6 @@
+python3
+openssh-client
+network-manager
+dnsmasq-base
+rfkill
+iw

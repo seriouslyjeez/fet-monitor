@@ -128,6 +128,8 @@ class Commands(unittest.TestCase):
     def test_setup_network_is_open_and_answers_every_name(self):
         s = self.sys()
         s.hotspot_on("FeTMonitor-Setup-AB12")
+        self.assertLess(self.rec.calls.index((["rfkill", "unblock", "wifi"], None)), self.rec.calls.index((self.rec.argvs("nmcli", "connection", "add")[0], None)),
+                        "WiFi unblocked first: a new card keeps it blocked until a country is set")
         add = self.rec.argvs("nmcli", "connection", "add")[0]
         self.assertIn("ap", add)
         self.assertNotIn("wifi-sec.key-mgmt", add, "open")
@@ -167,8 +169,10 @@ class Commands(unittest.TestCase):
         add = self.rec.argvs("nmcli", "connection", "add")[0]
         self.assertEqual((add[add.index("ipv4.method") + 1], add[add.index("ipv4.addresses") + 1], add[add.index("ipv4.dns") + 1]),
                          ("manual", "192.168.1.20/24", "1.1.1.1,8.8.8.8"))
+        self.assertIn(["rfkill", "unblock", "wifi"], self.rec.argvs("rfkill"))
         s = self.sys({("nmcli", "-t", "-f", "NAME,TYPE"): (0, listing)})
         s.use_network({"mode": "cable", "address": "dhcp"})
+        self.assertEqual(self.rec.argvs("rfkill"), [], "cable: the radio is left as it is")
         add = self.rec.argvs("nmcli", "connection", "add")[0]
         self.assertEqual((add[add.index("con-name") + 1], add[add.index("ipv4.method") + 1]), ("fet-eth", "auto"))
         self.assertEqual(self.rec.argvs("nmcli", "connection", "modify"), [], "cable: WiFi settings untouched")

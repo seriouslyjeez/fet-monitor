@@ -1,17 +1,124 @@
 # Installing FeT Monitor on a Raspberry Pi
 
-This guide is for a club volunteer; no Linux experience is needed. Allow about 45 minutes, most of it waiting.
+This guide is for a club volunteer; no Linux experience is needed, and you never need the Pi's command line. Allow
+about 20 minutes. Everything is done from a phone and, once, a computer that writes the SD card (Mac, Windows or Linux).
 
 **You need:** a Raspberry Pi (Zero 2 W, 3, 4 or 5) with its power supply, a microSD card (16 GB or larger, a good
-brand), a computer with an SD card reader, and access to the club router's admin page. A wired network cable is
-best for the Pi; WiFi works too.
-
-Commands are shown in grey boxes. Type them exactly (or copy and paste), then press Enter. Where you see
-`<Pi IP>`, type the Pi's address instead, for example `192.168.1.20`.
+brand), a computer with an SD card reader, and a phone. A network cable to the club router is optional: the Pi can
+also join the club WiFi, or run its own WiFi network for the targets (no router needed).
 
 ---
 
-## 1. Prepare the SD card
+## 1. Download the FeT Monitor image
+
+On the [releases page](https://github.com/seriouslyjeez/fet-monitor/releases) open the newest **server** release
+(named `v<version>`; releases named `fw-...` are FeT Bridge firmware) and download **`fet-monitor-<version>-pi.img.xz`**.
+It is Raspberry Pi OS Lite (64-bit) with FeT Monitor installed.
+
+*Optional, recommended: check it.* Download `IMAGE-SHA256SUMS` and `IMAGE-SHA256SUMS.sig` from the same release and,
+in a terminal in the download folder (Mac/Linux; the key line is the same as in step B7):
+
+    echo 'release@fet-monitor namespaces="fet-monitor-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZo2o3OYW8M4gMSQXrY0/dBfgHDD5kQykvSefZcm5te' > signers
+    ssh-keygen -Y verify -f signers -I release@fet-monitor -n fet-monitor-release -s IMAGE-SHA256SUMS.sig < IMAGE-SHA256SUMS
+    shasum -a 256 -c IMAGE-SHA256SUMS
+
+The first must print `Good "fet-monitor-release" signature`, the second `OK`. If not, do not use the image.
+
+## 2. Write the SD card
+
+1. Install **Raspberry Pi Imager** from <https://www.raspberrypi.com/software/> and start it.
+2. **Choose Device:** your Pi model.
+3. **Choose OS:** scroll to the bottom, **Use custom**, and pick the `fet-monitor-<version>-pi.img.xz` you downloaded.
+4. **Choose Storage:** the SD card. Double-check it is the card, not another drive: it will be erased.
+5. **Next.** When asked *"Would you like to apply OS customisation settings?"* choose **No**: the setup page does all
+   of that.
+
+Wait until Imager says it is done, then remove the card.
+
+## 3. First start
+
+Put the card in the Pi. If the Pi will use a cable, plug it into the club router now. Then connect the power and wait
+about **2 minutes**.
+
+## 4. The setup page (on your phone)
+
+1. On the phone, open the WiFi settings and join the open network **`FeTMonitor-Setup-XXXX`**.
+2. The setup page opens by itself (as in a hotel). If it does not, open a browser at `http://192.168.4.1/`.
+3. Fill it in:
+   - **This Pi:** a short name (e.g. `range`), the **country** and the **time zone** (shot times use it). The Pi's clock
+     is taken from the phone if it has no internet.
+   - **Range Control password:** for the page that manages targets, updates and the Pi itself. Use one you do not use
+     anywhere else (the club network is not encrypted).
+   - **First match director** (optional): a login for Match Control.
+   - **Admin login:** only for someone who might need the Pi's command line one day. **Allow SSH** stays off unless
+     you need it (it can be turned on later in Range Control).
+   - **Network**, one of:
+     - **Cable to the club router:** the page shows the address the Pi got. Keep it as a *fixed address* (recommended),
+       or reserve it for the Pi in the router.
+     - **Club WiFi:** choose it, enter its password and press **Test connection**. The setup network goes away for up to
+       a minute while the Pi tries; then join `FeTMonitor-Setup-XXXX` again and reopen the page: it shows the result
+       (or what went wrong, e.g. a wrong password). Keep the address as a *fixed address* (recommended).
+     - **Its own range network:** the Pi makes a WiFi network (name and password of your choice) for the targets and
+       phones. No router or internet is needed; the Pi is always `10.42.0.1`.
+4. **Save settings.** The page shows the **address of FeT Monitor** and the **device token**. **Write both down**:
+   every target needs them.
+5. **Switch now.** The setup network goes away and the Pi uses its network. Put the phone back on that network (club
+   WiFi, or the range network) and open the address you wrote down, e.g. `http://192.168.1.20:8080/`.
+
+If the Pi cannot use the network you chose (for example the cable is not plugged in), the setup network comes back
+by itself: join it and correct the network.
+
+## 5. Open FeT Monitor
+
+On any phone, tablet or computer on the same network, open the address, for example `http://192.168.1.20:8080/`.
+You see *All targets* (empty until a target reports).
+
+## 6. Set up each target
+
+For each target (its WiFi bridge must already have FeT Monitor firmware; see `firmware/FLASHING.md`):
+
+1. With the target off, make sure the WiFi module is plugged in. Switch the target **off and on three times
+   quickly** (within a few seconds). This opens its setup portal.
+2. On a phone, join the open WiFi network **`FeTMonitor-xxxxxx`** (older firmware: `freETarget-xxxxxx`). The setup page
+   usually opens by itself; if not, browse to `http://192.168.4.1/`.
+3. Enter:
+   - **WiFi network** and **password** of the club network (2.4 GHz, WPA2; the module cannot use 5 GHz),
+   - **Server address:** the Pi's IP address (not `range.local`),
+   - **Server token:** the device token you wrote down.
+4. Save. The target restarts, joins the club WiFi and appears on the FeT Monitor page within a minute.
+   Fire a shot to check.
+
+## 7. Later: the Pi itself, without a command line
+
+- **Range Control → This Pi:** the Pi's name, time zone, clock (*Set from this device*, when it has no internet),
+  network (cable, club WiFi, own range network; fixed address), SSH on or off, the admin password, **Restart** and
+  **Shut down**. A new club WiFi is tried first: a wrong password changes nothing. If a new network does not come up
+  within a minute, the Pi goes back to the previous one.
+- **Shut down before unplugging the Pi:** pulling the power can damage the SD card.
+- **A new place, or the WiFi changed:** if the Pi finds no network within 3 minutes of starting, the setup network
+  `FeTMonitor-Setup-XXXX` comes back for the network settings only (passwords and logins are not changed there).
+- **Updates:** Range Control → *Check for updates* → *Install*. The database is backed up first; if the new version
+  does not start, the previous one comes back by itself.
+
+## 8. Rulebooks on the Pi
+
+Each match follows one rulebook, and the Pi keeps a copy of each one FeT Monitor uses (ISSF, USA Shooting, CMP Air
+Gun, CMP 3PAR, NRA Precision Air Rifle), so the book opens at the range without internet. The PDFs are the publishers'
+copyright and are not part of FeT Monitor: the first time the server starts with internet access it downloads the
+missing ones from the publishers' own sites into `/var/lib/fet-monitor/rulebooks/`. *Match Control → Rulebooks*
+shows each copy (the edition FeT Monitor follows, or a different file), downloads one again, or takes a PDF you
+upload from a laptop when the Pi has no internet. It also links to each publisher's rulebook page. To stop the
+automatic download, add `--no-rulebook-download` to the `ExecStart` line of the service.
+
+---
+
+## Advanced: install on a Raspberry Pi that already runs Raspberry Pi OS
+
+For a Pi you set up yourself (Raspberry Pi OS Bookworm or Trixie, Lite or desktop). This needs the command line once.
+On a Pi that already has a network, the setup network never appears (it opens only if the Pi starts without a
+network), and *Range Control → This Pi* works as above.
+
+### B1. Prepare the SD card
 
 1. On your computer, install **Raspberry Pi Imager** from <https://www.raspberrypi.com/software/> and start it.
 2. **Choose Device:** your Pi model.
@@ -22,7 +129,7 @@ Commands are shown in grey boxes. Type them exactly (or copy and paste), then pr
 5. Click **Next**. When asked *"Would you like to apply OS customisation settings?"* choose **Edit settings**.
    (Newer Imager versions show these as steps of a wizard; the settings are the same.)
 
-## 2. Imager settings
+### B2. Imager settings
 
 On the **General** tab:
 
@@ -39,12 +146,12 @@ On the **Services** tab:
 Click **Save**, then **Yes** to apply the settings, and **Yes** to write the card. Wait until Imager says it is done,
 then remove the card.
 
-## 3. First boot
+### B3. First boot
 
 Put the card in the Pi, connect the network cable (if used) and then the power. Wait **2 to 3 minutes**: the first
 start sets everything up and may restart once on its own.
 
-## 4. Find the Pi's address and fix it
+### B4. Find the Pi's address and fix it
 
 1. Open the router's admin page and find the list of connected devices (often called *Clients*, *DHCP leases* or
    *Attached devices*). Look for the hostname you chose (`range`). Note its IP address, for example `192.168.1.20`.
@@ -54,7 +161,7 @@ start sets everything up and may restart once on its own.
 Why this matters: each target is told the Pi's **IP address** and sends its shots there. Names like `range.local`
 did not work reliably on club networks in testing, so the targets need a number that never changes.
 
-## 5. Log in to the Pi
+### B5. Log in to the Pi
 
 On your computer open a terminal (Windows: *PowerShell*; Mac: *Terminal*) and type:
 
@@ -63,14 +170,14 @@ On your computer open a terminal (Windows: *PowerShell*; Mac: *Terminal*) and ty
 The first time, answer `yes` to the question about the key fingerprint, then type the Pi password (nothing is shown
 while you type; that is normal).
 
-## 6. Update the Pi
+### B6. Update the Pi
 
     sudo apt update && sudo apt full-upgrade -y
     sudo reboot
 
-Wait a minute, then log in again as in step 5.
+Wait a minute, then log in again as in step B5.
 
-## 7. Download and check FeT Monitor
+### B7. Download and check FeT Monitor
 
 On the [releases page](https://github.com/seriouslyjeez/fet-monitor/releases) find the newest **server** release
 (named `v<version>`, for example `v0.6.24`; releases named `fw-...` are FeT Bridge firmware). Download its three
@@ -105,7 +212,7 @@ installed FeT Monitor shows the same file. If you can, compare the fingerprint a
 
 Do **not** install from a command that pipes a download straight into `sudo bash`. Always download, check, then run.
 
-## 8. Install
+### B8. Install
 
     tar -xzf fet-monitor-$V.tar.gz
     cd fet-monitor-$V
@@ -121,7 +228,7 @@ The installer checks the system, installs FeT Monitor and starts it. Along the w
 
 If anything fails, the installer stops with a message saying which step failed. See *Troubleshooting* below.
 
-## 9. Open FeT Monitor
+### B9. Open FeT Monitor
 
 On any phone, tablet or computer on the same network, open a browser at:
 
@@ -129,32 +236,7 @@ On any phone, tablet or computer on the same network, open a browser at:
 
 You should see the FeT Monitor page with *All targets* (empty until a target reports).
 
-## 10. Set up each target
-
-For each target (its WiFi bridge must already have FeT Monitor firmware; see `firmware/FLASHING.md`):
-
-1. With the target off, make sure the WiFi module is plugged in. Switch the target **off and on three times
-   quickly** (within a few seconds). This opens its setup portal.
-2. On a phone, join the open WiFi network **`FeTMonitor-xxxxxx`** (older firmware: `freETarget-xxxxxx`). The setup page
-   usually opens by itself; if not, browse to `http://192.168.4.1/`.
-3. Enter:
-   - **WiFi network** and **password** of the club network (2.4 GHz, WPA2; the module cannot use 5 GHz),
-   - **Server address:** the Pi's IP address (not `range.local`),
-   - **Server token:** the device token from step 8.
-4. Save. The target restarts, joins the club WiFi and appears on the FeT Monitor page within a minute.
-   Fire a shot to check.
-
-## 10a. Rulebooks on the Pi
-
-Each match follows one rulebook, and the Pi keeps a copy of each one FeT Monitor uses (ISSF, USA Shooting, CMP Air
-Gun, CMP 3PAR, NRA Precision Air Rifle), so the book opens at the range without internet. The PDFs are the publishers'
-copyright and are not part of FeT Monitor: the first time the server starts with internet access it downloads the
-missing ones from the publishers' own sites into `/var/lib/fet-monitor/rulebooks/`. *Match Control → Rulebooks*
-shows each copy (the edition FeT Monitor follows, or a different file), downloads one again, or takes a PDF you
-upload from a laptop when the Pi has no internet. It also links to each publisher's rulebook page. To stop the
-automatic download, add `--no-rulebook-download` to the `ExecStart` line of the service.
-
-## 11. Optional: automatic security updates
+### B10. Optional: automatic security updates
 
     sudo apt install -y unattended-upgrades
 
@@ -163,7 +245,7 @@ FeT Monitor itself is updated separately:
 
 - **From Range Control**: *Check for updates* shows the newest signed release and its notes; *Install* backs up the
   database, installs it and restarts. If the new version does not start, the previous one comes back by itself.
-- **By hand:** download, check and unpack a newer release as in steps 7 and 8, and run its `sudo ./install.sh`.
+- **By hand:** download, check and unpack a newer release as in steps B7 and B8, and run its `sudo ./install.sh`.
   Re-running the installer is the upgrade: it keeps the database, the device token and the password.
 
 ---
@@ -218,3 +300,10 @@ backup as above is the fix.
 **Remove FeT Monitor.** `sudo ./install.sh --uninstall` removes the program and service but keeps the database,
 backups, token and password (re-running the installer brings everything back).
 `sudo ./install.sh --uninstall --purge` also deletes all data, after asking you to type `DELETE`.
+
+**The setup network `FeTMonitor-Setup-XXXX` does not appear.** Wait 3 minutes after power-on. It appears on the
+first start of a new card, and later only when the Pi finds no network. If the Pi still has its network (for example
+the cable is plugged in), it does not appear: open FeT Monitor at its address and use *Range Control → This Pi*.
+
+**The setup page does not open by itself.** Open a browser at `http://192.168.4.1/` while joined to the setup network.
+Some phones ask whether to *stay connected* to a network without internet: answer yes.

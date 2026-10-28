@@ -13,6 +13,13 @@ Fingerprint: `SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`.
 3. `python3 tools/release.py server --notes notes.md` builds `dist/server-<version>/` (archive, `SHA256SUMS`,
    `SHA256SUMS.sig`), asks for the key's passphrase, and checks the signature with `fetserver/release_signers`.
 4. Publish: add `--publish` (asks before running `gh release create`), or run the printed command.
+5. The SD card image: publishing the release starts the GitHub Actions workflow *SD card image*
+   (`.github/workflows/image.yml`, about an hour). It downloads the signed release, checks its signature with
+   `fetserver/release_signers` and refuses to build otherwise, builds Raspberry Pi OS Lite (Trixie, 64-bit) with
+   FeT Monitor (`image/stage-fet`, `install.sh --image`) and attaches `fet-monitor-<version>-pi.img.xz` and
+   `IMAGE-SHA256SUMS` to the release. Then sign it: `python3 tools/release.py image <version> --publish` downloads the
+   image, checks its hash on your computer, signs `IMAGE-SHA256SUMS` and uploads `IMAGE-SHA256SUMS.sig`. To rebuild
+   an image by hand: Actions → *SD card image* → *Run workflow* with the tag.
 
 ## FeT Bridge firmware release (tag `fw-<version>`)
 

@@ -18,3 +18,5 @@ docs/LOCAL-NOTES.md
 CLAUDE.md
 dist/
 docs/PLAN-*.md
+# The release unpacked by the image workflow
+image/stage-fet/00-fet/files/

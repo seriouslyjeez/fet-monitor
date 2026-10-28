@@ -215,8 +215,12 @@ and flash faults (needs g++; skipped without it).
 
 ## Install on a Raspberry Pi
 
-Step-by-step guide (SD card to first shot): **[docs/INSTALL.md](docs/INSTALL.md)**. In short, from an unpacked,
-checksum-verified release archive on Raspberry Pi OS Bookworm:
+Step-by-step guide (SD card to first shot): **[docs/INSTALL.md](docs/INSTALL.md)**. The usual way needs no command
+line: write the release's SD card image (`fet-monitor-<version>-pi.img.xz`) with Raspberry Pi Imager, start the Pi,
+join the WiFi `FeTMonitor-Setup-XXXX` with a phone and fill in the setup page (name, time zone, Range Control
+password, admin login, SSH, and the network: cable, club WiFi or the Pi's own range network). Later changes, restart
+and shut down are in *Range Control → This Pi*. On a Pi that already runs Raspberry Pi OS (Bookworm or Trixie), from
+an unpacked, checksum-verified release archive:
 
     sudo ./install.sh                  # install, or upgrade when re-run (keeps data, token and password)
     sudo ./install.sh --help           # --reset-password, --no-password, --uninstall [--purge]

@@ -73,3 +73,28 @@ Use the Pi that runs the old install today (or recreate it: old README steps wit
 - `ip -4 route get` output parsing on Raspberry Pi OS, and start-up time on a Pi Zero 2 W (the installer waits up to
   45 s for the server to answer).
 - Raspberry Pi Imager screen names in `docs/INSTALL.md` (they change between Imager versions).
+
+## The Pi as an appliance (setup network, System page, SD card image)
+
+Upgrade first (an existing Pi, through Range Control):
+- [ ] After the update the Pi does NOT show the setup network (it has a network); FeT Monitor runs as before.
+- [ ] *Range Control → This Pi* shows the name, time zone, clock and network; *Turn SSH off/on* works (`ssh` refused /
+      accepted); *Set* the admin password and log in with it over SSH; *Restart* comes back in about a minute.
+- [ ] *Change network* to a club WiFi with a WRONG password: "nothing changed", the Pi stays reachable.
+- [ ] *Shut down*: the green light stops blinking; unplug, plug in: it starts normally.
+
+The image (a spare SD card):
+- [ ] The *SD card image* workflow attached `fet-monitor-<version>-pi.img.xz`; `release.py image` signed it.
+- [ ] Raspberry Pi Imager → *Use custom* → the image, customisation **No**. First start: within ~2 minutes the open
+      WiFi `FeTMonitor-Setup-XXXX` appears (WiFi not blocked on a new card).
+- [ ] iPhone and Android: joining it opens the setup page by itself (captive portal). If not, `http://192.168.4.1/`
+      works.
+- [ ] Cable: the page shows the address; *Keep as fixed*; Save shows address + device token; *Switch now*; FeT Monitor
+      opens at the address; the token works in a target.
+- [ ] Club WiFi: *Test connection* with a wrong password -> the setup network comes back and the page says why; with
+      the right one -> the address; *Switch now* -> FeT Monitor on the club WiFi.
+- [ ] Own range network: a target (ESP-01) joins it with server address 10.42.0.1; a phone joins it and opens
+      `http://10.42.0.1:8080/`; with no internet the clock is right (from the phone).
+- [ ] Fallback: unplug the cable (cable setup) and restart: after ~3 minutes the setup network appears with the
+      network settings only; plug the cable back in: it closes by itself.
+- [ ] Two cards from the same image get different device tokens; SSH is off until switched on.
