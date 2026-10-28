@@ -144,6 +144,16 @@ For each target (its WiFi bridge must already have FeT Monitor firmware; see `fi
 4. Save. The target restarts, joins the club WiFi and appears on the FeT Monitor page within a minute.
    Fire a shot to check.
 
+## 10a. Rulebooks on the Pi
+
+Each match follows one rulebook, and the Pi keeps a copy of each one FeT Monitor uses (ISSF, USA Shooting, CMP Air
+Gun, CMP 3PAR, NRA Precision Air Rifle), so the book opens at the range without internet. The PDFs are the publishers'
+copyright and are not part of FeT Monitor: the first time the server starts with internet access it downloads the
+missing ones from the publishers' own sites into `/var/lib/fet-monitor/rulebooks/`. *Match Control → Rulebooks*
+shows each copy (the edition FeT Monitor follows, or a different file), downloads one again, or takes a PDF you
+upload from a laptop when the Pi has no internet. It also links to each publisher's rulebook page. To stop the
+automatic download, add `--no-rulebook-download` to the `ExecStart` line of the service.
+
 ## 11. Optional: automatic security updates
 
     sudo apt install -y unattended-upgrades

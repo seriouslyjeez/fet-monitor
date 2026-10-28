@@ -18,6 +18,7 @@ from .core import Core
 from .db import Database
 from .firmware import FirmwareStore
 from .releases import Updates
+from .rulebookfiles import RulebookFiles
 from .server import make_server
 
 log = logging.getLogger("fetserver")
@@ -36,8 +37,9 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     core = Core(db, offline_after_ms=int(args.offline_after * 1000),
                 heartbeat_interval_ms=int(args.heartbeat_interval * 1000),
                 lease_ms=int(args.lease * 1000), shot_lag_ms=int(args.shot_lag * 1000))
+    rulebooks = RulebookFiles(data_dir)
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
-                         firmware=FirmwareStore(data_dir), updates=Updates(data_dir))
+                         firmware=FirmwareStore(data_dir), updates=Updates(data_dir), rulebooks=rulebooks)
     stop = threading.Event()
 
     def on_signal(signum, _frame):
@@ -59,6 +61,8 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
                     last_err, last_at = repr(exc), time.monotonic()
 
     threading.Thread(target=match_clock, daemon=True).start()
+    if not args.no_rulebook_download:          # the rulebooks not stored yet, from their publishers (needs internet once)
+        threading.Thread(target=rulebooks.download_missing, daemon=True).start()
     log.info("listening on %s:%d, data in %s", args.host, args.port, data_dir)
     stop.wait()
     server.shutdown()
@@ -183,6 +187,8 @@ def main(argv=None) -> int:
     ap.add_argument("--to", default="./backups", help="backup destination directory")
     ap.add_argument("--keep", type=int, default=14, help="backups to keep")
     ap.add_argument("--password-stdin", action="store_true", help="set-password: read the password from stdin (scripts)")
+    ap.add_argument("--no-rulebook-download", action="store_true",
+                    help="do not fetch missing rulebooks from their publishers at start-up (Match Control can still)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,

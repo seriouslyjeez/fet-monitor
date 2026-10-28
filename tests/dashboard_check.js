@@ -789,3 +789,27 @@ console.log('OK');
   assert(finalPanel({final: f, state: 'ready'}, true).includes('data-act="mcredraw"') && !finalPanel({final: f, state: 'running'}, true).includes('mcredraw'));
   console.log('air gun final OK');
 }
+
+// rulebooks: local copies on the server, the publishers' pages; a match links its own book
+{
+  const {mcRulebooks, bookLink, bookFile, guideRow} = X;
+  const R = D.rulebooks, base = {status: {user: 'md', role: 'director'}, rulebooks: R};
+  const pg = mcRulebooks(base);
+  assert(R.docs.length === 5 && pg.includes('USA Shooting Rules') && pg.includes('ISSF Rule Book 2026'), 'every document, USA Shooting listed separately');
+  assert(pg.includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && !pg.includes('/api/v1/rulebooks/issf-2026.pdf'), 'Open only for stored copies');
+  assert.strictEqual(count(pg, /<b>Open<\/b>/g), 1, 'one stored copy, one Open');
+  assert(pg.includes('A different file than the edition FeT Monitor follows') && pg.includes('uploaded by &lt;b&gt;md&lt;/b&gt;'), 'a different file is marked; who stored it, escaped');
+  assert(pg.includes('cannot reach &lt;b&gt;competitions.nra.org') && pg.includes('Not stored'), 'the last download error');
+  assert(pg.includes('href="https://thecmp.org/competitions/cmp-competitions-rulebooks/"') && pg.includes('Where the publishers keep their rulebooks'), 'the repositories');
+  assert(pg.includes('data-act="mcrbdl" data-id="nra-par-2025"') && pg.includes('data-act="mcrbup"'), 'directors download or upload');
+  const ro = mcRulebooks(Object.assign({}, base, {status: {user: 'ro', role: 'officer'}}));
+  assert(!ro.includes('mcrbdl') && !ro.includes('mcrbup') && ro.includes('cmp-ag-2026.pdf'), 'range officers read only');
+  const ag = {doc: 'cmp-ag-2026', name: 'CMP Air Gun', url: 'https://thecmp.org/competitions/cmp-competitions-rulebooks/'};
+  assert(bookLink(base, ag).includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && !bookLink(base, ag).includes('not stored'), 'stored: the local copy');
+  const nra = {doc: 'nra-par-2025', name: 'NRA', url: 'https://competitions.nra.org/competition-resources/rule-books/'};
+  assert(bookLink(base, nra).includes('href="https://competitions.nra.org/') && bookLink(base, nra).includes('not stored here'), 'not stored: the publisher, marked');
+  assert.strictEqual(bookLink(base, {doc: null, name: 'No rulebook'}), '', 'no rulebook: no link');
+  const f = {guide: {rule: 'CMP AG 7.11.8', text: 't', suggest: null, todo: null, url: ag.url}};
+  assert(guideRow(f, {}, bookFile(base, ag)).includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && guideRow(f, {}, null).includes('href="' + ag.url + '"'), 'guidance opens the local copy');
+  console.log('rulebooks OK');
+}

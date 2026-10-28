@@ -118,10 +118,17 @@ class DashboardLogic(unittest.TestCase):
             listing = core.results.listing()
             saved = core.results.get(listing[0]["key"])
             lane2 = next(t for t in targets if t["device_id"] == "lane-2")
+            from fetserver.rulebookfiles import RulebookFiles
+            from fetserver.rulebooks import REPOSITORIES
+            store = RulebookFiles(tmp, fetch=lambda url: b"%PDF-1.7 not the real book")
+            store.add("cmp-ag-2026", b"%PDF-1.7 x", "upload", "<b>md</b>")
+            store.errors["nra-par-2025"] = "cannot reach <b>competitions.nra.org</b>"
+            rulebooks = {"docs": store.status(), "repositories": [{"name": n, "url": u} for n, u in REPOSITORIES]}
             payload = {"targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15),
                        "sight": core.sight_suggestion(lane2["view"]["series_id"], 0), "comp": comp,
                        "moving": moving, "ready": ready, "cdetail": cdetail, "mtargets": mtargets, "movedTarget": moved_target,
-                       "single": single, "saved": saved, "listing": listing, "laneShots": lane_shots}
+                       "single": single, "saved": saved, "listing": listing, "laneShots": lane_shots,
+                       "rulebooks": rulebooks}
         proc = subprocess.run(["node", os.path.join(HERE, "dashboard_check.js")], input=json.dumps(payload),
                               capture_output=True, text=True, timeout=30)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

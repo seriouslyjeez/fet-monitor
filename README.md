@@ -50,8 +50,10 @@ automatic one after 20 shots) starts the count afresh.
 
 **Match Control** (header link; beta, 10 m air rifle): runs a match's clock over chosen targets. Standard formats are
 transcribed from the rulebooks with their rule numbers ([docs/MATCH-FORMATS.md](docs/MATCH-FORMATS.md)): ISSF / USA
-Shooting 60 shots (qualification), CMP National Standard 3x10, 3x20, 3x20 standing and 60 standing, NRA Precision
-3x10, 3x20, 3x40, 40 and 60 standing; plus *Design your own match*. The server owns the clock: it starts each phase
+Shooting 60 shots (qualification), CMP Air Gun AR60, CMP National Standard 3x10, 3x20, 3x20 standing and 60 standing,
+NRA Precision 3x10, 3x20, 3x40, 40 and 60 standing; plus *Design your own match*, which names its rulebook (or none).
+Each format follows one rulebook only: its procedures, rule references, tie-breaks and finals. *Rulebooks* keeps a
+copy of each book on the server (downloaded from the publisher, or uploaded), so it opens without internet. The server owns the clock: it starts each phase
 (set-up, preparation and sighting, the pause while targets switch to record, record, changeover), switches the targets
 between sighting and record as each rulebook says (ISSF / CMP: at START after the pause; NRA: one clock per position
 and the shooter starts record from their own screen), shows the countdown on every shooter screen. How commands are given is chosen per match (and can be switched during it):
@@ -243,6 +245,9 @@ backup from /var/backups/fet-monitor in that case.
 | POST /events | target (X-FET-Token) | Batch of up to 50 events; reply `acked` is a list of `[boot_count, seq]` pairs (duplicates included), `rejected` lists malformed events |
 | POST /heartbeat | target (X-FET-Token) | Status in; `server_time_ms`, `heartbeat_interval_ms` and pending `commands` out |
 | GET /health | anyone | Liveness |
+| GET /rulebooks | anyone | The rulebooks FeT Monitor follows: each with its publisher, edition, official link, publisher's page, SHA-256 and the copy stored on this server (`stored`, `local`), plus the publishers' rulebook pages (`repositories`) |
+| GET /rulebooks/<id>.pdf | anyone | A stored rulebook (404 if not stored) |
+| POST /match/rulebooks/<id>/download, /upload | match director | Store a rulebook from its publisher's site, or a PDF uploaded as `application/pdf` (32 MB at most) |
 | GET /targets?client_id= | browser | Targets with online state, mode, shooter, settings, control claim (`mine` is relative to client_id) and `view`: the current stream's count, groups, aggregate, current target-picture shots and last shot |
 | GET /targets/<id>/shots?since_id=&limit=&segment_id= | browser | Shots with aligned x/y in mm, ring, decimal score, mode |
 | GET /targets/<id>/series | browser | Series history, newest first, with scored and sighter totals |

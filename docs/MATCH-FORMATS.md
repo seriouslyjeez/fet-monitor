@@ -17,6 +17,12 @@ anywhere (electronic targets). Times are minutes unless marked.
 | **NRA** (`NRA`) | NRA Precision Air Rifle Rules, 2025. | 3x10, 3x20, 3x40, 40 and 60 standing | none yet |
 | **No rulebook** (`NONE`) | — | custom only | any built final (each follows its own book) |
 
+The documents themselves are not in this repository (each is its publisher's copyright). The Pi downloads them from
+the links in fetserver/rulebooks.py (DOCS, with the SHA-256 of the edition FeT Monitor was built against) and keeps
+them, so the book is available without internet; Match Control → Rulebooks shows them and the publishers' pages.
+USA Shooting applies the ISSF rules; its current rule extract (2025-26, chapters 6 and 7) is hosted by the NCAA, as
+USA Shooting's own site lists only its 2011 rules.
+
 The club shoots its 10 m standing events under the CMP Air Gun book and 3-position under 3PAR (the user,
 2026-10-28). The two CMP books number their rules differently (e.g. interruptions: Air Gun 7.12, 3PAR 7.18), so
 references are written "CMP AG 7.12.2" and "CMP 3PAR 7.18.3". A reference typed as "CMP 7.x" is looked up in the

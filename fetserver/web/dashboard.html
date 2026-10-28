@@ -125,6 +125,7 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 <div id="toast"></div>
 <input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
 <input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
+<input type="file" id="pdffile" accept=".pdf,application/pdf" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
 <script>
 'use strict';
@@ -849,6 +850,38 @@ function bookChoices(mc) {                       // [book id, name]: the books o
   (mc.formats || []).filter(x => x.builtin).forEach(x => { seen[x.book] = x.book_name; });
   return Object.keys(seen).map(k => [k, seen[k]]).concat([['NONE', 'No rulebook (the match director decides)']]);
 }
+function bookFile(mc, rbx) {                     // the local copy of a match's rulebook, if this server has it
+  const doc = rbx && rbx.doc && ((mc.rulebooks || {}).docs || []).find(x => x.id === rbx.doc);
+  return doc && doc.local ? doc.local : null;
+}
+function bookLink(mc, rbx) {                     // "Rulebook: CMP Air Gun", opening the copy stored here (or the publisher's page)
+  if (!rbx || !rbx.doc) return '';
+  const local = bookFile(mc, rbx);
+  return '<a href="' + esc(local || rbx.url) + '" target="_blank" rel="noopener">Rulebook: ' + esc(rbx.name) + '</a>' + (local ? '' : ' <span class="bad">(not stored here)</span>');
+}
+function mcRulebooks(mc) {                       // the rulebooks: local copies on this server, and the publishers' pages
+  const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin'), r = mc.rulebooks;
+  let h = '<div class="panel"><div class="row"><span class="title">Rulebooks</span><button data-act="mcback">All matches</button></div>' +
+    '<p class="mut">Each match follows one rulebook. The copies below are stored on this server, so they open without internet at the range. ' +
+    'They are the publishers\' copyright and not part of FeT Monitor: the server downloads them from the publishers\' own sites (when it has internet), ' +
+    'or a match director uploads the PDF. Each copy is checked against the edition FeT Monitor follows.</p>';
+  if (!r) return h + '<p class="mut">Loading…</p></div>';
+  h += '<table class="t"><tr><th>Rulebook</th><th>Stored here</th><th></th></tr>' + r.docs.map(x => {
+    const st = x.stored;
+    const state = !st ? '<span class="bad">Not stored</span>' : st.current ? '<span style="color:var(--ok)">The edition FeT Monitor follows</span>'
+      : '<span class="bad">A different file than the edition FeT Monitor follows: rule numbers may differ</span>';
+    return '<tr><td><b>' + esc(x.title) + '</b><div class="mut">' + esc(x.publisher) + ' · ' + esc(x.edition) + '</div></td><td>' + state +
+      (st ? '<div class="mut">' + (st.how === 'upload' ? 'uploaded' : 'downloaded') + (st.by ? ' by ' + esc(st.by) : '') + ', ' + esc(new Date(st.stored_ms).toLocaleString()) + '</div>' : '') +
+      (x.error ? '<div class="bad">' + esc(x.error) + '</div>' : '') + '</td><td><div class="mcbar" style="margin:0">' +
+      (x.local ? '<a href="' + esc(x.local) + '" target="_blank" rel="noopener"><b>Open</b></a>' : '') +
+      '<a href="' + esc(x.page) + '" target="_blank" rel="noopener">Publisher\'s page</a>' +
+      (director ? '<button data-act="mcrbdl" data-id="' + esc(x.id) + '"' + (mc.rbBusy ? ' disabled' : '') + '>' + (mc.rbBusy === x.id ? 'Downloading…' : st ? 'Download again' : 'Download') + '</button>' +
+        '<button data-act="mcrbup" data-id="' + esc(x.id) + '">Upload PDF…</button>' : '') + '</div></td></tr>';
+  }).join('') + '</table>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
+    '<h3 style="margin-top:12px">Where the publishers keep their rulebooks</h3><ul>' +
+    r.repositories.map(x => '<li><a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.name) + '</a></li>').join('') + '</ul>';
+  return h + '</div>';
+}
 function mcFormatEditor(mc) {
   const f = mc.fdraft || {name: '', scoring: 'decimal', team_size: 4, phases: []};
   const kinds = ['setup', 'sight', 'pause', 'record', 'stage', 'changeover'], positions = ['', 'standing', 'prone', 'kneeling', 'sitting'];
@@ -888,7 +921,8 @@ function mcList(mc) {
   const nsel = deletable(mc).length, nrsel = Object.keys(rsel).filter(k => rsel[k]).length;
   const res = mc.results || [];
   return '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') <button data-act="mclogout">Log out</button></span></div>' +
-    (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><button data-act="mcnew">Single match (no competitors)</button><button data-act="mcfnew">Design your own match</button></div>' : '<p class="mut">Range officers run matches a match director has created.</p>') +
+    (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><button data-act="mcnew">Single match (no competitors)</button><button data-act="mcfnew">Design your own match</button><button data-act="mcrb">Rulebooks</button></div>'
+      : '<p class="mut">Range officers run matches a match director has created. <button data-act="mcrb">Rulebooks</button></p>') +
     '<h3>Competitions</h3>' + (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Competition</th><th>Format</th><th>Competitors</th><th>Relays</th><th></th></tr>' + mc.comps.map(c =>
       '<tr>' + tick('c' + c.id, c.busy, c.name) + '<td>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(c.format_name) + '</td><td>' + c.competitors + '</td><td>' +
       c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(r.state) + '</button>').join(' ') + '</td>' +
@@ -916,7 +950,7 @@ function mcConsole(mc) {
   const live = st === 'running' || st === 'paused' || st === 'holding', officer = c.paced === 'officer', ot = st === 'overtime';
   let h = '<div class="panel"><div class="row"><span class="title">' + esc(d.name) + '</span><span>' +
     (d.competition_id != null ? '<button data-act="mccopen" data-id="' + d.competition_id + '">Competitors &amp; relays</button> ' : '') + '<button data-act="mcback">All matches</button></span></div>' +
-    '<div class="mut">' + [esc(d.format.name) + (d.format.modified ? ' <b>(times modified)</b>' : ''), esc(d.format.edition || ''), d.record_shots + ' record shots'].filter(Boolean).join(' · ') + '</div>' +
+    '<div class="mut">' + [esc(d.format.name) + (d.format.modified ? ' <b>(times modified)</b>' : ''), esc(d.format.edition || ''), d.record_shots + ' record shots', bookLink(mc, d.rb)].filter(Boolean).join(' · ') + '</div>' +
     '<div class="row" style="align-items:flex-end;margin-top:8px"><div><div class="mcphase">' + esc(st === 'ready' ? 'Ready to start' : st === 'done' ? 'Match finished' : st === 'aborted' ? 'Match stopped' : (st === 'paused' || (ot && c.paused) ? 'PAUSED · ' : st === 'holding' ? 'Waiting for START · ' : '') + c.label) + '</div>' +
     (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (live ? '<div class="mut">' + esc(PHASE_KIND[c.kind] || '') + (c.extra_ms ? ' · +' + Math.round(c.extra_ms / 1000) + ' s extra' : '') + '</div>' : '') +
     (st !== 'done' && st !== 'aborted' && !ot ? '<div class="mut" style="margin-top:4px"><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b> · ' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') +
@@ -938,7 +972,7 @@ function mcConsole(mc) {
     '<tr><td>' + f.lane + '</td><td>' + (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + '</td><td>' + (f.miss ? 'miss' : dec(f.decimal)) + '</td><td>' + esc(f.why) + '</td><td>' +
     (director ? '<select data-mcdec="' + f.shot_id + '"><option value="undecided">Undecided' + (f.stream === 'scored' ? ' (not counted)' : '') + '</option>' +
       Object.keys(decisionsFor(f)).map(k => '<option value="' + k + '"' + (f.decision === k ? ' selected' : '') + '>' + esc(decisionsFor(f)[k]) + (f.guide && f.guide.suggest === k ? ' ← rulebook' : '') + '</option>').join('') + '</select>'
-      : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>' + guideRow(f, decisionsFor(f))).join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
+      : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>' + guideRow(f, decisionsFor(f), bookFile(mc, d.rb))).join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
 }
 function laneTime(l, d) {                       // a shooter's own clock (moved, interrupted, ...), or the match's
@@ -1083,10 +1117,10 @@ function shotSheet(mc) {
     '<h4>Shots</h4><div class="scroll" style="max-height:55vh"><table class="t"><tr><th>#</th><th>Value</th><th>Time</th><th>Corrections</th><th></th></tr>' + L.shots.slice().reverse().map(row).join('') + '</table></div>' +
     '<p class="mut">Newest first; S = sighting shot. Range officers mark shots under review or record protests; the match director settles them and corrects scores. Nothing is deleted: a correction can be voided.</p></div>';
 }
-function guideRow(f, labels) {                  // what the rulebook says about a flagged shot (rules.py guidance)
+function guideRow(f, labels, local) {           // what the rulebook says about a flagged shot (rules.py guidance)
   const g = f.guide;
   if (!g) return '';
-  return '<tr class="guide"><td></td><td colspan="4"><span class="mut">' + (g.rule ? '<a href="' + esc(g.url) + '" target="_blank" rel="noopener">' + esc(g.rule) + '</a>: ' : '') + esc(g.text) +
+  return '<tr class="guide"><td></td><td colspan="4"><span class="mut">' + (g.rule ? '<a href="' + esc(local || g.url) + '" target="_blank" rel="noopener">' + esc(g.rule) + '</a>: ' : '') + esc(g.text) +
     (g.suggest ? ' <b>Suggested: ' + esc(labels[g.suggest] || g.suggest) + '.</b>' : '') + (g.todo ? ' ' + esc(g.todo) : '') + '</span></td></tr>';
 }
 function commandsPanel(d) {                     // what the range officer says now (and, when they read them, the Next button)
@@ -1180,7 +1214,7 @@ function mcCompPage(mc) {
   const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
   const free = c.competitors.filter(p => !p.relay), rd = mc.rdraft || {};
   let h = '<div class="panel mcform"><div class="row"><span class="title">' + esc(c.name) + '</span><button data-act="mcback">All matches</button></div>' +
-    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ' + esc((c.rb || {}).name || '') + ' rules · teams of ' + c.team_size +
+    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ' + (bookLink(mc, c.rb) || esc((c.rb || {}).name || '') + ' rules') + ' · teams of ' + c.team_size +
     (c.best_count ? ' (best ' + c.team_size + ' count)' : '') + ' · commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</div>' +
     '<div class="mcbar"><a href="#/results/' + c.id + '">Results</a> · <a href="#/print/results/' + c.id + '" target="_blank" rel="noopener">Print results</a> · ' +
     '<a href="#/print/cards/' + c.id + '" target="_blank" rel="noopener">Print score cards</a> · <a href="' + API + '/results/' + c.id + '.csv">CSV</a> · <a href="' + API + '/results/' + c.id + '-teams.csv">Teams CSV</a></div>' +
@@ -1266,7 +1300,7 @@ function matchView(S) {
   const mc = S.mc || {};
   const inner = !mc.status ? '<div class="panel"><p class="mut">Loading…</p></div>' : !mc.status.logged_in ? mcLogin(mc) :
     mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) :
-    mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : mcList(mc);
+    mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : mc.view === 'rulebooks' ? mcRulebooks(mc) : mcList(mc);
   return '<div class="mc">' + inner + '</div>';
 }
 function matchUsersPanel(users, msg) {          // Range Control: who may use Match Control
@@ -1368,6 +1402,7 @@ async function refresh() {
         const cs = await matchCall('/competitions');
         if (cs.status === 200) { mc.comps = cs.data.competitions; mc.compsErr = ''; }
         else mc.compsErr = (cs.data && cs.data.error) || 'error ' + cs.status;
+        if (mc.view === 'rulebooks' || !mc.rulebooks) mc.rulebooks = await get('/rulebooks').catch(() => mc.rulebooks);
         if (mc.view === 'comp' && mc.copen) {
           const cd = await matchCall('/competitions/' + mc.copen);
           if (cd.status === 200) mc.comp = cd.data;
@@ -1710,6 +1745,17 @@ async function matchAct(el, a) {
   }
   if (a === 'mclogout') { await matchCall('/logout', {}); mc.view = 'list'; return refresh(); }
   if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; mc.shotp = null; return refresh(); }
+  if (a === 'mcrb') { mc.view = 'rulebooks'; mc.msg = ''; return refresh(); }
+  if (a === 'mcrbdl') {
+    mc.rbBusy = el.dataset.id; mc.msg = ''; render(true);
+    const res = await matchCall('/rulebooks/' + el.dataset.id + '/download', {});
+    mc.rbBusy = null;
+    if (res.data.docs) mc.rulebooks.docs = res.data.docs;
+    if (res.status === 200) toast(res.data.stored.current ? 'Downloaded: the edition FeT Monitor follows' : 'Downloaded, but it is a different file than the edition FeT Monitor follows');
+    else mc.msg = 'Not downloaded: ' + (res.data.error || 'error ' + res.status);
+    return render(true);
+  }
+  if (a === 'mcrbup') { mc.rbUp = el.dataset.id; const f = document.getElementById('pdffile'); if (f) f.click(); return; }
   if (a === 'mcnew') { mc.view = 'new'; mc.draft = {lanes: {}}; mc.msg = ''; return render(); }
   if (a === 'mcfnew') { mc.view = 'format'; mc.fdraft = {name: '', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'Sighting', minutes: 10}, {kind: 'record', label: 'Record', minutes: 30, shots: 20, warn: '5, 2'}]}; mc.msg = ''; return render(); }
   if (a === 'mcfedit') {
@@ -2055,6 +2101,20 @@ function boot() {
     refresh();
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'np_details' && S.mc) S.mc.npOpen = e.target.open; }, true);
+  const pdfPick = document.getElementById('pdffile');   // a rulebook PDF a match director uploads (no internet at the range)
+  if (pdfPick) pdfPick.addEventListener('change', async () => {
+    const f = pdfPick.files && pdfPick.files[0], mc = S.mc;
+    pdfPick.value = '';
+    if (!f || !mc || !mc.rbUp) return;
+    if (f.size > 32 * 1024 * 1024) { mc.msg = 'That file is too big for a rulebook (32 MB at most).'; return render(true); }
+    const r = await fetch(API + '/match/rulebooks/' + mc.rbUp + '/upload', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'application/pdf', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    if (d.docs && mc.rulebooks) mc.rulebooks.docs = d.docs;
+    if (r && r.status === 200) { mc.msg = ''; toast(d.stored.current ? 'Stored: the edition FeT Monitor follows' : 'Stored, but it is a different file than the edition FeT Monitor follows'); }
+    else mc.msg = 'Not stored: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
+    render(true);
+  });
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -2158,7 +2218,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

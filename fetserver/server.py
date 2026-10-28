@@ -19,6 +19,8 @@ from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_firmware
+from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
+from .rulebooks import DOC_BY_ID, REPOSITORIES
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -27,6 +29,8 @@ MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|resta
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
+RULEBOOK_RE = re.compile(r"^/api/v1/match/rulebooks/([a-z0-9-]{2,40})/(download|upload)$")
+RULEBOOK_FILE_RE = re.compile(r"^/api/v1/rulebooks/([a-z0-9-]{2,40})\.pdf$")
 MAX_CSV = 256 * 1024
 RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$")   # c competition, m match, a frozen copy
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
@@ -115,6 +119,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
             return self._send(403, {"error": "Match Control requests must come from the FeT Monitor page"})
         sess = admin.match_session(self._match_token(), mc.user)
+        rbm = RULEBOOK_RE.match(path)
+        if rbm and method == "POST":                   # a rulebook: download it from its publisher, or upload the PDF
+            return self._rulebook(sess, rbm.group(1), rbm.group(2))
         imp = COMP_IMPORT_RE.match(path)
         if imp and method == "POST":                   # a CSV file of competitors: read in memory, never stored
             if not sess or sess["role"] not in ("director", "admin"):
@@ -329,6 +336,62 @@ class Handler(BaseHTTPRequestHandler):
         except MatchError as exc:
             return self._send(400, {"error": str(exc)})
         self._send(404, {"error": "not found"})
+
+    def _rulebook(self, sess, doc_id: str, what: str) -> None:
+        """A match director stores a rulebook: from the publisher's site (download) or a PDF file (upload, raw
+        application/pdf). Refused before reading an upload's body when not allowed or too big."""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            length = -1
+        if not sess or sess["role"] not in ("director", "admin"):
+            self.close_connection = True
+            return self._send(401 if not sess else 403, {"error": "only a match director can do that"})
+        if doc_id not in DOC_BY_ID:
+            self.close_connection = True
+            return self._send(404, {"error": "unknown rulebook"})
+        store: RulebookFiles = self.server.rulebooks
+        try:
+            if what == "download":
+                if 0 < length <= MAX_BODY:
+                    self.rfile.read(length)
+                meta = store.download(doc_id, sess["user"])
+            else:
+                if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/pdf":
+                    self.close_connection = True
+                    return self._send(415, {"error": "upload the PDF file itself (application/pdf)"})
+                if not 0 < length <= MAX_PDF:
+                    self.close_connection = True
+                    return self._send(413, {"error": f"a rulebook is at most {MAX_PDF // (1024 * 1024)} MB"})
+                data = self.rfile.read(length)
+                if len(data) != length:
+                    self.close_connection = True
+                    raise BadRequest("upload cut off")
+                meta = store.add(doc_id, data, "upload", sess["user"])
+        except RulebookError as exc:
+            return self._send(400, {"error": str(exc), "docs": store.status()})
+        log.info("Match Control: %s stored rulebook %s by %s (%s)", sess["user"], doc_id, what,
+                 "the edition FeT Monitor follows" if meta["current"] else "a different file")
+        return self._send(200, {"stored": meta, "docs": store.status()})
+
+    def _rulebook_file(self, doc_id: str) -> None:
+        """A stored rulebook PDF (public on the club network, like the publishers' own pages)."""
+        path = self.server.rulebooks.path(doc_id)
+        if path is None:
+            return self._send(404, {"error": "this rulebook is not stored on the server: download it in Match Control > Rulebooks"})
+        size = path.stat().st_size
+        self.send_response(200)
+        self.send_header("Content-Type", "application/pdf")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition", f'inline; filename="{doc_id}.pdf"')
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
 
     def _firmware_upload(self) -> None:
         """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big."""
@@ -581,6 +644,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._device_firmware(dm.group(1))
         if url.path == "/api/v1/stream":
             return self._stream()
+        if url.path == "/api/v1/rulebooks":            # public: the rulebooks, their local copies and the publishers' pages
+            return self._send(200, {"docs": self.server.rulebooks.status(), "repositories": [{"name": n, "url": u} for n, u in REPOSITORIES]})
+        rf = RULEBOOK_FILE_RE.match(url.path)
+        if rf:
+            return self._rulebook_file(rf.group(1))
         if url.path == "/api/v1/health":
             return self._send(200, {"ok": True, "version": __version__, "time": iso(core.now_ms()),
                                     "event_conflicts": core.conflict_count()})
@@ -736,8 +804,10 @@ class FetHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
-    def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None):
+    def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
+                 rulebooks: RulebookFiles = None):
         super().__init__(addr, Handler)
+        self.rulebooks = rulebooks if rulebooks is not None else RulebookFiles(None)
         self.core = core
         self.token = token
         self.firmware = firmware if firmware is not None else FirmwareStore(None)
@@ -762,5 +832,5 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
-                firmware: FirmwareStore = None, updates: Updates = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware, updates)
+                firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks)

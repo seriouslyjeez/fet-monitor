@@ -19,9 +19,49 @@ BOOKS = {
          "url": "https://thecmp.org/competitions/cmp-competitions-rulebooks/", "tie": "CMP"},     # 8.5.1: the same countback as 3PAR 8.6.1
     PAR: {"name": "CMP 3PAR", "title": PAR_EDITION, "cite": "CMP 3PAR",
           "url": "https://thecmp.org/air/national-standard-three-position-air-rifle-rules/", "tie": "CMP"},
-    NRA: {"name": "NRA", "title": "NRA Precision Air Rifle Rules 2025", "cite": "NRA", "url": "http://rulebooks.nra.org", "tie": "NRA"},
+    NRA: {"name": "NRA", "title": "NRA Precision Air Rifle Rules 2025", "cite": "NRA",
+          "url": "https://competitions.nra.org/competition-resources/rule-books/", "tie": "NRA"},
     NONE: {"name": "No rulebook", "title": "No rulebook: the match director decides", "cite": "", "url": "", "tie": None},
 }
+# The documents FeT Monitor was built against, from each publisher's own site (fetched 2026-10-28; sha256 of those
+# files). The PDFs are not in this repository: they are the publishers' copyright. The Pi downloads them
+# (rulebookfiles.py) so the book is there without internet. USA Shooting follows the ISSF rules; it is listed
+# separately with the current USA Shooting rule extract, which the NCAA hosts (USA Shooting's own site lists 2011 rules).
+DOCS = (
+    {"id": "issf-2026", "book": ISSF, "publisher": "ISSF", "title": "ISSF Rule Book 2026",
+     "edition": "Edition 2025, third print 10/2026, effective 19 October 2026",
+     "url": "https://backoffice.issf-sports.org/getfile.aspx?mod=docf&pane=1&inst=455&file=ISSF-Rule-Book-2026-Edition-2025-Third-Print-10-2026-Effective-19-October-2026.pdf",
+     "page": "https://www.issf-sports.org/rules", "size": 9137845,
+     "sha256": "2a79b10e08375de1f0c45f62c19f615f1e665d169e5db4dee7a0805399a2d078"},
+    {"id": "usas-2025", "book": ISSF, "publisher": "USA Shooting", "title": "USA Shooting Rules: 50 m Rifle and 10 m Air Rifle",
+     "edition": "2025-26 extract of chapters 6 and 7, hosted by the NCAA (USA Shooting applies the ISSF rules)",
+     "url": "https://ncaaorg.s3.amazonaws.com/championships/sports/rifle/rules/2025-26PRXRI_USAShootingRules.pdf",
+     "page": "https://usashooting.org/resource-center/", "size": 1504833,
+     "sha256": "0fcf0539979ca2e818a2dbf87d6eaff0421d2cc044c2faa43dbf9e5f86a12067"},
+    {"id": "cmp-ag-2026", "book": AG, "publisher": "CMP", "title": "CMP Air Rifle and Air Pistol Competition Rules",
+     "edition": "5th edition, 2026", "url": "https://thecmp.org/wp-content/uploads/2026/04/2026-CMP-Air-Gun-Rulebook.pdf",
+     "page": "https://thecmp.org/competitions/cmp-competitions-rulebooks/", "size": 1997673,
+     "sha256": "5cdcbb1b0e8ea2e253f7c82d2c8d892fa6f4313b75eb95339735a404562cdf98"},
+    {"id": "cmp-3par-2026", "book": PAR, "publisher": "CMP (National Three-Position Air Rifle Council)",
+     "title": "National Standard Three-Position Air Rifle Rules", "edition": "16th edition, 2026-2028",
+     "url": "https://thecmp.org/wp-content/uploads/2026/10/2026-2028-3-PAR-Rules.pdf",
+     "page": "https://thecmp.org/air/national-standard-three-position-air-rifle-rules/", "size": 1325281,
+     "sha256": "98a8eb7dae61b40fbfe3ae60769bb1ab6381910c3eb51965ca95a3abcc31c179"},
+    {"id": "nra-par-2025", "book": NRA, "publisher": "NRA", "title": "NRA Precision Air Rifle Rules",
+     "edition": "revised February 2025", "url": "https://competitions.nra.org/media/10004/2025-precisionairrifle_rulebook.pdf",
+     "page": "https://competitions.nra.org/competition-resources/rule-books/", "size": 1992105,
+     "sha256": "02076a0b05f7749ec21ee9fe33ac733eecf696a78de3e46f8e149ff33068f313"},
+)
+DOC_BY_ID = {d["id"]: d for d in DOCS}
+BOOK_DOC = {ISSF: "issf-2026", AG: "cmp-ag-2026", PAR: "cmp-3par-2026", NRA: "nra-par-2025"}     # the book itself
+REPOSITORIES = (                                     # where each publisher keeps its rulebooks (Match Control links)
+    ("ISSF rules", "https://www.issf-sports.org/rules"),
+    ("USA Shooting resource center", "https://usashooting.org/resource-center/"),
+    ("NCAA rifle playing rules (USA Shooting rule extract)", "https://www.ncaa.org/championships/playing-rules/rifle-playing-rules/"),
+    ("CMP competition rulebooks", "https://thecmp.org/competitions/cmp-competitions-rulebooks/"),
+    ("CMP National Standard Three-Position Air Rifle rules and range officer scripts", "https://thecmp.org/air/national-standard-three-position-air-rifle-rules/"),
+    ("NRA rule books", "https://competitions.nra.org/competition-resources/rule-books/"),
+)
 LEGACY = {"ISSF": ISSF, "CMP": PAR, "CMP 3PAR": PAR, "CMP Air Gun": AG, "NRA": NRA}
 TIE_RULES = ("ISSF", "CMP", "NRA")
 
@@ -197,7 +237,7 @@ def texts(book: str) -> dict:
     pm, pnum = PROC[book]["protest_min"]
     nr, nrm = r("not_registered"), r("not_registered_move")
     return {
-        "book": book, "name": b["name"], "title": b["title"], "url": b["url"],
+        "book": book, "name": b["name"], "title": b["title"], "url": b["url"], "doc": BOOK_DOC.get(book),
         "move": (mv + ": " if mv else "") + mtext,
         "move_extra_s": s,
         "later_relay": lr,
