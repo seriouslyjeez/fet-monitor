@@ -208,7 +208,8 @@ class Matches:
                 continue
             if not only and not everyone and own_clock(ln):
                 continue
-            out = (ln["start_phase"] > phase and not everyone) or (only_lanes is not None and ln["lane"] not in only_lanes and not only)
+            out = (ln["start_phase"] > phase and not everyone) or (only_lanes is not None and ln["lane"] not in only_lanes and not only) \
+                or ln["out_place"] is not None
             self.core._set_mode_in(c, ln["device_id"], "sighter" if out else mode, self._session(m, ln), now)
 
     @staticmethod
@@ -251,8 +252,11 @@ class Matches:
             self._set_modes(c, m, "record" if p["kind"] == "record" else "sighter", now)
 
     def _finish_phase(self, c, m, now: int, how: str) -> None:
-        fmt = json.loads(m["format_json"])
         self._log(c, m["id"], now, "phase_end", m["phase"], None, {"how": how})
+        if m["final_kind"] in ("airgun", "sfz_standing", "sfz_3p"):    # a final with eliminations: decide a place
+            self._decide_place(c, m, now)
+            m = self._row(c, m["id"])
+        fmt = json.loads(m["format_json"])
         c.execute("UPDATE match_lanes SET own_phase=NULL, own_left_ms=NULL, sighting=0, extra_ms=0 WHERE match_id=? AND own_phase=? "
                   "AND own_left_ms=0 AND own_since_ms IS NULL AND moving_since_ms IS NULL", (m["id"], m["phase"]))   # their time ended early
         for ln in self._lanes(c, m["id"]):                # a moved shooter with time left finishes this phase on their own
@@ -311,6 +315,61 @@ class Matches:
                 self._pub(mid)
         return ended
 
+    def final_scores(self, c, m) -> Dict[int, dict]:
+        """A final's running scores per firing point: {lane: {"total": tenths of the final's shots (no shoot-offs),
+        "rounds": {round: [shoot-off tenths ...]}}}."""
+        fmt = json.loads(m["format_json"])
+        wins = self.windows(c, m["id"])
+        flags = {f["shot_id"]: f for f in self.flags(c, m)}
+        out = {}
+        for ln in self._lanes(c, m["id"]):
+            row = {"total": 0, "rounds": {}}
+            for x in self.counted(c, m, ln, flags):
+                w = next((w for w in wins if w["start"] <= x["t"] and (w["end"] is None or x["t"] < w["end"])), None)
+                p = fmt["phases"][w["phase"]] if w else {}
+                if p.get("lanes") is not None:
+                    row["rounds"].setdefault(p.get("round"), []).append(x["tenths"])
+                else:
+                    row["total"] += x["tenths"]
+            out[ln["lane"]] = row
+        return out
+
+    def _decide_place(self, c, m, now: int) -> None:
+        """After a deciding shot (a phase with "out": that place) or a shoot-off for it: the lowest finalist takes
+        that place and is eliminated (after the last shot, 1st and 2nd are decided); a tie inserts a one-shot
+        shoot-off for the tied right after (CMP Air Gun 10.3.5), repeated until broken. A place that does not exist
+        (fewer finalists) is skipped."""
+        fmt = json.loads(m["format_json"])
+        p = fmt["phases"][m["phase"]]
+        if p["kind"] != "record":
+            return
+        rnd = m["phase"] if p.get("out") else p.get("round")
+        if rnd is None or (p.get("lanes") is not None and p.get("round") is None):
+            return
+        place = fmt["phases"][rnd]["out"]
+        active = [ln for ln in self._lanes(c, m["id"]) if ln["out_place"] is None and ln["series_id"] is not None]
+        if len(active) != place:
+            return
+        sc = self.final_scores(c, m)
+        key = lambda ln: (sc[ln["lane"]]["total"], sc[ln["lane"]]["rounds"].get(rnd, []))
+        low = min(key(ln) for ln in active)
+        bottom = [ln for ln in active if key(ln) == low]
+        if len(bottom) > 1:                              # tied: a shoot-off for them, now
+            n = 1 + sum(1 for x in fmt["phases"] if x.get("lanes") is not None and x["kind"] == "record")
+            fmt["phases"][m["phase"] + 1:m["phase"] + 1] = mf.shoot_off_phases(sorted(ln["lane"] for ln in bottom), n, "10.3.5", rnd)
+            if len(fmt["phases"]) > mf.MAX_PHASES:       # never jam the clock: the match director decides by hand
+                self._log(c, m["id"], now, "shoot_off_limit", m["phase"], None, {"lanes": sorted(ln["lane"] for ln in bottom), "place": place})
+                return
+            c.execute("UPDATE matches SET format_json=? WHERE id=?", (json.dumps(fmt), m["id"]))
+            self._log(c, m["id"], now, "shoot_off", m["phase"] + 2, None, {"lanes": sorted(ln["lane"] for ln in bottom), "place": place, "auto": True})
+            return
+        out = bottom[0]
+        decided = [(out, place)] + ([(next(ln for ln in active if ln is not out), 1)] if place == 2 else [])
+        for ln, pl in decided:
+            c.execute("UPDATE match_lanes SET out_place=?, out_ms=? WHERE match_id=? AND device_id=?", (pl, now, m["id"], ln["device_id"]))
+            self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl})
+            self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
+
     def _all_fired(self, c, m) -> bool:
         """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 10.4.6 c)."""
         fmt = json.loads(m["format_json"])
@@ -320,6 +379,7 @@ class Matches:
         start = c.execute("SELECT MAX(at_ms) FROM match_log WHERE match_id=? AND kind IN ('phase_start','go') AND phase=?",
                           (m["id"], m["phase"])).fetchone()[0]
         lanes = [ln for ln in self._lanes(c, m["id"]) if ln["series_id"] is not None and ln["left_ms"] is None and not own_clock(ln)
+                 and ln["out_place"] is None
                  and (p.get("lanes") is None or ln["lane"] in p["lanes"])]
         return bool(lanes) and all(c.execute("SELECT COUNT(*) FROM shots WHERE series_id=? AND stream='scored' AND event_ms>=?",
                                              (ln["series_id"], start)).fetchone()[0] >= p["shots"] for ln in lanes)
@@ -914,6 +974,8 @@ class Matches:
                     why, code = f"before this shooter rejoins at {fmt['phases'][ln['start_phase']]['label'].lower()} (CMP 7.18)", "waiting"
                 elif any(ph == w["phase"] and at <= t and at >= attempt_start[(w["phase"], w["attempt"])] for ph, at in stops):
                     why, code = "after this shooter's own time (CMP 7.18.3)", "after_own_time"
+                elif ln["out_place"] is not None and t >= ln["out_ms"] and ln["out_place"] > 1:
+                    why, code = "after being eliminated", "eliminated"
                 elif fmt["phases"][w["phase"]].get("lanes") is not None and ln["lane"] not in fmt["phases"][w["phase"]]["lanes"]:
                     why, code = f"during {fmt['phases'][w['phase']]['label'].lower()}, not in it", "not_in_shoot_off"
                 elif w["hold"]:
@@ -1000,7 +1062,7 @@ class Matches:
     LOG_TEXT = {"start": "Match started", "end": "Match finished", "abort": "Match stopped", "pause": "Clock paused", "resume": "Clock resumed",
                 "restart": "Restarted", "extra": "Extra time for everyone", "pacing": "Commands changed", "move": "Shooter moved to another target",
                 "lane_ready": "Moved shooter ready", "lane_extra": "Extra time for this shooter", "lane_stop": "Shooter's own time ended",
-                "left_relay": "Sent to a later relay (CMP 7.18)", "shoot_off": "Shoot-off", "joins_relay": "Joins from an earlier relay (CMP 7.18)",
+                "left_relay": "Sent to a later relay (CMP 7.18)", "shoot_off": "Shoot-off", "place": "Place decided", "joins_relay": "Joins from an earlier relay (CMP 7.18)",
                 "posted": "Preliminary results posted", "official": "Results made official", "reopen": "Official results reopened",
                 "interrupt": "Shooter's time stopped", "interrupt_end": "Shooter's time runs again", "malfunction": "Malfunction",
                 "late": "Late arrival joined", "sighters": "Sighters allowed"}

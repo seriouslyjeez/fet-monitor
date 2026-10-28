@@ -354,6 +354,11 @@ MIGRATIONS = [
     ALTER TABLE matches ADD COLUMN final_class TEXT;
     ALTER TABLE match_lanes ADD COLUMN final_pos TEXT;
     """,
+    """
+    -- Finals with eliminations (CMP Air Gun Final 10.2): the place a finalist was eliminated in, and when.
+    ALTER TABLE match_lanes ADD COLUMN out_place INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN out_ms INTEGER;
+    """,
 ]
 
 

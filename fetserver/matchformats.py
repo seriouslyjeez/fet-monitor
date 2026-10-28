@@ -16,14 +16,14 @@ from __future__ import annotations
 
 import copy
 import re
-from typing import Dict, List
+from typing import Optional, Dict, List
 
 KINDS = {"setup", "sight", "pause", "record", "stage", "changeover"}
 FIRE_KINDS = {"sight", "record", "stage"}
 SCORING = {"decimal", "integer"}
 POSITIONS = {"", "standing", "prone", "kneeling", "sitting"}
 MAX_PHASES = 80                  # a final with its single shots and shoot-offs needs more than a qualification
-FINALS = ("standard", "sfz_standing", "sfz_3p")
+FINALS = ("standard", "airgun", "sfz_standing", "sfz_3p")
 MAX_SECONDS = 4 * 3600
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
@@ -151,8 +151,32 @@ def _nra_standing(n):
             "phases": [_nra_stage("standing", n, True)]}
 
 
+AG_EDITION = "CMP Air Rifle and Air Pistol Competition Rules, 5th ed. (2026)"
+
+
+def _ag_ar60():
+    """CMP Air Gun rules 6.4.1 b (electronic targets) and the CMP 60-shot script: call to the line, 15 minutes
+    preparation and sighting (30 s warning, 7.9.1), straight on to 60 record shots in 75 minutes (10 and 5 minute
+    warnings, 7.9.2)."""
+    return {
+        "id": "cmp-ag-ar60", "name": "10m Air Rifle 60 (AR60, CMP Air Gun Rules)", "rulebook": "CMP Air Gun", "tie_rules": "CMP",
+        "edition": AG_EDITION, "scoring": "decimal", "team_size": 4,
+        "notes": "Electronic targets (6.4.1 b). Target carriers: 90 minutes record fire (6.4.1 d), set the time when creating the match. "
+                 "Ties: last 10-shot series, then shot by shot from the last (8.5.1 b). Teams of 2, 3 or 4 as the program says (6.4.6).",
+        "phases": [
+            P("setup", "Call to the line", 15, rule="script", start="You may move your rifles and equipment to the firing line. "
+              "Your preparation and sighting time will begin in fifteen minutes."),
+            P("sight", "Preparation and sighting", 15, position="standing", warnings=[(30, "Thirty seconds")], rule="6.4.1 b, 7.9.1",
+              start="Preparation and sighting time. Start. You will have fifteen minutes to fire unlimited sighting shots.",
+              end="Preparation and sighting time. Stop."),
+            P("record", "Record fire", 75, shots=60, position="standing", rule="6.4.1 b, 7.9.2",
+              warnings=[(600, "Ten minutes"), (300, "Five minutes")],
+              start="This event will be 60 record shots fired in a time limit of 75 minutes. Start.", end="Stop. Unload."),
+        ]}
+
+
 BUILTIN: Dict[str, dict] = {f["id"]: f for f in (
-    _issf_qual(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
+    _issf_qual(), _ag_ar60(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
     _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60))}
 
 
@@ -218,6 +242,9 @@ def validate(fmt) -> dict:
         for flag in ("nohold", "early"):           # finals: no hold for START after LOAD; the shot ends when all have fired
             if p.get(flag) is True:
                 out["phases"][-1][flag] = True
+        for key in ("out", "round"):              # finals: the place decided after this phase; a shoot-off's decision
+            if isinstance(p.get(key), int) and not isinstance(p.get(key), bool):
+                out["phases"][-1][key] = p[key]
         if isinstance(p.get("lanes"), list) and all(isinstance(x, int) and not isinstance(x, bool) for x in p["lanes"]):
             out["phases"][-1]["lanes"] = sorted(set(p["lanes"]))   # a shoot-off: only these firing points fire
     if not any(p["kind"] in ("record", "stage") for p in out["phases"]):
@@ -252,9 +279,44 @@ def cmp_standard_final(spoken: bool = False) -> dict:
                      "notes": "Added to the qualification score (10.4.3); ties for 1st-3rd shot off (10.2.9 n).", "phases": phases})
 
 
-def shoot_off_phases(lanes, n: int) -> list:
-    """One tie-breaking shot for the tied firing points (CMP 10.2.9 n): LOAD, 5 seconds, START, 50 seconds."""
-    return [dict(P("pause", "Shoot-off %d: load" % n, 0, 5, rule="10.2.9 n",
-                   start="These commands are for the tied athletes only, for your tie-breaking shot. Load."), lanes=list(lanes)),
-            dict(P("record", "Shoot-off %d" % n, 0, 50, shots=1, position="standing", rule="10.2.9 n", start="Start.", end="Stop."),
-                 nohold=True, early=True, lanes=list(lanes))]
+def shoot_off_phases(lanes, n: int, rule: str = "10.2.9 n", round_: Optional[int] = None) -> list:
+    """One tie-breaking shot for the tied firing points (3PAR 10.2.9 n, Air Gun 10.3.5): LOAD, 5 seconds, START,
+    50 seconds or until the tied have fired. round_: the phase whose decision it settles."""
+    extra = {"round": round_} if round_ is not None else {}
+    return [dict(P("pause", "Shoot-off %d: load" % n, 0, 5, rule=rule,
+                   start="These commands are for the tied athletes only, for your tie-breaking shot. Load."), lanes=list(lanes), **extra),
+            dict(P("record", "Shoot-off %d" % n, 0, 50, shots=1, position="standing", rule=rule, start="Start.", end="Stop."),
+                 nohold=True, early=True, lanes=list(lanes), **extra)]
+
+
+AIRGUN_OUT = {12: 8, 14: 7, 16: 6, 18: 5, 20: 4, 22: 3, 24: 2}   # after shot n, place p is decided (24: 1st and 2nd)
+
+
+def cmp_airgun_final(spoken: bool = False) -> dict:
+    """CMP Air Gun Final (Air Rifle and Air Pistol Rules 2026, 10.2; script 20 Feb 2026): take positions 30 s,
+    preparation and sighting 5 min (30 s warning), a pause for the targets, 2 series of 5 shots in 250 s, then single
+    shots in 50 s; after shots 12, 14 ... 22 the lowest finalist is eliminated, shot 24 decides 1st and 2nd (10.2.1).
+    Every shot is LOAD, 5 s, START, and STOP at its time (10.2.5 c, 10.2.6 c). Spoken: a pause for the scores before
+    each LOAD. Phases that decide a place carry "out": that place."""
+    phases = [P("setup", "Take your positions", 0, 30, rule="10.2.2", start="Take your positions. Your preparation and sighting time will start in 30 seconds."),
+              P("sight", "Preparation and sighting", 5, position="standing", warnings=[(30, "Thirty seconds")], rule="10.2.3",
+                start="Preparation and sighting. Start. You will have five minutes to fire unlimited sighting shots.",
+                end="Stop. Unload. Preparation and sighting time. Stop."),
+              P("pause", "Targets to match fire", 0, 30, rule="10.2.4")]
+
+    def load(label, say, k):
+        if spoken and k > 1:
+            phases.append(P("pause", "Scores and commentary", 0, COMMENTARY_S, rule="10.2.5 d"))
+        phases.append(P("pause", label, 0, 5, rule="10.2.5", start=say))
+    for k in (1, 2):
+        load("Series %d: load" % k, "For the %s competition series. Load." % ("first" if k == 1 else "next"), k)
+        phases.append(dict(P("record", "Series %d" % k, 0, 250, shots=5, position="standing", rule="10.2.5", start="Start.", end="Stop."), nohold=True))
+    for n in range(11, 25):
+        load("Shot %d: load" % n, "For the next competition shot. Load.", n)
+        ph = dict(P("record", "Shot %d" % n, 0, 50, shots=1, position="standing", rule="10.2.6", start="Start.", end="Stop."), nohold=True)
+        if n in AIRGUN_OUT:
+            ph["out"] = AIRGUN_OUT[n]
+        phases.append(ph)
+    return validate({"id": "cmp-final-airgun", "name": "CMP Air Gun Final", "rulebook": "CMP Air Gun", "tie_rules": "CMP", "edition": AG_EDITION,
+                     "scoring": "decimal", "final": "airgun", "notes": "The final alone decides the places (10.1.1); every tie is shot off (10.3.5).",
+                     "phases": phases})

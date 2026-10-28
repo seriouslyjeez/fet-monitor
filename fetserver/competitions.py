@@ -10,6 +10,7 @@ have exactly team_size members. Teams that do not qualify are listed, unranked, 
 from __future__ import annotations
 
 import json
+import random
 from functools import cmp_to_key
 from typing import Dict, List, Optional
 
@@ -345,13 +346,15 @@ class Competitions:
         that finished relay on their own target. The final is a match of the competition; paced "officer" (default:
         the range officer gives LOAD for every shot) or "spoken" (the console speaks the commands, with a pause for the
         scores before each LOAD)."""
-        if kind != "standard":
+        if kind not in ("standard", "airgun"):
             raise MatchError("this final is not built yet")
+        if kind == "airgun" and for_relay is not None:
+            raise MatchError("the Air Gun Final is for the top of a class, not for a relay")
         if paced not in ("officer", "spoken"):
             raise MatchError("a final's commands: officer (the range officer reads them) or spoken")
         c = self.db.conn()
         comp = self._row(c, cid)
-        fmt = mf.cmp_standard_final(spoken=paced == "spoken")
+        fmt = mf.cmp_standard_final(spoken=paced == "spoken") if kind == "standard" else mf.cmp_airgun_final(spoken=paced == "spoken")
         if for_relay is not None:
             r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
             if r is None or r["state"] != "done":
@@ -374,7 +377,11 @@ class Competitions:
             ranked = [e for e in group["individuals"] if e["fired"] and not e.get("dq")]
             if len(ranked) < want:
                 raise MatchError(f"only {len(ranked)} competitors have a score")
-            lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, ranked[:want])]
+            chosen = ranked[:want]
+            if kind == "airgun":                         # firing points by random draw (Air Gun 10.1.2)
+                chosen = list(chosen)
+                random.SystemRandom().shuffle(chosen)
+            lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, chosen)]
             name = f"{comp['name']} - final" + (f" ({cls})" if cls else "")
         mid = self.matches.create(name, None, lanes, by, paced=paced, fmt=fmt, competition_id=cid, relay=None)
         with self.db.write() as w:
@@ -383,6 +390,23 @@ class Competitions:
                 w.execute("UPDATE match_lanes SET final_pos=? WHERE match_id=? AND device_id=?", (chr(65 + i), mid, l["device_id"]))
         self._pub(cid)
         return mid
+
+    def redraw_final(self, mid: int, by: str) -> None:
+        """A new random draw of an Air Gun Final's firing points, before it starts (10.1.2)."""
+        with self.db.write() as c:
+            m = self.matches._row(c, mid)
+            if m["final_kind"] != "airgun":
+                raise MatchError("only a final with a draw can be redrawn")
+            if m["state"] != "ready":
+                raise MatchError("the final has started")
+            lanes = c.execute("SELECT * FROM match_lanes WHERE match_id=? ORDER BY lane", (mid,)).fetchall()
+            people = [(l["competitor"], l["competitor_id"]) for l in lanes]
+            random.SystemRandom().shuffle(people)
+            for l, (name, pid) in zip(lanes, people):
+                c.execute("UPDATE match_lanes SET competitor=?, competitor_id=? WHERE match_id=? AND device_id=?", (name, pid, mid, l["device_id"]))
+            self.matches._log(c, mid, self.core.now_ms(), "redraw", None, None, {"by": by})
+        self.matches._pub(mid)
+        self._pub(m["competition_id"])
 
     def _finals(self, c, comp, finals, classes, decimal: bool, with_shots: bool) -> List[dict]:
         """Each final's standings. Standard (CMP 10.4.3): qualification + final; ties for places 1-3 by shoot-off
@@ -413,8 +437,17 @@ class Competitions:
                 if with_shots:
                     row["shot_list"] = main
                 rows.append(row)
+            if m["final_kind"] == "airgun":              # the final alone decides (Air Gun 10.1.1); places as decided
+                outs = {ln["lane"]: ln["out_place"] for ln in self.matches._lanes(c, m["id"])}
+                for r in rows:
+                    r["total"], r["out"] = r["final"], outs.get(r["lane"])
+                ranked = sorted(rows, key=lambda r: (r["dq"] is not None, r["out"] if r["out"] is not None else 0, -r["total"]))
+                for i, r in enumerate(ranked):
+                    r["place"], r["tied"] = (i + 1 if not r["dq"] else None), False     # eliminated rows sort by their place
+            else:
+                ranked = self._rank_final(rows)
             entry = {"match_id": m["id"], "name": m["name"], "kind": m["final_kind"], "cls": m["final_class"] or "", "for_relay": m["final_for"],
-                     "state": m["state"], "official_ms": m["official_ms"], "rows": self._rank_final(rows)}
+                     "state": m["state"], "official_ms": m["official_ms"], "rows": ranked}
             entry["shoot_off_needed"] = self._ties_for_medals(entry["rows"]) if m["state"] == "done" and m["final_kind"] == "standard" else []
             out.append(entry)
             if m["final_for"] is not None:

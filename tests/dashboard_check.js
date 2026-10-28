@@ -755,7 +755,9 @@ console.log('OK');
   const comp = {competitors: [{class: 'Sporter'}, {class: 'Precision'}], relays: [{match_id: 4, relay: 1, state: 'done'}, {match_id: 5, relay: 2, state: 'running'}], finals: []};
   const p = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}, {device_id: 't2', name: '<b>L2</b>', in_match: true}], fin: {}}, true);
   assert(p.includes('data-fintgt="t1"') && !p.includes('data-fintgt="t2"') && p.includes('value="Precision"') && /data-act="mcfinal" disabled/.test(p), 'free targets, classes; nothing picked yet');
-  assert(p.includes('data-act="mcfinalrelay" data-id="4"') && !p.includes('data-id="5"'), 'a final for a finished relay only');
+  assert(!p.includes('mcfinalrelay') && p.includes('random draw'), 'the Air Gun Final (default): no relay finals; a draw');
+  const ps = finalsPanel(comp, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}], fin: {kind: 'standard'}}, true);
+  assert(ps.includes('data-act="mcfinalrelay" data-id="4"') && !ps.includes('data-id="5"'), 'Standard: a final for a finished relay only');
   assert(!finalsPanel(comp, {targets: []}, false).includes('mcfinal'), 'officers see the list only');
   const f = {name: 'L - final', shoot_off_needed: [[1, 2]], rows: [
     {place: 1, tied: true, pos: 'A', name: '<i>AMES</i>', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},
@@ -768,4 +770,16 @@ console.log('OK');
   assert(cp.includes('data-act="mcshootoff" data-lanes="1,2"') && !finalPanel({final: f}, false).includes('mcshootoff'), 'the director starts the shoot-off');
   assert(finalPanel({final: null}, true) === '');
   console.log('finals OK');
+}
+
+// the Air Gun Final's standings and the redraw
+{
+  const {finalTable, finalPanel} = X;
+  const f = {name: 'L - final', kind: 'airgun', state: 'running', shoot_off_needed: [], rows: [
+    {place: 1, out: null, pos: 'B', name: 'BELL', qual: 210, final: 215.3, shots: 22, total: 215.3, shoot_off: [], dq: null},
+    {place: 3, out: 3, pos: 'A', name: '<i>AMES</i>', qual: 212, final: 210.1, shots: 22, total: 210.1, shoot_off: [10.1], dq: null}]};
+  const t = finalTable(f, false);
+  assert(t.includes('(so far)') && t.includes('&lt;i&gt;AMES') && t.includes('<th>Shoot-off</th>') && !t.includes('<th>Total</th>'), 'final only, provisional places marked');
+  assert(finalPanel({final: f, state: 'ready'}, true).includes('data-act="mcredraw"') && !finalPanel({final: f, state: 'running'}, true).includes('mcredraw'));
+  console.log('air gun final OK');
 }

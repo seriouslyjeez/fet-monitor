@@ -1106,6 +1106,12 @@ function protestLeft(until) {                    // whole minutes of protest tim
 }
 function finalTable(f, print) {                 // a final's standings (results page, console, print)
   const so = f.rows.some(r => r.shoot_off.length), cls = print ? '' : 't';
+  if (f.kind === 'airgun') {                     // the final alone decides (CMP Air Gun 10.1.1)
+    return '<table class="' + cls + '"><tr><th>Place</th><th>Pos</th><th>Finalist</th><th>Final</th>' + (so ? '<th>Shoot-off</th>' : '') + '<th>Qualification</th></tr>' + f.rows.map(r =>
+      '<tr><td>' + (r.dq ? '' : (r.place || '') + (r.out == null && f.state !== 'done' ? ' <span class="mut">(so far)</span>' : '')) + '</td><td>' + esc(r.pos || '') + '</td><td>' + esc(r.name) + '</td><td><b>' +
+      (r.dq ? 'DQ' : r.final.toFixed(1)) + '</b> <span class="mut">(' + r.shots + ')</span></td>' + (so ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') +
+      '<td class="mut">' + (r.qual != null ? r.qual.toFixed(1) : '') + '</td></tr>').join('') + '</table>';
+  }
   const rows = f.rows.filter(r => r.counts !== false), info = f.rows.filter(r => r.counts === false);
   const line = r => '<tr><td>' + (r.dq ? '' : (r.place || '') + (r.tied ? '=' : '')) + '</td><td>' + esc(r.pos || '') + '</td><td>' + esc(r.name) + '</td><td>' + (r.qual != null ? r.qual.toFixed(1) : '') +
     '</td><td>' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut">(' + r.shots + ')</span></td><td><b>' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</b></td>' + (so ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>';
@@ -1117,6 +1123,7 @@ function finalPanel(d, director) {              // on a final's console: standin
   const f = d.final;
   if (!f) return '';
   return '<div class="panel"><h3>' + esc(f.name) + '</h3>' + finalTable(f, false) +
+    (f.kind === 'airgun' && d.state === 'ready' && director ? '<div class="mcbar"><button data-act="mcredraw">Draw the firing points again</button></div>' : '') +
     (f.shoot_off_needed.length ? '<div class="warnbox">Tied for a medal place: a one-shot shoot-off, 50 seconds (CMP 10.2.9 n). ' +
       (director ? f.shoot_off_needed.map(g => '<button class="pri" data-act="mcshootoff" data-lanes="' + g.join(',') + '">Shoot-off: firing points ' + g.join(', ') + '</button>').join(' ') : 'The match director starts it.') + '</div>' : '') + '</div>';
 }
@@ -1203,8 +1210,12 @@ function finalsPanel(c, mc, director) {         // CMP 10: Standard Final for th
   let h = '<div class="panel mcform"><h3>Finals</h3>' + ((c.finals || []).length ? '<table class="t">' + c.finals.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + esc(f.state) + '</td>' +
     '<td><button data-act="mcopen" data-id="' + f.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No final yet.</p>');
   if (!director) return h + '</div>';
-  h += '<h4>Standard Final (CMP 10.4)</h4><p class="mut">10 shots standing, each on command (LOAD, 5 s, START, 50 s), added to the qualification score. ' +
-    'Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).</p>' +
+  const kind = fin.kind || 'airgun';
+  h += '<h4>New final</h4><div class="seg"><button data-act="mcfinkind" data-v="airgun" class="' + (kind === 'airgun' ? 'sel' : '') + '">Air Gun Final (CMP Air Gun 10.2)</button>' +
+    '<button data-act="mcfinkind" data-v="standard" class="' + (kind === 'standard' ? 'sel' : '') + '">Standard Final (3PAR 10.4)</button></div>' +
+    (kind === 'airgun' ? '<p class="mut">24 shots: 2 series of 5 in 250 s, then single shots in 50 s; the lowest finalist is out after shots 12, 14 … 22 (only places that exist), shot 24 decides 1st and 2nd. ' +
+      'The final alone decides; every tie is shot off at once. Firing points by random draw (10.1.2).</p>'
+      : '<p class="mut">10 shots standing, each on command (LOAD, 5 s, START, 50 s), added to the qualification score. Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).</p>') +
     '<div class="mcbar">' + (classes.length > 1 || classes[0] ? '<label>Class <select data-fin="cls">' + classes.map(k => '<option value="' + esc(k) + '"' + ((fin.cls || classes[0]) === k ? ' selected' : '') + '>' + esc(k || 'no class') + '</option>').join('') + '</select></label>' : '') +
     '<label>Finalists <input type="number" min="1" max="8" style="width:60px" data-fin="n" value="' + esc(n) + '"></label>' +
     '<label>Commands <select data-fin="paced"><option value="officer"' + (fin.paced !== 'spoken' ? ' selected' : '') + '>Range officer reads them (Next for each LOAD)</option>' +
@@ -1212,7 +1223,7 @@ function finalsPanel(c, mc, director) {         // CMP 10: Standard Final for th
     '<div>Targets, in order A, B, C …: ' + (free.length ? free.map(t => '<label style="margin-right:10px"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('')
       : '<span class="bad">no free target</span>') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcfinal"' + (picked.length ? '' : ' disabled') + '>Create the final</button></div>' +
-    (done.length ? '<h4>Final for all athletes (CMP 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
+    (done.length && kind === 'standard' ? '<h4>Final for all athletes (CMP 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
       done.map(r => '<button data-act="mcfinalrelay" data-id="' + r.match_id + '">Final for relay ' + esc(r.relay) + '</button>').join('') + '</div>' : '');
   return h + '</div>';
 }
@@ -1825,12 +1836,13 @@ async function matchAct(el, a) {
     if (show(res)) { mc.results = res.data.results; toast('Results shown again'); }
     return refresh();
   }
+  if (a === 'mcfinkind') { mc.fin = Object.assign(mc.fin || {}, {kind: el.dataset.v}); return render(true); }
   if (a === 'mcfinal' || a === 'mcfinalrelay') {
     const fin = mc.fin || {}, free = (mc.targets || []).filter(t => !t.in_match).filter(t => (fin.devs || {})[t.device_id]).map(t => t.device_id);
     const classes = [...new Set(mc.comp.competitors.map(p => p.class || ''))].sort();
     const body = a === 'mcfinalrelay' ? {kind: 'standard', for_relay: +el.dataset.id, paced: fin.paced || 'officer'}
-      : {kind: 'standard', devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length), paced: fin.paced || 'officer'};
-    if (!confirm(a === 'mcfinalrelay' ? 'Create the Standard Final for everyone on this relay?' : 'Create the Standard Final for the top ' + body.n + '?')) return;
+      : {kind: fin.kind || 'airgun', devices: free, cls: fin.cls != null ? fin.cls : classes[0], n: fin.n != null ? +fin.n : Math.min(8, free.length), paced: fin.paced || 'officer'};
+    if (!confirm(a === 'mcfinalrelay' ? 'Create the Standard Final for everyone on this relay?' : 'Create the ' + (body.kind === 'airgun' ? 'Air Gun' : 'Standard') + ' Final for the top ' + body.n + '?')) return;
     const res = await matchCall('/competitions/' + mc.copen + '/finals', body);
     if (show(res)) { mc.comp = res.data; mc.fin = {}; toast('Final created: open its console to run it'); }
     return refresh();
@@ -1900,6 +1912,11 @@ async function matchAct(el, a) {
     const body = mc.detail.competition_id != null ? {device_id: pick.value, competitor_id: lp.pid ? +lp.pid : null} : {device_id: pick.value, competitor: lp.name || ''};
     if (mc.detail.competition_id != null && !lp.pid) { mc.msg = 'Choose the competitor'; return render(true); }
     if (show(await matchCall('/matches/' + mc.open + '/late', body))) { mc.latep = null; toast('Added'); }
+    return refresh();
+  }
+  if (a === 'mcredraw') {
+    if (!confirm('Draw the firing points again?')) return;
+    if (!show(await matchCall('/matches/' + mc.open + '/redraw', {}))) toast(mc.msg); else toast('Drawn again');
     return refresh();
   }
   if (a === 'mcshootoff') {

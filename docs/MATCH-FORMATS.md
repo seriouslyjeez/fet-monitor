@@ -87,7 +87,7 @@ qualification results.
 Note: 10.3.2 c says "400/300/150 seconds" for the series, but the course of fire in 10.3.1 gives 250 s for each
 5-shot standing series (as ISSF); 250 s is used here.
 
-## CMP Air Rifle and Air Pistol Rules (5th ed. 2026): AR60 and the Air Gun Final (not built yet)
+## CMP Air Rifle and Air Pistol Rules (5th ed. 2026): AR60 and the Air Gun Final (built in)
 
 - AR60 on electronic targets (6.4.1 b, script): call to the line at least 15 minutes; 15 minutes preparation and
   sighting (30 s warning, 7.9.1); then straight on to 60 record shots in 75 minutes (90 on target carriers), warnings
@@ -102,7 +102,16 @@ Note: 10.3.2 c says "400/300/150 seconds" for the series, but the course of fire
   (a new 50 s per unfired shot), malfunction (1 minute, then a new 50 s per unfired shot; once per final), a shot that
   does not register (protest at once; refire), target failure (move; 2 minutes of sighters), delay over 5 minutes
   (2 minutes of sighters for everyone).
-- Note: the rule gives a shoot-off shot 50 s (10.3.5); the Air Gun final script says "after 30 seconds: STOP".
+- Note: the rule gives a shoot-off shot 50 s (10.3.5); the Air Gun final script says "after 30 seconds: STOP". The
+  user chose the rule: 50 s (it ends as soon as the tied finalists have fired).
+- How FeT Monitor runs it: *AR60* is a built-in format ("10m Air Rifle 60 (AR60, CMP Air Gun Rules)"). The *Air Gun
+  Final* (competition page, Finals): the top n of the class (n up to 8, at most one per target) drawn to the targets
+  at random (*Draw again* before the start); officer-paced by default (Next for each LOAD), or spoken (20 s for the
+  scores before each LOAD). Series and single shots stop at their time. After shots 12-22 the lowest finalist is out
+  (only places that exist: with fewer finalists the first eliminations are skipped); after shot 24 1st and 2nd are
+  decided. A tie at a decision inserts a one-shot shoot-off for the tied finalists at once (50 s, ends when they have
+  fired), repeated until broken; if shoot-offs never break it (the format's phase limit), the place is left for the
+  match director and logged. Eliminated targets stay in sighting; their later shots are flagged.
 
 ## CMP 3x10 (5.3.2) and 3x20 (5.3.3), kneeling-prone-standing order
 

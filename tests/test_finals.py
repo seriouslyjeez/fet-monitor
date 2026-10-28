@@ -161,3 +161,111 @@ class SpokenFinal(FinalCase):
             self.final(n=1, devices=("lane-3",), paced="loud")
         self.assertEqual(sum(1 for p in self.m.detail(self.final(n=1, devices=("lane-3",)))["format"]["phases"] if p["label"].startswith("Scores")), 0,
                          "officer-paced (default): the range officer takes the time")
+
+
+class AirGunFinal(FinalCase):
+    """CMP Air Gun Final (Air Rifle and Air Pistol Rules 2026, 10.2): draw, 2 x 5 shots, 14 single shots, the
+    lowest out after shots 12..22 (only places that exist), shot 24 decides 1st/2nd, every tie shot off (10.3.5)."""
+    def drive(self, mid, x_of, until=None):
+        """Run the final: Next at every hold; in a shot phase each finalist still in it fires (x_of(device, shot no.)
+        gives the offset); time runs out for series and single shots (no early STOP), shoot-offs end when all fired."""
+        shot = 0
+        for _ in range(400):
+            d = self.m.detail(mid)
+            if d["state"] == "done" or (until and until(d)):
+                return d
+            if d["state"] == "holding":
+                self.m.command(mid, "go", "ro"); continue
+            ph = d["format"]["phases"][d["clock"]["phase"]]
+            if ph["kind"] == "record":
+                lanes = {l["lane"]: l for l in d["lanes"]}
+                if ph.get("lanes") is None:
+                    shot += ph["shots"]
+                for l in lanes.values():
+                    if l.get("out") is None and (ph.get("lanes") is None or l["lane"] in ph["lanes"]) and not self.is_out(mid, l["lane"]):
+                        for _ in range(ph["shots"]):
+                            self.shoot(l["target"], x_of(l["target"], shot, ph))
+                self.m.tick()
+                if self.m.detail(mid)["clock"]["phase"] != d["clock"]["phase"] or self.m.detail(mid)["state"] == "done":
+                    continue
+            self.clock.t += max(1, self.m.detail(mid)["clock"]["remaining_ms"]); self.m.tick()
+        self.fail("the final did not finish")
+
+    def is_out(self, mid, lane):
+        r = self.core.db.conn().execute("SELECT out_place FROM match_lanes WHERE match_id=? AND lane=?", (mid, lane)).fetchone()
+        return r["out_place"] is not None
+
+    def places(self, mid):
+        return {r["device_id"]: r["out_place"] for r in self.core.db.conn().execute("SELECT * FROM match_lanes WHERE match_id=?", (mid,))}
+
+    def test_draw_eliminations_and_places(self):
+        mid = self.cc.create_final(self.cid, "airgun", ["lane-5", "lane-4", "lane-3", "lane-2"], "md")
+        d = self.m.detail(mid)
+        self.assertEqual(sorted(l["competitor"] for l in d["lanes"]), ["AMES", "BELL", "COLE", "DUNN"], "the top 4, in a random draw")
+        self.assertEqual([l["pos"] for l in d["lanes"]], ["A", "B", "C", "D"])
+        self.cc.redraw_final(mid, "md")
+        value = {"lane-5": "0.10", "lane-4": "0.60", "lane-3": "1.20", "lane-2": "2.00"}    # A best ... D worst
+        self.m.start(mid, "md")
+        with self.assertRaises(MatchError):
+            self.cc.redraw_final(mid, "md")
+        d = self.drive(mid, lambda dev, n, ph: value[dev], until=lambda d: d["clock"]["label"] == "Shot 21: load")
+        self.assertEqual(self.places(mid), {"lane-5": None, "lane-4": None, "lane-3": None, "lane-2": 4},
+                         "with 4 finalists the first eliminations are skipped; after shot 20 the 4th is out")
+        self.assertEqual(self.mode("lane-2"), "sighter")
+        d = self.drive(mid, lambda dev, n, ph: value[dev], until=lambda d: d["clock"]["label"] == "Shot 21")
+        self.assertEqual((self.mode("lane-5"), self.mode("lane-2")), ("record", "sighter"), "out: never switched to record again")
+        self.shoot("lane-2", "0.00")                               # after being eliminated: flagged
+        d = self.drive(mid, lambda dev, n, ph: value[dev])
+        self.assertEqual(self.places(mid), {"lane-5": 1, "lane-4": 2, "lane-3": 3, "lane-2": 4})
+        self.assertIn("after being eliminated", [f[3] for f in self.flags(mid) if f[0] == "lane-2"])
+        f = next(x for x in self.cc.results(self.cid)["finals"] if x["match_id"] == mid)
+        self.assertEqual([(r["device_id"], r["place"]) for r in f["rows"]], [("lane-5", 1), ("lane-4", 2), ("lane-3", 3), ("lane-2", 4)])
+        self.assertEqual(f["rows"][0]["shots"], 24)
+        self.assertEqual(f["rows"][0]["total"], f["rows"][0]["final"], "the final alone decides")
+
+    def test_a_tie_is_shot_off_at_once(self):
+        mid = self.cc.create_final(self.cid, "airgun", ["lane-5", "lane-4", "lane-3"], "md", n=3)
+        devs = [l["target"] for l in self.m.detail(mid)["lanes"]]
+        self.m.start(mid, "md")
+        # two finalists equal all the way: at shot 22 (3rd place) they tie -> shoot-off; then the third one wins
+        tied = devs[:2]
+        def x(dev, n, ph):
+            if ph.get("lanes"):                                     # the shoot-off: the first tied one wins it
+                return "0.00" if dev == tied[0] else "1.50"
+            return "1.00" if dev in tied else "0.00"
+        d = self.drive(mid, x, until=lambda d: d["clock"]["label"].startswith("Shoot-off 1"))
+        so = next(p for p in d["format"]["phases"] if p["label"] == "Shoot-off 1")
+        self.assertEqual((so["lanes"], so.get("round") is not None), (sorted(l["lane"] for l in d["lanes"] if l["target"] in tied), True))
+        self.drive(mid, x)
+        self.assertEqual(self.places(mid), {devs[2]: 1, tied[0]: 2, tied[1]: 3}, "the shoot-off decided 3rd")
+
+    def test_fewer_than_eight_and_spoken(self):
+        with self.assertRaises(MatchError):
+            self.cc.create_final(self.cid, "airgun", None, "md", for_relay=self.r1)
+        mid = self.cc.create_final(self.cid, "airgun", ["lane-5", "lane-4"], "md", paced="spoken")
+        labels = [p["label"] for p in self.m.detail(mid)["format"]["phases"]]
+        self.assertEqual(labels.count("Scores and commentary"), 15)
+        self.m.start(mid, "md")
+        d = self.drive(mid, lambda dev, n, ph: "0.10" if dev == "lane-5" else "2.00")
+        self.assertEqual(self.places(mid), {"lane-5": 1, "lane-4": 2}, "two finalists: only shot 24 decides")
+
+    def test_shoot_offs_that_never_break_do_not_jam_the_clock(self):
+        mid = self.cc.create_final(self.cid, "airgun", ["lane-5", "lane-4"], "md")
+        self.m.start(mid, "md")
+        d = self.drive(mid, lambda dev, n, ph: "1.00")               # always equal
+        self.assertEqual(d["state"], "done")
+        self.assertEqual(self.places(mid), {"lane-5": None, "lane-4": None}, "undecided: for the match director")
+        self.assertEqual(self.core.db.conn().execute("SELECT COUNT(*) FROM match_log WHERE match_id=? AND kind='shoot_off_limit'", (mid,)).fetchone()[0], 1)
+
+
+class Draw(FinalCase):
+    def test_the_draw_shuffles(self):
+        import random
+        orig = random.SystemRandom.shuffle
+        random.SystemRandom.shuffle = lambda self, x: x.reverse()
+        try:
+            mid = self.cc.create_final(self.cid, "airgun", ["lane-5", "lane-4", "lane-3"], "md", n=3)
+        finally:
+            random.SystemRandom.shuffle = orig
+        self.assertEqual([l["competitor"] for l in self.m.detail(mid)["lanes"]], ["COLE", "BELL", "AMES"],
+                         "the draw (here: reversed) decides the firing points, not the ranking")

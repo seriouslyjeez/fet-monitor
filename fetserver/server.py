@@ -23,7 +23,7 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw)|/flags/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
@@ -277,6 +277,10 @@ class Handler(BaseHTTPRequestHandler):
                     need_director()
                     mc.shoot_off(mid, payload.get("lanes"), who)
                     log.warning("Match Control: %s started a shoot-off for %s in match %d", who, payload.get("lanes"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "redraw":        # a new draw of a final's firing points (Air Gun 10.1.2)
+                    need_director()
+                    core.competitions.redraw_final(mid, who)
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "late":          # a late arrival joins (ISSF 6.11.4)
                     if payload.get("competitor_id") is not None:
