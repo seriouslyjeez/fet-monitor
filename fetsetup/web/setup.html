@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FeT Monitor setup</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--fg:#14171c;--mut:#5d6470;--line:#d9dde3;--pri:#1f5fbf;--bad:#b42318;--ok:#137a3a;--hi:#eef4ff}
+@media (prefers-color-scheme: dark){:root{--bg:#111418;--card:#1a1e24;--fg:#e8eaed;--mut:#9aa1ab;--line:#2c323a;--pri:#6ea2ff;--bad:#ff8a80;--ok:#6fd38f;--hi:#1f2a3a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:16px}h1{font-size:22px;margin:4px 0 12px}h2{font-size:17px;margin:0 0 8px}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px}
+label{display:block;margin:8px 0 3px;font-weight:600}input,select{width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--fg)}
+.row{display:flex;gap:8px}.row>*{flex:1}.chk{display:flex;gap:8px;align-items:center;font-weight:400}.chk input{width:auto}
+.mut{color:var(--mut);font-size:14px}.bad{color:var(--bad)}.ok{color:var(--ok)}.box{background:var(--hi);border-radius:8px;padding:10px;margin:8px 0}
+button{font:inherit;font-weight:600;padding:11px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);margin-top:10px}
+button.pri{background:var(--pri);border-color:var(--pri);color:#fff;width:100%}.seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{flex:1;margin-top:0}
+.seg button.sel{background:var(--pri);border-color:var(--pri);color:#fff}.token{font:700 22px ui-monospace,Menlo,monospace;word-break:break-all}
+.big{font-size:20px;font-weight:700}
+</style>
+</head>
+<body>
+<main id="app"><p class="mut">Loading…</p></main>
+<script>
+'use strict';
+const S = {info: null, f: {hostname: 'range', ssh: false, network: {mode: 'cable', address: 'dhcp', channel: 6}}, msg: '', busy: false};
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+
+async function call(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-FET-Setup': '1'}, body: JSON.stringify(body)});
+  return {status: r.status, data: await r.json().catch(() => ({}))};
+}
+function guessZone() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } }
+
+function addressPart(where, lease) {         // automatic, or keep the address it has now as a fixed one
+  const n = S.f.network, fixed = n.address !== 'dhcp';
+  if (!lease) return '';
+  return '<div class="box">' + where + ' address now: <b>' + esc(lease.ip) + '</b>' + (lease.gateway ? ', router ' + esc(lease.gateway) : '') + '</div>' +
+    '<label class="chk"><input type="radio" name="addr" data-addr="fixed"' + (fixed ? ' checked' : '') + '><span>Keep <b>' + esc(lease.ip) + '</b> as a fixed address (recommended: the targets need an address that never changes)</span></label>' +
+    '<label class="chk"><input type="radio" name="addr" data-addr="dhcp"' + (fixed ? '' : ' checked') + '><span>Automatic: then reserve this address for the Pi in the club router</span></label>' +
+    (fixed ? '<p class="mut">Fixed: make sure the router never gives this address to another device (a reservation, or an address outside its DHCP range).</p>' : '');
+}
+function networkPart() {
+  const i = S.info, n = S.f.network, t = i.test;
+  const seg = '<div class="seg">' + [['cable', 'Cable to the club router'], ['wifi', 'Club WiFi'], ['own', 'Its own range network']]
+    .map(([k, l]) => '<button data-mode="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div>';
+  if (n.mode === 'cable') {
+    return seg + (i.cable ? addressPart('Cable', i.cable) : '<p class="bad">No address on the cable yet: plug it into the club router, then reload this page.</p>');
+  }
+  if (n.mode === 'wifi') {
+    const tested = t && t.ssid === n.ssid;
+    return seg + '<label for="ssid">Club WiFi</label><select id="ssid"><option value="">choose…</option>' +
+      i.networks.map(w => '<option value="' + esc(w.ssid) + '"' + (w.ssid === n.ssid ? ' selected' : '') + '>' + esc(w.ssid) + (w.secure ? '' : ' (open: not usable)') + ' · ' + w.signal + '%</option>').join('') + '</select>' +
+      '<p class="mut">Not listed? It may be 5 GHz only: the Pi and the targets need 2.4 GHz.</p>' +
+      '<label for="psk">WiFi password</label><input id="psk" type="password" autocomplete="off" value="' + esc(n.psk || '') + '">' +
+      '<button id="test">Test connection</button><p class="mut">The setup network goes away for up to a minute while the Pi tries. ' +
+      'Then join <b>' + esc(i.setup_ssid) + '</b> again and reopen this page.</p>' +
+      (tested ? (t.ok ? '<p class="ok">Connected to ' + esc(t.ssid) + '.</p>' + addressPart('WiFi', t.lease) : '<p class="bad">Could not connect to ' + esc(t.ssid) + ': ' + esc(t.why) + '</p>') : '');
+  }
+  return seg + '<p class="mut">The Pi makes a WiFi network for the targets and phones (no router needed, no internet). The Pi is always <b>' + esc(i.own_ip) + '</b>.</p>' +
+    '<label for="ossid">Range network name</label><input id="ossid" maxlength="32" value="' + esc(n.ssid || 'FeTMonitor-Range') + '">' +
+    '<label for="opsk">Range network password (8 to 63 characters)</label><input id="opsk" autocomplete="off" value="' + esc(n.psk || '') + '">' +
+    '<label for="ochan">Channel</label><select id="ochan">' + [1, 6, 11].map(c => '<option' + (n.channel === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>';
+}
+function form() {
+  const i = S.info, f = S.f;
+  const zone = f.timezone || (i.zones.includes(guessZone()) ? guessZone() : '');
+  return '<h1>Set up FeT Monitor</h1><p class="mut">Everything here can be changed later in Range Control.</p>' +
+    '<section><h2>This Pi</h2><label for="hostname">Name</label><input id="hostname" value="' + esc(f.hostname) + '" autocapitalize="none">' +
+    '<div class="row"><div><label for="country">Country</label><select id="country"><option value="">choose…</option>' +
+    i.countries.map(c => '<option value="' + c.code + '"' + (f.country === c.code ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></div>' +
+    '<div><label for="tz">Time zone</label><select id="tz"><option value="">choose…</option>' + i.zones.map(z => '<option' + (zone === z ? ' selected' : '') + '>' + esc(z) + '</option>').join('') + '</select></div></div>' +
+    '<p class="mut">The clock is set from this phone if the Pi has no internet.</p></section>' +
+    '<section><h2>Range Control password</h2><p class="mut">For the page that manages targets and updates. Use one you do not use anywhere else.</p>' +
+    '<input id="rp" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.range_password || '') + '">' +
+    '<input id="rp2" type="password" autocomplete="new-password" placeholder="Again" style="margin-top:6px" value="' + esc(f.range_password2 || '') + '"></section>' +
+    '<section><h2>First match director (optional)</h2><div class="row"><input id="dir" placeholder="Name" autocapitalize="none" value="' + esc(f.director || '') + '">' +
+    '<input id="dirpw" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.director_password || '') + '"></div></section>' +
+    '<section><h2>Admin login</h2><p class="mut">Only for someone who needs the Pi\'s command line.</p>' +
+    '<div class="row"><input id="admin" placeholder="Login name" autocapitalize="none" value="' + esc(f.admin || '') + '"></div>' +
+    '<div class="row" style="margin-top:6px"><input id="apw" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.admin_password || '') + '">' +
+    '<input id="apw2" type="password" autocomplete="new-password" placeholder="Again" value="' + esc(f.admin_password2 || '') + '"></div>' +
+    '<label class="chk"><input type="checkbox" id="ssh"' + (f.ssh ? ' checked' : '') + '> Allow SSH (remote login). Off is safer; it can be turned on later.</label></section>' +
+    '<section><h2>Network</h2>' + networkPart() + '</section>' +
+    (S.msg ? '<p class="bad" id="msg">' + esc(S.msg) + '</p>' : '') + (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +
+    '<button class="pri" id="save"' + (S.busy ? ' disabled' : '') + '>Save settings</button>';
+}
+function summary() {
+  const s = S.info.summary, own = s.mode === 'own';
+  return '<h1>Write this down</h1><section><p>FeT Monitor</p><p class="big">' + (s.url ? esc(s.url) : 'address: see the club router') + '</p>' +
+    '<p>Each target\'s setup needs:</p><div class="box">Server address: <b>' + esc(s.address || '—') + '</b><br>Device token:<div class="token">' + esc(s.token || '—') + '</div></div>' +
+    (own ? '<p>Targets and phones join the WiFi <b>' + esc(s.ssid) + '</b>.</p>' : '') +
+    (s.ssh ? '<p class="mut">SSH is on for <b>' + esc(s.admin) + '</b>.</p>' : '') + '</section>' +
+    '<section><h2>Switch the Pi to its network</h2><p>This setup network then goes away. ' +
+    (own ? 'Join <b>' + esc(s.ssid) + '</b> on this phone and open the address above.'
+      : 'Put this phone back on the ' + (s.mode === 'wifi' ? 'WiFi <b>' + esc(s.ssid) + '</b>' : 'club network') + ' and open the address above.') + '</p>' +
+    (S.info.error ? '<p class="bad">' + esc(S.info.error) + '</p>' : '') +
+    '<button class="pri" id="switch">Switch now</button><button id="back">Change settings</button></section>';
+}
+function render() {
+  const i = S.info, app = $('app');
+  if (!i) return;
+  if (i.phase === 'testing') { app.innerHTML = '<h1>Testing the WiFi…</h1><section><p>The setup network is gone for up to a minute. When <b>' + esc(i.setup_ssid) + '</b> is back, join it again: this page shows the result.</p></section>'; return; }
+  if (i.phase === 'switching' || i.phase === 'done') { app.innerHTML = '<h1>Switching…</h1><section><p>The Pi is moving to its network. Open the address you wrote down from the network it uses. ' +
+    'If the Pi cannot connect, <b>' + esc(i.setup_ssid) + '</b> comes back: join it and reopen this page.</p></section>'; return; }
+  if (i.phase === 'saved' && !S.editing) { app.innerHTML = summary(); return; }
+  if (i.phase === 'applying') { app.innerHTML = '<h1>Saving…</h1>'; return; }
+  app.innerHTML = form();
+}
+function collect() {                           // the form's fields into S.f (kept across redraws)
+  const f = S.f, v = id => $(id) ? $(id).value : undefined;
+  const set = (k, id) => { const x = v(id); if (x !== undefined) f[k] = x; };
+  set('hostname', 'hostname'); set('country', 'country'); set('timezone', 'tz'); set('range_password', 'rp'); set('range_password2', 'rp2');
+  set('director', 'dir'); set('director_password', 'dirpw'); set('admin', 'admin'); set('admin_password', 'apw'); set('admin_password2', 'apw2');
+  if ($('ssh')) f.ssh = $('ssh').checked;
+  const n = f.network;
+  if (n.mode === 'wifi') { if ($('ssid')) n.ssid = v('ssid'); if ($('psk')) n.psk = v('psk'); }
+  if (n.mode === 'own') { n.ssid = v('ossid'); n.psk = v('opsk'); n.channel = +v('ochan'); }
+  remember();
+}
+const SECRET = ['range_password', 'range_password2', 'director_password', 'admin_password', 'admin_password2'];
+function remember() {                          // the phone may close this page while the WiFi is tested: keep what was typed
+  try { const keep = Object.assign({}, S.f, {network: Object.assign({}, S.f.network, {psk: undefined})}); SECRET.forEach(k => delete keep[k]);
+        sessionStorage.setItem('fet_setup', JSON.stringify(keep)); } catch (e) {}
+}
+try { const old = JSON.parse(sessionStorage.getItem('fet_setup') || 'null'); if (old && old.network) S.f = old; } catch (e) {}
+function leaseFor() { const n = S.f.network, i = S.info; return n.mode === 'cable' ? i.cable : (i.test && i.test.ok && i.test.ssid === n.ssid ? i.test.lease : null); }
+async function refresh() {
+  const r = await call('/api/info').catch(() => null);
+  if (r && r.status === 200) { if (S.info) collect(); S.info = r.data; render(); }
+}
+document.addEventListener('click', async e => {
+  const el = e.target.closest('button,input[data-addr]');
+  if (!el) return;
+  collect();
+  const n = S.f.network;
+  if (el.dataset.mode) { e.preventDefault(); n.mode = el.dataset.mode; n.address = 'dhcp'; return render(); }
+  if (el.dataset.addr) { n.address = el.dataset.addr === 'fixed' ? Object.assign({}, leaseFor()) : 'dhcp'; return render(); }
+  if (el.id === 'test') { S.msg = ''; const r = await call('/api/test', {ssid: n.ssid, psk: n.psk}); if (r.status !== 200) S.msg = r.data.error || 'error'; return refresh(); }
+  if (el.id === 'save') {
+    S.msg = ''; S.busy = true; render();
+    const body = Object.assign({}, S.f, {clock_ms: Date.now(), network: Object.assign({}, n, {address: n.address})});
+    const r = await call('/api/finish', body).catch(() => null);
+    S.busy = false; S.editing = false;
+    if (!r || r.status !== 200) S.msg = (r && r.data.error) || 'no answer from the Pi';
+    return refresh();
+  }
+  if (el.id === 'back') { S.editing = true; return render(); }
+  if (el.id === 'switch') { const r = await call('/api/switch', {}); if (r.status !== 200) S.msg = r.data.error || 'error'; return refresh(); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'ssid') { collect(); render(); } });
+refresh();
+setInterval(() => { if (S.info && ['testing', 'switching', 'applying'].includes(S.info.phase)) refresh(); }, 3000);
+</script>
+</body>
+</html>
