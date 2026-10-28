@@ -23,7 +23,7 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late)|/flags/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
@@ -268,6 +268,13 @@ class Handler(BaseHTTPRequestHandler):
                         need_director()                    # before the start it is setting up: the match director's
                     mc.move(mid, payload.get("from"), payload.get("to"), who)
                     log.warning("Match Control: %s moved %s to %s in match %d", who, payload.get("from"), payload.get("to"), mid)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(2) == "late":          # a late arrival joins (ISSF 6.11.4)
+                    if payload.get("competitor_id") is not None:
+                        core.competitions.add_late(mid, payload.get("competitor_id"), payload.get("device_id"), who)
+                    else:
+                        mc.add_late(mid, payload.get("device_id"), payload.get("competitor"), who)
+                    log.warning("Match Control: %s added a late arrival on %s to match %d", who, payload.get("device_id"), mid)
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "later-relay":   # CMP 7.18: finish the match on a later relay
                     to = core.competitions.finish_on_later_relay(mid, payload.get("from"), payload.get("to_match"), payload.get("to"), who)

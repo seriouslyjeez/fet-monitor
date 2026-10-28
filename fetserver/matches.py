@@ -394,6 +394,28 @@ class Matches:
                           (m["phase_used_ms"] + now - m["phase_started_ms"], mid))
                 self._lanes_pause(c, mid, now)
                 self._log(c, mid, now, "pause", m["phase"], None, {"by": by})
+            elif action == "interrupt":                    # the whole range stops (target failure, power, safety)
+                if m["state"] != "running":
+                    raise MatchError("the clock is not running")
+                c.execute("UPDATE matches SET state='paused', phase_used_ms=?, phase_started_ms=NULL WHERE id=?",
+                          (m["phase_used_ms"] + now - m["phase_started_ms"], mid))
+                self._lanes_pause(c, mid, now)
+                self._log(c, mid, now, "pause", m["phase"], None, {"by": by, "interruption": True})
+            elif action == "interrupt_end":
+                last = c.execute("SELECT * FROM match_log WHERE match_id=? AND kind='pause' ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
+                if m["state"] != "paused" or last is None or not json.loads(last["data"] or "{}").get("interruption"):
+                    raise MatchError("the range is not interrupted")
+                lost = (now - last["at_ms"]) // 1000
+                extra, sighters, rule = range_interruption(rules_of(fmt), lost)
+                c.execute("UPDATE matches SET state='running', phase_started_ms=?, phase_extra_ms=phase_extra_ms+? WHERE id=?", (now, extra * 1000, mid))
+                self._lanes_resume(c, mid, now)
+                self._log(c, mid, now, "resume", m["phase"], None, {"by": by, "interruption": True, "lost_s": lost, "extra_s": extra, "sighters": sighters, "rule": rule})
+                if sighters and p["kind"] in ("record", "stage"):        # unlimited sighters for everyone before record again
+                    them = [ln["device_id"] for ln in self._lanes(c, mid) if not own_clock(ln) and ln["left_ms"] is None and ln["start_phase"] <= m["phase"]]
+                    c.executemany("UPDATE match_lanes SET sighting=1 WHERE match_id=? AND device_id=?", [(mid, d) for d in them])
+                    self._log(c, mid, now, "sighters", m["phase"], None, {"rule": rule})
+                    for d in them:
+                        self._set_modes(c, m, "sighter", now, only=d)
             elif action == "resume":
                 if m["state"] != "paused":
                     raise MatchError("not paused")
@@ -479,7 +501,8 @@ class Matches:
         devs = self._lane_devs(c, mid, device_id)
         q = ",".join("?" * len(devs))
         start = c.execute("SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='phase_start' AND phase=?", (mid, phase)).fetchone()[0]
-        ready = c.execute(f"SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='lane_ready' AND device_id IN ({q})", (mid, *devs)).fetchone()[0]
+        ready = c.execute(f"SELECT MAX(id) FROM match_log WHERE match_id=? AND kind IN ('lane_ready','sighters') AND (device_id IN ({q}) OR device_id IS NULL)",
+                          (mid, *devs)).fetchone()[0]
         return c.execute(f"SELECT 1 FROM match_log WHERE match_id=? AND kind='start_record' AND phase=? AND device_id IN ({q}) AND id>?",
                          (mid, phase, *devs, max(start or 0, ready or 0))).fetchone() is not None
 
@@ -539,6 +562,57 @@ class Matches:
             self._log(c, mid, now, "move", phase, to_dev, {"from": from_dev, "by": by})
         self._pub(mid)
 
+    def add_late(self, mid: int, device_id: str, competitor: Optional[str], by: str, competitor_id: Optional[int] = None) -> None:
+        """A shooter who arrives late joins the running match on a free target, with no extra time (ISSF 6.11.4);
+        after the preparation and sighting time they may still fire sighters, within their time."""
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["state"] not in LIVE:
+                raise MatchError("the match is not running")
+            self.not_official(m)
+            if not isinstance(device_id, str) or c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone() is None:
+                raise MatchError("unknown target")
+            other = self.lock_of(c, device_id)
+            if other:
+                raise MatchError(f"that target is in the match '{other}'")
+            fmt = json.loads(m["format_json"])
+            p = fmt["phases"][m["phase"]]
+            lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (mid,)).fetchone()[0] or 0) + 1
+            name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
+            c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
+                      (mid, device_id, lane, name, competitor_id))
+            ln = self._lane(c, mid, device_id)
+            sighting = p["kind"] in ("record", "stage")
+            sid = self.core._set_mode_in(c, device_id, "sighter", self._session(m, ln), now, new_series=True)
+            c.execute("UPDATE series SET total=? WHERE id=?", (mf.record_shots(fmt), sid))
+            c.execute("UPDATE match_lanes SET series_id=?, sighting=? WHERE match_id=? AND device_id=?", (sid, 1 if sighting else 0, mid, device_id))
+            self._log(c, mid, now, "late", m["phase"], device_id, {"competitor": name, "by": by, "rule": "ISSF 6.11.4"})
+            if sighting:
+                self._log(c, mid, now, "sighters", m["phase"], device_id, {"rule": "ISSF 6.11.4"})
+        self._pub(mid)
+
+    def _resume_lane(self, c, m, ln, p, left: int, sighters: bool, now: int) -> None:
+        """A shooter whose time stood still goes on with `left` ms in their phase (sighters first if allowed)."""
+        sighting = 1 if sighters and p["kind"] in ("record", "stage") else 0
+        if ln["own_phase"] is not None:
+            counting = m["state"] not in ("paused",) and not (m["state"] == "overtime" and m["phase_started_ms"] is None)
+            c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, own_left_ms=?, own_since_ms=?, sighting=? "
+                      "WHERE match_id=? AND device_id=?", (left, now if counting else None, sighting, m["id"], ln["device_id"]))
+        else:
+            c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=?, sighting=? "
+                      "WHERE match_id=? AND device_id=?", (left - self.remaining_ms(m, now), sighting, m["id"], ln["device_id"]))
+        mode = "sighter" if sighting or p["kind"] != "record" or m["state"] == "holding" else "record"
+        self._set_modes(c, m, mode, now, only=ln["device_id"])
+
+    def _stop_reason(self, c, mid, device_id) -> Optional[str]:
+        """Why a lane's time stands still: "interrupt" / "malfunction", or None for a move (ended by Ready)."""
+        devs = self._lane_devs(c, mid, device_id)
+        q = ",".join("?" * len(devs))
+        r = c.execute(f"SELECT kind, data FROM match_log WHERE match_id=? AND kind IN ('move','interrupt') AND device_id IN ({q}) "
+                      "AND phase IS NOT NULL ORDER BY id DESC LIMIT 1", (mid, *devs)).fetchone()
+        return json.loads(r["data"])["reason"] if r and r["kind"] == "interrupt" else None
+
     def lane_command(self, mid: int, device_id: str, action: str, by: str, seconds: Optional[int] = None) -> None:
         """One lane: 'ready' (a moved shooter is in position: their time runs again, plus `seconds` extra, default by
         the rulebook), 'extra' (seconds of extra time for this shooter only), 'start_record' (after sighters)."""
@@ -559,16 +633,42 @@ class Matches:
                 if not isinstance(seconds, int) or isinstance(seconds, bool) or not 0 <= seconds <= 3600:
                     raise MatchError("extra time: 0 to 3600 seconds")
                 left = ln["moving_left_ms"] + seconds * 1000
-                sighting = 1 if p["kind"] in ("record", "stage") else 0
-                if ln["own_phase"] is not None:
-                    counting = m["state"] not in ("paused",) and not (m["state"] == "overtime" and m["phase_started_ms"] is None)
-                    c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, own_left_ms=?, own_since_ms=?, sighting=? "
-                              "WHERE match_id=? AND device_id=?", (left, now if counting else None, sighting, mid, device_id))
-                else:
-                    c.execute("UPDATE match_lanes SET moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=?, sighting=? "
-                              "WHERE match_id=? AND device_id=?", (left - self.remaining_ms(m, now), sighting, mid, device_id))
+                self._resume_lane(c, m, ln, p, left, True, now)
                 self._log(c, mid, now, "lane_ready", phase, device_id, {"extra_s": seconds, "left_ms": left, "by": by})
-                self._set_modes(c, m, "sighter", now, only=device_id)     # unlimited sighters first (all three rulebooks)
+            elif action in ("interrupt", "malfunction") and (action == "interrupt" or rules_of(fmt) == "NRA"):
+                # the shooter's time stops: an interruption (ISSF 6.11.3, CMP 7.18, NRA 9.2 b), or an NRA disabled rifle (9.5)
+                if ln["moving_since_ms"] is not None:
+                    raise MatchError("this shooter's time is already stopped")
+                if m["state"] not in LIVE or m["state"] == "holding":
+                    raise MatchError("the clock is not running")
+                c.execute("UPDATE match_lanes SET moving_since_ms=?, moving_left_ms=?, own_since_ms=NULL, own_left_ms=NULL "
+                          "WHERE match_id=? AND device_id=?", (now, self.lane_left_ms(m, ln, now), mid, device_id))
+                self._log(c, mid, now, "interrupt", phase, device_id, {"reason": action, "by": by})
+            elif action == "interrupt_end":
+                if ln["moving_since_ms"] is None or self._stop_reason(c, mid, device_id) is None:
+                    raise MatchError("this shooter is not interrupted")
+                reason = self._stop_reason(c, mid, device_id)
+                lost = (now - ln["moving_since_ms"]) // 1000
+                left, sighters, rule = interruption_time(rules_of(fmt), reason, ln["moving_left_ms"], lost)
+                self._resume_lane(c, m, ln, p, left, sighters, now)
+                self._log(c, mid, now, "interrupt_end", phase, device_id, {"reason": reason, "lost_s": lost, "left_ms": left, "sighters": sighters, "rule": rule, "by": by})
+                if sighters:
+                    self._log(c, mid, now, "sighters", phase, device_id, {"rule": rule})
+            elif action == "malfunction":                # ISSF 6.13.4, CMP 7.19.1: the clock keeps running
+                book = rules_of(fmt)
+                allowable = seconds == 1                 # ISSF: sighters only for an allowable malfunction (the RO ticks it)
+                sighters = book == "CMP" or allowable
+                extra = 120 if book == "CMP" and self.lane_left_ms(m, ln, now) <= 300_000 else 0     # after the 5-minute warning
+                if extra:
+                    col = "own_left_ms" if ln["own_phase"] is not None else "extra_ms"
+                    c.execute(f"UPDATE match_lanes SET {col}={col}+? WHERE match_id=? AND device_id=?", (extra * 1000, mid, device_id))
+                if sighters and p["kind"] in ("record", "stage"):
+                    c.execute("UPDATE match_lanes SET sighting=1 WHERE match_id=? AND device_id=?", (mid, device_id))
+                    self._set_modes(c, m, "sighter", now, only=device_id)
+                rule = "CMP 7.19.1" if book == "CMP" else "ISSF 6.13.4"
+                self._log(c, mid, now, "malfunction", phase, device_id, {"allowable": allowable, "sighters": sighters, "extra_s": extra, "rule": rule, "by": by})
+                if sighters:
+                    self._log(c, mid, now, "sighters", phase, device_id, {"rule": rule})
             elif action == "extra":
                 if not isinstance(seconds, int) or isinstance(seconds, bool) or not 1 <= seconds <= 3600:
                     raise MatchError("extra time: 1 to 3600 seconds")
@@ -730,7 +830,8 @@ class Matches:
             devs = set(self._lane_devs(c, m["id"], ln["device_id"]))
             mine = [r for r in log if r["device_id"] in devs]
             switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
-            readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_ready"]
+            readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] in ("lane_ready", "sighters")] + \
+                [(r["phase"], r["at_ms"]) for r in log if r["kind"] == "sighters" and r["device_id"] is None]
             stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
             moving, own = _lane_spans(log, devs, wins)
 
@@ -758,8 +859,9 @@ class Matches:
                 else:
                     w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
                 why, code, kind = None, None, None          # code + the phase's kind: what the rulebook guidance looks up
-                if any(inside(sp) for sp in moving):
-                    why, code = "while moving to another target", "moving"
+                stopped = next((sp for sp in moving if inside(sp)), None)
+                if stopped is not None:
+                    why, code = stopped["why"], "moving"
                 elif w is None:
                     code = "before_start" if first is None or t < first else "after_end"
                     why = "before the start" if code == "before_start" else "after the end"
@@ -843,6 +945,8 @@ class Matches:
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
+                "interrupted": m["state"] == "paused" and bool(json.loads((c.execute("SELECT data FROM match_log WHERE match_id=? AND kind='pause' "
+                                                                                     "ORDER BY id DESC LIMIT 1", (mid,)).fetchone() or {"data": "{}"})["data"] or "{}").get("interruption")),
                 "flags": self.flags(c, m) if m["state"] != "ready" else [],
                 "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid),
                 "open_items": self.open_items(c, m) if m["official_ms"] is None else []}
@@ -851,7 +955,9 @@ class Matches:
                 "restart": "Restarted", "extra": "Extra time for everyone", "pacing": "Commands changed", "move": "Shooter moved to another target",
                 "lane_ready": "Moved shooter ready", "lane_extra": "Extra time for this shooter", "lane_stop": "Shooter's own time ended",
                 "left_relay": "Sent to a later relay (CMP 7.18)", "joins_relay": "Joins from an earlier relay (CMP 7.18)",
-                "posted": "Preliminary results posted", "official": "Results made official", "reopen": "Official results reopened"}
+                "posted": "Preliminary results posted", "official": "Results made official", "reopen": "Official results reopened",
+                "interrupt": "Shooter's time stopped", "interrupt_end": "Shooter's time runs again", "malfunction": "Malfunction",
+                "late": "Late arrival joined", "sighters": "Sighters allowed"}
 
     WORDS = {"count": "counted", "annul": "annulled", "miss": "scored as a miss", "penalty2": "counted, 2 points off",
              "annul_penalty2": "annulled, 2 points off", "ignore": "no penalty", "penalty2_first": "2 points off the first record shot",
@@ -929,7 +1035,8 @@ class Matches:
         devs = self._lane_devs(c, m["id"], ln["device_id"])[1:]
         names = {r["device_id"]: r["name"] for r in c.execute(
             f"SELECT device_id, name FROM targets WHERE device_id IN ({','.join('?' * len(devs))})", devs)} if devs else {}
-        return {"own": own, "own_label": fmt["phases"][phase]["label"] if own and 0 <= phase < len(fmt["phases"]) else None,
+        return {"own": own, "stop": self._stop_reason(c, m["id"], ln["device_id"]) if own == "moving" else None,
+                "own_label": fmt["phases"][phase]["label"] if own and 0 <= phase < len(fmt["phases"]) else None,
                 "own_kind": fmt["phases"][phase]["kind"] if own and 0 <= phase < len(fmt["phases"]) else None,
                 "own_remaining_ms": left if own else None, "own_ends_at_ms": now + left if own and counting else None,
                 "sighting": bool(ln["sighting"]), "moved_from": [names.get(d) or d for d in reversed(devs)]}
@@ -960,7 +1067,7 @@ class Matches:
         if lc["own"] == "waiting":                      # CMP 7.18: rejoining at a later phase
             clock.update(state="paused", label="Waiting: you start at " + lc["own_label"], remaining_ms=0, ends_at_ms=None, kind=None)
         elif lc["own"] == "moving":
-            clock.update(state="paused", label="Moving to another target: your time is stopped", remaining_ms=lc["own_remaining_ms"],
+            clock.update(state="paused", label={"interrupt": "Interrupted", "malfunction": "Rifle being repaired"}.get(lc["stop"], "Moving to another target") + ": your time is stopped", remaining_ms=lc["own_remaining_ms"],
                          ends_at_ms=None, next=None)
         elif lc["own"] in ("own", "extra"):
             fmt = json.loads(r["format_json"])
@@ -1143,9 +1250,10 @@ def _lane_spans(log, devs, wins):
     moving, own, mv, ow, restarts = [], [], None, None, []
     for r in log:
         k, mine = r["kind"], r["device_id"] in devs
-        if k == "move" and mine and r["phase"] is not None and mv is None:
-            mv = {"start": r["at_ms"], "end": None}
-        elif k == "lane_ready" and mine and mv is not None:
+        if k in ("move", "interrupt") and mine and r["phase"] is not None and mv is None:
+            mv = {"start": r["at_ms"], "end": None, "why": "while moving to another target" if k == "move" else
+                  "during an interruption" if json.loads(r["data"]).get("reason") == "interrupt" else "while the rifle was being repaired"}
+        elif k in ("lane_ready", "interrupt_end") and mine and mv is not None:
             mv["end"] = r["at_ms"]
             moving.append(mv)
             mv = None
@@ -1168,3 +1276,32 @@ def _lane_spans(log, devs, wins):
     for o in own:
         o["superseded"] = any(rid > o["start_id"] and to <= o["phase"] for to, rid in restarts)
     return moving, own
+
+
+def interruption_time(book: str, reason: str, left_ms: int, lost_s: int) -> tuple:
+    """(time left, sighters?, rule) for a shooter whose interruption (or NRA disabled rifle) ended after lost_s seconds;
+    left_ms: what they had left when it began (their clock stood still since).
+    ISSF 6.11.3.1: over 3 minutes, the time lost (in the last 5 minutes: the time left + 1 minute); up to 3 minutes the
+    time lost is not given back; 6.11.3.2: over 5 minutes, + 5 minutes and unlimited sighters.
+    CMP 7.18.1-2: the time lost; over 5 minutes + 2 minutes and unlimited sighters.
+    NRA 9.2 b: over 3 minutes equal time, over 5 unlimited sighters; 9.5 (disabled rifle): the time that remained, sighters."""
+    if reason == "malfunction":                              # only NRA stops the clock for a malfunction
+        return left_ms, True, "NRA 9.5"
+    if book == "CMP":
+        return (left_ms + 120_000, True, "CMP 7.18.2") if lost_s > 300 else (left_ms, False, "CMP 7.18.1")
+    if book == "NRA":
+        back = left_ms if lost_s > 180 else max(0, left_ms - lost_s * 1000)
+        return back, lost_s > 300, "NRA 9.2 b"
+    if lost_s <= 180:
+        return max(0, left_ms - lost_s * 1000), False, "ISSF 6.11.3.1"
+    back = left_ms + (60_000 if left_ms <= 300_000 else 0)
+    return (back + 300_000, True, "ISSF 6.11.3.2") if lost_s > 300 else (back, False, "ISSF 6.11.3.1")
+
+
+def range_interruption(book: str, lost_s: int) -> tuple:
+    """(extra seconds, sighters?, rule) for the whole range after an interruption of lost_s seconds (the clock was
+    stopped, so the time lost is given back): ISSF 6.10.9.1 / 6.11.3.2 over 5 minutes + 5 minutes and sighters;
+    CMP 7.18.4 over 5 minutes + 2 minutes and sighters; NRA 9.2 b over 5 minutes sighters."""
+    if lost_s <= 300:
+        return 0, False, {"ISSF": "ISSF 6.11.3.1", "CMP": "CMP 7.18.4", "NRA": "NRA 9.2 b"}[book]
+    return {"ISSF": (300, True, "ISSF 6.10.9.1, 6.11.3.2"), "CMP": (120, True, "CMP 7.18.4"), "NRA": (0, True, "NRA 9.2 b")}[book]

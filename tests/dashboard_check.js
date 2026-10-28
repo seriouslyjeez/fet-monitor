@@ -729,3 +729,22 @@ console.log('OK');
   assert(statusLine({results_posted_ms: 1, protest_until_ms: Date.now() + 120000}).includes('protests until') && statusLine({}).includes('Provisional'));
   console.log('phase F OK');
 }
+
+// phase G: interruptions, malfunctions and late arrival on the console
+{
+  const {lanesPanel, lateSheet} = X;
+  const rd = JSON.parse(JSON.stringify(D.ready)), l = rd.lanes.find(x => x.device_id !== 'comp-4');
+  rd.state = 'running'; rd.clock.kind = 'record';
+  const p = lanesPanel(rd, {}, false);
+  assert(p.includes('data-act="mclint" data-a="interrupt" data-id="' + l.device_id + '"') && p.includes('data-a="malfunction"'), 'interruption and malfunction per firing point');
+  l.own = 'moving'; l.stop = 'interrupt'; l.own_remaining_ms = 300000;
+  const q = lanesPanel(rd, {}, false);
+  assert(q.includes('<b>Interrupted</b> · 5:00 kept') && q.includes('data-a="interrupt_end" data-id="' + l.device_id + '">Interruption ended') && !q.includes('data-act="mclready" data-id="' + l.device_id + '"'));
+  l.stop = 'malfunction';
+  assert(lanesPanel(rd, {}, false).includes('>Repaired<'), 'NRA disabled rifle: Repaired');
+  const det = Object.assign({}, rd, {competition_id: 1});
+  const ls = lateSheet({detail: det, latep: {people: [{id: 1, name: 'AMES', relay: 1}, {id: 2, name: '<b>BELL</b>', relay: null}]}, targets: D.mtargets});
+  assert(ls.includes('&lt;b&gt;BELL') && !ls.includes('>AMES<') && ls.includes('ISSF 6.11.4'), 'only competitors on no relay');
+  assert(lateSheet({detail: Object.assign({}, rd, {competition_id: null}), latep: {}, targets: D.mtargets}).includes('data-latename'), 'a single match: a name');
+  console.log('phase G OK');
+}

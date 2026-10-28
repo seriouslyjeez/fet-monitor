@@ -322,6 +322,20 @@ class Competitions:
         self._pub(comp["id"])
         return to
 
+    def add_late(self, mid: int, competitor_id, device_id: str, by: str) -> None:
+        """A competitor who is on no relay arrives late: they join this running relay (ISSF 6.11.4: no extra time)."""
+        c = self.db.conn()
+        m = self.matches._row(c, mid)
+        p = c.execute("SELECT * FROM competitors WHERE id=? AND competition_id=?", (competitor_id, m["competition_id"])).fetchone() \
+            if isinstance(competitor_id, int) and m["competition_id"] is not None else None
+        if p is None:
+            raise MatchError("unknown competitor")
+        if c.execute("""SELECT 1 FROM match_lanes l JOIN matches x ON x.id=l.match_id WHERE l.competitor_id=? AND x.state!='aborted'
+                        AND l.left_ms IS NULL""", (competitor_id,)).fetchone():
+            raise MatchError(f"{display_name(p)} is already on a relay")
+        self.matches.add_late(mid, device_id, display_name(p), by, competitor_id)
+        self._pub(m["competition_id"])
+
     def _check_free(self, c, device_id: str) -> None:
         if c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone() is None:
             raise MatchError("unknown target")

@@ -166,6 +166,18 @@ How FeT Monitor does it (Match Control console, *Shots…* on a firing point; fe
   flag and decision, correction (also voided ones), move, relay change, pause, extra time, restart, posting and
   official/reopen of a match, in time order with who did it; printable with signature lines, and as CSV.
 
+## Interruptions, malfunctions, late arrival (console)
+
+| | ISSF | CMP | NRA |
+|---|---|---|---|
+| One shooter interrupted (*Interruption*, then *Interruption ended*) | up to 3 min: time not given back; over 3 min: the time lost (in the last 5 min: time left + 1 min) (6.11.3.1); over 5 min: + 5 min and sighters (6.11.3.2) | the time lost (7.18.1); over 5 min: + 2 min and sighters (7.18.2) | over 3 min: equal time; over 5 min: sighters (9.2 b) |
+| Whole range (*Range interruption* button) | the clock stops; over 5 min: + 5 min and sighters (6.10.9.1, 6.11.3.2) | the clock stops; over 5 min: + 2 min and sighters (7.18.4) | the clock stops; over 5 min: sighters (9.2 b) |
+| Malfunction (*Malfunction…*) | no extra time; sighters only if allowable (6.13.4) | sighters on request; + 2 min after the 5-minute warning (7.19.1) | disabled rifle: the shooter's time stops until *Repaired*, then the time that remained and sighters (9.5, 9.2 c) |
+| Late arrival (*Late arrival…*) | joins on a free target, no extra time; sighters allowed within their time (6.11.4) | as ISSF | as ISSF |
+
+Sighters granted this way are allowed until the shooter (or the range officer) presses *Start record*; everything is
+on the range incident report.
+
 ## Still to read before building them
 
 CMP Standard and Start-from-Zero finals (rule 10.3 to 10.5), NRA 10-shot standing final (7.1.2), team sizes and

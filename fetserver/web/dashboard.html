@@ -913,7 +913,9 @@ function mcConsole(mc) {
       ' · switch to ' + ['spoken', 'officer', 'auto'].filter(k => k !== c.paced).map(k => '<button data-act="mccmd" data-a="pacing" data-v="' + k + '">' + esc(PACE[k][0]) + '</button>').join(' ') + '</div>' : '') + '</div>' +
     '<div class="mcclock' + (st === 'paused' ? ' paused' : '') + '" data-clock="console">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>' +
     '<div class="mcbar">' + (st === 'ready' ? '<button class="pri" data-act="mcstart">Start match</button>' : '') +
-    (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button>' : '') + (st === 'paused' ? '<button class="pri" data-act="mccmd" data-a="resume">Resume clock</button>' : '') +
+    (st === 'running' ? '<button data-act="mccmd" data-a="pause">Pause clock</button><button class="danger" data-act="mccmd" data-a="interrupt" title="Target failure, power, safety: the rulebook extra time and sighters when it ends">Range interruption</button>' : '') +
+    (st === 'paused' ? (d.interrupted ? '<button class="pri" data-act="mccmd" data-a="interrupt_end">Interruption ended</button>' : '<button class="pri" data-act="mccmd" data-a="resume">Resume clock</button>') : '') +
+    (live ? '<button data-act="mclate">Late arrival…</button>' : '') +
     (st === 'running' || st === 'paused' ? '<button data-act="mccmd" data-a="extra" data-s="60">+1 min</button><button data-act="mccmd" data-a="extra" data-s="300">+5 min</button>' : '') +
     (live ? '<button data-act="mccmd" data-a="next">' + (st === 'holding' ? 'Skip this phase' : 'End this phase now') + '</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
     (ot ? (c.paused ? '<button class="pri" data-act="mccmd" data-a="resume">Resume their clocks</button>' : '<button data-act="mccmd" data-a="pause">Pause their clocks</button>') +
@@ -929,8 +931,9 @@ function mcConsole(mc) {
       : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>' + guideRow(f, decisionsFor(f))).join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
 }
-function laneTime(l, d) {                       // a shooter's own clock (moved to another target), or the match's
+function laneTime(l, d) {                       // a shooter's own clock (moved, interrupted, ...), or the match's
   if (!l.own) return '';
+  if (l.own === 'moving' && l.stop) return '<div class="mut"><b>' + (l.stop === 'interrupt' ? 'Interrupted' : 'Rifle being repaired') + '</b> · ' + fmtClock(l.own_remaining_ms) + ' kept</div>';
   if (l.own === 'left' || l.own === 'waiting') return '<div class="mut">' + esc(l.relay_note || '') + '</div>';   // CMP 7.18
   const c = l.own === 'moving' ? '<b>Moving</b> · ' + fmtClock(l.own_remaining_ms) + ' kept'
     : '<span data-lends="' + (l.own_ends_at_ms || '') + '">' + fmtClock(l.own_remaining_ms) + '</span> ' + (l.own === 'own' ? esc(l.own_label) + ', own time' : 'own time');
@@ -946,8 +949,11 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
       (l.moved_from && l.moved_from.length ? '<div class="mut">moved from ' + l.moved_from.map(esc).join(', ') + '</div>' : '') + '</td>' +
       '<td>' + esc(l.competitor || '–') + laneTime(l, d) + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td><td><div class="mcbar" style="margin:0">' +
       (stage ? (l.in_record ? '<span class="mut">in record</span>' : '<button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>') : '') +
-      (l.own === 'moving' ? '<label class="mut">extra <input type="number" min="0" max="60" step="0.5" style="width:56px" id="rdy_' + esc(l.device_id) + '" value="' + mins + '"> min</label>' +
+      (l.own === 'moving' && !l.stop ? '<label class="mut">extra <input type="number" min="0" max="60" step="0.5" style="width:56px" id="rdy_' + esc(l.device_id) + '" value="' + mins + '"> min</label>' +
         '<button class="pri" data-act="mclready" data-id="' + esc(l.device_id) + '">Shooter ready</button>' : '') +
+      (l.own === 'moving' && l.stop ? '<button class="pri" data-act="mclint" data-a="interrupt_end" data-id="' + esc(l.device_id) + '">' + (l.stop === 'interrupt' ? 'Interruption ended' : 'Repaired') + '</button>' : '') +
+      (live && c.kind !== 'pause' && l.own !== 'moving' && l.own !== 'left' && l.own !== 'waiting' && st === 'running' ? '<button data-act="mclint" data-a="interrupt" data-id="' + esc(l.device_id) + '" title="This shooter\'s time stops (ISSF 6.11.3, CMP 7.18, NRA 9.2 b)">Interruption</button>' +
+        '<button data-act="mclint" data-a="malfunction" data-id="' + esc(l.device_id) + '">Malfunction…</button>' : '') +
       (l.sighting && l.own !== 'moving' ? '<span class="mut">sighting</span><button data-act="mclrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') +
       ((live || (ot && l.own)) && l.own !== 'moving' ? '<button data-act="mclextra" data-id="' + esc(l.device_id) + '" title="Extra time for this shooter only">+1 min</button>' : '') +
       (canMove ? '<button data-act="mcmove" data-id="' + esc(l.device_id) + '">Move…</button>' : '') +
@@ -957,6 +963,18 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
 const MOVE_RULE = {ISSF: 'ISSF 6.10.9.2 and 6.11.3.2: their time stops while they move; when they are ready they get 5 minutes extra and unlimited sighting shots before they go on with record.',
   CMP: 'CMP 7.18.3: they get the time they had left plus 2 minutes, and unlimited sighting shots before they go on with record.',
   NRA: 'NRA 9.2 b and 10.3.2: they get the time they lost (their time stops while they move) and unlimited sighting shots before they go on with record.'};
+function lateSheet(mc) {                         // a late arrival joins the running match (ISSF 6.11.4)
+  const d = mc.detail, lp = mc.latep, free = (mc.targets || []).filter(t => !t.in_match);
+  const people = lp.people ? lp.people.filter(p => !p.relay) : null;
+  return '<div class="sheet"><div class="row"><h2>Late arrival</h2><button data-act="mclatecancel">Cancel</button></div>' +
+    (d.competition_id != null ? (people == null ? '<p class="mut">Loading…</p>' : people.length ? '<p>Competitor: <select data-latep><option value="">choose…</option>' +
+      people.map(p => '<option value="' + p.id + '"' + (String(lp.pid) === String(p.id) ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></p>' : '<p class="bad">Every competitor is on a relay.</p>')
+      : '<p>Name: <input type="text" data-latename maxlength="60" value="' + esc(lp.name || '') + '"></p>') +
+    '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</label>').join('')
+      : '<p class="bad">No free target.</p>') +
+    '<p class="mut">ISSF 6.11.4: a late shooter may start but gets no extra time; after the preparation and sighting time they may still fire sighters within their time, then Start record.</p>' +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '<div class="mcbar"><button class="pri" data-act="mclatego"' + (free.length ? '' : ' disabled') + '>Add to the match</button></div></div>';
+}
 function moveSheet(mc) {                         // move a shooter to another target (a target failed)
   const d = mc.detail, mv = mc.movep, l = d && d.lanes.find(x => x.device_id === mv.from);
   if (!l) return '';
@@ -1366,11 +1384,11 @@ function render(force) {                  // force: a structural change (e.g. an
 }
 function renderOverlay(t) {
   const o = document.getElementById('overlay');
-  if (route().match && S.mc && (S.mc.editp || S.mc.movep || S.mc.shotp)) {   // Match Control: a competitor, a move, a shot list
+  if (route().match && S.mc && (S.mc.editp || S.mc.movep || S.mc.shotp || S.mc.latep)) {   // Match Control: a competitor, a move, a shot list, a late arrival
     o.className = 'open';
     const ae = document.activeElement;
     if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) return;
-    o.innerHTML = S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
+    o.innerHTML = S.mc.latep ? lateSheet(S.mc) : S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
     return;
   }
   o.className = (S.gear || S.sight) && t ? 'open' : '';
@@ -1819,6 +1837,23 @@ async function matchAct(el, a) {
   }
   if (a === 'mcmove') { mc.movep = {from: el.dataset.id}; mc.shotp = null; mc.msg = ''; return render(); }
   if (a === 'mcmovecancel') { mc.movep = null; mc.msg = ''; return render(); }
+  if (a === 'mclate') {
+    mc.latep = {}; mc.msg = ''; render();
+    if (mc.detail.competition_id != null) {
+      const r = await matchCall('/competitions/' + mc.detail.competition_id);
+      if (r.status === 200 && mc.latep) mc.latep.people = r.data.competitors;
+    }
+    return render(true);
+  }
+  if (a === 'mclatecancel') { mc.latep = null; mc.msg = ''; return render(); }
+  if (a === 'mclatego') {
+    const lp = mc.latep, pick = document.querySelector('input[name="lateto"]:checked');
+    if (!pick) { mc.msg = 'Choose a target'; return render(true); }
+    const body = mc.detail.competition_id != null ? {device_id: pick.value, competitor_id: lp.pid ? +lp.pid : null} : {device_id: pick.value, competitor: lp.name || ''};
+    if (mc.detail.competition_id != null && !lp.pid) { mc.msg = 'Choose the competitor'; return render(true); }
+    if (show(await matchCall('/matches/' + mc.open + '/late', body))) { mc.latep = null; toast('Added'); }
+    return refresh();
+  }
   if (a === 'mcmvmode') { mc.movep.mode = el.dataset.v; mc.msg = ''; return render(true); }
   if (a === 'mcmovego') {
     const pick = document.querySelector('input[name="mvto"]:checked'), mv = mc.movep;
@@ -1830,6 +1865,17 @@ async function matchAct(el, a) {
       return refresh();
     }
     if (show(await matchCall('/matches/' + mc.open + '/move', {from: mv.from, to: pick.value}))) { mc.movep = null; toast('Moved'); }
+    return refresh();
+  }
+  if (a === 'mclint') {                          // one shooter: interruption, its end, a malfunction
+    const k = el.dataset.a, d = mc.detail, body = {device_id: el.dataset.id, action: k};
+    if (k === 'malfunction') {
+      if (d.tie_rules === 'ISSF') body.seconds = confirm('Is it an ALLOWABLE malfunction (ISSF 6.13.2.1)? OK: yes, sighters allowed after the repair. Cancel: no (no sighters). No extra time either way (6.13.4).') ? 1 : 0;
+      else if (!confirm(d.tie_rules === 'NRA' ? 'Disabled rifle (NRA 9.5): the shooter\'s time stops until you press Repaired; then the time that remained and sighters.'
+        : 'Malfunction (CMP 7.19.1): sighters on request; 2 minutes extra if it happened after the 5-minute warning. Continue?')) return;
+    }
+    const res = await matchCall('/matches/' + mc.open + '/lane', body);
+    if (!show(res)) toast(mc.msg);
     return refresh();
   }
   if (a === 'mclready' || a === 'mclrecord' || a === 'mclextra') {
@@ -1845,6 +1891,7 @@ async function matchAct(el, a) {
     const action = a === 'mcrecord' ? 'start_record' : el.dataset.a;
     if (el.dataset.ot && !confirm('End the moved shooters\' own time now? The match then finishes.')) return;
     if (action === 'abort' && !confirm('Stop the whole match now? This cannot be undone.')) return;
+    if (action === 'interrupt' && !confirm('Interrupt the whole range now? Every clock stops. When it ends, the time is given back; over 5 minutes the rulebook adds extra time and sighters.')) return;
     if (action === 'next' && !el.dataset.ot && !confirm('End this phase now and go to the next one?')) return;
     if (action === 'pacing' && !confirm('Switch the commands to "' + PACE[el.dataset.v][0] + '"?\n\n' + PACE[el.dataset.v][1] + ' (from the next phase on).')) return;
     const res = await matchCall('/matches/' + mc.open + '/command', {action: action, seconds: el.dataset.s ? +el.dataset.s : undefined, device_id: el.dataset.id, paced: el.dataset.v});
@@ -1942,6 +1989,7 @@ function boot() {
     if (el.dataset.mct != null && el.dataset.mct !== undefined) { const dd = mc.view === 'cnew' ? (mc.cdraft = mc.cdraft || {}) : mc.draft; dd.times = dd.times || {}; dd.times[el.dataset.mct] = Math.round(parseFloat(el.value) * 60); }
     if (el.dataset.mcf) mc.fdraft[el.dataset.mcf] = el.value;
     if (el.dataset.pe && mc.editp) mc.editp[el.dataset.pe] = el.value;
+    if (el.dataset.latename !== undefined && mc.latep) mc.latep.name = el.value;
     if (el.dataset.fx && mc.shotp && mc.shotp.form && el.tagName === 'INPUT') mc.shotp.form[el.dataset.fx] = el.value;
     if (el.dataset.np) { mc.np = mc.np || {}; mc.np[el.dataset.np] = el.value; }
     if (el.dataset.mcx) { mc.cdraft = mc.cdraft || {}; mc.cdraft[el.dataset.mcx] = el.value; if (el.dataset.mcx === 'format_id') { mc.cdraft.times = {}; delete mc.cdraft.team_size; render(true); } }
@@ -1955,6 +2003,8 @@ function boot() {
     if (el.dataset.rl) { mc.rdraft = mc.rdraft || {}; mc.rdraft[el.dataset.rl] = el.value; render(true); }
     if (el.name === 'mvto' && mc.movep) mc.movep.to = el.value;
     if (el.dataset.mvrel !== undefined && mc.movep) { mc.movep.rel = el.value; render(true); }
+    if (mc.latep && el.dataset.latep !== undefined) mc.latep.pid = el.value;
+    if (mc.latep && el.name === 'lateto') mc.latep.to = el.value;
     if (mc.shotp && mc.shotp.form && (el.dataset.fxc || el.dataset.fxr || (el.dataset.fx && el.tagName === 'SELECT'))) {
       const f = mc.shotp.form;
       if (el.dataset.fxc) f[el.dataset.fxc] = el.checked; else if (el.dataset.fxr) f[el.dataset.fxr] = el.value; else f[el.dataset.fx] = el.value;
@@ -1991,7 +2041,7 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   openStream();
   window.addEventListener('afterprint', endPrint);
@@ -2030,7 +2080,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>
