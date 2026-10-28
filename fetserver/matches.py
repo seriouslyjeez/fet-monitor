@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 
 from . import matchformats as mf
 from . import ranking
-from .rules import lookup_text
+from .rules import guidance, lookup_text
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
 ACTIVE = ("ready", "running", "paused", "holding", "overtime")
@@ -434,6 +434,7 @@ class Matches:
             m = self._row(c, mid)
             if m["state"] == "ready":
                 raise MatchError("the match has not started")
+            self.not_official(m)
             fmt = json.loads(m["format_json"])
             if not isinstance(phase, int) or isinstance(phase, bool) or not 0 <= phase < len(fmt["phases"]):
                 raise MatchError("no such phase")
@@ -488,6 +489,7 @@ class Matches:
             m = self._row(c, mid)
             if m["state"] in ("done", "aborted"):
                 raise MatchError("the match is over")
+            self.not_official(m)
             ln = self._lane(c, mid, from_dev)
             if to_dev == from_dev:
                 raise MatchError("choose another target")
@@ -565,6 +567,49 @@ class Matches:
                 raise MatchError("unknown action")
         self._pub(mid)
 
+    # ------------------------------------------------------------------------------------------- official results
+    @staticmethod
+    def not_official(m) -> None:
+        """Official results do not change: decisions, corrections, restarts and moves wait until they are reopened."""
+        if m["official_ms"] is not None:
+            raise MatchError("the results are official: reopen them first")
+
+    def open_items(self, c, m) -> List[str]:
+        """What stops the results from being made official, in words (empty: nothing)."""
+        out = []
+        if m["state"] != "done":
+            out.append("the match has not finished" if m["state"] != "aborted" else "the match was stopped")
+        undecided = sum(1 for f in self.flags(c, m) if not f["decision"]) if m["state"] != "ready" else 0
+        if undecided:
+            out.append(f"{undecided} flagged shot{'s' if undecided != 1 else ''} not decided")
+        n = self.core.corrections.open_count(c, m["id"])
+        if n:
+            out.append(f"{n} review{'s' if n != 1 else ''} or protest{'s' if n != 1 else ''} not settled")
+        return out
+
+    def make_official(self, mid: int, by: str) -> None:
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["official_ms"] is not None:
+                raise MatchError("already official")
+            todo = self.open_items(c, m)
+            if todo:
+                raise MatchError("not yet: " + "; ".join(todo))
+            c.execute("UPDATE matches SET official_ms=?, official_by=? WHERE id=?", (now, by, mid))
+            self._log(c, mid, now, "official", None, None, {"by": by})
+        self._pub(mid)
+
+    def reopen(self, mid: int, by: str) -> None:
+        now = self.core.now_ms()
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["official_ms"] is None:
+                raise MatchError("the results are not official")
+            c.execute("UPDATE matches SET official_ms=NULL, official_by=NULL WHERE id=?", (mid,))
+            self._log(c, mid, now, "reopen", None, None, {"by": by, "was_official_ms": m["official_ms"]})
+        self._pub(mid)
+
     def decide(self, mid: int, shot_id: int, decision: str, by: str) -> None:
         flags = {f["shot_id"]: f for f in self.detail(mid)["flags"]}
         if shot_id not in flags:
@@ -573,6 +618,7 @@ class Matches:
         if decision not in allowed and decision != "undecided":
             raise MatchError(f"decision must be one of {', '.join(allowed)}")
         with self.db.write() as c:
+            self.not_official(self._row(c, mid))
             if decision == "undecided":
                 c.execute("DELETE FROM shot_decisions WHERE shot_id=?", (shot_id,))
             else:
@@ -654,37 +700,41 @@ class Matches:
                          "live": not any(inside(pz) for pz in pauses), "superseded": o["superseded"]}
                 else:
                     w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
-                why = None
+                why, code, kind = None, None, None          # code + the phase's kind: what the rulebook guidance looks up
                 if any(inside(sp) for sp in moving):
-                    why = "while moving to another target"
+                    why, code = "while moving to another target", "moving"
                 elif w is None:
-                    why = "before the start" if first is None or t < first else "after the end"
+                    code = "before_start" if first is None or t < first else "after_end"
+                    why = "before the start" if code == "before_start" else "after the end"
                 elif w["superseded"]:
-                    why = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted"
+                    why, code = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted", "restarted"
                 elif w["hold"]:
-                    why = f"before START of {fmt['phases'][w['phase']]['label'].lower()}"
+                    kind = fmt["phases"][w["phase"]]["kind"]
+                    why, code = f"before START of {fmt['phases'][w['phase']]['label'].lower()}", "before_cmd"
                 elif not w["live"]:
-                    why = "while the clock was paused"
+                    why, code = "while the clock was paused", "paused"
                 else:
                     p = fmt["phases"][w["phase"]]
                     rec = s["stream"] == "scored"
+                    kind = p["kind"]
                     if p["kind"] not in mf.FIRE_KINDS:
-                        why = f"during {p['label'].lower()} (no firing)"
+                        why, code = f"during {p['label'].lower()} (no firing)", "no_fire"
                     elif p["kind"] == "sight" and rec:
-                        why = f"a record shot during {p['label'].lower()}"
+                        why, code = f"a record shot during {p['label'].lower()}", "record_in_sight"
                     elif p["kind"] == "record" and not rec and not sighting_ok(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
-                        why = f"a sighting shot during {p['label'].lower()}"
+                        why, code = f"a sighting shot during {p['label'].lower()}", "sighter_in_record"
                     elif p["kind"] == "stage" and not rec and in_record(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
-                        why = "a sighting shot after record started"
+                        why, code = "a sighting shot after record started", "sighter_after_record"
                     elif rec:
                         key = (w["phase"], w["attempt"])
                         counted[key] = counted.get(key, 0) + 1
                         if counted[key] > p["shots"]:
-                            why = f"more than {p['shots']} record shots in {p['label'].lower()}"
+                            why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
                 if why and s["id"] is not None:
                     out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
                                 "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
-                                "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"]})
+                                "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"],
+                                "guide": guidance(code, kind, s["stream"], rules_of(fmt))})
         return out
 
     def _clock(self, m, now: int) -> dict:
@@ -727,12 +777,13 @@ class Matches:
                           "sighters": counts["sighter"], "record": counts["scored"],
                           "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False})
         return {"id": m["id"], "name": m["name"], "format": fmt, "state": m["state"], "created_by": m["created_by"],
-                "competition_id": m["competition_id"], "relay": m["relay"],
+                "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "move_extra_s": MOVE_EXTRA_S[rules_of(fmt)], "tie_rules": rules_of(fmt),
                 "flags": self.flags(c, m) if m["state"] != "ready" else [],
-                "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid)}
+                "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid),
+                "open_items": self.open_items(c, m) if m["official_ms"] is None else []}
 
     def lane_clock(self, c, m, ln, now: int) -> dict:
         """A lane's own clock, for the console and the shooter's screen: own = "moving" (time stands still until the
@@ -759,7 +810,8 @@ class Matches:
             fmt = json.loads(m["format_json"])
             out.append({"id": m["id"], "name": m["name"], "state": m["state"], "format_name": fmt["name"],
                         "created_ms": m["created_ms"], "clock": self._clock(m, now),
-                        "competition_id": m["competition_id"], "relay": m["relay"], "results_hidden": bool(m["results_hidden"])})
+                        "competition_id": m["competition_id"], "relay": m["relay"], "results_hidden": bool(m["results_hidden"]),
+                        "official_ms": m["official_ms"]})
         return out
 
     def target_info(self, c, device_id: str, now: int) -> Optional[dict]:
@@ -891,7 +943,7 @@ class Matches:
             r.pop("summary", None)
         return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "state": m["state"], "clock": self._clock(m, self.core.now_ms()),
-                "provisional_ranking": False, "rows": rows}
+                "provisional_ranking": False, "rows": rows, "official_ms": m["official_ms"], "official_by": m["official_by"]}
 
     def board(self, ids: Optional[List[int]] = None) -> List[dict]:
         """Public scoreboard data for the given matches, or for every active match and those finished in the last 6 h."""

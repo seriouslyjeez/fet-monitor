@@ -23,7 +23,7 @@ from .releases import ReleaseError, Updates, fetch_firmware
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official)|/flags/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4}))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
@@ -277,6 +277,11 @@ class Handler(BaseHTTPRequestHandler):
                     log.warning("Match Control: %s recorded %s on firing point %s of match %d (correction %d)", who, payload.get("kind"),
                                 payload.get("lane"), mid, cid)
                     return self._send(200, {"id": cid, **mc.detail(mid)})
+                if method == "POST" and mm.group(2) == "official":     # make the results official, or reopen them
+                    need_director()
+                    (mc.reopen if payload.get("action") == "reopen" else mc.make_official)(mid, who)
+                    log.warning("Match Control: %s %s the results of match %d", who, "reopened" if payload.get("action") == "reopen" else "made official", mid)
+                    return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "restart":
                     need_director()                        # mistakes happen: the match director can go back
                     mc.restart(mid, payload.get("phase"), who)

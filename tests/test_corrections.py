@@ -194,3 +194,79 @@ class TeamWithADisqualifiedMember(CorrCase):
             team = cc.results(cid)["classes"][0]["teams"][0]
             self.assertEqual((team["place"], team.get("reason")), (None, want) if want else (1, None), fid)
             self.m.command(rid, "abort", "md")
+
+
+class OfficialResults(CorrCase):
+    def test_only_when_everything_is_settled_and_then_frozen(self):
+        mid = self.match([("setup", 60, 0), ("record", 60, 2)])
+        self.at(5); self.shoot("lane-1")                        # flagged: during setup
+        self.at(70); self.shoot("lane-1"); self.shoot("lane-1")
+        sid = self.shots(mid, 1, "scored")[0]["id"]
+        pid = self.cc.add(mid, "protest", 1, "ro", False, sid, {})
+        with self.assertRaises(MatchError) as ctx:
+            self.m.make_official(mid, "md")
+        self.assertIn("the match has not finished", str(ctx.exception))
+        self.at(200)
+        self.assertEqual(self.m.detail(mid)["open_items"], ["1 flagged shot not decided", "1 review or protest not settled"])
+        flag = self.m.detail(mid)["flags"][0]["shot_id"]
+        self.m.decide(mid, flag, "ignore", "md")
+        self.cc.settle(mid, pid, "withdrawn", "md")
+        self.m.make_official(mid, "md")
+        d = self.m.detail(mid)
+        self.assertEqual((d["official_by"], d["open_items"], self.m.results(mid)["official_ms"] is not None), ("md", [], True))
+        for fn in (lambda: self.m.decide(mid, flag, "penalty2_first", "md"), lambda: self.cc.add(mid, "review", 1, "ro", False, sid, {}),
+                   lambda: self.cc.void(mid, pid, "md"), lambda: self.m.restart(mid, 0, "md"), lambda: self.m.make_official(mid, "md")):
+            with self.assertRaises(MatchError):
+                fn()
+        self.m.reopen(mid, "md")
+        self.cc.add(mid, "review", 1, "ro", False, sid, {})       # changes are possible again
+        self.assertIsNone(self.m.detail(mid)["official_ms"])
+        with self.assertRaises(MatchError):
+            self.m.reopen(mid, "md")
+
+    def test_a_competition_is_official_when_every_relay_is(self):
+        cc = self.core.competitions
+        fid = self.custom([("record", 60, 1)])
+        cid = cc.create("L", fid, "md")
+        a, b = cc.save_competitor(cid, {"family": "Ames"}), cc.save_competitor(cid, {"family": "Bell"})
+        r1 = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
+        self.m.start(r1, "md"); self.at(100); self.m.make_official(r1, "md")
+        r2 = cc.add_relay(cid, [{"device_id": "lane-2", "competitor_id": b}], "md")
+        self.assertIsNone(cc.results(cid)["official_ms"], "relay 2 not yet")
+        self.m.start(r2, "md"); self.at(200); self.m.make_official(r2, "md")
+        self.assertIsNotNone(cc.results(cid)["official_ms"])
+
+
+class DecisionGuidance(CorrCase):
+    def test_flags_carry_the_rule_and_a_suggestion(self):
+        mid = self.match([("setup", 60, 0), ("record", 60, 1)])
+        self.at(5); self.shoot("lane-1")                        # during setup: before START (ISSF 6.11.1.1 h)
+        self.at(70); self.shoot("lane-1"); self.shoot("lane-1")  # one too many (ISSF 6.11.5)
+        self.at(200); self.shoot("lane-1")                      # after the end (ISSF 6.11.1.3 a)
+        g = {f["why"]: f["guide"] for f in self.m.detail(mid)["flags"]}
+        self.assertEqual((g["during setup 0 (no firing)"]["rule"], g["during setup 0 (no firing)"]["suggest"]), ("ISSF 6.11.1.1 h", "miss_first"))
+        self.assertEqual((g["more than 1 record shots in record 1"]["rule"], g["more than 1 record shots in record 1"]["suggest"]), ("ISSF 6.11.5", "annul"))
+        self.assertIn("2-point penalty", g["more than 1 record shots in record 1"]["todo"])
+        self.assertEqual((g["after the end"]["rule"], g["after the end"]["suggest"]), ("ISSF 6.11.1.3 a", "ignore"))
+        self.assertEqual(g["after the end"]["url"], "https://issf-sports.org/rules")
+
+    def test_each_rulebook(self):
+        from fetserver.rules import guidance
+        cases = [(("before_cmd", "record", "sighter", "CMP"), ("CMP 7.17.2", "penalty2_first")),
+                 (("before_cmd", "sight", "sighter", "CMP"), ("CMP 7.17.1", "miss_first")),
+                 (("before_start", None, "sighter", "NRA"), ("NRA 14.5", None)),
+                 (("sighter_after_record", "stage", "sighter", "NRA"), ("NRA 9.2 d", "penalty2_first")),
+                 (("sighter_in_record", "record", "sighter", "ISSF"), ("ISSF 6.11.1.2 d", None)),
+                 (("paused", "record", "scored", "CMP"), ("CMP 7.17.3", "count")),
+                 (("after_end", None, "scored", "ISSF"), ("ISSF 6.11.1.3 a", "miss")),
+                 (("no_fire", "changeover", "sighter", "CMP"), ("CMP 7.17.2", None)),
+                 (("restarted", "record", "scored", "ISSF"), (None, "annul")),
+                 (("moving", "record", "sighter", "CMP"), (None, "ignore")),
+                 (("before_start", None, "scored", "ISSF"), ("ISSF 6.11.1.1 h", "miss")),
+                 (("too_many", "record", "scored", "Custom"), ("ISSF 6.11.5", "annul"))]
+        for args, (rule, suggest) in cases:
+            g = guidance(*args)
+            self.assertEqual((g["rule"], g["suggest"]), (rule, suggest), args)
+            self.assertTrue(g["text"])
+            if suggest is None and rule:
+                self.assertTrue(g["todo"], args)

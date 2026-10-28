@@ -85,7 +85,7 @@ class ResultStore:
         return {"id": mid, "name": m["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "team_size": 0, "best_count": False,
                 "relays": [{"match_id": mid, "relay": None, "state": m["state"], "clock": self.matches._clock(m, self.core.now_ms())}],
-                "classes": [{"name": "", "individuals": ranked, "teams": []}]}
+                "classes": [{"name": "", "individuals": ranked, "teams": []}], "official_ms": m["official_ms"]}
 
     def listing(self, hidden_too: bool = False) -> List[dict]:
         """Every result, newest first: competitions, single matches that have started, frozen copies. hidden_too (Match

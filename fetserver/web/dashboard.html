@@ -99,6 +99,7 @@ body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:
 .sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
 .scard .faces{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:6px}.scard .faces svg{width:100%;height:auto}
+tr.guide td{border-top:0;padding-top:0}.resstatus{font-weight:700;margin:2px 0}.resstatus.prov{color:var(--m-sighter)}.resstatus.off{color:var(--ok)}.sheetpage tr.guide td{border-top:0;padding-top:0}.resstatus{color:#111}
 .dqbox{border:2px solid #b91c1c;color:#b91c1c;padding:4px 8px;margin:6px 0}.rulenotes{margin:4px 0 8px 18px;padding:0;font-size:13px}
 .sign{display:flex;gap:30px;margin-top:20px}.sign div{flex:1;border-top:1px solid #111;padding-top:3px;font-size:12px}
 @media print{.noprint{display:none!important}body{background:#fff}.scard{border:0}}
@@ -311,11 +312,12 @@ function resultsTables(res, print) {
         '</td><td><b>' + (t.place ? fmtScore(res, t.total) : '') + '</b></td><td>' + (t.place ? t.x : '') + '</td></tr>').join('') + '</table>' : '')).join('') +
     ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.tie_rules) + ' rules; = an unbreakable tie; * shots waiting for the match director; −n penalty points; DQ disqualified.</p>';
 }
+const statusLine = res => '<div class="resstatus ' + (res.official_ms ? 'off' : 'prov') + '">' + (res.official_ms ? 'Official results · ' + esc(new Date(res.official_ms).toLocaleString()) : 'Provisional results') + '</div>';
 function resultsPage(res) {
   if (!res) return '<div class="panel"><p class="mut">Loading…</p></div>';
   if (res.missing) return '<div class="panel mc"><span class="title">Results</span><p>These results were deleted, or never existed.</p><a href="#/results">All results</a></div>';
   const k = esc(res.key), teams = res.classes.some(cl => cl.teams.length);
-  return '<div class="panel mc"><div class="row"><span class="title">' + esc(res.name) + '</span><a href="#/results">All results</a></div><div class="mut">' + esc(res.format_name) + ' · ' + esc(res.scoring) + ' scoring' +
+  return '<div class="panel mc"><div class="row"><span class="title">' + esc(res.name) + '</span><a href="#/results">All results</a></div>' + statusLine(res) + '<div class="mut">' + esc(res.format_name) + ' · ' + esc(res.scoring) + ' scoring' +
     (res.frozen_ms ? ' · saved copy from ' + esc(new Date(res.frozen_ms).toLocaleString()) + ' (the match was deleted from Match Control)' : '') + '</div>' +
     '<div class="mcbar"><a href="#/print/results/' + k + '" target="_blank" rel="noopener">Print results</a> · <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Print score cards</a> · ' +
     '<a href="' + API + '/results/' + k + '.csv">CSV</a>' + (teams ? ' · <a href="' + API + '/results/' + k + '-teams.csv">Teams CSV</a>' : '') + '</div>' + resultsTables(res, false) + '</div>';
@@ -324,7 +326,7 @@ function resultsPage(res) {
 function printResults(res, at) {
   if (!res) return '<p>Loading…</p>';
   if (res.missing) return '<p>These results were deleted.</p>';
-  return '<div class="sheetpage"><h1>' + esc(res.name) + '</h1><div>' + esc(res.format_name) + ' · ' +
+  return '<div class="sheetpage"><h1>' + esc(res.name) + '</h1>' + statusLine(res) + '<div>' + esc(res.format_name) + ' · ' +
     esc((at || new Date()).toLocaleString()) + '</div>' + resultsTables(res, true) + '</div>';
 }
 function scoreCards(res, only) {
@@ -896,13 +898,13 @@ function mcConsole(mc) {
       '<button data-act="mccmd" data-a="next" data-ot="1">End their time now</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
     (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' && !ot ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
       : '<button class="pri" data-act="mcspeak">Turn on sound for spoken commands</button>') : '') + '</div></div>' +
-    commandsPanel(d) + correctionsPanel(d, director);
+    commandsPanel(d) + correctionsPanel(d, director) + officialPanel(d, director);
   h += lanesPanel(d, mc, director);
   h += '<div class="panel"><h3>Flagged shots' + (d.flags.length ? ' (' + d.flags.length + ')' : '') + '</h3>' + (d.flags.length ? '<table class="t"><tr><th>FP</th><th>Shot</th><th>Value</th><th>Why</th><th>Decision</th></tr>' + d.flags.map(f =>
     '<tr><td>' + f.lane + '</td><td>' + (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + '</td><td>' + (f.miss ? 'miss' : dec(f.decimal)) + '</td><td>' + esc(f.why) + '</td><td>' +
     (director ? '<select data-mcdec="' + f.shot_id + '"><option value="undecided">Undecided' + (f.stream === 'scored' ? ' (not counted)' : '') + '</option>' +
-      Object.keys(decisionsFor(f)).map(k => '<option value="' + k + '"' + (f.decision === k ? ' selected' : '') + '>' + esc(decisionsFor(f)[k]) + '</option>').join('') + '</select>'
-      : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>').join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
+      Object.keys(decisionsFor(f)).map(k => '<option value="' + k + '"' + (f.decision === k ? ' selected' : '') + '>' + esc(decisionsFor(f)[k]) + (f.guide && f.guide.suggest === k ? ' ← rulebook' : '') + '</option>').join('') + '</select>'
+      : esc(f.decision ? decisionsFor(f)[f.decision] : 'undecided')) + '</td></tr>' + guideRow(f, decisionsFor(f))).join('') + '</table>' : '<p class="mut">None. Shots fired out of their time are listed here and do not count until the match director decides.</p>') + '</div>';
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
 }
 function laneTime(l, d) {                       // a shooter's own clock (moved to another target), or the match's
@@ -1009,6 +1011,12 @@ function shotSheet(mc) {
     '<h4>Shots</h4><div class="scroll" style="max-height:55vh"><table class="t"><tr><th>#</th><th>Value</th><th>Time</th><th>Corrections</th><th></th></tr>' + L.shots.slice().reverse().map(row).join('') + '</table></div>' +
     '<p class="mut">Newest first; S = sighting shot. Range officers mark shots under review or record protests; the match director settles them and corrects scores. Nothing is deleted: a correction can be voided.</p></div>';
 }
+function guideRow(f, labels) {                  // what the rulebook says about a flagged shot (rules.py guidance)
+  const g = f.guide;
+  if (!g) return '';
+  return '<tr class="guide"><td></td><td colspan="4"><span class="mut">' + (g.rule ? '<a href="' + esc(g.url) + '" target="_blank" rel="noopener">' + esc(g.rule) + '</a>: ' : '') + esc(g.text) +
+    (g.suggest ? ' <b>Suggested: ' + esc(labels[g.suggest] || g.suggest) + '.</b>' : '') + (g.todo ? ' ' + esc(g.todo) : '') + '</span></td></tr>';
+}
 function commandsPanel(d) {                     // what the range officer says now (and, when they read them, the Next button)
   const c = d.clock, st = d.state;
   if (!(st === 'running' || st === 'paused' || st === 'holding')) return '';
@@ -1023,6 +1031,15 @@ function commandsPanel(d) {                     // what the range officer says n
   return '<div class="panel cmds"><h3>Commands' + (officer ? ' (read by the range officer)' : ' (spoken by the console)') + '</h3>' +
     '<div class="mut">Given: “' + esc(c.start_say || c.label) + '”</div>' + (warn ? '<div class="mut">Coming: ' + warn + (c.end_say ? ' · at 0:00 “' + esc(c.end_say) + '”' : '') + '</div>' : '') +
     '<div class="cmdtext" id="mcsay"></div></div>';
+}
+function officialPanel(d, director) {         // provisional -> official, once everything is settled
+  if (d.state === 'ready') return '';
+  if (d.official_ms) return '<div class="panel"><h3>Results: official</h3><p>Made official ' + esc(new Date(d.official_ms).toLocaleString()) + ' by ' + esc(d.official_by || '') +
+    '. Nothing can be changed until they are reopened.</p>' + (director ? '<button data-act="mcofficial" data-a="reopen">Reopen the results</button>' : '') + '</div>';
+  const todo = d.open_items || [], since = d.ended_ms ? Math.floor((Date.now() + (S.mc && S.mc.offset || 0) - d.ended_ms) / 60000) : null;
+  return '<div class="panel"><h3>Results: provisional</h3>' + (todo.length ? '<p>Before they can be made official: ' + todo.map(esc).join('; ') + '.</p>' : '<p>Everything is settled.</p>') +
+    (d.state === 'done' && since != null && since < 10 ? '<p class="mut">Protest time: results protests may be made until 10 minutes after the results are posted (ISSF 6.16.5.1, CMP 8.2); ' + since + ' min so far.</p>' : '') +
+    (director ? '<button class="pri" data-act="mcofficial" data-a="make"' + (todo.length ? ' disabled' : '') + '>Make the results official</button>' : '') + '</div>';
 }
 function correctionsPanel(d, director) {        // mistakes happen: the match director can go back
   if (d.state === 'ready') return '';
@@ -1687,6 +1704,14 @@ async function matchAct(el, a) {
     if (mc.msg) toast(mc.msg);
     return refresh();
   }
+  if (a === 'mcofficial') {
+    const reopen = el.dataset.a === 'reopen';
+    if (!confirm(reopen ? 'Reopen the official results? Decisions and corrections become possible again; this is logged.' :
+      'Make the results official? After this nothing can be changed unless they are reopened.')) return;
+    const res = await matchCall('/matches/' + mc.open + '/official', {action: reopen ? 'reopen' : 'make'});
+    if (!show(res)) toast(mc.msg); else toast(reopen ? 'Results reopened' : 'Results are official');
+    return refresh();
+  }
   if (a === 'mcshots') { mc.shotp = {lane: +el.dataset.lane, data: null, form: null}; mc.msg = ''; await loadShots(mc); return render(); }
   if (a === 'mcshotsclose') { mc.shotp = null; mc.msg = ''; return render(); }
   if (a === 'mcfix') { mc.shotp.form = {kind: el.dataset.k, shot: el.dataset.shot ? +el.dataset.shot : null, corr: el.dataset.corr ? +el.dataset.corr : null}; mc.msg = ''; return render(true); }
@@ -1920,7 +1945,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, officialPanel, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

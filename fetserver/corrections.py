@@ -79,6 +79,7 @@ class Corrections:
             m = self.matches._row(c, mid)
             if m["state"] == "ready":
                 raise MatchError("the match has not started")
+            self.matches.not_official(m)
             ln = c.execute("SELECT * FROM match_lanes WHERE match_id=? AND lane=?", (mid, lane)).fetchone() if isinstance(lane, int) else None
             if ln is None:
                 raise MatchError("no such firing point in this match")
@@ -131,6 +132,7 @@ class Corrections:
             raise MatchError(f"outcome must be one of {', '.join(OUTCOMES)}")
         now = self.core.now_ms()
         with self.db.write() as c:
+            self.matches.not_official(self.matches._row(c, mid))
             r = self._get(c, mid, corr_id)
             if r["kind"] not in OPEN_KINDS or r["status"] != "open":
                 raise MatchError("only an open review or protest can be settled")
@@ -149,6 +151,7 @@ class Corrections:
 
     def void(self, mid: int, corr_id: int, by: str) -> None:
         with self.db.write() as c:
+            self.matches.not_official(self.matches._row(c, mid))
             r = self._get(c, mid, corr_id)
             if r["status"] == "void":
                 raise MatchError("already void")

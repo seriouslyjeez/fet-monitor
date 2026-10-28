@@ -645,3 +645,30 @@ console.log('OK');
   assert(cf.includes('<option value="">unknown</option>') && cf.includes('Firing point 1') && !cf.includes('<option value="2"'), 'crossfire: the other firing points or unknown');
   console.log('corrections OK');
 }
+
+// official results: the console panel and the results status
+{
+  const {officialPanel} = X;
+  const prov = officialPanel({state: 'done', open_items: ['1 flagged shot not decided'], ended_ms: 0}, true);
+  assert(prov.includes('Results: provisional') && prov.includes('1 flagged shot not decided') && /data-act="mcofficial" data-a="make" disabled/.test(prov));
+  assert(!officialPanel({state: 'done', open_items: []}, true).includes('disabled'), 'settled: the button works');
+  assert(!officialPanel({state: 'done', open_items: []}, false).includes('mcofficial'), 'officers see the status only');
+  const off = officialPanel({state: 'done', official_ms: 1, official_by: '<b>md</b>'}, true);
+  assert(off.includes('Results: official') && off.includes('data-a="reopen"') && off.includes('&lt;b&gt;md'));
+  assert(resultsPage(Object.assign({}, C, {official_ms: 1})).includes('Official results') && resultsPage(Object.assign({}, C, {official_ms: null})).includes('Provisional results'));
+  assert(printResults(Object.assign({}, C, {official_ms: null})).includes('Provisional results'), 'the print-out says so too');
+  console.log('official OK');
+}
+
+// decision guidance on the flagged shots
+{
+  const {guideRow, mcConsole} = X;
+  const f = {shot_id: 1, lane: 1, n: 2, stream: 'sighter', why: 'during setup', decision: null, miss: false, decimal: 9.1,
+    guide: {rule: 'ISSF 6.11.1.1 h', text: 'A shot before START <x>', suggest: 'miss_first', todo: null, url: 'https://issf-sports.org/rules'}};
+  const g = guideRow(f, {miss_first: 'Miss on the first record shot'});
+  assert(g.includes('href="https://issf-sports.org/rules"') && g.includes('&lt;x&gt;') && g.includes('Suggested: Miss on the first record shot'), g);
+  assert.strictEqual(guideRow({}, {}), '');
+  const todo = guideRow({guide: {rule: 'NRA 14.5', text: 't', suggest: null, todo: 'Ignore this shot, then…', url: 'u'}}, {});
+  assert(!todo.includes('Suggested') && todo.includes('Ignore this shot'));
+  console.log('guidance OK');
+}

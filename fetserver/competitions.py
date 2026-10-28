@@ -339,7 +339,13 @@ class Competitions:
             out_classes.append({"name": cls, "individuals": ranked, "teams": teams})
         return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules,
                 "record_shots": mf.record_shots(fmt), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
-                "relays": relays, "classes": out_classes}
+                "relays": relays, "classes": out_classes, "official_ms": self._official(c, cid)}
+
+    @staticmethod
+    def _official(c, cid):
+        """When the competition's results became official: every relay that was not stopped is official (the latest)."""
+        rows = [r for r in c.execute("SELECT state, official_ms FROM matches WHERE competition_id=? AND state!='aborted'", (cid,))]
+        return max(r["official_ms"] for r in rows) if rows and all(r["official_ms"] for r in rows) else None
 
     @staticmethod
     def _teams(ranked: List[dict], comp, rules: str, decimal: bool) -> List[dict]:

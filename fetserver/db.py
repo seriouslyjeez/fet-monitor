@@ -324,6 +324,20 @@ MIGRATIONS = [
     );
     CREATE INDEX shot_corrections_match ON shot_corrections (match_id, lane);
     """,
+    """
+    -- Official results (the match director, once every flag and protest is settled), and CMP 7.18: a shooter whose
+    -- target failed finishes the match on a later relay. On the later relay's lane: start_phase (the phase they rejoin
+    -- at), carry_shots (record shots already fired in it), carry_ms (time they had left there), from_match (the relay
+    -- they came from). On the earlier relay's lane: left_ms (when they left), to_match (where they went).
+    ALTER TABLE matches ADD COLUMN official_ms INTEGER;
+    ALTER TABLE matches ADD COLUMN official_by TEXT;
+    ALTER TABLE match_lanes ADD COLUMN start_phase INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE match_lanes ADD COLUMN carry_shots INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE match_lanes ADD COLUMN carry_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN from_match INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN left_ms INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN to_match INTEGER;
+    """,
 ]
 
 
