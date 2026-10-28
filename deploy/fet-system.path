@@ -1,0 +1,9 @@
+[Unit]
+Description=FeT Monitor: watch for a System request from Range Control (network, name, time, SSH, restart)
+
+[Path]
+PathExists=/var/lib/fet-monitor/system/request.json
+Unit=fet-system.service
+
+[Install]
+WantedBy=multi-user.target

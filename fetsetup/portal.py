@@ -29,8 +29,10 @@ SERVER_PORT = 8080
 
 
 class Portal:
-    def __init__(self, system: System, done_file: Path, sleep: Callable[[float], None] = time.sleep, background: bool = True):
-        self.sys, self.done_file, self.sleep, self.background = system, Path(done_file), sleep, background
+    def __init__(self, system: System, done_file: Path, sleep: Callable[[float], None] = time.sleep, background: bool = True,
+                 reopen: bool = False):
+        """reopen: the Pi is set up but found no network at boot: only its country and network can be set here."""
+        self.sys, self.done_file, self.sleep, self.background, self.reopen = system, Path(done_file), sleep, background, reopen
         self.lock = threading.Lock()
         self.phase, self.error, self.test, self.saved, self.summary = "form", None, None, None, None
         self.ssid = "FeTMonitor-Setup-" + system.serial_suffix()
@@ -52,7 +54,7 @@ class Portal:
         with self.lock:
             countries = self.sys.countries()
             test = {k: v for k, v in self.test.items() if k != "psk"} if self.test else None     # never sent back: the network is open
-            return {"phase": self.phase, "error": self.error, "test": test, "summary": self.summary, "setup_ssid": self.ssid,
+            return {"phase": self.phase, "error": self.error, "test": test, "summary": self.summary, "setup_ssid": self.ssid, "reopen": self.reopen,
                     "networks": self.networks, "cable": self.sys.lease(ETH), "countries": [{"code": c, "name": n} for c, n in countries],
                     "zones": self.sys.zones(), "own_ip": config.OWN_IP}
 
@@ -92,8 +94,8 @@ class Portal:
     # ------------------------------------------------------------------------------------- save, then switch
     def finish(self, raw: dict) -> dict:
         """Check and apply everything but the network; returns the summary to write down."""
-        info = {c for c, _ in self.sys.countries()}
-        cfg = config.check(raw, sorted(info), self.sys.zones())
+        codes = sorted(c for c, _ in self.sys.countries())
+        cfg = config.check_reopen(raw, codes) if self.reopen else config.check(raw, codes, self.sys.zones())
         net = cfg["network"]
         live = None
         if net["mode"] == "wifi":
@@ -120,9 +122,9 @@ class Portal:
                 self.phase = "form"
             raise config.SetupError(f"could not apply the settings: {exc}")
         addr = config.server_address(cfg, live)
-        summary = {"hostname": cfg["hostname"], "address": addr, "url": f"http://{addr}:{SERVER_PORT}/" if addr else None,
+        summary = {"hostname": cfg.get("hostname"), "address": addr, "url": f"http://{addr}:{SERVER_PORT}/" if addr else None,
                    "token": self.sys.device_token(), "mode": net["mode"], "ssid": net.get("ssid"),
-                   "fixed": isinstance(net["address"], dict), "ssh": cfg["ssh"], "admin": cfg["admin"]}
+                   "fixed": isinstance(net["address"], dict), "ssh": cfg.get("ssh", False), "admin": cfg.get("admin")}
         with self.lock:
             self.saved, self.summary, self.phase, self.error = cfg, summary, "saved", None
         return summary
@@ -152,12 +154,44 @@ class Portal:
                 with self.lock:
                     self.phase, self.error = "saved", f"{exc}: the setup network is back; check the network settings"
                 return
+            from .sysreq import save_last_good
+            save_last_good(net, self.done_file.parent / "network.json")   # Range Control falls back to it
             self.done_file.parent.mkdir(parents=True, exist_ok=True)
-            self.done_file.write_text(json.dumps({"at": int(time.time()), "hostname": self.saved["hostname"], "mode": net["mode"]}))
+            self.done_file.write_text(json.dumps({"at": int(time.time()), "mode": net["mode"], "reopened": self.reopen}))
             with self.lock:
                 self.phase = "done"
             self.stopped.set()
         self._bg(run)
+
+
+    def watch(self, every_s: float = 10.0) -> None:
+        """A reopened setup closes by itself when a network appears without anyone using the page (the cable was
+        plugged back in): the Pi just goes on with its old settings."""
+        while not self.stopped.is_set():
+            self.sleep(every_s)
+            with self.lock:
+                idle = self.phase == "form" and self.test is None
+            if idle and self.sys.has_network():
+                log.info("a network came back: closing the setup network")
+                self.sys.hotspot_off()
+                self.stopped.set()
+
+
+def boot(system: System, done_file: Path, wait_s: int = 180, sleep: Callable[[float], None] = time.sleep) -> Optional[Portal]:
+    """At every start: not set up yet -> the full setup; set up and a network comes up within wait_s -> nothing;
+    set up but no network -> the setup reopens for the network only. A stale catch-all DNS file (a crash during setup)
+    is removed first, so it never captures the Pi's own range network."""
+    system.hotspot_off()
+    if not Path(done_file).exists():
+        return Portal(system, done_file, sleep=sleep)
+    waited = 0
+    while waited < wait_s:
+        if system.has_network():
+            return None
+        sleep(5)
+        waited += 5
+    log.warning("no network %d s after start: reopening the setup network (network settings only)", wait_s)
+    return Portal(system, done_file, sleep=sleep, reopen=True)
 
 
 # ------------------------------------------------------------------------------------------- HTTP
@@ -235,6 +269,8 @@ def serve(portal: Portal, host: str = "0.0.0.0", port: int = 80) -> None:
     portal.start()
     srv = SetupServer((host, port), portal)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
+    if portal.reopen:
+        threading.Thread(target=portal.watch, daemon=True).start()
     portal.stopped.wait()
     time.sleep(1)
     srv.shutdown()

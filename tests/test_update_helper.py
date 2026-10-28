@@ -15,7 +15,15 @@ from tests.test_install import BASH, InstallerBase
 from tests.test_releases import make_key, sign
 
 ROOT = Path(__file__).resolve().parent.parent
-PARTS = ["install.sh", "LICENSE", "NOTICE", "README.md", "docs/INSTALL.md", "fetserver", "deploy"]
+def _release_parts():                     # exactly what a release contains (tools/make_release.py)
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("make_release", Path(__file__).resolve().parent.parent / "tools/make_release.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.FILES + mod.TREES
+
+
+PARTS = _release_parts()
 
 
 @unittest.skipUnless(BASH and shutil.which("ssh-keygen"), "bash 4+ and ssh-keygen needed")
@@ -94,8 +102,10 @@ class UpdateHelper(InstallerBase):
         self.assertTrue((self.root / "opt/fet-monitor/fetserver.prev").is_dir(), "the old code is kept for a manual rollback")
 
     def test_broken_release_is_rolled_back_with_its_database(self):
+        (self.root / "opt/fet-monitor/fetsetup/old_marker.py").write_text("# the installed setup code\n")
         self.stage("9.9.2", self.build("9.9.2", broken=True))
         r, st = self.run_helper()
+        self.assertTrue((self.root / "opt/fet-monitor/fetsetup/old_marker.py").exists(), "the setup code is rolled back too")
         self.assertEqual((r.returncode, st["state"]), (1, "rolled_back"), st["message"])
         self.assertEqual(self.health()["version"], self.old_version, "the previous version is running again")
         self.assertEqual(self.shots(), 1)

@@ -21,6 +21,7 @@ from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tupl
 from .releases import ReleaseError, Updates, fetch_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
 from .rulebooks import DOC_BY_ID, REPOSITORIES
+from .appliance import Appliance, ApplianceError
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -486,6 +487,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, view)
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
+        if path == "/api/v1/admin/system" and method == "GET":           # the Pi itself (appliance.py)
+            return self._send(200, self.server.appliance.view())
+        if path == "/api/v1/admin/system" and method == "POST":
+            try:
+                self.server.appliance.request(payload)
+            except ApplianceError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: system request %s", self.client_address[0], payload.get("action"))
+            return self._send(202, {"requested": payload.get("action")})
         if path == "/api/v1/admin/match-users" and method == "GET":
             return self._send(200, {"users": core.matches.users()})
         if path == "/api/v1/admin/match-users" and method == "POST":
@@ -805,8 +815,9 @@ class FetHTTPServer(ThreadingHTTPServer):
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
-                 rulebooks: RulebookFiles = None):
+                 rulebooks: RulebookFiles = None, appliance: Appliance = None):
         super().__init__(addr, Handler)
+        self.appliance = appliance if appliance is not None else Appliance(None)
         self.rulebooks = rulebooks if rulebooks is not None else RulebookFiles(None)
         self.core = core
         self.token = token
@@ -832,5 +843,6 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
-                firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks)
+                firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
+                appliance: Appliance = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance)

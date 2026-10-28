@@ -113,7 +113,15 @@ class System:
     # ------------------------------------------------------------------------------------- network
     def scan(self) -> List[dict]:
         """Nearby WiFi networks, strongest first, one entry per name: {ssid, signal, secure}. Only while no AP runs."""
-        out = self.run(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes"], timeout=30, check=False)
+        return self._wifi_list(True)
+
+    def scan_cached(self) -> List[dict]:
+        """The networks NetworkManager saw last (no new scan: works without root and keeps the radio as it is)."""
+        return self._wifi_list(False)
+
+    def _wifi_list(self, rescan: bool) -> List[dict]:
+        out = self.run(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes" if rescan else "no"],
+                       timeout=30 if rescan else 10, check=False)
         best = {}
         for line in out.splitlines():
             f = split_terse(line)
@@ -226,6 +234,41 @@ class System:
                     return True
         return False
 
+    def active_wifi(self) -> Optional[str]:
+        """The WiFi connection (client, not an access point of ours) up now, by name, or None."""
+        out = self.run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], check=False)
+        for line in out.splitlines():
+            f = split_terse(line)
+            if len(f) >= 3 and f[1] == "802-11-wireless" and f[0] not in ("fet-setup", "fet-range", "fet-test"):
+                return f[0]
+        return None
+
+    def reconnect(self, name: str) -> None:
+        self.run(["nmcli", "connection", "up", name], timeout=60, check=False)
+
+    def start_setup(self) -> None:
+        """The setup network for the network settings (fet-setup.service: it waits for a network first)."""
+        self.run(["systemctl", "start", "--no-block", "fet-setup.service"], check=False)
+
+    def ntp_synced(self) -> bool:
+        return self.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], check=False).strip() == "yes"
+
+    def facts(self) -> dict:
+        """What Range Control's System page shows (read-only; works without root)."""
+        conns = []
+        for line in self.run(["nmcli", "-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active"], check=False).splitlines():
+            f = split_terse(line)
+            if len(f) >= 3 and f[1] in ("802-3-ethernet", "802-11-wireless") and f[2]:
+                conns.append({"name": f[0], "type": "cable" if f[1] == "802-3-ethernet" else "wifi", "device": f[2],
+                              "own": f[0] == "fet-range", "setup": f[0] == "fet-setup", "lease": self.lease(f[2])})
+        tz = self.run(["timedatectl", "show", "-p", "Timezone", "--value"], check=False).strip()
+        ssh = self.run(["systemctl", "is-active", "ssh"], check=False).strip() == "active"
+        try:
+            host = self.path("/etc/hostname").read_text().strip()
+        except OSError:
+            host = ""
+        return {"hostname": host, "timezone": tz, "ntp": self.ntp_synced(), "ssh": ssh, "connections": conns}
+
     # ------------------------------------------------------------------------------------- the rest
     def set_country(self, cc: str) -> None:
         code, out = self.run_(["raspi-config", "nonint", "do_wifi_country", cc], None, 30)
@@ -237,8 +280,7 @@ class System:
 
     def set_clock(self, ms: int) -> None:
         """The time from the phone, when the Pi has no other source (no internet, no clock chip)."""
-        synced = self.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], check=False).strip() == "yes"
-        if not synced:
+        if not self.ntp_synced():
             self.run(["date", "-u", "-s", "@%d" % (ms // 1000)])
 
     def set_hostname(self, name: str) -> None:

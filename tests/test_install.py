@@ -64,7 +64,7 @@ def start(u):
             sys.exit("Unit fet-monitor.service not found.")
         log = open(os.path.join(root, ".server.log"), "a")
         p = subprocess.Popen([sys.executable, "-m", "fetserver", "serve", "--data-dir", os.path.join(root, "var/lib/fet-monitor"),
-                              "--host", "127.0.0.1", "--port", os.environ["FETM_PORT"]],
+                              "--host", "127.0.0.1", "--port", os.environ["FETM_PORT"], "--no-rulebook-download"],
                              cwd=os.path.join(root, "opt/fet-monitor"), stdout=log, stderr=log, start_new_session=True)
         pid = p.pid
     st["active"][u] = pid
@@ -207,7 +207,12 @@ class Installer(InstallerBase):
         for u in ("fet-monitor.service", "fet-monitor-backup.service", "fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor-update.service"):
             self.assertTrue((self.root / "etc/systemd/system" / u).exists(), u)
         state = json.loads((self.root / ".systemd.json").read_text())
-        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor.service"])
+        self.assertEqual(state["enabled"], ["fet-monitor-backup.timer", "fet-monitor-update.path", "fet-monitor.service", "fet-setup.service", "fet-system.path"])
+        self.assertEqual(self.mode("var/lib/fet-monitor/system"), 0o750)
+        self.assertTrue((self.root / "etc/systemd/system/fet-setup.service").exists())
+        self.assertTrue((self.root / "opt/fet-monitor/fetsetup/portal.py").exists() and (self.root / "opt/fet-monitor/fetsetup/web/setup.html").exists())
+        self.assertEqual(json.loads((self.root / "var/lib/fet-setup/setup.done").read_text()), {"by": "install.sh"},
+                         "installed over a working network: no setup network on the next start")
         self.assertEqual(self.mode("opt/fet-monitor/bin/fet-monitor-update"), 0o755)
         self.assertEqual(self.mode("var/lib/fet-monitor/update"), 0o750)
         self.assertTrue(self.get("/api/v1/health")["ok"])
@@ -226,7 +231,7 @@ class Installer(InstallerBase):
         self.assertEqual((self.root / "var/lib/fet-monitor/device_token").read_text().strip(), tok)
         self.assertEqual((self.root / "var/lib/fet-monitor/admin_password").read_text(), pw_before)
         self.assertFalse((self.root / "opt/fet-monitor/fetserver/stale_module.py").exists(), "code replaced, not merged")
-        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "bin", "fetserver"],
+        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "bin", "fetserver", "fetsetup"],
                          "no fetserver.old / fetserver.new left behind")
         self.assertIn("stopping the running server for the upgrade", r.stdout)
         self.assertEqual(self.get("/api/v1/targets")["targets"][0]["shot_count"], 1, "data untouched")
@@ -235,6 +240,29 @@ class Installer(InstallerBase):
         r = self.run_install("--reset-password", stdin="another range pw\nanother range pw\n")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertNotEqual((self.root / "var/lib/fet-monitor/admin_password").read_text(), pw_before)
+
+    def test_image_build(self):
+        """--image (pi-gen, in a chroot): no systemd running, no password, nothing started, no setup-done mark."""
+        import shutil
+        shutil.rmtree(self.root / "run/systemd/system")
+        r = self.run_install("--image")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("The first start opens the setup network", r.stdout)
+        self.assertFalse((self.root / "var/lib/fet-setup/setup.done").exists())
+        self.assertFalse((self.root / "var/lib/fet-monitor/admin_password").exists())
+        state = json.loads((self.root / ".systemd.json").read_text())
+        self.assertIn("fet-setup.service", state["enabled"])
+        self.assertEqual(state["active"], {}, "nothing started in the image")
+        self.assertNotIn("daemon-reload", self.calls())
+        self.assertFalse((self.root / "var/lib/fet-monitor/device_token").exists(), "no token in the image: every Pi makes its own")
+        self.assertIn("fet-system.path", state["enabled"])
+
+    def test_no_network_now_means_setup_on_next_start(self):
+        (self.bin / "ip").write_text("#!/bin/sh\nexit 2\n")
+        r = self.run_install("--no-password")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("the next start opens the setup network", r.stdout)
+        self.assertFalse((self.root / "var/lib/fet-setup/setup.done").exists())
 
     def test_installer_never_opens_the_database(self):
         r = self.run_install("--no-password")

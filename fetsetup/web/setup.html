@@ -63,8 +63,19 @@ function networkPart() {
     '<label for="opsk">Range network password (8 to 63 characters)</label><input id="opsk" autocomplete="off" value="' + esc(n.psk || '') + '">' +
     '<label for="ochan">Channel</label><select id="ochan">' + [1, 6, 11].map(c => '<option' + (n.channel === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>';
 }
+function reopenForm() {                        // a set-up Pi that found no network: its network only
+  const i = S.info, f = S.f;
+  return '<h1>Reconnect FeT Monitor</h1><section><p>The Pi could not reach its network when it started. Choose its network again.</p>' +
+    '<p class="mut">Passwords, logins and the rest are not changed here: they stay as they were (Range Control changes them).</p>' +
+    '<label for="country">Country</label><select id="country"><option value="">choose…</option>' +
+    i.countries.map(c => '<option value="' + c.code + '"' + (f.country === c.code ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></section>' +
+    '<section><h2>Network</h2>' + networkPart() + '</section>' +
+    (S.msg ? '<p class="bad" id="msg">' + esc(S.msg) + '</p>' : '') + (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +
+    '<button class="pri" id="save"' + (S.busy ? ' disabled' : '') + '>Save network</button>';
+}
 function form() {
   const i = S.info, f = S.f;
+  if (i.reopen) return reopenForm();
   const zone = f.timezone || (i.zones.includes(guessZone()) ? guessZone() : '');
   return '<h1>Set up FeT Monitor</h1><p class="mut">Everything here can be changed later in Range Control.</p>' +
     '<section><h2>This Pi</h2><label for="hostname">Name</label><input id="hostname" value="' + esc(f.hostname) + '" autocapitalize="none">' +

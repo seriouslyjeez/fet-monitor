@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fetsetup import config
 from fetsetup.config import SetupError
-from fetsetup.portal import Portal, SetupServer
+from fetsetup.portal import Portal, SetupServer, boot
 from fetsetup.system import CATCH_ALL, System, SystemError_, split_terse, why
 
 ZONES = ["America/Chicago", "Europe/Berlin", "UTC"]
@@ -255,7 +255,7 @@ class Flow(unittest.TestCase):
         self.assertEqual([x[1] for x in p.sys.log if x[0] == "apply"], ["country", "timezone", "clock", "hostname", "admin", "range_password", "ssh"])
         self.assertTrue(p.sys.ap, "the setup network stays until Switch")
         p.switch()
-        self.assertEqual((p.phase, p.sys.net["mode"], p.stopped.is_set(), json.loads(self.done.read_text())["hostname"]), ("done", "cable", True, "range"))
+        self.assertEqual((p.phase, p.sys.net["mode"], p.stopped.is_set(), json.loads(self.done.read_text())["mode"]), ("done", "cable", True, "cable"))
         self.assertIn(("use", "cable", False), p.sys.log, "the setup network went first")
         with self.assertRaisesRegex(SetupError, "save the settings first"):
             p.switch()                                       # done: not again
@@ -308,6 +308,54 @@ class Flow(unittest.TestCase):
         with self.assertRaisesRegex(SetupError, "could not apply"):
             p.finish(good(hostname="boom"))
         self.assertEqual(p.phase, "form")
+
+
+class Boot(unittest.TestCase):
+    """At every start: first boot -> the full setup; a set-up Pi with a network -> nothing; without -> network only."""
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.done = Path(tmp.name) / "setup.done"
+        self.slept = []
+
+    def sleep(self, s):
+        self.slept.append(s)
+
+    def test_first_boot_opens_the_full_setup(self):
+        fake = FakeSystem(network_comes_up=True)
+        p = boot(fake, self.done, sleep=self.sleep)
+        self.assertEqual((p is not None, p.reopen, self.slept), (True, False, []), "first boot: at once, even with a network")
+        self.assertIn(("ap", False), fake.log, "a stale setup network (and its catch-all DNS) is cleared first")
+
+    def test_a_set_up_pi_with_a_network(self):
+        self.done.write_text("{}")
+        self.assertIsNone(boot(FakeSystem(network_comes_up=True), self.done, sleep=self.sleep))
+
+    def test_no_network_reopens_for_the_network_only(self):
+        self.done.write_text("{}")
+        p = boot(FakeSystem(network_comes_up=False, cable={"ip": "192.168.1.30", "prefix": 24, "gateway": "192.168.1.1", "dns": []}),
+                 self.done, wait_s=30, sleep=self.sleep)
+        self.assertEqual((p.reopen, sum(self.slept)), (True, 30))
+        p.background = False
+        p.start()
+        s = p.finish({"country": "DE", "network": {"mode": "cable", "address": "dhcp"}, "range_password": "x", "admin": "root"})
+        self.assertEqual([x[1] for x in p.sys.log if x[0] == "apply"], ["country"], "no passwords, logins, name or SSH over the open network")
+        self.assertEqual((s["address"], s["token"]), ("192.168.1.30", "tok-123"))
+        with self.assertRaisesRegex(SetupError, "country"):
+            p.finish({"country": "XX", "network": {"mode": "cable", "address": "dhcp"}})
+
+    def test_a_reopened_setup_closes_when_the_network_comes_back(self):
+        fake = FakeSystem(network_comes_up=False)
+        p = Portal(fake, self.done, sleep=lambda s: setattr(fake, "comes_up", True), background=False, reopen=True)
+        p.start()
+        p.watch()
+        self.assertEqual((p.stopped.is_set(), fake.ap), (True, False))
+        fake2 = FakeSystem(network_comes_up=True)
+        busy = Portal(fake2, self.done, sleep=lambda s: busy.stopped.set(), background=False, reopen=True)
+        busy.start()
+        busy.phase = "saved"
+        busy.watch()
+        self.assertTrue(fake2.ap, "someone is using the page: it stays")
 
 
 class OverHttp(unittest.TestCase):

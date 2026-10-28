@@ -45,8 +45,9 @@ mkdir -p "$NEW_CODE" "$NEW_DATA" "$NEW_BACKUPS"
 say "4/7 copying data, backups and code"
 cp -a "$OLD_DATA/." "$NEW_DATA/"
 [ -d "$OLD_BACKUPS" ] && cp -a "$OLD_BACKUPS/." "$NEW_BACKUPS/"
-rm -rf "$NEW_CODE/fetserver"
+rm -rf "$NEW_CODE/fetserver" "$NEW_CODE/fetsetup"
 cp -r fetserver "$NEW_CODE/"
+if [ -d fetsetup ]; then cp -r fetsetup "$NEW_CODE/"; fi
 chown -R "$NEW_USER:$NEW_USER" "$NEW_DATA" "$NEW_BACKUPS"
 
 say "5/7 installing services"

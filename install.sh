@@ -17,7 +17,9 @@ AVAHI_DIR="$R/etc/avahi/services"
 OS_RELEASE="$R/etc/os-release"
 SYSTEMD_RUN="$R/run/systemd/system"
 OLD_DATA="$R/var/lib/freetarget"
-UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service)
+SETUP_DIR="$R/var/lib/fet-setup"
+UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service fet-setup.service fet-system.path fet-system.service)
+PACKAGES=(fetserver fetsetup)
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RESET_PASSWORD=0
@@ -25,6 +27,7 @@ NO_PASSWORD=0
 UNINSTALL=0
 PURGE=0
 ASSUME_YES=0
+IMAGE=0
 
 # ---------------------------------------------------------------------------------------------- output
 step_no=0
@@ -53,6 +56,8 @@ Options:
   --uninstall        stop and remove the service and code; KEEPS the database, backups and device token
   --purge            with --uninstall: also delete the database, backups, device token and user (asks first)
   --yes              with --purge: do not ask for confirmation
+  --image            building a FeT Monitor SD card image (in a chroot): no password, nothing started; the first
+                     boot opens the setup network
   -h, --help         this help
 EOF
 }
@@ -64,6 +69,7 @@ while [ $# -gt 0 ]; do
     --uninstall) UNINSTALL=1 ;;
     --purge) PURGE=1 ;;
     --yes) ASSUME_YES=1 ;;
+    --image) IMAGE=1; NO_PASSWORD=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die "unknown option: $1" ;;
   esac
@@ -141,9 +147,16 @@ preflight() {
     || die "Python 3.9 or newer is needed; found $(python3 -V 2>&1)"
   info "$(python3 -V 2>&1)"
 
-  command -v systemctl >/dev/null 2>&1 && [ -d "$SYSTEMD_RUN" ] || die "systemd is not running on this system"
+  if [ "$IMAGE" -eq 1 ]; then
+    command -v systemctl >/dev/null 2>&1 || die "systemctl is missing"
+  else
+    command -v systemctl >/dev/null 2>&1 && [ -d "$SYSTEMD_RUN" ] || die "systemd is not running on this system"
+  fi
   command -v runuser >/dev/null 2>&1 || die "runuser (util-linux) is missing"
   info "systemd: ok"
+  if ! command -v nmcli >/dev/null 2>&1; then
+    warn "NetworkManager (nmcli) is missing: the setup network and page will not run (Raspberry Pi OS has it)"
+  fi
   if ! command -v ssh-keygen >/dev/null 2>&1; then
     warn "ssh-keygen is missing: updates from Range Control cannot check release signatures (sudo apt install openssh-client)"
   fi
@@ -152,7 +165,7 @@ preflight() {
 # ---------------------------------------------------------------------------------------------- uninstall
 uninstall() {
   step "Stopping and removing the service"
-  systemctl disable --now fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path >/dev/null 2>&1 || true
+  systemctl disable --now fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path >/dev/null 2>&1 || true
   local u
   for u in "${UNITS[@]}"; do rm -f "$UNIT_DIR/$u"; done
   rm -f "$AVAHI_DIR/fet-monitor.service"
@@ -169,7 +182,7 @@ uninstall() {
   fi
   if [ "$PURGE" -eq 1 ]; then
     step "Deleting the database, backups and user"
-    rm -rf "$DATA_DIR" "$BACKUP_DIR"
+    rm -rf "$DATA_DIR" "$BACKUP_DIR" "$SETUP_DIR"
     if id -u "$SVC_USER" >/dev/null 2>&1; then userdel "$SVC_USER"; fi
     printf '\nFeT Monitor removed completely.\n'
   else
@@ -209,11 +222,11 @@ create_user_and_dirs() {
     useradd --system --no-create-home --home-dir /var/lib/fet-monitor --shell /usr/sbin/nologin "$SVC_USER"
     info "created system user $SVC_USER (no login)"
   fi
-  mkdir -p "$CODE_DIR" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
+  mkdir -p "$CODE_DIR" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update" "$DATA_DIR/system"
   chown root:root "$CODE_DIR"
   chmod 0755 "$CODE_DIR"
-  chown "$SVC_USER:$SVC_USER" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
-  chmod 0750 "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update"
+  chown "$SVC_USER:$SVC_USER" "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update" "$DATA_DIR/system"
+  chmod 0750 "$DATA_DIR" "$BACKUP_DIR" "$DATA_DIR/update" "$DATA_DIR/system"
   info "$CODE_DIR (root, 755)  $DATA_DIR and $BACKUP_DIR ($SVC_USER, 750)"
 }
 
@@ -225,14 +238,17 @@ install_code() {
     info "stopping the running server for the upgrade"
     systemctl stop fet-monitor.service
   fi
-  rm -rf "$CODE_DIR/fetserver.new" "$CODE_DIR/fetserver.old"
-  cp -R "$HERE/fetserver" "$CODE_DIR/fetserver.new"
-  find "$CODE_DIR/fetserver.new" -name '__pycache__' -type d -prune -exec rm -rf {} +
-  chown -R root:root "$CODE_DIR/fetserver.new"
-  chmod -R u=rwX,go=rX "$CODE_DIR/fetserver.new"
-  if [ -d "$CODE_DIR/fetserver" ]; then mv "$CODE_DIR/fetserver" "$CODE_DIR/fetserver.old"; fi
-  mv "$CODE_DIR/fetserver.new" "$CODE_DIR/fetserver"
-  rm -rf "$CODE_DIR/fetserver.old"
+  local pkg
+  for pkg in "${PACKAGES[@]}"; do              # each package swapped in whole: never half old, half new
+    rm -rf "$CODE_DIR/$pkg.new" "$CODE_DIR/$pkg.old"
+    cp -R "$HERE/$pkg" "$CODE_DIR/$pkg.new"
+    find "$CODE_DIR/$pkg.new" -name '__pycache__' -type d -prune -exec rm -rf {} +
+    chown -R root:root "$CODE_DIR/$pkg.new"
+    chmod -R u=rwX,go=rX "$CODE_DIR/$pkg.new"
+    if [ -d "$CODE_DIR/$pkg" ]; then mv "$CODE_DIR/$pkg" "$CODE_DIR/$pkg.old"; fi
+    mv "$CODE_DIR/$pkg.new" "$CODE_DIR/$pkg"
+    rm -rf "$CODE_DIR/$pkg.old"
+  done
   mkdir -p "$CODE_DIR/bin"                     # the root update helper: root-owned, outside anything the server can write
   install -m 0755 "$HERE/deploy/fet-monitor-update.sh" "$CODE_DIR/bin/fet-monitor-update"
   chown root:root "$CODE_DIR/bin" "$CODE_DIR/bin/fet-monitor-update"
@@ -240,7 +256,7 @@ install_code() {
   for f in LICENSE NOTICE; do
     if [ -f "$HERE/$f" ]; then install -m 0644 "$HERE/$f" "$CODE_DIR/$f"; fi
   done
-  info "code in $CODE_DIR/fetserver"
+  info "code in $CODE_DIR/fetserver and $CODE_DIR/fetsetup"
   [ "$was_active" -eq 0 ] || info "(the server is restarted below)"
 }
 
@@ -250,15 +266,22 @@ install_units() {
   local u
   for u in "${UNITS[@]}"; do install -m 0644 "$HERE/deploy/$u" "$UNIT_DIR/$u"; done
   if [ -d "$AVAHI_DIR" ]; then install -m 0644 "$HERE/deploy/fet-monitor.avahi.service" "$AVAHI_DIR/fet-monitor.service"; fi
-  systemctl daemon-reload
-  systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path >/dev/null 2>&1
+  [ "$IMAGE" -eq 1 ] || systemctl daemon-reload            # a chroot has no running systemd; enable still works
+  systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path >/dev/null 2>&1
   info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup),"
-  info "fet-monitor-update.path (installs signed updates requested from Range Control)"
+  info "fet-monitor-update.path (installs signed updates requested from Range Control),"
+  info "fet-setup.service (setup network on first start, or when the Pi finds no network),"
+  info "fet-system.path (applies Range Control's System page: network, name, time, SSH, restart)"
 }
 
 device_token() {
   step "Device token"
   local tok="$DATA_DIR/device_token"
+  if [ "$IMAGE" -eq 1 ]; then                  # never one token for every Pi made from the image
+    rm -f "$tok"
+    info "image: each Pi creates its own token when FeT Monitor first starts"
+    return 0
+  fi
   if [ -s "$tok" ]; then
     info "kept the existing token (targets keep working)"
   else
@@ -268,6 +291,22 @@ device_token() {
   fi
   chown "$SVC_USER:$SVC_USER" "$tok"
   chmod 0600 "$tok"
+}
+
+setup_marker() {
+  step "First-time setup"
+  mkdir -p "$SETUP_DIR"
+  chmod 0755 "$SETUP_DIR"
+  if [ -e "$SETUP_DIR/setup.done" ]; then
+    info "already set up"
+  elif [ "$IMAGE" -eq 1 ]; then
+    info "image: the first start opens the setup network FeTMonitor-Setup-XXXX"
+  elif ip -4 route get 1.1.1.1 >/dev/null 2>&1; then          # installed over a working network: no setup network
+    printf '{"by": "install.sh"}\n' > "$SETUP_DIR/setup.done"
+    info "this Pi has a network: no setup network (it opens only if the Pi starts without a network)"
+  else
+    info "no network now: the next start opens the setup network FeTMonitor-Setup-XXXX"
+  fi
 }
 
 range_password() {
@@ -348,6 +387,11 @@ create_user_and_dirs
 install_code
 install_units
 device_token
+setup_marker
 range_password
+if [ "$IMAGE" -eq 1 ]; then
+  printf '\nFeT Monitor %s installed in the image. The first start opens the setup network.\n' "$(version_of_release)"
+  exit 0
+fi
 start_and_check
 summary

@@ -728,6 +728,59 @@ function updatesPanel(u) {
     '</div><p class="mut">Only releases signed with the FeT Monitor release key are installed. The database is backed up first; ' +
     'if the new version does not start, the previous version and its database come back by themselves.</p></div>';
 }
+const SYS_STATE = {running: 'Working', done: 'Done', failed: 'Not done'};
+const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user', 'sy_upw'],      // what each request used
+  network: ['sy_ssid', 'sy_psk', 'sy_ossid', 'sy_opsk', 'sy_ochan', 'sy_ip', 'sy_prefix', 'sy_gw']};
+function systemPanel(v, rc) {                   // Range Control: the Pi itself (fetserver/appliance.py, root helper fetsetup/sysreq.py)
+  if (!v) return '';
+  const f = v.facts || {}, st = v.status, sf = rc.sysf || {}, n = sf.network || {mode: 'wifi', address: 'dhcp', channel: 6}, off = !v.helper_installed;
+  const dis = off ? ' disabled' : '', skew = Math.abs((v.clock_ms || 0) - Date.now()) > 60000;
+  const kept = sf.vals || {}, val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));   // typed values survive redraws
+  const conn = (f.connections || []).map(c => '<li>' + (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') + ' <b>' + esc(c.name) + '</b>' +
+    (c.lease ? ': ' + esc(c.lease.ip) + (c.lease.gateway ? ', router ' + esc(c.lease.gateway) : '') : c.own ? ': 10.42.0.1' : '') + '</li>').join('');
+  const netForm = '<div class="seg">' + [['cable', 'Cable'], ['wifi', 'Club WiFi'], ['own', 'Own range network']].map(([k, l]) =>
+      '<button data-act="rcsysmode" data-v="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div>' +
+    (n.mode === 'wifi' ? '<label>WiFi <select id="sy_ssid"><option value="">choose…</option>' + (v.networks || []).map(w => '<option' + (w.ssid === kept.sy_ssid ? ' selected' : '') + '>' + esc(w.ssid) + '</option>').join('') +
+      '</select></label> <label>Password <input id="sy_psk" type="password" autocomplete="off" value="' + val('sy_psk') + '"></label>' : '') +
+    (n.mode === 'own' ? '<label>Network name <input id="sy_ossid" maxlength="32" value="' + val('sy_ossid', 'FeTMonitor-Range') + '"></label> <label>Password <input id="sy_opsk" autocomplete="off" value="' + val('sy_opsk') + '"></label>' +
+      ' <label>Channel <select id="sy_ochan">' + [1, 6, 11].map(c => '<option' + (+(kept.sy_ochan || 6) === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>'
+      : '<div><label><input type="checkbox" id="sy_fixed"' + (n.fixed ? ' checked' : '') + ' data-act="rcsysfixed"> Fixed address</label>' +
+        (n.fixed ? ' <input id="sy_ip" placeholder="192.168.1.20" size="14" value="' + val('sy_ip') + '"> / <input id="sy_prefix" size="3" value="' + val('sy_prefix', 24) + '">' +
+          ' router <input id="sy_gw" placeholder="192.168.1.1" size="14" value="' + val('sy_gw') + '">' : '') + '</div>') +
+    '<div class="bulk"><button class="pri" data-act="rcsys" data-a="network"' + dis + '>Change network</button></div>' +
+    '<p class="mut">This page may lose its connection while the Pi changes network. A new club WiFi is tried first (a wrong password changes nothing); ' +
+    'if the new network does not come up within a minute, the Pi goes back to the previous one, or opens the setup network.</p>';
+  return '<div class="panel"><h3>This Pi</h3>' +
+    (!v.helper_installed ? '<p class="bad">The System service is not installed on this Pi: install FeT Monitor 0.6.30 or newer.</p>' : '') +
+    (v.busy ? '<p class="mut"><b>Working on the last change…</b></p>' : '') +
+    (st ? '<p class="' + (st.state === 'failed' ? 'bad' : 'mut') + '">' + esc(SYS_STATE[st.state] || st.state) + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>' : '') +
+    '<div class="bulk"><label>Name <input id="sy_host" value="' + val('sy_host', f.hostname) + '" size="16"></label><button data-act="rcsys" data-a="hostname"' + dis + '>Save</button>' +
+    '<label>Time zone <select id="sy_tz">' + (v.zones || []).map(z => '<option' + (z === (kept.sy_tz || f.timezone) ? ' selected' : '') + '>' + esc(z) + '</option>').join('') + '</select></label>' +
+    '<button data-act="rcsys" data-a="timezone"' + dis + '>Save</button></div>' +
+    '<p>Clock: <b>' + esc(new Date(v.clock_ms).toLocaleString()) + '</b> ' + (f.ntp ? '<span class="mut">(from the internet)</span>'
+      : (skew ? '<span class="bad">differs from this device</span> ' : '') + '<button data-act="rcsys" data-a="clock"' + dis + '>Set from this device</button>') + '</p>' +
+    '<h4>Network</h4><ul>' + (conn || '<li class="mut">none</li>') + '</ul>' + netForm +
+    '<h4>Access</h4><div class="bulk"><span>SSH is <b>' + (f.ssh ? 'on' : 'off') + '</b></span><button data-act="rcsys" data-a="ssh" data-on="' + (f.ssh ? '0' : '1') + '"' + dis + '>Turn SSH ' + (f.ssh ? 'off' : 'on') + '</button></div>' +
+    '<div class="bulk"><label>Admin login <input id="sy_user" size="12" autocapitalize="none" value="' + val('sy_user') + '"></label> <label>New password <input id="sy_upw" type="password" autocomplete="new-password" value="' + val('sy_upw') + '"></label>' +
+    '<button data-act="rcsys" data-a="admin"' + dis + '>Set</button></div>' +
+    '<h4>Power</h4><div class="bulk"><button data-act="rcsys" data-a="restart"' + dis + '>Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown"' + dis + '>Shut down</button></div>' +
+    '<p class="mut">Shut down before unplugging the Pi: pulling the power can damage the SD card.</p>' + (rc.sysMsg ? '<p class="bad">' + esc(rc.sysMsg) + '</p>' : '') + '</div>';
+}
+function sysRequest(a, el) {                    // the request for one System button, from the fields; null to stop
+  const val = id => (document.getElementById(id) || {}).value || '';
+  if (a === 'hostname') return {action: a, hostname: val('sy_host')};
+  if (a === 'timezone') return {action: a, timezone: val('sy_tz')};
+  if (a === 'clock') return {action: a, clock_ms: Date.now()};
+  if (a === 'ssh') return {action: a, on: el.dataset.on === '1'};
+  if (a === 'admin') return {action: a, user: val('sy_user'), password: val('sy_upw')};
+  if (a === 'restart') return confirm('Restart the Pi now? FeT Monitor is back in about a minute; running matches keep their clock.') ? {action: a} : null;
+  if (a === 'shutdown') return confirm('Shut the Pi down now? It stays off until it is unplugged and plugged in again.') ? {action: a} : null;
+  const n = (S.rc.sysf || {}).network || {mode: 'wifi'};
+  const addr = n.fixed && n.mode !== 'own' ? {ip: val('sy_ip'), prefix: +val('sy_prefix'), gateway: val('sy_gw'), dns: []} : 'dhcp';
+  const net = n.mode === 'wifi' ? {mode: 'wifi', ssid: val('sy_ssid'), psk: val('sy_psk'), address: addr}
+    : n.mode === 'own' ? {mode: 'own', ssid: val('sy_ossid'), psk: val('sy_opsk'), channel: +val('sy_ochan')} : {mode: 'cable', address: addr};
+  return confirm('Change the network now? The targets need the new server address if it changes.') ? {action: 'network', network: net} : null;
+}
 function fwJobText(t, images) {      // the latest firmware update of a target, in words
   const j = t.fw_job;
   const best = t.fw_best ? '<div class="fwjob">' + esc(t.fw_best.version) + ' available</div>' : '';   // not shown while waiting or updating
@@ -798,7 +851,7 @@ function rangeView(S) {
       '<div class="bulk"><button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' +
       esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + ') on ' + nsel + ' selected</button><span class="mut">e.g. to go back to an older version</span></div>' :
       '<p class="mut">No images uploaded.</p>') + '</div>';
-  return h + matchUsersPanel(rc.musers || [], rc.muMsg) + updatesPanel(rc.updates) + '</div>';
+  return h + matchUsersPanel(rc.musers || [], rc.muMsg) + systemPanel(rc.system, rc) + updatesPanel(rc.updates) + '</div>';
 }
 
 // ---- Match Control ----
@@ -1413,6 +1466,8 @@ async function refresh() {
         if (fw.status === 200) S.rc.images = fw.data.images;
         const mu = await adminCall('/match-users');
         if (mu.status === 200) S.rc.musers = mu.data.users;
+        const sy = await adminCall('/system');
+        if (sy.status === 200) S.rc.system = sy.data;
         const up = await adminCall('/updates');
         if (up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
@@ -1716,6 +1771,19 @@ async function rangeAct(el, a) {
     if (!confirm('Remove ' + el.dataset.u + ' from Match Control?')) return;
     const res = await adminCall('/match-users/' + encodeURIComponent(el.dataset.u) + '/delete', {});
     if (res.status === 200) rc.musers = res.data.users;
+    return refresh();
+  }
+  if (a === 'rcsysmode' || a === 'rcsysfixed') {
+    const sf = rc.sysf = rc.sysf || {}, n = sf.network = sf.network || {mode: 'wifi', channel: 6};
+    if (a === 'rcsysmode') n.mode = el.dataset.v; else n.fixed = el.checked;
+    return render(true);
+  }
+  if (a === 'rcsys') {
+    const body = sysRequest(el.dataset.a, el);
+    if (!body) return;
+    const res = await adminCall('/system', body);
+    rc.sysMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
+    if (res.status === 202 && rc.sysf && rc.sysf.vals) (SYS_FIELDS[body.action] || []).forEach(id => { delete rc.sysf.vals[id]; });  // sent: forgotten
     return refresh();
   }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
@@ -2149,6 +2217,9 @@ function boot() {
     else mc.msg = 'Not stored: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
     render(true);
   });
+  setInterval(() => { if (route().range && S.rc && S.rc.system && S.rc.system.busy) refresh(); }, 3000);   // a System change in progress
+  const keepSys = e => { if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; } };
+  document.addEventListener('input', keepSys); document.addEventListener('change', keepSys);
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -2252,7 +2323,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {systemPanel, sysRequest, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

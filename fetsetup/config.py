@@ -108,6 +108,17 @@ def check(raw: dict, countries: List[str], zones: List[str]) -> dict:
     return out
 
 
+def check_reopen(raw: dict, countries: List[str]) -> dict:
+    """The setup reopened on a Pi that is already set up (it found no network): only the country and the network.
+    Passwords and logins are never changed over the open setup network (Range Control changes them)."""
+    if not isinstance(raw, dict):
+        raise SetupError("the settings are missing")
+    cc = raw.get("country") if isinstance(raw.get("country"), str) else ""
+    if not COUNTRY_RE.match(cc) or cc not in countries:
+        raise SetupError("choose the country (it sets the WiFi channels allowed there)")
+    return {"country": cc, "network": check_network(raw.get("network"))}
+
+
 def check_network(n) -> dict:
     if not isinstance(n, dict) or n.get("mode") not in MODES:
         raise SetupError("choose how the Pi connects: cable, the club WiFi, or its own network")
@@ -138,7 +149,10 @@ def check_network(n) -> dict:
 def plan(cfg: dict) -> List[tuple]:
     """The steps to apply, in order: everything that does not touch the network first (the phone stays connected
     to the setup network while they run), the network last. Each step is (name, argument)."""
-    steps = [("country", cfg["country"]), ("timezone", cfg["timezone"])]
+    steps = [("country", cfg["country"])]
+    if "timezone" not in cfg:                     # a reopened setup: the country only (then the network)
+        return steps
+    steps.append(("timezone", cfg["timezone"]))
     if cfg.get("clock_ms"):
         steps.append(("clock", cfg["clock_ms"]))
     steps += [("hostname", cfg["hostname"]), ("admin", (cfg["admin"], cfg["admin_password"])),

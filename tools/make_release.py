@@ -3,7 +3,7 @@
 
     python3 tools/make_release.py
 
-The archive unpacks to fet-monitor-<version>/ with install.sh, fetserver/, deploy/, docs/INSTALL.md, LICENSE, NOTICE and
+The archive unpacks to fet-monitor-<version>/ with install.sh, fetserver/, fetsetup/, deploy/, docs/INSTALL.md, LICENSE, NOTICE and
 README.md. Entries are owned by root (uid/gid 0), have normalised permissions and the time of the last commit, so the same
 commit always gives the same archive bytes. Refuses to build from a working tree with uncommitted changes unless
 --dirty is given (such an archive is for testing only).
@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = ["install.sh", "LICENSE", "NOTICE", "README.md", "docs/INSTALL.md"]
-TREES = ["fetserver", "deploy"]
+TREES = ["fetserver", "fetsetup", "deploy"]
 EXECUTABLE = {"install.sh", "deploy/migrate-from-freetarget.sh", "deploy/fet-monitor-update.sh"}
 
 

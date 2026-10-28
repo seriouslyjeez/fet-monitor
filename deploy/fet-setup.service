@@ -1,0 +1,16 @@
+[Unit]
+Description=FeT Monitor: first-time setup network and page; reopens it when the Pi finds no network
+# python3 -m fetsetup boot: not set up yet -> the open setup network "FeTMonitor-Setup-XXXX" with the setup page (port
+# 80) until it is done; set up -> waits up to 3 minutes for a network and exits, or reopens the setup for the network
+# settings only. Runs as root: it changes the network, the Pi's name, time zone, logins and SSH.
+After=NetworkManager.service fet-monitor.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/fet-monitor
+ExecStart=/usr/bin/python3 -m fetsetup boot
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

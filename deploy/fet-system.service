@@ -1,0 +1,11 @@
+[Unit]
+Description=FeT Monitor: apply a System request from Range Control
+# python3 -m fetsetup system: reads and deletes system/request.json, checks it again itself, applies it (network,
+# Pi name, time zone, clock, WiFi country, SSH, admin login, restart, shut down) and writes system/status.json.
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/fet-monitor
+ExecStart=/usr/bin/python3 -m fetsetup system
+TimeoutStartSec=300
+PrivateTmp=true

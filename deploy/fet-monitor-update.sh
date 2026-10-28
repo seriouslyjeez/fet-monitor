@@ -88,8 +88,11 @@ DB_BACKUP="${backups[${#backups[@]}-1]}"
 [ -f "$DB_BACKUP" ] || fail "the database backup is missing; nothing was changed"
 
 status running "$VERSION" "installing"
-rm -rf "$CODE/fetserver.prev"
-cp -a "$CODE/fetserver" "$CODE/fetserver.prev"
+PKGS=(fetserver fetsetup)                               # every package the install replaces; .prev for a rollback
+for pkg in "${PKGS[@]}"; do
+  rm -rf "$CODE/$pkg.prev"
+  if [ -d "$CODE/$pkg" ]; then cp -a "$CODE/$pkg" "$CODE/$pkg.prev"; fi
+done
 if (cd "$NEW" && bash ./install.sh --no-password) >>"$LOG" 2>&1; then
   status "done" "$VERSION" "updated to $VERSION (database backup: $DB_BACKUP)"
   exit 0
@@ -99,8 +102,10 @@ fi
 # version may have upgraded its structure, which the old code would refuse).
 status running "$VERSION" "update failed, rolling back"
 systemctl stop fet-monitor.service || true
-rm -rf "$CODE/fetserver"
-mv "$CODE/fetserver.prev" "$CODE/fetserver"
+for pkg in "${PKGS[@]}"; do                            # the previous code; a package it did not have is removed
+  rm -rf "$CODE/$pkg"
+  if [ -d "$CODE/$pkg.prev" ]; then mv "$CODE/$pkg.prev" "$CODE/$pkg"; fi
+done
 cp "$DB_BACKUP" "$DATA/fetserver.db.restore"
 rm -f "$DATA/fetserver.db-wal" "$DATA/fetserver.db-shm"
 mv "$DATA/fetserver.db.restore" "$DATA/fetserver.db"

@@ -849,3 +849,29 @@ console.log('OK');
   assert(nra.includes('<th>Qualification</th>') && nra.includes('300.4') && nra.includes('added to the qualification') && !nra.includes('medal'), 'added finals: totals; no medal while running');
   console.log('final board OK');
 }
+
+// Range Control: the Pi itself (System page)
+{
+  const {systemPanel} = X;
+  const v = {helper_installed: true, busy: false, clock_ms: Date.now() - 3600000, zones: ['UTC', 'Europe/Berlin'], networks: [{ssid: '<b>Club</b>', signal: 70, secure: true}],
+    status: {state: 'failed', action: 'network', message: 'could not join <i>Club</i>: wrong WiFi password; nothing changed', time: Date.now()},
+    facts: {hostname: 'range', timezone: 'Europe/Berlin', ntp: false, ssh: false, connections: [{name: 'fet-wifi', type: 'wifi', lease: {ip: '192.168.1.20', gateway: '192.168.1.1'}},
+      {name: 'fet-range', type: 'wifi', own: true, lease: null}]}};
+  const h = systemPanel(v, {sysf: {network: {mode: 'wifi'}}});
+  assert(h.includes('Not done: could not join &lt;i&gt;Club') && h.includes('<option selected>Europe/Berlin</option>'), 'status escaped; current time zone chosen');
+  assert(h.includes('differs from this device') && h.includes('data-a="clock"'), 'clock an hour off and no internet time: offer this device');
+  assert(h.includes('192.168.1.20') && h.includes('Own range network') && h.includes('&lt;b&gt;Club'), 'connections listed; WiFi names escaped');
+  assert(h.includes('SSH is <b>off</b>') && h.includes('data-on="1"'), 'SSH: the switch turns it on');
+  assert(!/data-act="rcsys"[^>]*disabled/.test(h) && h.includes('id="sy_psk"'), 'ready: buttons enabled; WiFi password field');
+  const busy = systemPanel(Object.assign({}, v, {busy: true, facts: Object.assign({}, v.facts, {ntp: true})}), {sysf: {network: {mode: 'own'}}});
+  assert(!/data-a="restart" disabled/.test(busy) && busy.includes('Working on the last change') && busy.includes('id="sy_ossid"') && !busy.includes('data-a="clock"') && busy.includes('from the internet'), 'busy: said so (not disabled: a focused field would keep it stuck); own network fields; internet time: no clock button');
+  const none = systemPanel(Object.assign({}, v, {helper_installed: false}), {});
+  assert(none.includes('System service is not installed') && /data-a="hostname" disabled/.test(none), 'old install: said so, nothing to press');
+  const fixed = systemPanel(v, {sysf: {network: {mode: 'cable', fixed: true}}});
+  assert(fixed.includes('id="sy_ip"') && fixed.includes('id="sy_gw"') && !fixed.includes('id="sy_psk"'), 'cable with a fixed address');
+  assert.strictEqual(systemPanel(null, {}), '');
+  const typed = systemPanel(v, {sysf: {network: {mode: 'wifi'}, vals: {sy_ssid: '<b>Club</b>', sy_psk: 'a"b', sy_host: 'new-name', sy_tz: 'UTC'}}});
+  assert(typed.includes('value="a&quot;b"') && typed.includes('value="new-name"') && typed.includes('<option selected>UTC</option>') && typed.includes('<option selected>&lt;b&gt;Club'),
+    'typed values come back after a redraw (escaped)');
+  console.log('system OK');
+}
