@@ -901,5 +901,25 @@ console.log('OK');
   assert(fail.includes('warnbox') && fail.includes('a different device'), 'a failure shows');
   assert(flashPanel({ports: [], probes: {}, job: null, backups: []}, {}).includes('No USB serial device'), 'nothing plugged in');
   assert.strictEqual(flashPanel(null, {}), '');
+  // settings: Configure needs a WiFi name; Install also configures when the image is 0.3.0 or newer
+  const {flashSettings, verAtLeast} = X;
+  assert(verAtLeast('0.3.0', '0.3.0') && verAtLeast('0.10.0', '0.3.0') && !verAtLeast('0.2.9', '0.3.0') && !verAtLeast('', '0.3.0'), 'versions compare as numbers');
+  const f3 = Object.assign({}, f, {server_host: '192.168.1.20', probes: Object.assign({}, f.probes, {'/dev/ttyUSB0': Object.assign({}, f.probes['/dev/ttyUSB0'], {device: 'esp8266', offer: {sha256: 'cd', version: '0.3.0'}, advice: '1 MB module: <x>'})})});
+  const empty = flashPanel(f3, {});
+  assert(!/rcflashcfg[^>]*disabled/.test(empty) && empty.includes('and configure it, if the settings') && empty.includes('value="192.168.1.20"'),
+    'buttons do not depend on typed values (no redraw while typing); the Pi address filled in');
+  assert(empty.includes('1 MB module: &lt;x&gt;'), 'the 4 MB advice shows');
+  assert(count(empty, /rcflashcfg/g) === 1, 'no Configure for the Arduino');
+  assert(empty.includes('auto-reset programmer') && empty.includes('PROG/UART switch'), 'both programmer kinds explained');
+  const rcf = {flashf: {fs_ssid: ' club ', fs_pass: ' pw with spaces ', fs_name: 'Lane-3', fs_host: '10.42.0.1'}};
+  const filled = flashPanel(f3, rcf);
+  assert(filled.includes('value="10.42.0.1"') && filled.includes('value=" pw with spaces "'), 'typed values kept');
+  assert.deepStrictEqual(flashSettings(rcf, f3), {ssid: 'club', pass: ' pw with spaces ', name: 'Lane-3', host: '10.42.0.1', ip: '', gw: ''});
+  assert.strictEqual(flashSettings({flashf: {fs_ssid: 'x'}}, f3).host, '192.168.1.20', 'the address the page reached the Pi on');
+  assert.strictEqual(flashSettings({}, f3), null);
+  assert(!flashPanel(f, rcf).includes('and configure'), 'a 0.2.2 image takes no settings');
+  assert(/rcflashcfg[^>]*disabled/.test(flashPanel(Object.assign({}, f3, {job: {state: 'running', port: 'x'}}), rcf)), 'one job at a time');
+  const cfg = flashPanel(Object.assign({}, f3, {job: {state: 'running', kind: 'configure', what: 'Settings', port: '/dev/ttyUSB0', step: 'waiting for FeT Bridge to start', percent: 0}}), rcf);
+  assert(cfg.includes('Settings:</b> waiting for FeT Bridge to start<') && !cfg.includes('width:0%'), 'configuring: a step, no progress bar');
   console.log('flash OK');
 }

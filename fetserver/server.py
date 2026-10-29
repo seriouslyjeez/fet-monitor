@@ -490,12 +490,22 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
         if path == "/api/v1/admin/flash" and method == "GET":            # the flash station (flashstation.py)
-            return self._send(200, self.server.flash.view())
-        if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start") and method == "POST":
+            view = self.server.flash.view()
+            view["server_host"] = self.connection.getsockname()[0]       # the address this page reached the Pi on
+            return self._send(200, view)
+        if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start", "/api/v1/admin/flash/configure") and method == "POST":
+            settings = payload.get("settings")
+            if isinstance(settings, dict):                                # the bridge reports to this server, with its token
+                settings = dict(settings, port=self.server.server_address[1], token=self.server.token)
             try:
                 if path.endswith("identify"):
                     return self._send(200, self.server.flash.identify(str(payload.get("port", ""))))
-                job = self.server.flash.start_flash(str(payload.get("port", "")), str(payload.get("sha256", "")), "Range Control")
+                if path.endswith("configure"):
+                    job = self.server.flash.start_configure(str(payload.get("port", "")), settings, "Range Control")
+                    log.warning("Range Control from %s: configuring the FeT Bridge on %s", self.client_address[0], job["port"])
+                    return self._send(202, job)
+                job = self.server.flash.start_flash(str(payload.get("port", "")), str(payload.get("sha256", "")), "Range Control",
+                                                    settings if isinstance(settings, dict) else None)
             except FlashError as exc:
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: flashing FeT Bridge %s on %s", self.client_address[0], job["version"], job["port"])

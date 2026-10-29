@@ -1,15 +1,19 @@
 """The flash station (fetserver/flashstation.py): USB serial ports from sysfs, identification with esptool / avrdude
 (recorded output, never run), and installing FeT Bridge with a backup, a full erase on first install, write and verify.
 On hardware only: real programmers (PROG switch vs auto-reset), timings, esptool versions on Raspberry Pi OS."""
+import binascii
 import json
 import os
+import pty
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
 from fetserver.firmware import FirmwareStore
-from fetserver.flashstation import FlashError, FlashStation, list_ports, run_tool, why_esptool
+from fetserver.flashstation import FlashError, FlashStation, list_ports, run_tool, settings_line, why_esptool
+from fetserver.seriallink import SerialLink
 from tests.test_match_http import MatchHttpBase
 
 MAC = "84:f3:eb:12:34:56"
@@ -66,6 +70,73 @@ class Tools:
         return [next(a for a in c if a in ("flash_id", "read_flash", "erase_flash", "write_flash", "verify_flash", "version")) for c in self.calls if c[0] != "avrdude"]
 
 
+def no_serial(port):
+    raise OSError("no serial port in tests")
+
+
+class FakeBridge:
+    """The other end of the serial port: FeT Bridge as firmware src/core/provision.cpp answers, or an older one that only
+    prints its start-up line, or a Mega. gone: that many opens fail first (unplugged); drop: the first write fails."""
+    def __init__(self, dev="fet-123456", fw="0.3.0", answers=True, old=None, errors=(), gone=0, drop=False, mega=None):
+        self.dev, self.fw, self.answers, self.old, self.errors = dev, fw, answers, old, list(errors)
+        self.gone, self.drop, self.mega = gone, drop, mega
+        self.out, self.written, self.settings = [], [], None
+        self.opens = self.restarts = self.closes = self.settings_lines = 0
+
+    def open(self, port):
+        self.opens += 1
+        if self.gone:
+            self.gone -= 1
+            raise OSError("No such file or directory")
+        self.port = port
+        if self.mega and self.mega[0] == "banner":
+            self.out.append(self.mega[1])
+        return self
+
+    def restart_esp(self):
+        self.restarts += 1
+        return True
+
+    def write(self, data):
+        if self.drop:
+            self.drop = False
+            raise OSError("Input/output error")
+        self.written.append(data)
+        line = data.decode().rstrip("\n")
+        if self.mega:
+            if self.mega[0] == "asked" and line == '{"VERSION":0}':
+                self.out.append(self.mega[1])
+            return
+        if self.old:
+            self.out.append(f"FET bridge firmware {self.old} (fet-123456)")
+        elif not self.answers:
+            return
+        elif line == "FETCFG HELLO":
+            self.out.append(f"FETCFG HELLO {self.dev} {self.fw}")
+        elif line.startswith("FETCFG "):
+            self.settings_lines += 1
+            hexed, crc = line[7:].split(" ")
+            body = bytes.fromhex(hexed)
+            assert binascii.crc32(body) == int(crc, 16)
+            if self.errors:
+                self.out.append("FETCFG ERROR " + self.errors.pop(0))
+            else:
+                self.settings = json.loads(body)
+                self.out.append(f"FETCFG OK {self.dev}")
+
+    def readline(self, timeout):
+        if self.out:
+            return self.out.pop(0)
+        time.sleep(min(timeout, 0.005))
+        return None
+
+    def close(self):
+        self.closes += 1
+
+
+SETTINGS = {"ssid": "club", "pass": "password1", "host": "192.168.1.20", "port": 8080, "token": "the-token", "name": "Lane-3"}
+
+
 class Case(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -81,9 +152,12 @@ class Case(unittest.TestCase):
         (self.store.dir / (sha * 64 + ".bin")).write_bytes(b"\xe9" + b"\0" * 10)
         return sha * 64
 
-    def station(self, tools):
-        self.tools = tools
-        return FlashStation(self.store, self.root, run=tools, sys_tty=str(self.sys / "class/tty"), now=lambda: 1_800_000_000, background=False)
+    def station(self, tools, link=None):
+        self.tools, self.link = tools, link
+        st = FlashStation(self.store, self.root, run=tools, sys_tty=str(self.sys / "class/tty"), now=lambda: 1_800_000_000, background=False,
+                          opener=link.open if link else no_serial)
+        st.hello_wait, st.hello_every, st.reply_wait, st.mega_wait = 0.6, 0.05, 0.2, 0.3
+        return st
 
 
 class Ports(Case):
@@ -131,6 +205,16 @@ class Identify(Case):
         r = self.station(Tools(chip_out=(0, V5 % "4MB"))).identify("/dev/ttyUSB0")
         self.assertEqual((r["chip"], r["flash_size"], r["offer"]["version"]), ("ESP8266EX", 4 << 20, "0.2.2"))
 
+    def test_one_mb_modules_hear_about_four_mb_and_new_bridges_take_settings(self):
+        self.image("b", "0.3.0", 1)
+        self.image("c", "0.3.0", 4)
+        r = self.station(Tools(fet=b"fet-monitor-bridge/0.3.0")).identify("/dev/ttyUSB0")
+        self.assertIn("4 MB ESP-01S", r["advice"])
+        self.assertTrue(r["configurable"])
+        r = self.station(Tools(size="4MB")).identify("/dev/ttyUSB0")
+        self.assertEqual(r["advice"], "")
+        self.assertFalse(r["configurable"], "0.2.0 cannot take settings over USB")
+
     def test_original_firmware_means_first_install(self):
         self.image("b", "0.2.2", 1)
         r = self.station(Tools(fet=b"AT version:1.2.0.0 ...")).identify("/dev/ttyUSB0")
@@ -157,6 +241,21 @@ class Identify(Case):
         self.assertEqual((r["device"], r["offer"]), ("mega", None))
         avr_call = next(c for c in self.tools.calls if c[0] == "avrdude")
         self.assertIn("-n", avr_call, "read-only")
+        self.assertIn("no freETarget start-up message", r["label"])
+
+    def test_mega_freetarget_version(self):
+        avr = (0, "avrdude: device signature = 0x1e9801 (probably m2560)\n")
+        tools = Tools(chip_out=(2, "Timed out waiting for packet header"), avr=avr)
+        r = self.station(tools, FakeBridge(mega=("banner", 'freETarget "4.3.0 December 21, 2023"'))).identify("/dev/ttyUSB0")
+        self.assertEqual((r["device"], r["freetarget"]), ("mega", "4.3.0 December 21, 2023"))
+        self.assertIn("freETarget 4.3.0", r["label"])
+        self.assertEqual(self.link.written, [], "the start-up message was enough: nothing sent")
+        r = self.station(tools, FakeBridge(mega=("asked", '{"VERSION": "4.3.1 March 2, 2024"}'))).identify("/dev/ttyUSB0")
+        self.assertEqual(r["freetarget"], "4.3.1 March 2, 2024")
+        self.assertEqual(self.link.written, [b'{"VERSION":0}\n'])
+        r = self.station(tools, FakeBridge(mega=("silent", ""))).identify("/dev/ttyUSB0")
+        self.assertIsNone(r["freetarget"])
+        self.assertEqual(self.link.closes, 1)
 
     def test_a_genuine_arduino_is_never_reset_by_esptool(self):
         usb_tree(self.sys, "ttyACM0", "2341", "0042", "Arduino Mega 2560")
@@ -273,6 +372,143 @@ class Flash(Case):
             st.start_flash("/dev/ttyUSB0", sha, "rc")
 
 
+class Configure(Case):
+    def setUp(self):
+        super().setUp()
+        usb_tree(self.sys, "ttyUSB0", "1a86", "7523")
+
+    def configure(self, link, settings=SETTINGS, port="/dev/ttyUSB0"):
+        return self.station(Tools(), link).start_configure(port, settings, "rc")
+
+    def test_settings_line(self):
+        line = settings_line({"ssid": "a b"})
+        hexed, crc = line.decode().split()[1:]
+        self.assertEqual(json.loads(bytes.fromhex(hexed)), {"ssid": "a b"})
+        self.assertEqual(int(crc, 16), binascii.crc32(bytes.fromhex(hexed)))
+        self.assertNotIn(b"{", line)
+        self.assertTrue(line.endswith(b"\n") and line.count(b"\n") == 1)
+
+    def test_configured(self):
+        link = FakeBridge()
+        job = self.configure(link, dict(SETTINGS, ip="", gw="", extra="dropped"))
+        self.assertEqual((job["state"], job["device_id"], job["configured"]), ("done", "fet-123456", True))
+        self.assertEqual(link.settings, SETTINGS, "only the keys the bridge knows; empty optional ones left out")
+        self.assertEqual(link.restarts, 1, "an auto-reset programmer restarts the ESP once")
+        self.assertNotIn("password1", json.dumps(job), "the WiFi password is never in the job (the page shows it)")
+        self.assertEqual(link.closes, 1)
+
+    def test_fixed_ip_and_port_as_text(self):
+        link = FakeBridge()
+        self.configure(link, dict(SETTINGS, port="8080", ip="192.168.1.60", gw="192.168.1.1"))
+        self.assertEqual((link.settings["port"], link.settings["ip"], link.settings["gw"]), (8080, "192.168.1.60", "192.168.1.1"))
+
+    def test_refused_before_anything_is_sent(self):
+        for bad, why in ((dict(SETTINGS, ssid=""), "WiFi name"), (dict(SETTINGS, name=" "), "target name"),
+                         ({k: v for k, v in SETTINGS.items() if k != "token"}, "token"), (dict(SETTINGS, port="x"), "number"),
+                         (dict(SETTINGS, ssid=5), "ssid must be text"), (None, "no settings")):
+            link = FakeBridge()
+            with self.assertRaisesRegex(FlashError, why):
+                self.configure(link, bad)
+            self.assertEqual(link.opens, 0)
+        with self.assertRaisesRegex(FlashError, "not a USB serial port"):
+            self.configure(FakeBridge(), port="/etc/passwd")
+
+    def test_the_bridge_says_what_is_wrong(self):
+        job = self.configure(FakeBridge(errors=["WiFi password must be 8 to 63 characters"]))
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("refused the settings: WiFi password must be 8 to 63 characters", job["message"])
+
+    def test_a_damaged_line_is_sent_again(self):
+        link = FakeBridge(errors=["checksum mismatch: send it again"])
+        self.assertEqual(self.configure(link)["state"], "done")
+        self.assertEqual(link.settings_lines, 2)
+        link = FakeBridge(errors=["checksum mismatch: send it again"] * 3)
+        job = self.configure(link)
+        self.assertEqual((job["state"], link.settings_lines), ("failed", 3))
+        self.assertIn("USB cable", job["message"])
+
+    def test_no_answer_explains_both_programmer_kinds(self):
+        job = self.configure(FakeBridge(answers=False))
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("PROG/UART switch", job["message"])
+        self.assertIn("auto-reset", job["message"])
+
+    def test_an_older_bridge_is_named(self):
+        link = FakeBridge(old="0.2.2")
+        job = self.configure(link)
+        self.assertIn("(0.2.2) is too old", job["message"])
+        self.assertEqual(link.settings_lines, 0, "the password never goes to a bridge that would log it as a line")
+        self.assertFalse(any(not w.startswith(b"FETCFG HELLO") for w in link.written))
+
+    def test_plugged_in_again_while_waiting(self):
+        link = FakeBridge(gone=4, drop=True)                 # PROG/UART switch: unplugged, back, the port drops once
+        job = self.configure(link)
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertEqual(link.opens, 6)
+        self.assertEqual(link.restarts, 1)
+        self.assertEqual(link.closes, 2)
+
+    def test_one_job_at_a_time(self):
+        st = self.station(Tools(), FakeBridge())
+        st.job = {"state": "running"}
+        with self.assertRaisesRegex(FlashError, "busy"):
+            st.start_configure("/dev/ttyUSB0", SETTINGS, "rc")
+
+    def test_install_and_configure(self):
+        sha = self.image("b", "0.3.0", 1)
+        link = FakeBridge()
+        st = self.station(Tools(), link)
+        st.identify("/dev/ttyUSB0")
+        job = st.start_flash("/dev/ttyUSB0", sha, "rc", SETTINGS)
+        self.assertEqual((job["state"], job["configured"], link.settings), ("done", True, SETTINGS))
+        self.assertIn("installed and verified and configured (fet-123456)", job["message"])
+        self.assertEqual(self.tools.subcmds()[-1], "verify_flash", "settings only after the write is verified")
+        pr = st.view()["probes"]["/dev/ttyUSB0"]
+        self.assertEqual((pr["running"], pr["configurable"], pr["first_install"]), ("0.3.0", True, False))
+        self.assertTrue(pr["label"].endswith("FeT Bridge 0.3.0"), pr["label"])
+
+    def test_installed_but_not_configured(self):
+        sha = self.image("b", "0.3.0", 1)
+        st = self.station(Tools(), FakeBridge(answers=False))
+        st.identify("/dev/ttyUSB0")
+        job = st.start_flash("/dev/ttyUSB0", sha, "rc", SETTINGS)
+        self.assertEqual((job["state"], job["configured"]), ("done", False))
+        self.assertIn("installed and verified, not configured yet", job["message"])
+        self.assertIn("PROG/UART switch", job["message"])
+
+    def test_an_older_image_takes_no_settings(self):
+        sha = self.image("b", "0.2.2", 1)
+        st = self.station(Tools(), FakeBridge())
+        st.identify("/dev/ttyUSB0")
+        with self.assertRaisesRegex(FlashError, "cannot take settings"):
+            st.start_flash("/dev/ttyUSB0", sha, "rc", SETTINGS)
+        self.assertNotIn("write_flash", self.tools.subcmds())
+
+
+class SerialOverPty(unittest.TestCase):
+    def test_lines_both_ways(self):
+        master, slave = pty.openpty()
+        name = os.ttyname(slave)
+        link = SerialLink(name)
+        self.addCleanup(link.close)
+        link.write(b"FETCFG HELLO\n")
+        got = b""
+        while not got.endswith(b"\n"):
+            got += os.read(master, 64)
+        self.assertEqual(got, b"FETCFG HELLO\n", "raw: no \\r added, nothing echoed")
+        os.write(master, b"noise\r\nFETCFG HELLO fet-1 0.3.0\r\npart")
+        self.assertEqual(link.readline(1), "noise")
+        self.assertEqual(link.readline(1), "FETCFG HELLO fet-1 0.3.0")
+        self.assertIsNone(link.readline(0.1), "an unfinished line waits")
+        os.write(master, b"ial\n")
+        self.assertEqual(link.readline(1), "partial")
+        link.restart_esp()                                   # a pty has no modem lines: no error either way
+        os.close(master)
+        os.close(slave)
+        with self.assertRaises(OSError):
+            link.readline(1)
+
+
 class OverHttp(MatchHttpBase):
     def setUp(self):
         super().setUp()
@@ -294,6 +530,21 @@ class OverHttp(MatchHttpBase):
         st, body, _ = self.req("POST", "/api/v1/admin/flash/start", {"port": "/dev/ttyUSB0", "sha256": "a" * 64}, "admin")
         self.assertEqual((st, "identify" in body["error"]), (400, True))
         self.assertEqual(self.req("GET", "/api/v1/admin/flash-backups/84f3eb123456-20261028-120000.bin", None, "admin")[0], 404)
+
+    def test_configure_uses_this_servers_port_and_token(self):
+        link = FakeBridge()
+        st = self.server.flash
+        st.opener, st.hello_every, st.reply_wait = link.open, 0.05, 0.2
+        st, _, cookie = self.req("POST", "/api/v1/admin/login", {"password": "range-pass"})
+        self.cookies["admin"] = cookie.split(";")[0]
+        st, body, _ = self.req("GET", "/api/v1/admin/flash", None, "admin")
+        self.assertEqual(body["server_host"], "127.0.0.1")
+        page = {"ssid": "club", "pass": "password1", "host": "192.168.1.20", "name": "Lane-3", "token": "guessed", "port": 1}
+        st, body, _ = self.req("POST", "/api/v1/admin/flash/configure", {"port": "/dev/ttyUSB0", "settings": page}, "admin")
+        self.assertEqual((st, body["state"]), (202, "done"))
+        self.assertEqual((link.settings["token"], link.settings["port"]), (self.server.token, self.server.server_address[1]))
+        st, body, _ = self.req("POST", "/api/v1/admin/flash/configure", {"port": "/dev/ttyUSB0"}, "admin")
+        self.assertEqual((st, body["error"]), (400, "no settings"))
 
 
 if __name__ == "__main__":

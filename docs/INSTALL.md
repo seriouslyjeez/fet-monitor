@@ -111,7 +111,20 @@ programmer has a switch, set it to PROG or UART), plug it into a USB port of the
 device**, press **Identify**, then **Install FeT Bridge**. The Pi uses the newest FeT Bridge image it has for that
 module's flash size (*Check GitHub for FeT Bridge firmware* first if it has none). The first time, the module's
 original firmware is saved (you can download it from the same page) and the chip is erased. The target's Arduino
-Mega and the ESP32 (version 5/6) boards are recognised but not flashed here yet.
+Mega (with its freETarget version) and the ESP32 (version 5/6) boards are recognised but not flashed here yet.
+
+**Configure it at the same time** (FeT Bridge 0.3.0 and newer): fill in *Settings for the target* (WiFi name and
+password, the target's name; this Pi's address is filled in) before pressing Install, and the module is set up over
+USB right after the install: no setup WiFi needed. **Configure** sends the settings to a module that already runs
+FeT Bridge 0.3.0 or newer.
+
+**Which programmer?** We recommend an **auto-reset** ESP-01 programmer (CH340 with automatic download mode, usually
+with a reset button): the Pi switches it between flashing and running by itself. A programmer with a **PROG/UART
+switch** works too: PROG for Identify and Install; then press Configure, set the switch to UART, and unplug the
+programmer and plug it in again within a minute and a half (the Pi waits for it).
+
+**1 MB or 4 MB?** The original ESP-01 (1 MB) runs FeT Bridge on your own network. A 4 MB ESP-01S costs a few dollars
+more and leaves room for remote management over HTTPS (planned), so buy 4 MB modules for new targets.
 
 ## 8. Rulebooks on the Pi
 

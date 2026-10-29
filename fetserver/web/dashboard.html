@@ -728,25 +728,54 @@ function updatesPanel(u) {
     '</div><p class="mut">Only releases signed with the FeT Monitor release key are installed. The database is backed up first; ' +
     'if the new version does not start, the previous version and its database come back by themselves.</p></div>';
 }
+const FLASH_FIELDS = ['fs_ssid', 'fs_pass', 'fs_name', 'fs_host', 'fs_ip', 'fs_gw'];
+function flashSettings(rc, f) {                 // the settings form's values (typed values survive redraws), or null without a WiFi name
+  const v = (rc.flashf || {}), get = id => (v[id] != null ? v[id] : id === 'fs_host' ? (f.server_host || '') : '').trim();
+  if (!get('fs_ssid')) return null;
+  return {ssid: get('fs_ssid'), pass: v.fs_pass || '', name: get('fs_name'), host: get('fs_host'), ip: get('fs_ip'), gw: get('fs_gw')};
+}
+function verAtLeast(v, want) {
+  const a = String(v || '').split('.').map(Number), b = want.split('.').map(Number);
+  for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== b[i]) return (a[i] || 0) > b[i]; }
+  return true;
+}
 function flashPanel(f, rc) {                    // Range Control: flash a device plugged into the Pi (fetserver/flashstation.py)
   if (!f) return '';
-  const job = f.job, running = job && job.state === 'running';
+  const job = f.job, running = job && job.state === 'running', kept = rc.flashf || {};
+  const val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));
   const port = p => {
     const pr = f.probes[p.port], busy = rc.flashBusy === p.port;
+    const withCfg = pr && pr.offer && verAtLeast(pr.offer.version, '0.3.0');   // labels stay put while someone types (no redraw then)
+    const canCfg = p.hint !== 'arduino' && (!pr || pr.device === 'esp8266');
     return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td>' +
       (pr ? '<b>' + esc(pr.label) + '</b>' + (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcflashgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' +
-          (running ? ' disabled' : '') + '>' + (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button></div>' +
+          (running ? ' disabled' : '') + '>' + (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button>' +
+          (withCfg ? ' <span class="mut">and configure it, if the settings below have a WiFi name</span>' : '') + '</div>' +
           (pr.first_install ? '<div class="mut">First install: the original firmware is saved first (download below), then the whole chip is erased.</div>' : '')
-        : '<div class="mut">' + esc(pr.why_not || '') + '</div>') : '') + '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' +
-      (running || rc.flashBusy ? ' disabled' : '') + '>' + (busy ? 'Identifying…' : 'Identify') + '</button></td></tr>';
+        : '<div class="mut">' + esc(pr.why_not || '') + '</div>') + (pr.advice ? '<div class="mut">' + esc(pr.advice) + '</div>' : '') : '') +
+      '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + (running || rc.flashBusy ? ' disabled' : '') + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+      (canCfg ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + (running || rc.flashBusy ? ' disabled' : '') + '>Configure</button>' : '') +
+      '</td></tr>';
   };
   return '<div class="panel"><h3>Flash a device (USB)</h3>' +
     '<p class="mut">Plug a FeT Bridge (an ESP-01 or ESP-01S on a USB programmer) into a USB port of this Pi and press Identify: it gets the newest FeT Bridge ' +
-    'for its flash size. On a programmer with a switch, set it to PROG (or UART) before plugging it in. Arduino Mega and ESP32 boards are identified, not flashed (yet).</p>' +
+    'for its flash size. Arduino Mega and ESP32 boards are identified, not flashed (yet).</p>' +
+    '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
+    'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
+    '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
+    'set the switch to UART and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p></details>' +
     (f.ports.length ? '<table class="t"><tr><th>Port</th><th>Device</th><th></th></tr>' + f.ports.map(port).join('') + '</table>' : '<p class="mut">No USB serial device plugged in.</p>') +
-    (job ? '<div class="' + (job.state === 'failed' ? 'warnbox' : 'box') + '"><b>' + esc(job.port) + ' · FeT Bridge ' + esc(job.version) + ':</b> ' +
-      (running ? esc(job.step) + ' ' + esc(job.percent) + ' %' : esc(job.message || job.state)) +
-      (running ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--pri);border-radius:3px"></div></div>' : '') + '</div>' : '') +
+    '<h4>Settings for the target (FeT Bridge 0.3.0 and newer)</h4>' +
+    '<div class="bulk"><label>WiFi <input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label> <label>Password <input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
+    ' <label>Target name <input id="fs_name" maxlength="32" size="10" placeholder="Lane-1" value="' + val('fs_name') + '"></label></div>' +
+    '<div class="bulk"><label>This Pi\'s address <input id="fs_host" size="14" value="' + val('fs_host', f.server_host) + '"></label>' +
+    ' <label>Fixed IP <input id="fs_ip" size="13" placeholder="optional" value="' + val('fs_ip') + '"></label> <label>router <input id="fs_gw" size="13" value="' + val('fs_gw') + '"></label></div>' +
+    '<p class="mut">With a WiFi name filled in, Install also configures the target, and Configure sends these settings to one that already runs FeT Bridge. ' +
+    'It reports to this Pi (its port and token are added). Use the Pi\'s IP address: names ending in .local do not work for targets. The target checks the ' +
+    'settings like its own setup page, keeps them, and restarts.</p>' +
+    (job ? '<div class="' + (job.state === 'failed' ? 'warnbox' : 'box') + '"><b>' + esc(job.port) + ' · ' + esc(job.what || ('FeT Bridge ' + job.version)) + ':</b> ' +
+      (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' ' + esc(job.percent) + ' %') : esc(job.message || job.state)) +
+      (running && job.kind !== 'configure' ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--pri);border-radius:3px"></div></div>' : '') + '</div>' : '') +
     (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
     (f.backups.length ? '<h4>Saved original firmware</h4><ul>' + f.backups.map(b => '<li><a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' +
       Math.round(b.size / 1024) + ' KB</span></li>').join('') + '</ul><p class="mut">The firmware a device had before its first FeT Bridge install (esptool write_flash 0x0 puts it back).</p>' : '') +
@@ -1824,7 +1853,15 @@ async function rangeAct(el, a) {
     const pr = ((rc.flash || {}).probes || {})[el.dataset.port] || {};
     if (!confirm('Install FeT Bridge ' + (pr.offer || {}).version + ' on ' + el.dataset.port + '?' + (pr.first_install ? '\n\nFirst install: the original firmware is saved, then the whole chip is erased.' : '') +
       '\n\nDo not unplug it until it says done.')) return;
-    const res = await adminCall('/flash/start', {port: el.dataset.port, sha256: el.dataset.sha});
+    const settings = flashSettings(rc, rc.flash || {}), cfg = settings && verAtLeast((pr.offer || {}).version, '0.3.0');
+    const res = await adminCall('/flash/start', cfg ? {port: el.dataset.port, sha256: el.dataset.sha, settings} : {port: el.dataset.port, sha256: el.dataset.sha});
+    rc.flashMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
+    return refresh();
+  }
+  if (a === 'rcflashcfg') {
+    const settings = flashSettings(rc, rc.flash || {});
+    if (!settings) { rc.flashMsg = 'Fill in the WiFi name first'; return render(true); }
+    const res = await adminCall('/flash/configure', {port: el.dataset.port, settings});
     rc.flashMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
     return refresh();
   }
@@ -2282,7 +2319,10 @@ function boot() {
   });
   setInterval(() => { if (route().range && S.rc && ((S.rc.system && S.rc.system.busy) || (S.rc.flash && S.rc.flash.job && S.rc.flash.job.state === 'running'))) refresh(); }, 2000);   // a change or a flash in progress
   setInterval(() => { if (route().range && S.rc && S.rc.flash && !S.rc.flashBusy) refresh(); }, 5000);   // a device plugged in or out
-  const keepSys = e => { if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; } };
+  const keepSys = e => {
+    if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; }
+    if (e.target.id && FLASH_FIELDS.includes(e.target.id) && S.rc) (S.rc.flashf = S.rc.flashf || {})[e.target.id] = e.target.value;   // kept for the next target
+  };
   document.addEventListener('input', keepSys); document.addEventListener('change', keepSys);
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
@@ -2387,7 +2427,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashPanel, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

@@ -120,3 +120,13 @@ Keeping the Pi's software up to date:
 - [ ] A programmer WITHOUT PROG mode set: *Identify* explains the switch.
 - [ ] The target's Arduino Mega by USB: identified as a Mega (no flashing); it keeps running afterwards.
 - [ ] On a Pi Zero 2 W: the ESP-01 has enough power from the USB port (otherwise note the powered hub).
+- [ ] FeT Bridge 0.3.0 (export it first): with the settings filled in, *Install* on an **auto-reset** programmer ends
+      "installed and verified and configured (fet-xxxxxx)"; the module joins the WiFi and appears under Targets.
+      Note whether the reset pulse (RTS) restarted it, or esptool's own hard reset already had.
+- [ ] Same with a **PROG/UART switch** programmer: Install ends "not configured yet: ... set the switch to UART";
+      *Configure*, flip to UART, replug: "Configured". The portal does NOT open (quick-boot counter forgotten).
+- [ ] *Configure* with a wrong WiFi password length: the bridge's own reason shows; old settings kept.
+- [ ] *Configure* on a FeT Bridge 0.2.x: "too old to take settings over USB"; its shot log has no FETCFG lines.
+- [ ] The target's Mega by USB: the label shows its freETarget version (start-up message or {"VERSION":0} answer);
+      note the exact text it printed.
+- [ ] A FeT Bridge 0.3.0 in a real target: the Arduino's output in the first minute still arrives complete.
