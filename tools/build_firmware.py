@@ -23,6 +23,21 @@ CORE = "esp8266:esp8266"
 CORE_VERSION = "3.1.2"
 LAYOUTS = {"1MB": "1M128", "4MB": "4M2M"}       # Flash Size: 1MB (FS:128KB OTA:~438KB) / 4MB (FS:2MB OTA:~1019KB)
 FQBN = "esp8266:esp8266:generic:eesz={eesz},FlashMode=dout,xtal=80,baud=115200"
+# Over-the-air updates (core 3.1.2 Updater/getFreeSketchSpace): the running image and the new one, each rounded up to
+# 4 KB sectors, must both fit below the file system, which starts at 0xDB000 in the 1 MB layout (eagle.flash.1m128.ld).
+SKETCH_AREA_1MB = 0xDB000
+SECTOR = 4096
+
+
+def sectors(n: int) -> int:
+    return (n + SECTOR - 1) // SECTOR * SECTOR
+
+
+def ota_check_1mb(size: int) -> tuple:
+    """(ok, text): can a 1 MB module running this image take an update of the same size, and how large may the next be."""
+    room = SKETCH_AREA_1MB - sectors(size)
+    return sectors(size) <= room, (f"1 MB over-the-air room: a module running this image can take an update of up to "
+                                   f"{room} bytes ({room - sectors(size)} bytes more than this image)")
 
 
 def main() -> int:
@@ -47,7 +62,14 @@ def main() -> int:
             if r.returncode:
                 print(r.stdout[-3000:] + r.stderr[-3000:], file=sys.stderr)
                 return 1
-            c = subprocess.run([sys.executable, str(ROOT / "tools/collect_firmware.py"), str(Path(out) / "fet_bridge.ino.bin")])
+            binary = Path(out) / "fet_bridge.ino.bin"
+            if name == "1MB":
+                ok, text = ota_check_1mb(binary.stat().st_size)
+                print("  " + text, flush=True)
+                if not ok:
+                    print("  too large: a 1 MB module could not update itself to a build of this size; make it smaller", file=sys.stderr)
+                    return 1
+            c = subprocess.run([sys.executable, str(ROOT / "tools/collect_firmware.py"), str(binary)])
             if c.returncode:
                 return c.returncode
     return 0
