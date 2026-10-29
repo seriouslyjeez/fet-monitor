@@ -43,6 +43,8 @@ class Workflow(unittest.TestCase):
                      "disable-first-boot-user-rename: 1", "pi-gen-version: arm64", "release: trixie", "compression: xz"):
             self.assertIn(line, WORKFLOW)
         self.assertIn("IMAGE-SHA256SUMS", WORKFLOW)
+        self.assertIn("increase-runner-disk-size: false", WORKFLOW, "the action's apt purge fails on runner images without its packages")
+        self.assertLess(WORKFLOW.index("Free disk space"), WORKFLOW.index("usimd/pi-gen-action"))
 
 
 def release_tool():

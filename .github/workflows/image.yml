@@ -42,6 +42,19 @@ jobs:
           tar -xzf "fet-monitor-$V.tar.gz" -C ../image/stage-fet/00-fet/files/fet-monitor --strip-components 1
           echo "VERSION=$V" >> "$GITHUB_ENV"
 
+      # pi-gen needs ~15-20 GB; the runner has ~14 GB free. The action's own cleanup (increase-runner-disk-size) runs
+      # `apt purge` on a fixed package list and fails (exit 100) when a runner image no longer has one of them
+      # (v0.6.30, runner image 20261025), so free the space here with plain deletions that cannot fail on a name.
+      - name: Free disk space on the runner
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost \
+            /usr/local/share/powershell /usr/local/share/chromium /opt/microsoft /opt/google /usr/lib/jvm /usr/local/julia* \
+            /usr/share/swift /usr/local/.ghcup || true
+          sudo docker system prune --all --force --volumes || true
+          sudo swapoff -a && sudo rm -f /mnt/swapfile /swapfile || true
+          df -h /
+
       - name: Build the image (pi-gen)
         id: build
         uses: usimd/pi-gen-action@v1
@@ -61,7 +74,7 @@ jobs:
           keyboard-keymap: us
           keyboard-layout: English (US)
           compression: xz
-          increase-runner-disk-size: true
+          increase-runner-disk-size: false   # done above
 
       - name: Attach to the release
         run: |
