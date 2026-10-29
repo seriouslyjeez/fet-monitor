@@ -1,4 +1,4 @@
-# FeT Monitor (v0.6.29)
+# FeT Monitor (v0.6.30)
 
 - Match Control (beta): competitions, corrections and official results
 - Finals by the rulebook (ISSF, CMP Air Gun, CMP 3PAR, NRA) and a finals TV board

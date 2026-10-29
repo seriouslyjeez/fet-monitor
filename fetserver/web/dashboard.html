@@ -804,7 +804,7 @@ function systemPanel(v, rc) {                   // Range Control: the Pi itself 
     '<p class="mut">This page may lose its connection while the Pi changes network. A new club WiFi is tried first (a wrong password changes nothing); ' +
     'if the new network does not come up within a minute, the Pi goes back to the previous one, or opens the setup network.</p>';
   return '<div class="panel"><h3>This Pi</h3>' +
-    (!v.helper_installed ? '<p class="bad">The System service is not installed on this Pi: install FeT Monitor 0.6.30 or newer.</p>' : '') +
+    (!v.helper_installed ? '<p class="bad">The System service is not installed on this Pi: run <code>sudo ./install.sh</code> from release 0.6.30 or newer once (updates from this page replace the program only).</p>' : '') +
     (v.busy ? '<p class="mut"><b>Working on the last change…</b></p>' : '') +
     (st ? '<p class="' + (st.state === 'failed' ? 'bad' : 'mut') + '">' + esc(SYS_STATE[st.state] || st.state) + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>' : '') +
     '<div class="bulk"><label>Name <input id="sy_host" value="' + val('sy_host', f.hostname) + '" size="16"></label><button data-act="rcsys" data-a="hostname"' + dis + '>Save</button>' +

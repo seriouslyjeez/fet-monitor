@@ -79,7 +79,7 @@ class Appliance:
         if self.dir is None:
             raise ApplianceError("this server has no data folder")
         if self.sys is None or not self.unit.is_file():
-            raise ApplianceError("the System helper is not installed: install a release from 0.6.30 on")
+            raise ApplianceError("the System helper is not installed: run sudo ./install.sh from release 0.6.30 or newer once")
         if not isinstance(req, dict) or req.get("action") not in ACTIONS:
             raise ApplianceError("unknown request")
         if self.busy():
