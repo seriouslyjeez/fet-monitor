@@ -25,9 +25,10 @@ jobs:
       TAG: ${{ github.event.release.tag_name || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      # The build scripts (image/) and the trusted signers come from the workflow's own commit: the tag itself on a
+      # release, main on a manual re-run (so a fixed build can rebuild an earlier release). FeT Monitor itself comes only
+      # from the signed release archive below.
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.TAG }}
 
       - name: Download and check the signed server release
         run: |
@@ -55,6 +56,14 @@ jobs:
           sudo swapoff -a && sudo rm -f /mnt/swapfile /swapfile || true
           df -h /
 
+      # pi-gen refuses a first user without a password when first-boot rename is off. It gets a random one, made here
+      # and never kept; image/stage-fet then locks the account (the setup page creates the admin login).
+      - name: A throwaway password for the build user
+        run: |
+          P="$(openssl rand -base64 33 | tr -d '\n/+=')"
+          echo "::add-mask::$P"
+          echo "BUILD_USER_PASS=$P" >> "$GITHUB_ENV"
+
       - name: Build the image (pi-gen)
         id: build
         uses: usimd/pi-gen-action@v1
@@ -64,8 +73,8 @@ jobs:
           pi-gen-version: arm64
           stage-list: stage0 stage1 stage2 ./image/stage-fet
           hostname: fetmonitor
-          username: fetimage                 # locked (no password): the setup page creates the admin login
-          password: ""
+          username: fetimage                 # locked by image/stage-fet: the setup page creates the admin login
+          password: ${{ env.BUILD_USER_PASS }}
           disable-first-boot-user-rename: 1
           enable-ssh: 0
           enable-cloud-init: 0
@@ -74,6 +83,7 @@ jobs:
           keyboard-keymap: us
           keyboard-layout: English (US)
           compression: xz
+          verbose-output: true               # pi-gen's own messages in the log when it stops
           increase-runner-disk-size: false   # done above
 
       - name: Attach to the release

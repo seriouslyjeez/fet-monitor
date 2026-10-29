@@ -23,6 +23,7 @@ class Stage(unittest.TestCase):
         chroot = (STAGE / "00-fet/02-run-chroot.sh").read_text()
         self.assertIn("./install.sh --image", chroot)
         self.assertIn("systemctl disable ssh", chroot)
+        self.assertIn("usermod --lock --expiredate 1 --shell /usr/sbin/nologin fetimage", chroot, "the build user never logs in")
         self.assertIn("copy_previous", (STAGE / "prerun.sh").read_text())
         self.assertTrue((STAGE / "EXPORT_IMAGE").exists(), "the stage is exported as the image")
         pkgs = (STAGE / "00-fet/00-packages").read_text().split()
@@ -39,11 +40,14 @@ class Workflow(unittest.TestCase):
         self.assertIn("startsWith(github.event.release.tag_name, 'v')", WORKFLOW, "server releases only (not fw-...)")
 
     def test_image_settings(self):
-        for line in ("stage-list: stage0 stage1 stage2 ./image/stage-fet", "enable-ssh: 0", 'password: ""', "enable-cloud-init: 0",
+        for line in ("stage-list: stage0 stage1 stage2 ./image/stage-fet", "enable-ssh: 0", "enable-cloud-init: 0",
                      "disable-first-boot-user-rename: 1", "pi-gen-version: arm64", "release: trixie", "compression: xz"):
             self.assertIn(line, WORKFLOW)
         self.assertIn("IMAGE-SHA256SUMS", WORKFLOW)
         self.assertIn("increase-runner-disk-size: false", WORKFLOW, "the action's apt purge fails on runner images without its packages")
+        self.assertIn("username: fetimage", WORKFLOW)
+        self.assertIn("password: ${{ env.BUILD_USER_PASS }}", WORKFLOW, "pi-gen refuses an empty password with rename off")
+        self.assertIn('echo "::add-mask::$P"', WORKFLOW)
         self.assertLess(WORKFLOW.index("Free disk space"), WORKFLOW.index("usimd/pi-gen-action"))
 
 
