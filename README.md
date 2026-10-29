@@ -313,6 +313,6 @@ backup from /var/backups/fet-monitor in that case.
 
 ## License
 
-Copyright 2026 Jake Miller. Licensed under the Apache License, Version 2.0 (see `LICENSE` and `NOTICE`).
-Redistributions, including modified versions, must keep the `NOTICE` file and its credit. Provided "as is",
-without warranty of any kind; see the license for the limitation of liability.
+Copyright (c) 2026 Jake Miller. Licensed under the MIT License (see `LICENSE`); `NOTICE` has the credits.
+Versions up to and including 0.6.30 were released under the Apache License 2.0. Provided "as is", without warranty
+of any kind.
