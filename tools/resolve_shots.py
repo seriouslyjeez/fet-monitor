@@ -77,7 +77,11 @@ def main(argv=None) -> int:
     ap.add_argument("--csv")
     a = ap.parse_args(argv)
     since_ms = int(datetime.datetime.fromisoformat(a.since).timestamp() * 1000) if a.since else None
-    conn = sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)
+    try:
+        conn = sqlite3.connect(f"file:{a.db}?mode=ro", uri=True)
+        conn.execute("SELECT 1 FROM shots LIMIT 1")
+    except sqlite3.OperationalError:              # a backup file in WAL mode without its -shm: open it as immutable
+        conn = sqlite3.connect(f"file:{a.db}?mode=ro&immutable=1", uri=True)
     res = analyse(conn, a.device, since_ms)
     if a.csv:
         with open(a.csv, "w", newline="") as f:
