@@ -25,6 +25,7 @@ from aiming_sheet import AIM_R, REF_N, REF_R, WIN_D   # noqa: E402  the card's o
 
 register_heif_opener()
 PPM, HALF = 40.0, 24.0                       # rectified image: 40 px per mm, +-24 mm around the window centre
+PAPER_DIST = 45.0                            # Lab distance from the paper's colour still counted as paper
 PELLET_R = 2.0                               # 4.5 mm pellet: the hole's radius in card stock, about
 
 def load(path):
@@ -99,9 +100,13 @@ def ink_mask():
     return m
 
 def hole_mask(rect):
-    hsv = cv2.cvtColor(rect, cv2.COLOR_BGR2HSV)
-    h, s, v = hsv[:, :, 0].astype(int), hsv[:, :, 1].astype(int), hsv[:, :, 2].astype(int)
-    paper = (s > 70) & (v > 90) & ((h < 15) | (h > 160))
+    # paper = close to the card's own colour (any colour: red card stock, green paper, ...); the typical colour of
+    # the window area is the paper's, as holes and ink cover only a small part of it
+    lab = cv2.cvtColor(rect, cv2.COLOR_BGR2LAB).astype(np.float32)
+    yy, xx = np.mgrid[0:rect.shape[0], 0:rect.shape[1]]
+    inside = np.hypot(xx / PPM - HALF, HALF - yy / PPM) < 19.0
+    ref = np.median(lab[inside], axis=0)
+    paper = np.linalg.norm(lab - ref, axis=2) < PAPER_DIST
     m = (~paper).astype(np.uint8) * 255
     m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(2.6 * PPM), int(2.6 * PPM)))
