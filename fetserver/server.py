@@ -23,7 +23,8 @@ from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
 from .rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
 from .flashstation import FlashError, FlashStation
-FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-\d{6}\.bin)$")
+from .targetfw import BadImage as BadHex, TargetFirmwareStore
+FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-\d{6}\.bin|mega-[0-9A-Za-z]{1,20}-\d{8}-\d{6}\.(?:hex|eep))$")
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
@@ -39,8 +40,9 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command|target-command)$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
+ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
 FACTORY_RESET_MIN = (0, 2, 2)
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
@@ -396,8 +398,9 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
 
-    def _firmware_upload(self) -> None:
-        """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big."""
+    def _firmware_upload(self, store=None) -> None:
+        """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big.
+        store: FeT Bridge images (default) or the Mega's FeT target firmware (.hex)."""
         try:
             length = int(self.headers.get("Content-Length", ""))
         except ValueError:
@@ -417,8 +420,8 @@ class Handler(BaseHTTPRequestHandler):
             self.close_connection = True
             raise BadRequest("upload cut off")
         try:
-            meta = self.server.firmware.add(data, uploaded_by=self.client_address[0])
-        except BadImage as exc:
+            meta = (store or self.server.firmware).add(data, uploaded_by=self.client_address[0])
+        except (BadImage, BadHex) as exc:
             return self._send(400, {"error": str(exc)})
         log.info("Range Control from %s: firmware %s (%s, %d bytes) uploaded", self.client_address[0], meta["version"],
                  meta["sha256"][:12], meta["size"])
@@ -457,6 +460,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"password_set": admin.password_set(), "logged_in": admin.check(self._admin_token())})
         if path == "/api/v1/admin/firmware" and method == "POST":
             return self._firmware_upload()
+        if path == "/api/v1/admin/target-firmware" and method == "POST":
+            return self._firmware_upload(self.server.target_firmware)
         if method == "POST":
             payload = self._read_json()
             if not isinstance(payload, dict):
@@ -487,12 +492,33 @@ class Handler(BaseHTTPRequestHandler):
                 t["fw_best"] = {"sha256": best["sha256"], "version": best["version"]} if best else None
                 t["fw_best_reason"] = why
             return self._send(200, view)
+        if path == "/api/v1/admin/target-firmware" and method == "GET":
+            return self._send(200, {"images": self.server.target_firmware.list()})
+        tfd = ADMIN_TFW_DELETE_RE.match(path)
+        if tfd and method == "POST":
+            if not self.server.target_firmware.delete(tfd.group(1)):
+                raise NotFound("no such firmware image")
+            log.info("Range Control from %s: deleted FeT target firmware %s", self.client_address[0], tfd.group(1)[:12])
+            return self._send(200, {"ok": True})
         if path == "/api/v1/admin/firmware" and method == "GET":
             return self._send(200, {"images": self.server.firmware.list(), "max_size": MAX_IMAGE})
         if path == "/api/v1/admin/flash" and method == "GET":            # the flash station (flashstation.py)
             view = self.server.flash.view()
             view["server_host"] = self.connection.getsockname()[0]       # the address this page reached the Pi on
             return self._send(200, view)
+        if path in ("/api/v1/admin/flash/mega-install", "/api/v1/admin/flash/mega-key", "/api/v1/admin/flash/mega-restore") and method == "POST":
+            port, fl = str(payload.get("port", "")), self.server.flash
+            try:
+                if path.endswith("install"):
+                    job = fl.start_mega_flash(port, str(payload.get("sha256", "")), "Range Control")
+                elif path.endswith("key"):
+                    job = fl.start_mega_key(port, "Range Control")
+                else:
+                    job = fl.start_mega_restore(port, str(payload.get("name", "")), "Range Control")
+            except FlashError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: Arduino Mega on %s: %s", self.client_address[0], port, job["what"])
+            return self._send(202, job)
         if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start", "/api/v1/admin/flash/configure") and method == "POST":
             settings = payload.get("settings")
             if isinstance(settings, dict):                                # the bridge reports to this server, with its token
@@ -594,6 +620,10 @@ class Handler(BaseHTTPRequestHandler):
                                          "(or use its setup portal: Forget settings)")
                     log.warning("Range Control from %s: FACTORY RESET of %s", self.client_address[0], did)
                 return self._send(200, {"id": core.enqueue_command(did, payload.get("type"), payload.get("line"))})
+            if what == "target-command":              # FeT target firmware: signed get/set/paper/status
+                cid = core.target_command(did, payload.get("verb"), payload.get("settings"))
+                log.info("Range Control from %s: %s %s %s", self.client_address[0], did, payload.get("verb"), payload.get("settings") or "")
+                return self._send(200, {"command_id": cid})
             if what == "firmware":
                 if payload.get("sha256") == "best":       # the newest image built for this target's flash size that fits
                     image, why = best_for(core.firmware_info(did), self.server.firmware.list())
@@ -852,8 +882,11 @@ class FetHTTPServer(ThreadingHTTPServer):
     request_queue_size = 256      # the default of 5 drops connections when many targets (up to 100) call in at once
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
-                 rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None):
+                 rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None,
+                 target_firmware: TargetFirmwareStore = None):
         super().__init__(addr, Handler)
+        self.target_firmware = target_firmware if target_firmware is not None else (
+            flash.target_images if flash is not None and flash.target_images is not None else TargetFirmwareStore(None))
         self.flash = flash if flash is not None else FlashStation(firmware if firmware is not None else FirmwareStore(None), None)
         self.appliance = appliance if appliance is not None else Appliance(None)
         self.rulebooks = rulebooks if rulebooks is not None else RulebookFiles(None)
@@ -882,5 +915,5 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
                 firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
-                appliance: Appliance = None, flash: FlashStation = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash)
+                appliance: Appliance = None, flash: FlashStation = None, target_firmware: TargetFirmwareStore = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash, target_firmware)

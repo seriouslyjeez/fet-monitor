@@ -21,6 +21,8 @@
 #include <shotline.h>
 
 #define FW_VERSION "0.1.0"
+// In the flash image, so the Pi's flash station can tell what a .hex file is and what a board runs.
+extern const char FW_ID[] __attribute__((used)) = "fet-target-mega/" FW_VERSION;
 #define USE_WATCHDOG 0   // off until the board's bootloader is known to clear the watchdog (old Mega bootloaders
                          // restart forever when it fires, and then cannot be flashed over USB)
 

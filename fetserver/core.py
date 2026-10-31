@@ -1003,6 +1003,15 @@ class Core:
             r = self.db.conn().execute("SELECT ota_space, flash_size FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
             t["fw_job"] = jobs.get(t["device_id"])
+            ft = self.db.conn().execute("SELECT key_fp, target_boot, target_settings_id, target_settings_json FROM targets WHERE device_id=?",
+                                        (t["device_id"],)).fetchone()
+            if ft["key_fp"] or ft["target_settings_json"]:                   # FeT target firmware: its own settings
+                cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
+                                                 WHERE device_id=? AND type='target' ORDER BY id DESC LIMIT 5""", (t["device_id"],))
+                t["fet_target"] = {"key_fp": ft["key_fp"], "boot": ft["target_boot"], "settings_id": ft["target_settings_id"],
+                                   "settings": json.loads(ft["target_settings_json"]) if ft["target_settings_json"] else None,
+                                   "commands": [{"id": c["id"], "verb": c["line"].split(" ")[4], "status": c["status"],
+                                                 "reply": c["reply"], "created": iso(c["created_ms"])} for c in cmds]}
         return {"targets": targets, "banned": banned}
 
     def remove_target(self, device_id: str) -> None:

@@ -17,6 +17,7 @@ from .admin import MIN_PASSWORD, Admin, write_password
 from .core import Core
 from .db import Database
 from .firmware import FirmwareStore
+from .targetfw import TargetFirmwareStore
 from .releases import Updates
 from .rulebookfiles import RulebookFiles
 from .appliance import Appliance
@@ -41,9 +42,11 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
                 lease_ms=int(args.lease * 1000), shot_lag_ms=int(args.shot_lag * 1000))
     rulebooks = RulebookFiles(data_dir)
     firmware = FirmwareStore(data_dir)
+    target_firmware = TargetFirmwareStore(data_dir)
+    flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key)
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
                          firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
-                         appliance=Appliance(data_dir), flash=FlashStation(firmware, data_dir))
+                         appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware)
     stop = threading.Event()
 
     def on_signal(signum, _frame):

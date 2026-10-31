@@ -2,6 +2,8 @@
 (recorded output, never run), and installing FeT Bridge with a backup, a full erase on first install, write and verify.
 On hardware only: real programmers (PROG switch vs auto-reset), timings, esptool versions on Raspberry Pi OS."""
 import binascii
+import binascii
+import hashlib
 import json
 import os
 import pty
@@ -252,7 +254,7 @@ class Identify(Case):
         self.assertEqual(self.link.written, [], "the start-up message was enough: nothing sent")
         r = self.station(tools, FakeBridge(mega=("asked", '{"VERSION": "4.3.1 March 2, 2024"}'))).identify("/dev/ttyUSB0")
         self.assertEqual(r["freetarget"], "4.3.1 March 2, 2024")
-        self.assertEqual(self.link.written, [b'{"VERSION":0}\n'])
+        self.assertEqual(self.link.written, [b'{"VERSION":0}\n', b"FT1 I\n"], "asked both ways")
         r = self.station(tools, FakeBridge(mega=("silent", ""))).identify("/dev/ttyUSB0")
         self.assertIsNone(r["freetarget"])
         self.assertEqual(self.link.closes, 1)
@@ -509,6 +511,225 @@ class SerialOverPty(unittest.TestCase):
             link.readline(1)
 
 
+SIG_OK = (0, "avrdude: device signature = 0x1e9801 (probably m2560)\n")
+
+
+class FakeAvrdude:
+    """avrdude played from a script: signature checks, reads that create the backup files, writes recorded."""
+    def __init__(self, fail_on=None):
+        self.calls, self.fail_on = [], fail_on
+        self.sig = SIG_OK
+
+    def __call__(self, argv, timeout, on_line):
+        self.calls.append(argv)
+        if argv[0] != "avrdude":
+            return 2, "Failed to connect to ESP32: Timed out waiting for packet header"   # esptool: not an ESP
+        if self.fail_on and any(self.fail_on in a for a in argv):
+            return 1, "avrdude: verification error, first mismatch at byte 0x0000"
+        for a in argv:
+            if a.startswith(("flash:r:", "eeprom:r:")):
+                Path(a.split(":")[2]).write_text(":00000001FF\n")
+        return self.sig if "-n" in argv else (0, "avrdude: 24748 bytes of flash verified")
+
+    def ops(self):
+        return [" ".join(a for a in c if a.startswith(("flash:", "eeprom:")) or a in ("-n", "-D")).replace(str(Path.home()), "~")
+                for c in self.calls if c[0] == "avrdude"]
+
+
+class FakeMega:
+    """A Mega on the end of the USB cable. runs: "fet" (FeT target firmware: hello on open, answers FT1 K/I) or
+    "freetarget" (prints its banner) or "silent"."""
+    def __init__(self, runs="fet", key_fp=None, refuse=None, wrong_fp=False):
+        self.runs, self.key_fp, self.refuse, self.wrong_fp = runs, key_fp, refuse, wrong_fp
+        self.out, self.written, self.keys = [], [], []
+        self.opens = self.closes = 0
+
+    def open(self, port):
+        self.opens += 1
+        self.out = []
+        if self.runs == "fet":
+            self.out.append("FT1 H b=4 fw=0.1.0 rev=310 k=1234abcd key=%s h=-" % (self.key_fp or "none"))
+        elif self.runs == "freetarget":
+            self.out.append('freETarget "4.3.1 March 2, 2024"')
+        return self
+
+    def write(self, data):
+        self.written.append(data)
+        line = data.decode().rstrip("\n")
+        if self.runs == "fet" and line.startswith("FT1 K "):
+            hexkey, crc = line[6:].split(" ")
+            key = bytes.fromhex(hexkey)
+            assert int(crc, 16) == binascii.crc32(key)
+            if self.refuse:
+                self.out.append("FT1 K err " + self.refuse)
+                return
+            self.keys.append(key)
+            fp = hashlib.sha256(key).hexdigest()[:8]
+            self.key_fp = "00000000" if self.wrong_fp else fp
+            self.out.append("FT1 K ok fp=" + self.key_fp)
+
+    def readline(self, timeout):
+        if self.out:
+            return self.out.pop(0)
+        time.sleep(min(timeout, 0.005))
+        return None
+
+    def close(self):
+        self.closes += 1
+
+
+class Mega(Case):
+    def setUp(self):
+        super().setUp()
+        usb_tree(self.sys, "ttyACM0", "2341", "0042", "Arduino Mega 2560")
+        (self.sys / "devices/usb1/1-0/serial").write_text("75830303934351C0B1A1\n")
+        from fetserver.targetfw import TargetFirmwareStore
+        self.tstore = TargetFirmwareStore(self.root)
+        self.registered = []
+
+    def mega_image(self, version="0.1.0"):
+        import hashlib as h
+        prog = b"\x0c\x94" * 64 + b"fet-target-mega/" + version.encode() + b"\x00"
+        lines = []
+        for off in range(0, len(prog), 16):
+            chunk = prog[off:off + 16]
+            rec = bytes([len(chunk), off >> 8, off & 255, 0]) + chunk
+            lines.append(":" + (rec + bytes([(-sum(rec)) & 0xFF])).hex().upper())
+        lines.append(":00000001FF")
+        meta = self.tstore.add(("\n".join(lines) + "\n").encode(), "test")
+        return meta["sha256"]
+
+    def station(self, avr, mega):
+        def register(key, note):
+            self.registered.append((key, note))
+            return hashlib.sha256(key).hexdigest()[:8]
+        self.avr, self.mega = avr, mega
+        st = FlashStation(self.store, self.root, run=avr, sys_tty=str(self.sys / "class/tty"), now=lambda: 1_800_000_000,
+                          background=False, opener=mega.open, target_images=self.tstore, register_key=register)
+        st.hello_wait, st.hello_every, st.reply_wait, st.mega_wait = 0.6, 0.05, 0.3, 0.3
+        return st
+
+    def test_identify_upstream_and_offer(self):
+        sha = self.mega_image()
+        r = self.station(FakeAvrdude(), FakeMega("freetarget")).identify("/dev/ttyACM0")
+        self.assertEqual((r["device"], r["freetarget"], r["fet_target"], r["first_install"]), ("mega", "4.3.1 March 2, 2024", None, True))
+        self.assertEqual(r["offer"]["sha256"], sha)
+        self.assertEqual(r["serial"], "75830303934351C0B1A1")
+
+    def test_identify_ours(self):
+        self.mega_image()
+        r = self.station(FakeAvrdude(), FakeMega("fet", key_fp="ab12cd34")).identify("/dev/ttyACM0")
+        self.assertEqual((r["fet_target"], r["key_fp"], r["first_install"], r["same"], r["can_key"]), ("0.1.0", "ab12cd34", False, True, True))
+        self.assertIn("FeT target 0.1.0 (key ab12cd34)", r["label"])
+
+    def test_no_image_yet(self):
+        r = self.station(FakeAvrdude(), FakeMega("freetarget")).identify("/dev/ttyACM0")
+        self.assertIsNone(r["offer"])
+        self.assertIn("upload its .hex", r["why_not"])
+
+    def test_first_install_saves_writes_and_keys(self):
+        sha = self.mega_image()
+        mega = FakeMega("freetarget")
+        st = self.station(FakeAvrdude(), mega)
+        st.identify("/dev/ttyACM0")
+        mega.runs = "fet"                                                  # what avrdude's write turns it into
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        ops = self.avr.ops()
+        self.assertEqual(ops[-3][:2], "-n", "same board checked")
+        self.assertIn("flash:r:", ops[-2])
+        self.assertIn("eeprom:r:", ops[-2], "the EEPROM (its calibration) is saved too")
+        self.assertTrue(ops[-1].startswith("-D flash:w:") and ops[-1].endswith(".hex:i"), ops[-1])
+        name = job["backup"]
+        self.assertTrue(name.startswith("mega-75830303934351C0B1A1-"))
+        self.assertIsNotNone(st.backup_path(name + ".hex"))
+        self.assertIsNotNone(st.backup_path(name + ".eep"))
+        self.assertEqual(len(self.registered), 1)
+        key = self.registered[0][0]
+        self.assertEqual(mega.keys, [key], "the server knew the key before the board got it")
+        self.assertIn(hashlib.sha256(key).hexdigest()[:8], job["message"])
+        self.assertEqual(st.view()["probes"]["/dev/ttyACM0"]["fet_target"], "0.1.0")
+
+    def test_an_update_keeps_no_backup(self):
+        sha = self.mega_image("0.2.0")
+        st = self.station(FakeAvrdude(), FakeMega("fet", key_fp="ab12cd34"))
+        st.identify("/dev/ttyACM0")
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertNotIn("flash:r", " ".join(self.avr.ops()))
+        self.assertNotIn("backup", job)
+
+    def test_failures(self):
+        sha = self.mega_image()
+        st = self.station(FakeAvrdude(fail_on="flash:w"), FakeMega("freetarget"))
+        st.identify("/dev/ttyACM0")
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("verification error", job["message"])
+        self.assertEqual(self.registered, [], "no key made for a board that was not written")
+        st = self.station(FakeAvrdude(), FakeMega("freetarget"))
+        st.identify("/dev/ttyACM0")
+        (self.sys / "devices/usb1/1-0/serial").write_text("OTHERBOARD\n")
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertIn("different board", job["message"])
+        (self.sys / "devices/usb1/1-0/serial").write_text("75830303934351C0B1A1\n")
+        self.avr.sig = (1, "avrdude: stk500v2_getsync(): timeout communicating with programmer")
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertIn("does not answer", job["message"])
+        self.avr.sig = (0, "avrdude: device signature = 0x1e950f (probably m328p)")   # another chip on the port
+        job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+        self.assertIn("does not answer", job["message"])
+        self.assertNotIn("flash:w", " ".join(self.avr.ops()), "nothing written to another board")
+
+    def test_key_problems(self):
+        sha = self.mega_image()
+        for mega, why in ((FakeMega("fet", refuse="weak_key"), "refused the key: weak_key"),
+                          (FakeMega("fet", wrong_fp=True), "different key"),
+                          (FakeMega("silent"), "did not start FeT target firmware")):
+            st = self.station(FakeAvrdude(), mega)
+            mega_runs, mega.runs = mega.runs, "fet" if mega.runs != "silent" else "silent"
+            mega.out = []
+            st.probes["/dev/ttyACM0"] = {"device": "mega", "serial": "75830303934351C0B1A1", "first_install": False,
+                                         "offer": {"sha256": sha}, "fet_target": "0.1.0"}
+            job = st.start_mega_flash("/dev/ttyACM0", sha, "rc")
+            self.assertEqual(job["state"], "failed")
+            self.assertIn(why, job["message"])
+
+    def test_new_key_only(self):
+        st = self.station(FakeAvrdude(), FakeMega("freetarget"))
+        st.identify("/dev/ttyACM0")
+        with self.assertRaisesRegex(FlashError, "FeT target firmware"):
+            st.start_mega_key("/dev/ttyACM0", "rc")                        # upstream firmware has no key to set
+        st = self.station(FakeAvrdude(), FakeMega("fet", key_fp="ab12cd34"))
+        with self.assertRaisesRegex(FlashError, "identify"):
+            st.start_mega_key("/dev/ttyACM0", "rc")
+        st.identify("/dev/ttyACM0")
+        job = st.start_mega_key("/dev/ttyACM0", "rc")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertEqual(len(self.mega.keys), 1)
+        self.assertEqual([c for c in self.avr.ops() if "flash:w" in c], [], "no avrdude write for a key")
+
+    def test_restore(self):
+        sha = self.mega_image()
+        st = self.station(FakeAvrdude(), FakeMega("freetarget"))
+        st.identify("/dev/ttyACM0")
+        self.mega.runs = "fet"
+        name = st.start_mega_flash("/dev/ttyACM0", sha, "rc")["backup"]
+        st.identify("/dev/ttyACM0")
+        job = st.start_mega_restore("/dev/ttyACM0", name, "rc")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        last = self.avr.ops()[-1]
+        self.assertIn("flash:w:", last)
+        self.assertIn(name + ".hex:i", last)
+        self.assertIn("eeprom:w:", last)
+        self.assertIn(name + ".eep:i", last)
+        with self.assertRaisesRegex(FlashError, "no such saved"):
+            st.start_mega_restore("/dev/ttyACM0", "../../etc/passwd", "rc")
+        st.backup_path(name + ".eep").unlink()
+        with self.assertRaisesRegex(FlashError, "no such saved"):
+            st.start_mega_restore("/dev/ttyACM0", name, "rc")             # never the program without its settings
+
+
 class OverHttp(MatchHttpBase):
     def setUp(self):
         super().setUp()
@@ -549,3 +770,61 @@ class OverHttp(MatchHttpBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MegaHex(unittest.TestCase):
+    """fetserver/targetfw.py: only well-formed program files for the Mega, with our identification, ever stored."""
+    def rec(self, addr, data, rtype=0):
+        r = bytes([len(data), addr >> 8 & 255, addr & 255, rtype]) + data
+        return ":" + (r + bytes([(-sum(r)) & 0xFF])).hex().upper()
+
+    def hexfile(self, prog=b"fet-target-mega/0.1.0", base=0, extra=(), end=True):
+        lines = list(extra)
+        for off in range(0, len(prog), 16):
+            lines.append(self.rec(base + off, prog[off:off + 16]))
+        if end:
+            lines.append(":00000001FF")
+        return ("\n".join(lines) + "\n").encode()
+
+    def test_good(self):
+        from fetserver.targetfw import inspect
+        m = inspect(self.hexfile())
+        self.assertEqual((m["version"], m["board"], m["size"]), ("0.1.0", "mega2560", 21))
+        hi = self.hexfile(extra=[self.rec(0, b"\x00\x03", 4)])                    # extended linear address 0x30000
+        self.assertEqual(inspect(hi)["size"], 0x30000 + 21)
+        seg = self.hexfile(extra=[self.rec(0, b"\x10\x00", 2)])                   # extended segment 0x1000 -> 0x10000
+        self.assertEqual(inspect(seg)["size"], 0x10000 + 21)
+
+    def test_refused(self):
+        from fetserver.targetfw import BadImage, inspect
+        good = self.hexfile().decode()
+        bad = [
+            (good.replace(":10000000", ":10000001", 1), "checksum"),
+            (good.replace(":", "", 1), "not an Intel HEX"),
+            (self.hexfile(end=False).decode(), "end record"),
+            (good + ":00000001FF\n", "after the end"),
+            (self.hexfile(extra=[self.rec(0, b"\x00\x03", 4), self.rec(0xE000, b"\x01")]).decode(), "boot loader"),
+            (self.hexfile(prog=b"freETarget 4.3.1").decode(), "not FeT target firmware"),
+            (self.hexfile(prog=b"fet-target-mega/0.1.0 fet-target-mega/0.2.0").decode(), "more than one"),
+            (":00000001FF\n", "no program"),
+            (good.replace(":10", ":11", 1), "wrong length"),
+            (self.hexfile(extra=[self.rec(0, b"\x00", 6)]).decode(), "record type"),
+            (":0000000GFF\n", "not an Intel HEX"),
+        ]
+        for text, why in bad:
+            with self.assertRaisesRegex(BadImage, why, msg=why):
+                inspect(text.encode())
+        with self.assertRaisesRegex(BadImage, "too large"):
+            inspect(b":" * (1024 * 1024 + 1))
+
+    def test_store(self):
+        from fetserver.targetfw import TargetFirmwareStore
+        with tempfile.TemporaryDirectory() as d:
+            st = TargetFirmwareStore(Path(d))
+            a = st.add(self.hexfile(b"fet-target-mega/0.1.0"))
+            b = st.add(self.hexfile(b"fet-target-mega/0.10.0"))
+            self.assertEqual(st.best()["sha256"], b["sha256"], "0.10.0 is newer than 0.1.0")
+            self.assertTrue(st.path(a["sha256"]).read_bytes().startswith(b":"))
+            self.assertIsNone(st.get("../x"))
+            self.assertTrue(st.delete(a["sha256"]))
+            self.assertEqual([m["version"] for m in st.list()], ["0.10.0"])

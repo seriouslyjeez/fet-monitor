@@ -28,6 +28,7 @@ import binascii
 import json
 import os
 import re
+import secrets
 import subprocess
 import tempfile
 import threading
@@ -51,6 +52,17 @@ SIZE_RE = re.compile(r"Detected flash size:\s*(\d+)\s*(MB|KB)", re.I)
 PCT_RE = re.compile(r"\((\d{1,3}) ?%\)")
 SIG_RE = re.compile(r"device signature = 0x([0-9a-f]{6})", re.I)
 M2560 = "1e9801"
+# ESP: <mac>-<date>-<time>.bin; Mega: mega-<USB serial>-<date>-<time>.hex (program) and .eep (EEPROM)
+BACKUP_NAME_RE = re.compile(r"[0-9a-f]{12}-\d{8}-\d{6}\.bin|mega-[0-9A-Za-z]{1,20}-\d{8}-\d{6}\.(?:hex|eep)")
+def ft_info(line: str):
+    """(firmware version, key fingerprint or None) from a FeT target "FT1 H ..." hello or "FT1 I ..." reply; else None."""
+    if not (line.startswith("FT1 H ") or line.startswith("FT1 I ")):
+        return None
+    f = dict(p.split("=", 1) for p in line.split(" ")[2:] if "=" in p)
+    fw, key = f.get("fw", ""), f.get("key", "")
+    if not re.fullmatch(r"[0-9A-Za-z.\-]{1,20}", fw) or not re.fullmatch(r"[0-9a-f]{8}|none", key):
+        return None
+    return fw, None if key == "none" else key
 HELLO_RE = re.compile(r"FETCFG HELLO (\S+) (\S+)")
 OK_RE = re.compile(r"FETCFG OK (\S+)")
 ERROR_RE = re.compile(r"FETCFG ERROR (.*)")
@@ -153,9 +165,12 @@ def why_esptool(out: str) -> str:
 class FlashStation:
     def __init__(self, images, data_dir: Optional[Path], run: Runner = run_tool, sys_tty: str = SYS_TTY,
                  esptool: Optional[List[str]] = None, now: Callable[[], float] = time.time, background: bool = True,
-                 opener: Callable[[str], SerialLink] = SerialLink):
+                 opener: Callable[[str], SerialLink] = SerialLink, target_images=None,
+                 register_key: Optional[Callable[[bytes, str], str]] = None):
         self.images, self.run, self.sys_tty, self.now, self.background = images, run, sys_tty, now, background
         self.opener = opener
+        self.target_images = target_images          # FeT target firmware for the Mega (targetfw.TargetFirmwareStore)
+        self.register_key = register_key            # Core.add_target_key: the server must know a key before the board does
         self.hello_wait, self.hello_every, self.reply_wait, self.mega_wait = 90.0, 1.5, 8.0, 6.0        # seconds
         self.backups = Path(data_dir) / "flash-backups" if data_dir is not None else None
         self.esptool = esptool
@@ -205,10 +220,7 @@ class FlashStation:
         code, out = self.run(["avrdude", "-p", "m2560", "-c", "wiring", "-P", port, "-b", "115200", "-n"], 60, None)
         m = SIG_RE.search(out)
         if m and m.group(1).lower() == M2560:
-            ver = self._mega_version(port)
-            return {"port": port, "device": "mega", "freetarget": ver,
-                    "label": "Arduino Mega 2560, " + (f"freETarget {ver}" if ver else "no freETarget start-up message (other firmware?)"),
-                    "offer": None, "why_not": "Flashing firmware onto the Mega is not offered yet (planned)."}
+            return self._mega_found(port)
         raise FlashError(esp_err or "not identified: no ESP chip and no Arduino Mega answered")
 
     def _esp_found(self, port: str, out: str) -> dict:
@@ -242,29 +254,195 @@ class FlashStation:
             self.probes[port] = res
         return res
 
-    def _mega_version(self, port: str) -> Optional[str]:
-        """Opening the port restarts a Mega (DTR); freETarget prints its version as it starts. If nothing comes, ask."""
+    def _mega_found(self, port: str) -> dict:
+        info = self._mega_version(port)
+        ft, up = info.get("fet_target"), info.get("freetarget")
+        serial = next((p["serial"] for p in list_ports(self.sys_tty) if p["port"] == port), "")
+        if ft:
+            what = f"FeT target {ft} (" + (f"key {info['key_fp']}" if info.get("key_fp") else "no key yet") + ")"
+        else:
+            what = f"freETarget {up}" if up else "no freETarget start-up message (other firmware?)"
+        res = {"port": port, "device": "mega", "freetarget": up, "fet_target": ft, "key_fp": info.get("key_fp"),
+               "serial": serial, "label": "Arduino Mega 2560, " + what, "can_key": bool(ft) and self.register_key is not None}
+        best = self.target_images.best() if self.target_images is not None else None
+        if best is None:
+            res.update(offer=None, why_not="no FeT target firmware for the Mega on this Pi yet: upload its .hex in Range Control")
+        else:
+            res.update(offer={"sha256": best["sha256"], "version": best["version"], "size": best["size"]}, why_not="",
+                       first_install=not ft, same=bool(ft) and version_tuple(ft) == version_tuple(best["version"]))
+        with self.lock:
+            self.probes[port] = res
+        return res
+
+    def _mega_version(self, port: str) -> dict:
+        """Opening the port restarts a Mega (DTR). freETarget prints its version as it starts, the FeT target firmware
+        its hello line. If nothing comes, ask both ways (each firmware ignores the other's question)."""
         try:
             link = self.opener(port)
         except OSError:
-            return None
+            return {}
         try:
             deadline, asked = time.monotonic() + self.mega_wait, False
             while time.monotonic() < deadline:
                 if not asked and time.monotonic() > deadline - self.mega_wait / 3:   # after its boot loader is done
                     link.write(b'{"VERSION":0}\n')
+                    link.write(b"FT1 I\n")
                     asked = True
                 line = link.readline(0.2)
                 if line is None:
                     continue
+                h = ft_info(line)
+                if h:
+                    return {"fet_target": h[0], "key_fp": h[1]}
                 m = FET_BANNER_RE.search(line) or (FET_VERSION_RE.search(line) if asked else None)
                 if m:
-                    return next(g for g in m.groups() if g).strip()[:60]
+                    return {"freetarget": next(g for g in m.groups() if g).strip()[:60]}
         except OSError:
-            return None
+            return {}
         finally:
             link.close()
-        return None
+        return {}
+
+    # ------------------------------------------------------------------------------------- the Mega
+    def _avrdude(self, port: str, args: List[str], timeout: float) -> str:
+        code, out = self.run(["avrdude", "-p", "m2560", "-c", "wiring", "-P", port, "-b", "115200"] + args, timeout, None)
+        if code != 0:
+            last = ((out.strip().splitlines() or ["failed"])[-1])[:200]
+            raise FlashError(last if last.startswith("avrdude") else "avrdude: " + last)
+        return out
+
+    def _mega_job(self, port: str, what: str, by: str, work_fn) -> dict:
+        with self.lock:
+            self._not_busy()
+            job = {"id": int(self.now() * 1000), "port": port, "state": "running", "step": "starting", "percent": 0, "log": [],
+                   "kind": "mega", "what": what, "by": by}
+            self.job = job
+
+        def work():
+            try:
+                msg = work_fn(job)
+            except FlashError as exc:
+                with self.lock:
+                    job.update(state="failed", message=str(exc))
+                return
+            with self.lock:
+                job.update(state="done", step="done", percent=100, message=msg)
+        self._go(work)
+        return job
+
+    def _same_mega(self, port: str, probe: dict) -> None:
+        self._step("checking it is the same board")
+        try:
+            out = self._avrdude(port, ["-n"], 60)
+        except FlashError:
+            out = ""
+        m = SIG_RE.search(out)
+        if not m or m.group(1).lower() != M2560:
+            raise FlashError("the Arduino Mega does not answer now: plug it in again and identify it")
+        serial = next((p["serial"] for p in list_ports(self.sys_tty) if p["port"] == port), None)
+        if serial != probe.get("serial"):
+            raise FlashError("a different board is plugged in now: identify it again")
+
+    def start_mega_flash(self, port: str, sha: str, by: str) -> dict:
+        """Install FeT target firmware on the Mega identified on port: first install saves its program and EEPROM
+        (freETarget keeps its calibration there), then avrdude writes and verifies, then a new key goes in over USB."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "mega" or not probe.get("offer") or probe["offer"]["sha256"] != sha:
+            raise FlashError("identify the device again first")
+        img = self.target_images.get(sha) if self.target_images is not None else None
+        path = self.target_images.path(sha) if img else None
+        if path is None:
+            raise FlashError("that firmware is not on this Pi")
+        if probe["first_install"] and self.backups is None:
+            raise FlashError("no data folder for the backup of the original program")
+
+        def work(job):
+            self._same_mega(port, probe)
+            if probe["first_install"]:
+                self.backups.mkdir(parents=True, exist_ok=True)
+                tag = re.sub(r"[^0-9A-Za-z]", "", probe.get("serial") or "")[:20] or "x"
+                name = f"mega-{tag}-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.now()))}"
+                self._step("saving the original program and settings (EEPROM)")
+                self._avrdude(port, ["-U", f"flash:r:{self.backups / (name + '.hex')}:i",
+                                     "-U", f"eeprom:r:{self.backups / (name + '.eep')}:i"], 900)
+                with self.lock:
+                    job["backup"] = name
+            self._step("writing and verifying")
+            self._avrdude(port, ["-D", "-U", f"flash:w:{path}:i"], 600)
+            with self.lock:                          # what it runs now: the key step and the page know
+                probe.update(fet_target=img["version"], first_install=False, same=True, key_fp=None,
+                             label=f"Arduino Mega 2560, FeT target {img['version']}")
+            fp = self._mega_key(port, f"installed {img['version']} by {by}")
+            return f"FeT target {img['version']} installed and verified, key {fp}: put the Mega back into the target"
+        return self._mega_job(port, f"FeT target {img['version']}", by, work)
+
+    def start_mega_key(self, port: str, by: str) -> dict:
+        """A new key for a Mega that runs FeT target firmware (lost key, or a board from elsewhere)."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "mega" or not probe.get("fet_target"):
+            raise FlashError("identify the board first: it must run FeT target firmware")
+        return self._mega_job(port, "New key", by, lambda job: "new key " + self._mega_key(port, f"new key by {by}") + " set")
+
+    def _mega_key(self, port: str, note: str) -> str:
+        """Make a key, give it to the server, then to the board over USB (the only way a key gets in)."""
+        if self.register_key is None:
+            raise FlashError("this flash station cannot store keys (no server)")
+        self._step("setting the target's key")
+        key = secrets.token_bytes(32)
+        fp = self.register_key(key, note)
+        line = b"FT1 K %s %08x\n" % (key.hex().encode(), binascii.crc32(key))
+        deadline = time.monotonic() + self.hello_wait
+        while time.monotonic() < deadline:
+            try:
+                link = self.opener(port)
+            except OSError:
+                time.sleep(self.hello_every / 3)
+                continue
+            try:
+                end = time.monotonic() + self.mega_wait                    # it restarts when the port opens
+                while time.monotonic() < end:
+                    got = link.readline(0.2)
+                    if got is None or not ft_info(got):
+                        continue
+                    link.write(line)
+                    end2 = time.monotonic() + self.reply_wait
+                    while time.monotonic() < end2:
+                        r = link.readline(0.2)
+                        if r is None:
+                            continue
+                        if r.startswith("FT1 K ok fp="):
+                            if r[len("FT1 K ok fp="):].strip() != fp:
+                                raise FlashError("the board reports a different key: try again")
+                            return fp
+                        if r.startswith("FT1 K err "):
+                            raise FlashError("the board refused the key: " + r[len("FT1 K err "):].strip())
+                    raise FlashError("the board did not confirm the key: try again")
+            except OSError:
+                pass
+            finally:
+                link.close()
+        raise FlashError("the board did not start FeT target firmware: plug it in again and try again")
+
+    def start_mega_restore(self, port: str, name: str, by: str) -> dict:
+        """Put a saved original program and EEPROM back."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "mega":
+            raise FlashError("identify the board first")
+        hexp, eep = self.backup_path(name + ".hex"), self.backup_path(name + ".eep")
+        if hexp is None or eep is None:
+            raise FlashError("no such saved program")
+
+        def work(job):
+            self._same_mega(port, probe)
+            self._step("writing the saved program and settings back")
+            self._avrdude(port, ["-D", "-U", f"flash:w:{hexp}:i", "-U", f"eeprom:w:{eep}:i"], 900)
+            with self.lock:
+                probe.update(fet_target=None, first_install=True, same=False, key_fp=None, label="Arduino Mega 2560, restored")
+            return f"the saved program and settings ({name}) are back on the board"
+        return self._mega_job(port, "Restore " + name, by, work)
 
     def _fet_version(self, port: str) -> Optional[str]:
         with tempfile.TemporaryDirectory() as d:
@@ -487,11 +665,12 @@ class FlashStation:
         here = {p["port"] for p in ports}
         backups = []
         if self.backups is not None and self.backups.is_dir():
-            backups = sorted(({"name": p.name, "size": p.stat().st_size} for p in self.backups.glob("*.bin")), key=lambda b: b["name"], reverse=True)
+            backups = sorted(({"name": p.name, "size": p.stat().st_size} for p in self.backups.iterdir() if BACKUP_NAME_RE.fullmatch(p.name)),
+                             key=lambda b: b["name"], reverse=True)
         return {"ports": ports, "probes": {k: v for k, v in probes.items() if k in here}, "job": job, "backups": backups}
 
     def backup_path(self, name: str) -> Optional[Path]:
-        if self.backups is None or not re.fullmatch(r"[0-9a-f]{12}-\d{8}-\d{6}\.bin", name or ""):
+        if self.backups is None or not BACKUP_NAME_RE.fullmatch(name or ""):
             return None
         p = self.backups / name
         return p if p.is_file() else None

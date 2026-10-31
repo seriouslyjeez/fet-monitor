@@ -253,3 +253,56 @@ class EndToEnd(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OverHttp(unittest.TestCase):
+    """Range Control: the Mega's firmware store, target settings commands, the target's state in the admin view."""
+    def setUp(self):
+        from tests.test_firmware import ServerCase
+        self.sc = ServerCase("setUp")
+        self.sc.setUp()
+        self.addCleanup(self.sc.tmp.cleanup)
+        self.addCleanup(self.sc.server.server_close)
+        self.addCleanup(self.sc.server.shutdown)
+        self.sc.login()
+        self.core = self.sc.core
+        from fetserver.targetfw import TargetFirmwareStore
+        self.sc.server.target_firmware = TargetFirmwareStore(self.sc.dir)
+
+    def hexfile(self, version="0.1.0"):
+        prog = b"fet-target-mega/" + version.encode()
+        r = bytes([len(prog), 0, 0, 0]) + prog
+        return (":" + (r + bytes([(-sum(r)) & 0xFF])).hex().upper() + "\n:00000001FF\n").encode()
+
+    def test_mega_firmware_store(self):
+        st, body, _ = self.sc.req("POST", "/api/v1/admin/target-firmware", raw=self.hexfile(), ctype="application/octet-stream")
+        self.assertEqual(st, 200, body)
+        sha = json.loads(body)["sha256"]
+        st, body, _ = self.sc.req("GET", "/api/v1/admin/target-firmware")
+        self.assertEqual([m["version"] for m in json.loads(body)["images"]], ["0.1.0"])
+        st, body, _ = self.sc.req("POST", "/api/v1/admin/target-firmware", raw=b":00000001FF\n", ctype="application/octet-stream")
+        self.assertEqual((st, json.loads(body)["error"]), (400, "no program in the file"))
+        self.assertEqual(self.sc.req("POST", "/api/v1/admin/target-firmware/%s/delete" % sha, {})[0], 200)
+        self.assertEqual(self.sc.req("POST", "/api/v1/admin/target-firmware/%s/delete" % sha, {})[0], 404)
+        self.sc.cookie = None
+        self.assertEqual(self.sc.req("POST", "/api/v1/admin/target-firmware", raw=self.hexfile(), ctype="application/octet-stream")[0], 401)
+
+    def test_target_settings_from_range_control(self):
+        self.core.add_target_key(KEY)
+        self.core.handle_events({"device_id": "t1", "boot_count": 1, "uptime_ms": 10_000,
+                                 "events": [{"seq": 1, "type": "target_hello", "uptime_ms": 9_000, "raw": hello(3)}]})
+        st, body, _ = self.sc.req("POST", "/api/v1/admin/targets/t1/target-command", {"verb": "set", "settings": {"led_pct": 70}})
+        self.assertEqual(st, 200, body)
+        st, body, _ = self.sc.req("POST", "/api/v1/admin/targets/t1/target-command", {"verb": "set", "settings": {"led_pct": "x"}})
+        self.assertEqual(st, 400)
+        st, body, _ = self.sc.req("GET", "/api/v1/admin/targets")
+        t = next(t for t in json.loads(body)["targets"] if t["device_id"] == "t1")
+        self.assertEqual((t["fet_target"]["key_fp"], t["fet_target"]["boot"]), (FP, 3))
+        self.assertEqual([(c["verb"], c["status"]) for c in t["fet_target"]["commands"]], [("set", "queued")])
+
+    def test_mega_routes_need_an_identified_board(self):
+        for path, body in (("mega-install", {"port": "/dev/ttyACM0", "sha256": "a" * 64}), ("mega-key", {"port": "/dev/ttyACM0"}),
+                           ("mega-restore", {"port": "/dev/ttyACM0", "name": "mega-x-20261031-120000"})):
+            st, payload, _ = self.sc.req("POST", "/api/v1/admin/flash/" + path, body)
+            self.assertEqual(st, 400, path)
+            self.assertIn("identify", json.loads(payload)["error"])
