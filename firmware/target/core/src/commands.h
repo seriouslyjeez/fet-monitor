@@ -9,7 +9,8 @@
 //   - b is this boot's count (a command recorded earlier cannot be replayed after a restart),
 //   - i is higher than the last command carried out in this boot (nor within it).
 // Verbs: get (all settings), set key=value ... (all checked first, then applied together and saved once), paper
-// (advance the witness paper now), status. Replies are signed with the same key and repeat b and i, so the server
+// (advance the witness paper now), status (k, up = uptime ms, d = shots dropped, q = triggers ignored while the paper
+// moved). Replies are signed with the same key and repeat b and i, so the server
 // can match them. Reasons have no spaces: r=bad_signature, old_command, wrong_boot, unknown_verb, malformed,
 // unknown_setting:<key>, out_of_range:<key>, save_failed, not_provisioned, no_boot_count (this start could not be
 // counted, so a recorded command could be replayed: nothing is carried out). Lines from fetserver/targetproto.py.
@@ -25,6 +26,7 @@ struct Actions {                                    // what the platform does fo
   virtual void settingsChanged(const Settings& s) = 0;   // apply LED level, capture timing, threshold, ...
   virtual uint32_t uptimeMs() = 0;
   virtual uint16_t dropped() = 0;
+  virtual uint16_t muted() = 0;                       // triggers ignored while the paper moved (Capture::muted)
 };
 
 class Commands {

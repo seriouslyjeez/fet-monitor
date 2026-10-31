@@ -38,6 +38,15 @@ void Capture::tick(uint32_t nowMs, uint32_t nowUs) {
   uint8_t run = (uint8_t)(hw_.running() & ALL);
   switch (state_) {
     case IDLE:
+      if (quiet_ && (int32_t)(nowMs - quietUntil_) >= 0) quiet_ = false;
+      if (quiet_) {                                   // the paper is moving: nothing starts a shot
+        if (run || faceSeen_) {
+          if (muted_ != 0xFFFF) muted_++;
+          hw_.arm();
+          faceSeen_ = false;
+        }
+        break;
+      }
       if (run) {
         firstMs_ = nowMs;
         until_ = nowMs + waitMs;

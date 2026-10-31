@@ -121,6 +121,7 @@ size_t Commands::handle(const char* line, char* out, size_t cap) {
     r.b.add(" k="); r.b.addHex(st_.id(), 8);
     r.b.add(" up="); r.b.addU(act_.uptimeMs());
     r.b.add(" d="); r.b.addU(act_.dropped());
+    r.b.add(" q="); r.b.addU(act_.muted());
     return r.finish(out, key_, keyLen_);
   }
   if (vl == 5 && memcmp(verb, "paper", 5) == 0 && nt == 3) {

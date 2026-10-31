@@ -207,6 +207,39 @@ class Capture(Case):
         self.tick(100)
         self.assertIsNone(parse_shot(self.pop())["face_us"], "and does not stick to the next shot")
 
+    def test_paper_moving_is_not_a_shot(self):
+        self.h.run("quiet 100")                                    # the motor runs (main loop calls this while busy)
+        self.h.run("run 8")                                        # the West microphone hears it, as on 2026-10-31
+        self.tick(150)
+        self.h.run("face 150500")
+        self.tick(160)
+        self.h.run("run f")
+        self.tick(399)                                             # 300 ms after the motor stopped: still settling
+        self.assertIsNone(self.pop(), "never reported as a shot")
+        self.assertEqual(self.h.run("muted"), "3", "counted: what the target ignored is not hidden")
+        self.assertEqual(self.hw()[3], 0, "the latches are cleared again")
+        self.h.run("run f")
+        self.tick(400)                                             # quiet over to the millisecond: listening again
+        got = parse_shot(self.pop())
+        self.assertEqual((got["seq"], got["ms"]), (1, 400), "the next real shot is the first")
+        self.assertIsNone(got["face_us"], "a face edge while the paper moved does not stick to it")
+
+    def test_a_shot_in_progress_is_finished(self):
+        self.h.run("run 1")
+        self.tick(10)                                              # North heard it: waiting for the others
+        self.h.run("quiet 10")                                     # the paper starts (another shot's advance)
+        self.h.run("run e")
+        self.tick(11)
+        self.assertEqual(parse_shot(self.pop())["seq"], 1, "not cut short")
+        self.assertEqual(self.h.run("muted"), "0")
+        self.h.run("set paperquiet 0")
+        self.h.run("quiet 2000")
+        self.tick(2000)
+        self.h.run("run f")
+        self.tick(2070)                                            # ringing over (50 ms) and quiet over: listening
+        self.tick(2080)
+        self.assertIsNotNone(self.pop())
+
 
 class Lines(Case):
     def shot(self):
@@ -506,7 +539,7 @@ class CommandChannel(Case):
         self.assertEqual([r["values"][k] for k in KEYS], DEFAULTS)
         self.assertEqual(r["values"]["k"], settings_id(DEFAULTS))
         s = self.cmd(2, "status")
-        self.assertEqual((s["values"]["up"], s["values"]["d"]), (123456, 2))
+        self.assertEqual((s["values"]["up"], s["values"]["d"], s["values"]["q"]), (123456, 2, 3))
         self.assertTrue(self.cmd(3, "paper")["ok"])
         self.assertEqual(self.h.run("acts"), "1 0")
 

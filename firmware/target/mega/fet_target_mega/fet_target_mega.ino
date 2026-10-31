@@ -20,7 +20,7 @@
 #include <settings.h>
 #include <shotline.h>
 
-#define FW_VERSION "0.1.0"
+#define FW_VERSION "0.1.1"
 // In the flash image, so the Pi's flash station can tell what a .hex file is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-mega/" FW_VERSION;
 #define USE_WATCHDOG 0   // off until the board's bootloader is known to clear the watchdog (old Mega bootloaders
@@ -119,6 +119,7 @@ struct MegaActions : tgt::Actions {
   void settingsChanged(const tgt::Settings& s) override;
   uint32_t uptimeMs() override { return millis(); }
   uint16_t dropped() override { return capture.dropped(); }
+  uint16_t muted() override { return capture.muted(); }
 };
 static MegaActions actions;
 static tgt::Commands* commands = 0;                                        // made once the boot count is known
@@ -263,6 +264,7 @@ void loop() {
   pollPort(Serial3, wifiIn, false);
   pollSwitches(now);
   paper.tick(now);
+  if (paper.busy()) { noInterrupts(); capture.quietFor(now); interrupts(); }   // the motor is not a shot
   static uint32_t lastTemp = 0;
   if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); }
 }

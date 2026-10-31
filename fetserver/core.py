@@ -361,7 +361,7 @@ class Core:
         c.execute("UPDATE commands SET reply=? WHERE id=?", ("ok" if r["ok"] else r["reason"], cmd["id"]))
         if not r["ok"]:
             return
-        vals = {k: v for k, v in r["values"].items() if k not in ("k", "up", "d")}
+        vals = {k: v for k, v in r["values"].items() if k not in ("k", "up", "d", "q")}   # status counts are not settings
         t = c.execute("SELECT target_settings_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
         cur = json.loads(t["target_settings_json"]) if t["target_settings_json"] else {}
         verb = cmd["line"].split(" ")[4]

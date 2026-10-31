@@ -55,6 +55,7 @@ struct FakeActions : Actions {
   void settingsChanged(const Settings&) override { changes++; }
   uint32_t uptimeMs() override { return 123456; }
   uint16_t dropped() override { return 2; }
+  uint16_t muted() override { return 3; }
 };
 
 struct FakeMotor : MotorOut {
@@ -115,7 +116,7 @@ int main() {
     else if (cmd == "temp") { int t; is >> t; temp = (int16_t)t; }
     else if (cmd == "linecap") is >> cap_;
     else if (cmd == "set") { std::string k; int v; is >> k >> v;
-      if (k == "wait") cap.waitMs = (uint16_t)v; else if (k == "ring") cap.ringMs = (uint16_t)v; else if (k == "facealone") cap.faceAloneMs = (uint16_t)v; }
+      if (k == "wait") cap.waitMs = (uint16_t)v; else if (k == "ring") cap.ringMs = (uint16_t)v; else if (k == "facealone") cap.faceAloneMs = (uint16_t)v; else if (k == "paperquiet") cap.paperQuietMs = (uint16_t)v; }
     else if (cmd == "pop") {
       Shot s;
       if (!cap.pop(s)) { std::cout << "none\n"; }
@@ -127,6 +128,8 @@ int main() {
     }
     else if (cmd == "hw") std::cout << hw.arms << " " << hw.clears << " " << hw.reads << " " << (int)hw.run << "\n";
     else if (cmd == "dropped") std::cout << cap.dropped() << "\n";
+    else if (cmd == "quiet") { uint32_t ms; is >> ms; cap.quietFor(ms); }
+    else if (cmd == "muted") std::cout << cap.muted() << "\n";
     else if (cmd == "sha") { std::string h; is >> h; auto d = unhex(h); Sha256 s; s.update(d.data(), d.size()); uint8_t o[32]; s.finish(o); std::cout << hex(o, 32) << "\n"; }
     else if (cmd == "hmac") { std::string k, m; is >> k >> m; auto kk = unhex(k), mm = unhex(m); uint8_t o[32];
       hmacSha256(kk.data(), kk.size(), mm.data(), mm.size(), o); std::cout << hex(o, 32) << "\n"; }

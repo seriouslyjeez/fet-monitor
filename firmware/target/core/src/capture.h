@@ -12,6 +12,10 @@
 // records its time relative to the moment the counters were stopped. A face edge with no microphone within
 // faceAloneMs is reported on its own (mask 0, hasFace): a plate hit that the microphones did not hear.
 //
+// While the witness paper moves, and paperQuietMs after it stops, the motor and the moving paper are not shots:
+// quietFor() keeps capture from starting; what it ignored is counted (muted()), never reported as a shot. A shot
+// already being captured or ringing is finished as usual.
+//
 // tick() and face() run in interrupts: no blocking, no allocation, no output. pop() runs in the main loop; the
 // platform calls it with interrupts disabled (it is a few instructions).
 #pragma once
@@ -47,10 +51,14 @@ class Capture {
   void face(uint32_t nowUs);                      // face sensor edge, from its interrupt
   bool pop(Shot& out);                            // main loop, with interrupts off
   uint16_t dropped() const { return dropped_; }   // shots lost because the queue was full
+  // The paper drive is running (main loop, with interrupts off): no new capture until paperQuietMs after the last call.
+  void quietFor(uint32_t nowMs) { quietUntil_ = nowMs + paperQuietMs; quiet_ = true; }
+  uint16_t muted() const { return muted_; }       // triggers ignored while the paper moved
 
   uint16_t waitMs = 2;                            // longest spread between the first and last microphone (+1)
   uint16_t ringMs = 50;                           // quiet time before re-arming
   uint16_t faceAloneMs = 5;                       // a face edge with no microphone after this long is a shot
+  uint16_t paperQuietMs = 300;                    // after the paper stops: the paper and the motor settle
 
  private:
   enum State { IDLE, WAIT, RING };
@@ -64,6 +72,9 @@ class Capture {
   Shot q_[QSIZE];
   volatile uint8_t head_ = 0, tail_ = 0;          // push at head_ (interrupt), pop at tail_ (main loop)
   volatile uint16_t dropped_ = 0;
+  volatile bool quiet_ = false;
+  volatile uint32_t quietUntil_ = 0;
+  volatile uint16_t muted_ = 0;
 };
 
 }  // namespace tgt

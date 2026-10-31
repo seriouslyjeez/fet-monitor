@@ -212,6 +212,10 @@ class Commands(Base):
         t = self.target()
         self.assertEqual(t["target_settings_id"], "99887766")
         self.assertEqual(json.loads(t["target_settings_json"]), {"led_pct": 80, "wait_ms": 2})
+        self.core.target_command("t1", "status")
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok k=99887766 up=5000 d=1 q=4"))
+        self.assertEqual(json.loads(self.target()["target_settings_json"]), {"led_pct": 80, "wait_ms": 2},
+                         "uptime, dropped and muted counts are not settings")
 
     def test_a_refusal_is_recorded_and_changes_nothing(self):
         self.bound()

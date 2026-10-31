@@ -21,6 +21,7 @@ struct Acts : tgt::Actions {
   void settingsChanged(const tgt::Settings& s) override { analogWrite(5, s.get(tgt::S_LED_PCT) * 255 / 100); }
   uint32_t uptimeMs() override { return millis(); }
   uint16_t dropped() override { return 0; }
+  uint16_t muted() override { return 0; }
 };
 
 static Dummy hw;
