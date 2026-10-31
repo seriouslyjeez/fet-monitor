@@ -2,7 +2,7 @@
 """Printable aiming sheets for measuring a target's accuracy (ground truth for the target firmware work).
 
     python3 tools/aiming_sheet.py [out.pdf]        # default dist/aiming-sheet.pdf
-    python3 tools/aiming_sheet.py card [out.pdf]   # cut-out cards for the target frame: dist/aiming-card.pdf
+    python3 tools/aiming_sheet.py card [N] [out.pdf]   # N (default 3) cut-out cards for the target frame: dist/aiming-card.pdf
 
 A 5 x 5 grid of aiming dots at 7 mm pitch around the centre of the rifle faceplate opening (50 mm across, drawing
 FET-016), split like a checkerboard over two sheets (A: 13 dots, B: 12) so that holes on one sheet are about 10 mm
@@ -272,9 +272,11 @@ def write_pdf(pages, out: Path):
 
 def main(argv) -> int:
     dist = Path(__file__).resolve().parent.parent / "dist"
-    if argv and argv[0] == "card":
-        out = Path(argv[1]) if len(argv) > 1 else dist / "aiming-card.pdf"
-        write_pdf([draw_card(n, 3) for n in (1, 2, 3)], out)
+    if argv and argv[0] == "card":                      # card [how many, default 3] [out.pdf]
+        rest = argv[1:]
+        count = int(rest.pop(0)) if rest and rest[0].isdigit() else 3
+        out = Path(rest[0]) if rest else dist / "aiming-card.pdf"
+        write_pdf([draw_card(n, count) for n in range(1, count + 1)], out)
         print(out)
         return 0
     out = Path(argv[0]) if argv else dist / "aiming-sheet.pdf"
