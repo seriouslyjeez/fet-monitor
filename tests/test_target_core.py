@@ -298,6 +298,38 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ServerSide(unittest.TestCase):
+    """fetserver/targetproto.py on its own: building commands and checking replies."""
+    def test_make_command(self):
+        from fetserver.targetproto import make_command
+        line = make_command(7, 3, "set", {"led_pct": 80}, KEY)
+        head, _, tag = line.rstrip("\n").rpartition(" h=")
+        self.assertEqual(head, "FT1 C b=7 i=3 set led_pct=80")
+        self.assertEqual(tag, mac(KEY, head.encode()))
+        for verb, settings in (("Paper", None), ("pa per", None), ("set", {"led pct": 1}), ("set", {"led_pct": True}),
+                               ("set", {"led_pct": "80"}), ("set", {"led_pct": 1.5})):
+            with self.assertRaises(ProtoError, msg=(verb, settings)):
+                make_command(7, 1, verb, settings, KEY)
+
+    def test_parse_reply(self):
+        from fetserver.targetproto import parse_reply
+
+        def signed(head, key=KEY):
+            return f"{head} h={mac(key, head.encode())}"
+        r = parse_reply(signed("FT1 R b=7 i=3 r=ok k=0a1b2c3d led_pct=80"), KEY)
+        self.assertEqual((r["ok"], r["reason"], r["values"], r["authenticated"]),
+                         (True, "", {"k": "0a1b2c3d", "led_pct": 80}, True))
+        r = parse_reply(signed("FT1 R b=7 i=4 r=out_of_range:wait_ms"), KEY)
+        self.assertEqual((r["ok"], r["reason"]), (False, "out_of_range:wait_ms"))
+        self.assertFalse(parse_reply("FT1 R b=7 i=0 r=not_provisioned h=-", KEY)["authenticated"])
+        self.assertFalse(parse_reply(signed("FT1 R b=7 i=3 r=ok"))["authenticated"], "no key given: not checked")
+        for bad in (signed("FT1 C b=7 i=3 r=ok"), signed("FT1 R i=3 b=7 r=ok"), signed("FT1 R b=7 i=3"),
+                    signed("FT1 R b=7 i=3 r=ok", bytes(32)), signed("FT1 R b=7 i=3 r=ok").replace("i=3", "i=4"),
+                    "FT1 R b=7 i=3 r=ok"):
+            with self.assertRaises(ProtoError, msg=bad):
+                parse_reply(bad, KEY)
+
+
 def avr_core_installed():
     if not shutil.which("arduino-cli"):
         return False
@@ -314,3 +346,279 @@ class Mega(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout[-2000:] + r.stderr[-2000:])
         ram = int(r.stdout.split("Global variables use ")[1].split()[0])
         self.assertLess(ram, 2048, "the core leaves the Mega most of its 8 KB")
+
+
+DEFAULTS = [0, 0, 0, 0, 50, 2, 50, 0, 5, 0]
+KEYS = ["paper_ms", "step_count", "step_ms", "paper_eco_mm", "led_pct", "wait_ms", "ring_ms", "face", "face_alone_ms", "vref_mv"]
+BASE, SLOT = 64, 8 + 4 * 10 + 4
+
+
+def slot_bytes(values, gen, version=1, count=10):
+    """A settings slot as firmware/target/core/src/settings.cpp writes it."""
+    import struct
+    import zlib
+    b = struct.pack("<HBBHxx", 0x4654, version, count, gen) + struct.pack("<%di" % len(values), *values)
+    return b + struct.pack("<I", zlib.crc32(b))
+
+
+def settings_id(values):
+    import struct
+    import zlib
+    return "%08x" % zlib.crc32(struct.pack("<%di" % len(values), *values))
+
+
+class SettingsStore(Case):
+    def load(self):
+        r = self.h.run("sload").split()
+        return r[0], int(r[1]), [int(v) for v in r[2:]]
+
+    def test_defaults_on_a_blank_chip(self):
+        self.assertEqual(self.load(), ("defaults", 0, DEFAULTS))
+        self.assertEqual(self.h.run("sid"), settings_id(DEFAULTS), "the id is the CRC-32 of the values")
+
+    def test_ranges_and_names(self):
+        self.load()
+        self.assertEqual(self.h.run("sset led_pct 101"), "out of range")
+        self.assertEqual(self.h.run("sset wait_ms 0"), "out of range")
+        self.assertEqual(self.h.run("sset nonsense 1"), "unknown setting")
+        self.assertEqual(self.h.run("sseti 10 1"), "unknown setting", "index past the end")
+        self.assertEqual(self.h.run("sseti -1 1"), "unknown setting")
+        self.assertEqual(self.h.run("sget led_pct"), "50", "nothing changed")
+        self.assertEqual(self.h.run("sset led_pct 100"), "ok")
+        self.assertEqual(self.h.run("sset wait_ms 1"), "ok")
+        self.assertEqual(self.h.run("sget led_pct"), "100")
+
+    def test_saved_only_when_changed_and_survives_a_restart(self):
+        self.load()
+        self.assertEqual(self.h.run("ssave"), "saved 1 1", "first save on a blank chip")
+        self.assertEqual(self.h.run("ssave"), "saved 1 1", "nothing changed: no write")
+        self.h.run("sset led_pct 50")
+        self.assertEqual(self.h.run("sdirty"), "0", "same value: not a change")
+        self.h.run("sset led_pct 80")
+        self.assertEqual(self.h.run("ssave"), "saved 2 2")
+        self.h.run("reboot")
+        state, gen, vals = self.load()
+        self.assertEqual((state, gen, vals[4]), ("loaded", 2, 80))
+        self.assertEqual(self.h.run("ssave"), "saved 2 2", "loaded and unchanged: no write")
+        self.assertEqual(self.h.run("sid"), settings_id(vals))
+
+    def test_reloading_discards_unsaved_changes(self):
+        self.load()
+        self.h.run("ssave")
+        self.h.run("sset led_pct 90")
+        self.assertEqual(self.load()[2][4], 50)
+        self.assertEqual(self.h.run("ssave"), "saved 1 1", "nothing to write after reloading")
+
+    def test_alternate_slots(self):
+        self.load()
+        for led in (10, 20, 30):
+            self.h.run("sset led_pct %d" % led)
+            self.h.run("ssave")
+        self.h.run("reboot")
+        self.assertEqual(self.load()[2][4], 30)
+        self.h.run("nvmset %d %s" % (BASE, "00" * SLOT))           # wipe slot 0: slot 1 still has a good copy
+        self.h.run("reboot")
+        state, gen, vals = self.load()
+        self.assertEqual(state, "loaded")
+        self.assertIn(vals[4], (20, 30))
+
+    def test_a_save_torn_by_a_power_cut_keeps_the_previous_settings(self):
+        self.load()
+        self.h.run("sset led_pct 70")
+        self.h.run("ssave")
+        for cut in (0, 1, 10, SLOT - 1):
+            self.h.run("sset led_pct %d" % (71 + cut % 20))
+            self.h.run("nvmtear %d" % cut)
+            self.assertTrue(self.h.run("ssave").startswith("failed"))
+            self.h.run("reboot")
+            self.assertEqual(self.load()[2][4], 70, cut)
+
+    def test_a_failed_write_is_reported_and_retried(self):
+        self.load()
+        self.h.run("sset led_pct 60")
+        self.h.run("nvmfail 1")
+        self.assertTrue(self.h.run("ssave").startswith("failed"))
+        self.assertEqual(self.h.run("sdirty"), "1", "still to be saved")
+        self.assertTrue(self.h.run("ssave").startswith("saved"))
+        self.h.run("reboot")
+        self.assertEqual(self.load()[2][4], 60)
+
+    def test_damaged_or_foreign_slots_are_not_used(self):
+        good = list(DEFAULTS)
+        good[4] = 33
+        self.h.run("nvmset %d %s" % (BASE, slot_bytes(good, 5).hex()))
+        newer = list(DEFAULTS)
+        newer[4] = 44
+        for bad in (slot_bytes(newer, 6)[:-1] + b"\x00",               # CRC wrong
+                    slot_bytes(newer, 6, version=2),                    # another layout
+                    slot_bytes(newer[:-1], 6, count=9),                 # fewer settings
+                    slot_bytes(newer, 6, count=9),                      # says 9, has 10: not this layout
+                    slot_bytes(newer[:4] + [101] + newer[5:], 6)):      # a value this firmware does not accept
+            self.h.run("nvmset %d %s" % (BASE + SLOT, bad.hex().ljust(2 * SLOT, "f")))
+            self.h.run("reboot")
+            self.assertEqual(self.load(), ("loaded", 5, good), bad.hex()[:20])
+        self.h.run("nvmset %d %s" % (BASE + SLOT, slot_bytes(newer, 6).hex()))
+        self.h.run("reboot")
+        self.assertEqual(self.load()[2][4], 44, "a good newer slot wins")
+
+    def test_generation_wraps(self):
+        a = list(DEFAULTS)
+        a[4] = 1
+        b = list(DEFAULTS)
+        b[4] = 2
+        self.h.run("nvmset %d %s" % (BASE, slot_bytes(a, 0xFFFF).hex()))
+        self.h.run("nvmset %d %s" % (BASE + SLOT, slot_bytes(b, 0x0001).hex()))
+        self.h.run("reboot")
+        self.assertEqual(self.load()[1:], (1, b), "0x0001 is newer than 0xFFFF")
+        self.h.run("sset led_pct 3")
+        self.h.run("ssave")
+        self.h.run("reboot")
+        self.assertEqual(self.load()[2][4], 3, "and the next save goes to the older slot")
+
+    def test_names_match_the_list(self):
+        for k, d in zip(KEYS, DEFAULTS):
+            self.assertEqual(self.h.run("sget " + k), str(d), k)
+
+
+class CommandChannel(Case):
+    def setUp(self):
+        super().setUp()
+        self.h.run("sload")
+
+    def send(self, line):
+        return self.h.run("cmd " + line.rstrip("\n"))
+
+    def cmd(self, cmd_id, verb, settings=None, boot=7, key=KEY):
+        from fetserver.targetproto import make_command, parse_reply
+        r = self.send(make_command(boot, cmd_id, verb, settings, key))
+        return parse_reply(r, KEY)
+
+    def test_refused_until_a_key_is_set(self):
+        from fetserver.targetproto import make_command, parse_reply
+        r = parse_reply(self.send(make_command(7, 1, "paper", key=KEY)), KEY)
+        self.assertEqual((r["ok"], r["reason"], r["authenticated"]), (False, "not_provisioned", False))
+        self.assertEqual(self.h.run("acts"), "0 0")
+
+    def test_get_status_paper(self):
+        self.h.run("ckey " + KEY.hex())
+        r = self.cmd(1, "get")
+        self.assertTrue(r["ok"] and r["authenticated"])
+        self.assertEqual([r["values"][k] for k in KEYS], DEFAULTS)
+        self.assertEqual(r["values"]["k"], settings_id(DEFAULTS))
+        s = self.cmd(2, "status")
+        self.assertEqual((s["values"]["up"], s["values"]["d"]), (123456, 2))
+        self.assertTrue(self.cmd(3, "paper")["ok"])
+        self.assertEqual(self.h.run("acts"), "1 0")
+
+    def test_set_is_checked_saved_and_survives_a_restart(self):
+        self.h.run("ckey " + KEY.hex())
+        r = self.cmd(1, "set", {"led_pct": 80, "paper_ms": 400})
+        self.assertTrue(r["ok"])
+        vals = list(DEFAULTS)
+        vals[4], vals[0] = 80, 400
+        self.assertEqual(r["values"]["k"], settings_id(vals), "the reply names the new settings id")
+        self.assertEqual(self.h.run("acts"), "0 1")
+        self.h.run("reboot")
+        self.assertEqual(self.h.run("sget led_pct"), "80")
+
+    def test_set_is_all_or_nothing(self):
+        self.h.run("ckey " + KEY.hex())
+        r = self.cmd(1, "set", {"led_pct": 80, "nonsense": 1})
+        self.assertEqual(r["reason"], "unknown_setting:nonsense")
+        r = self.cmd(2, "set", {"led_pct": 80, "wait_ms": 99})
+        self.assertEqual(r["reason"], "out_of_range:wait_ms")
+        self.assertEqual(self.h.run("sget led_pct"), "50", "nothing applied")
+        self.assertEqual(self.h.run("acts"), "0 0")
+
+    def test_a_failed_save_is_reported(self):
+        self.h.run("ckey " + KEY.hex())
+        self.h.run("nvmfail 1")
+        r = self.cmd(1, "set", {"led_pct": 81})
+        self.assertEqual(r["reason"], "save_failed")
+        self.assertEqual(self.h.run("sget led_pct"), "81", "in force now, saved at the next successful save")
+
+    def test_forged_commands(self):
+        from fetserver.targetproto import make_command, parse_reply
+        self.h.run("ckey " + KEY.hex())
+        good = make_command(7, 5, "set", {"led_pct": 90}, KEY)
+        g = good.rstrip("\n")
+        last = "0" if g[-1] != "0" else "1"
+        for bad in (good.replace("led_pct=90", "led_pct=10"), make_command(7, 5, "set", {"led_pct": 90}, bytes(32)),
+                    g + "0", g[:-1] + last,
+                    good.rstrip("\n").rsplit(" h=", 1)[0] + " h=-", good.rstrip("\n")[:-1],
+                    good.rstrip("\n").rsplit(" h=", 1)[0]):
+            r = parse_reply(self.send(bad), KEY)
+            self.assertEqual(r["reason"], "bad_signature", bad)
+            self.assertEqual(r["id"], 0, "nothing of a forged line is believed")
+        self.assertEqual(self.h.run("sget led_pct"), "50")
+        self.assertTrue(parse_reply(self.send(good), KEY)["ok"], "a forgery uses up no ids")
+
+    def test_replays(self):
+        from fetserver.targetproto import make_command, parse_reply
+        self.h.run("ckey " + KEY.hex())
+        line = make_command(7, 5, "paper", key=KEY)
+        self.assertTrue(parse_reply(self.send(line), KEY)["ok"])
+        self.assertEqual(parse_reply(self.send(line), KEY)["reason"], "old_command")
+        self.assertEqual(self.cmd(4, "paper")["reason"], "old_command", "a lower id")
+        self.assertEqual(self.cmd(6, "set", {"wait_ms": 99})["reason"], "out_of_range:wait_ms")
+        self.assertEqual(self.cmd(6, "paper")["reason"], "old_command", "a failed command used its id too")
+        self.h.run("reboot")
+        self.assertEqual(parse_reply(self.send(make_command(7, 50, "paper", key=KEY)), KEY)["reason"], "wrong_boot")
+        self.assertTrue(self.cmd(1, "paper", boot=8)["ok"], "the new boot starts over")
+        self.assertEqual(self.h.run("acts"), "2 0")
+
+    def test_malformed_and_unknown(self):
+        from fetserver.targetproto import mac, parse_reply
+        self.h.run("ckey " + KEY.hex())
+
+        def signed(head):
+            return parse_reply(self.send(f"{head} h={mac(KEY, head.encode())}"), KEY)["reason"]
+        self.assertEqual(signed("FT1 C b=7 i=1 dance"), "unknown_verb")
+        for head in ("FT1 C i=2 b=7 get", "FT1 C b=x i=3 get", "FT1 C b=7 i=4", "FT1 C b=7  i=5 get",
+                     "FT1 C b=7 i=99999999999 get", "FT1 C b=-7 i=6 get", "FT1 C b=7 i=4294967296 get",
+                     "FT1 C b=7 i=20 get "):
+            self.assertEqual(signed(head), "malformed", head)
+        for head in ("FT1 C b=7 i=10 set", "FT1 C b=7 i=11 get extra", "FT1 C b=7 i=12 paper now"):
+            self.assertEqual(signed(head), "unknown_verb", head)
+        for head in ("FT1 C b=7 i=13 set led_pct", "FT1 C b=7 i=14 set =5", "FT1 C b=7 i=15 set led_pct=5x",
+                     "FT1 C b=7 i=16 set led_pct=99999999999", "FT1 C b=7 i=18 set led_pct=",
+                     "FT1 C b=7 i=19 set led_pct=-4294967246", "FT1 C b=7 i=21 set led_pct=--5"):
+            self.assertEqual(signed(head), "malformed", head)
+        self.assertEqual(signed("FT1 C b=7 i=30 set wait_ms=-1"), "out_of_range:wait_ms")
+        self.assertEqual(self.h.run("sget led_pct"), "50")
+
+    def test_overlong_line_handed_in_directly(self):
+        self.h.run("ckey " + KEY.hex())
+        from fetserver.targetproto import parse_reply
+        r = parse_reply(self.send("FT1 C b=7 i=1 get " + "x" * 250 + " h=0123456789abcdef"), KEY)
+        self.assertEqual(r["reason"], "malformed")
+
+    def test_line_reader_edges(self):
+        self.assertEqual(self.h.run("rfeed \\n"), "0 []", "an empty line is no line")
+        self.assertEqual(self.h.run("rfeed abc\\n"), "1 [abc]")
+        self.assertEqual(self.h.run("rfeed def\\n"), "1 [abc]", "not taken yet: kept, nothing appended")
+        self.h.run("rnext")
+        self.assertEqual(self.h.run("rfeed def\\n"), "1 [def]")
+
+    def test_not_ours(self):
+        for line in ("hello", "FT1 S b=1", "FT1 R b=7 i=1 r=ok h=-", "FT1 C"):
+            self.assertEqual(self.send(line), "none", line)
+
+    def test_line_reader(self):
+        from fetserver.targetproto import make_command, parse_reply
+        self.h.run("ckey " + KEY.hex())
+        a = make_command(7, 1, "paper", key=KEY).rstrip("\n")
+        b = make_command(7, 2, "status", key=KEY).rstrip("\n")
+        out = self.h.run("feed " + a + "\\r\\n" + b + "\\n").split("\n")
+        self.assertEqual([parse_reply(r, KEY)["id"] for r in out], [1, 2])
+        long = make_command(7, 3, "paper", key=KEY).rstrip("\n") + " " + "x" * 200
+        self.assertEqual(self.h.run("feed " + long + "\\n"), "none", "an overlong line is dropped whole")
+        c = make_command(7, 4, "paper", key=KEY).rstrip("\n")
+        self.assertEqual(parse_reply(self.h.run("feed " + c + "\\n"), KEY)["id"], 4, "and the next one works")
+        self.assertEqual(self.h.run("acts"), "2 0")
+
+    def test_reply_buffer_too_small(self):
+        self.h.run("ckey " + KEY.hex())
+        self.h.run("replycap 60")
+        from fetserver.targetproto import make_command
+        self.assertEqual(self.send(make_command(7, 1, "get", key=KEY)), "none", "never a cut-off reply")

@@ -61,3 +61,49 @@ def parse_shot(line: str, key: Optional[bytes] = None) -> dict:
     else:
         raise ProtoError("malformed signature")
     return out
+
+
+# ------------------------------------------------------------------------------------------------ commands
+# FT1 C b=<boot> i=<id> <verb> [key=value ...] h=<mac>     (firmware/target/core/src/commands.h)
+# FT1 R b=<boot> i=<id> r=<ok|reason> [key=value ...] h=<mac>
+TOKEN_RE = re.compile(r"^[a-z_]+$")
+
+
+def make_command(boot: int, cmd_id: int, verb: str, settings: Optional[dict] = None, key: bytes = b"") -> str:
+    """A signed command line (with newline). settings: for "set", {name: int}."""
+    if not TOKEN_RE.match(verb):
+        raise ProtoError("bad verb")
+    head = f"FT1 C b={int(boot)} i={int(cmd_id)} {verb}"
+    for k, v in (settings or {}).items():
+        if not TOKEN_RE.match(k) or not isinstance(v, int) or isinstance(v, bool):
+            raise ProtoError("bad setting")
+        head += f" {k}={v}"
+    return f"{head} h={mac(key, head.encode())}\n"
+
+
+def parse_reply(line: str, key: Optional[bytes] = None) -> dict:
+    """boot, id, ok, reason ("" when ok), values {name: int, or str for k}, authenticated. A wrong signature raises."""
+    line = line.rstrip("\r\n")
+    head, sep, tag = line.rpartition(" h=")
+    if not sep or not head.startswith("FT1 R "):
+        raise ProtoError("not a reply")
+    parts = head[len("FT1 R "):].split(" ")
+    if len(parts) < 3 or not all(FIELD_RE.match(p) or re.match(r"^[a-z_]+=\S+$", p) for p in parts):
+        raise ProtoError("malformed reply")
+    f = [p.split("=", 1) for p in parts]
+    if [k for k, _ in f[:3]] != ["b", "i", "r"]:
+        raise ProtoError("malformed reply")
+    values = {}
+    for k, v in f[3:]:
+        values[k] = v if k == "k" else int(v)
+    out = {"boot": int(f[0][1]), "id": int(f[1][1]), "ok": f[2][1] == "ok",
+           "reason": "" if f[2][1] == "ok" else f[2][1], "values": values}
+    if tag == "-":
+        out["authenticated"] = False
+    elif key is not None and re.fullmatch(r"[0-9a-f]{16}", tag):
+        if not hmac.compare_digest(tag, mac(key, head.encode())):
+            raise ProtoError("signature does not match")
+        out["authenticated"] = True
+    else:
+        out["authenticated"] = False
+    return out
