@@ -25,6 +25,7 @@ from aiming_sheet import AIM_R, REF_N, REF_R, WIN_D   # noqa: E402  the card's o
 
 register_heif_opener()
 PPM, HALF = 40.0, 24.0                       # rectified image: 40 px per mm, +-24 mm around the window centre
+SEARCH_R = 23.0                              # mm from the window centre searched for holes
 PAPER_DIST = 45.0                            # Lab distance from the paper's colour still counted as paper
 PELLET_R = 2.0                               # 4.5 mm pellet: the hole's radius in card stock, about
 
@@ -41,7 +42,7 @@ def find_refs(img):
     st, cen = dark_blobs(img)
     # reference dots: small, round, filled. Their size in pixels is unknown (camera distance): take round filled
     # blobs, then the twelve that sit evenly on one circle.
-    cand = [cen[i] for i in range(1, len(st)) if 40 <= st[i, 4] <= 6000 and 0.8 < st[i, 2] / st[i, 3] < 1.25
+    cand = [cen[i] for i in range(1, len(st)) if 8 <= st[i, 4] <= 6000 and 0.8 < st[i, 2] / st[i, 3] < 1.25
             and st[i, 4] / (st[i, 2] * st[i, 3]) > 0.7]
     cand = np.array(cand)
     def pattern(on, ux, uy):          # how many points sit where reference dots go (every 360/REF_N deg, card upright)
@@ -112,7 +113,8 @@ def hole_mask(rect):
     disk = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (int(2.6 * PPM), int(2.6 * PPM)))
     m = cv2.morphologyEx(m, cv2.MORPH_OPEN, disk)       # lines, ring outlines, the 1.6 mm dots: gone; holes stay
     yy, xx = np.mgrid[0:m.shape[0], 0:m.shape[1]]
-    m[np.hypot(xx / PPM - HALF, HALF - yy / PPM) > 19.0] = 0                  # the window (+ its placement)
+    r = np.hypot(xx / PPM - HALF, HALF - yy / PPM)
+    m[r > SEARCH_R] = 0                                 # the window, its placement, wide shots (2.4 mm dots: gone in the open)
     return m
 
 def main(argv):
