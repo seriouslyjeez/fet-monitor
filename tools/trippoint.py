@@ -7,7 +7,7 @@ The target's own trip-point test ({"TEST":11}) prints, five times a second, the 
 microphones have tripped since it was armed (the latch). This shows it live while you turn the trip-point trimmer
 (RV1 on the 3.1 board), re-arms the latch on request, and logs every reading.
 
-Keys (then Enter):  r  re-arm the latch (all four clear)     q  quit
+Keys (then Enter):  r  re-arm the latch (all four clear)   b  run the paper motor 1 s (does it trip?)   q  quit
 Ending restarts the Mega (the firmware's own exit from the test leaves its shot timer off until a restart).
 
 Procedure: set the lowest V_Ref at which NOTHING trips on its own for a quiet minute (re-arm, then wait), then add a
@@ -126,6 +126,9 @@ def main(argv=None) -> int:
                         break
                     elif cmd in ("", "r"):
                         s.rearm()
+                    elif cmd == "b":
+                        s.say("paper motor on for 1 s")
+                        link.write(b"B")
                 line = link.readline(0.1)
                 if line:
                     s.handle(line)
