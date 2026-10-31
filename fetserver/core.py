@@ -13,6 +13,8 @@ from .db import Database
 from .groupstats import group_stats
 from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
+from .shotsolve import Geometry, solve
+from .targetproto import key_fingerprint, make_command, parse_hello, parse_reply, parse_shot
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 from .sightadj import suggest
 from .matches import Matches
@@ -256,6 +258,13 @@ class Core:
             elif etype == "config":
                 d = parse_echo(raw) if raw else data
                 self._apply_config(c, device_id, d)
+            elif etype == "target_shot":
+                self._derive_target_shot(c, event_id, device_id, event_ms, raw)
+                return True
+            elif etype == "target_hello":
+                self._derive_target_hello(c, device_id, raw)
+            elif etype == "target_reply":
+                self._derive_target_reply(c, device_id, raw)
             elif etype == "arduino_boot":
                 m = re.search(r'"([^"]+)"', raw or "")
                 if m:
@@ -267,18 +276,93 @@ class Core:
 
     def _derive_shot(self, c, event_id, device_id, event_ms, raw, data) -> None:
         sl = parse_shot_line(raw) if raw else shot_from_dict(data or {})
+        self._store_shot(c, event_id, device_id, event_ms, sl.shot, sl.miss, sl.x_h, sl.y_h, sl.n, sl.e, sl.s, sl.w,
+                         sl.time_s, sl.v_ref, sl.temp_c, sl.face)
+
+    # ---- the FeT target firmware (firmware/target): signed lines, raw times, the position solved here ----
+    def _target_key(self, c, device_id: str) -> Optional[bytes]:
+        r = c.execute("SELECT k.key_hex FROM targets t JOIN target_keys k ON k.fingerprint = t.key_fp WHERE t.device_id=?",
+                      (device_id,)).fetchone()
+        return bytes.fromhex(r["key_hex"]) if r else None
+
+    @staticmethod
+    def _geometry(c, device_id: str) -> Geometry:
+        r = c.execute("SELECT geometry_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if r and r["geometry_json"]:
+            g = json.loads(r["geometry_json"])
+            return Geometry(sensors=[tuple(p) for p in g["sensors"]], z_mm=g["z_mm"], angle_deg=g["angle_deg"],
+                            clock_mhz=g["clock_mhz"], walk_ticks=g["walk_ticks"])
+        return Geometry.from_upstream({"SENSOR": 230, "ANGLE": 45})       # freETarget's defaults, Mega 8 MHz
+
+    def _derive_target_shot(self, c, event_id, device_id, event_ms, raw) -> None:
+        """A signed shot: wrong signature -> no shot at all (ProtoError); no key here -> stored, auth 0."""
+        p = parse_shot(raw, self._target_key(c, device_id))
+        sol = solve(p["counts"], self._geometry(c, device_id), 20.0 if p["temp_c"] is None else p["temp_c"])
+        miss = not sol.ok                                                   # never a position from a failed solve
+        n, e, s, w = p["raw_counts"]
+        self._store_shot(c, event_id, device_id, event_ms, p["seq"], miss,
+                         None if miss else int(round(sol.x * 100)), None if miss else int(round(sol.y * 100)),
+                         n, e, s, w, p["ms"] / 1000.0, None, p["temp_c"], None,
+                         auth=int(p["authenticated"]), mic_mask=p["mask"], face_us=p["face_us"],
+                         misfit_um=None if miss or sol.residual_mm is None else int(round(sol.residual_mm * 1000)))
+
+    def _derive_target_hello(self, c, device_id, raw) -> None:
+        """Only a hello signed with a known key binds that key and moves the boot count (never backwards); an
+        unsigned or unknown-key hello cannot unbind a key (that would turn the target's signed shots into
+        'not authenticated')."""
+        h = parse_hello(raw)
+        key = None
+        if h["key_fp"]:
+            r = c.execute("SELECT key_hex FROM target_keys WHERE fingerprint=?", (h["key_fp"],)).fetchone()
+            key = bytes.fromhex(r["key_hex"]) if r else None
+        h = parse_hello(raw, key)                                          # raises on a wrong signature
+        t = c.execute("SELECT key_fp, target_boot FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        version = "FeT target " + h["fw"]
+        if h["authenticated"]:
+            if t["key_fp"] != h["key_fp"] or t["target_boot"] is None or h["boot"] > t["target_boot"]:
+                c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=0, target_settings_id=?,
+                             arduino_version=? WHERE device_id=?""",
+                          (h["key_fp"], h["boot"], h["settings_id"], version, device_id))
+        elif t["key_fp"] is None:
+            c.execute("UPDATE targets SET arduino_version=? WHERE device_id=?", (version, device_id))
+
+    def _derive_target_reply(self, c, device_id, raw) -> None:
+        r = parse_reply(raw, self._target_key(c, device_id))
+        if not r["authenticated"]:
+            raise ValueError("reply not authenticated")
+        cmd = c.execute("SELECT id, line FROM commands WHERE device_id=? AND type='target' AND line LIKE ? ORDER BY id DESC LIMIT 1",
+                        (device_id, f"FT1 C b={r['boot']} i={r['id']} %")).fetchone()
+        if cmd is None:
+            return
+        c.execute("UPDATE commands SET reply=? WHERE id=?", ("ok" if r["ok"] else r["reason"], cmd["id"]))
+        if not r["ok"]:
+            return
+        vals = {k: v for k, v in r["values"].items() if k not in ("k", "up", "d")}
+        t = c.execute("SELECT target_settings_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        cur = json.loads(t["target_settings_json"]) if t["target_settings_json"] else {}
+        verb = cmd["line"].split(" ")[4]
+        if verb == "set":                                                   # the values the command set
+            for part in cmd["line"].rsplit(" h=", 1)[0].split(" ")[5:]:
+                k, v = part.split("=", 1)
+                cur[k] = int(v)
+        cur.update(vals)                                                    # a "get" reply has them all
+        c.execute("UPDATE targets SET target_settings_id=COALESCE(?, target_settings_id), target_settings_json=? WHERE device_id=?",
+                  (r["values"].get("k"), json.dumps(cur, sort_keys=True) if cur else None, device_id))
+
+    def _store_shot(self, c, event_id, device_id, event_ms, shot_number, miss, x_h, y_h, n, e, s, w, time_s, v_ref,
+                    temp_c, face, auth=None, misfit_um=None, mic_mask=None, face_us=None) -> None:
         t = c.execute("SELECT calibre_x10, align_x_h, align_y_h FROM targets WHERE device_id=?",
                       (device_id,)).fetchone()
         calibre, ax_off, ay_off = t["calibre_x10"], t["align_x_h"], t["align_y_h"]
-        if sl.miss:
+        if miss:
             ax = ay = None
         else:
-            ax, ay = sl.x_h + ax_off, sl.y_h + ay_off
+            ax, ay = x_h + ax_off, y_h + ay_off
         # The mode in force when the shot happened (not when it arrived), so a delayed upload
         # lands in the right segment and series.
         seg_id, series_id, stream, series_no = self._assign_series(c, device_id, event_ms)
         ser = c.execute("SELECT kind, projectile_h FROM series WHERE id=?", (series_id,)).fetchone() if series_id else None
-        if sl.miss:
+        if miss:
             ring, tenths = 0, 0       # a miss is never a centre hit
         elif ser is not None and ser["kind"] == "ammo":
             ref = c.execute("SELECT ax_h, ay_h FROM shots WHERE series_id=? AND is_miss=0 ORDER BY series_no, id LIMIT 1",
@@ -290,11 +374,13 @@ class Core:
         c.execute(
             """INSERT INTO shots (event_id, device_id, event_ms, shot_number, is_miss, x_h, y_h, ax_h, ay_h,
                                   n, e, s, w, arduino_time_s, v_ref, temp_c, face, calibre_x10,
-                                  scoring_version, ring, tenths, segment_id, series_id, series_no, stream)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (event_id, device_id, event_ms, sl.shot, int(sl.miss), sl.x_h, sl.y_h, ax, ay,
-             sl.n, sl.e, sl.s, sl.w, sl.time_s, sl.v_ref, sl.temp_c, sl.face, calibre,
-             SCORING_VERSION, ring, tenths, seg_id, series_id, series_no, stream))
+                                  scoring_version, ring, tenths, segment_id, series_id, series_no, stream,
+                                  auth, misfit_um, mic_mask, face_us)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (event_id, device_id, event_ms, shot_number, int(miss), x_h, y_h, ax, ay,
+             n, e, s, w, time_s, v_ref, temp_c, face, calibre,
+             SCORING_VERSION, ring, tenths, seg_id, series_id, series_no, stream,
+             auth, misfit_um, mic_mask, face_us))
 
     # ---- series -------------------------------------------------------------
     @staticmethod
@@ -427,6 +513,54 @@ class Core:
                 raise NotFound(f"unknown target {device_id}")
             cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
                             (device_id, ctype, line, self.now_ms()))
+            return cur.lastrowid
+
+    def add_target_key(self, key: bytes, note: str = "") -> str:
+        """A key the flash station put into a target (over USB). Returns its fingerprint, which the target reports in
+        its hello: that is how the key finds its target."""
+        if not isinstance(key, bytes) or len(key) != 32 or key == bytes(32):
+            raise BadRequest("a target key is 32 random bytes")
+        fp = key_fingerprint(key)
+        with self.db.write() as c:
+            old = c.execute("SELECT key_hex FROM target_keys WHERE fingerprint=?", (fp,)).fetchone()
+            if old is not None and old["key_hex"] != key.hex():
+                raise BadRequest("another key has the same fingerprint: make a new key")
+            if old is None:
+                c.execute("INSERT INTO target_keys (fingerprint, key_hex, created_ms, note) VALUES (?,?,?,?)",
+                          (fp, key.hex(), self.now_ms(), note[:200]))
+        return fp
+
+    def target_command(self, device_id: str, verb: str, settings: Optional[dict] = None) -> int:
+        """Queue a signed command for a target running the FeT target firmware. Needs its key and the boot it
+        reported (a command names that boot: one recorded earlier is refused after a restart). Changing settings is
+        refused while the target is in a match."""
+        if verb not in ("get", "set", "paper", "status"):
+            raise BadRequest("verb must be get, set, paper or status")
+        if (verb == "set") != bool(settings):
+            raise BadRequest("set needs settings; the other verbs take none")
+        with self.db.write() as c:
+            t = c.execute("SELECT target_boot, target_cmd_id FROM targets WHERE device_id=? AND removed=0 AND banned=0",
+                          (device_id,)).fetchone()
+            if t is None:
+                raise NotFound(f"unknown target {device_id}")
+            key = self._target_key(c, device_id)
+            if key is None or t["target_boot"] is None:
+                raise BadRequest(f"{device_id} has not reported a key this server knows (FeT target firmware, set up "
+                                 "with the flash station)")
+            if verb == "set":
+                locked = self.matches.lock_of(c, device_id)
+                if locked:
+                    raise BadRequest(f"{device_id} is in the match '{locked}': its settings cannot change now")
+            cmd_id = t["target_cmd_id"] + 1
+            try:
+                line = make_command(t["target_boot"], cmd_id, verb, settings, key).rstrip("\n")
+            except ValueError as exc:                                       # ProtoError: a bad name or value
+                raise BadRequest(str(exc))
+            if len(line) > 300:
+                raise BadRequest("too many settings in one command")
+            c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+            cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                            (device_id, "target", line, self.now_ms()))
             return cur.lastrowid
 
     def queue_target_line(self, device_id: str, line: str) -> int:

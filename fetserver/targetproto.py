@@ -107,3 +107,30 @@ def parse_reply(line: str, key: Optional[bytes] = None) -> dict:
     else:
         out["authenticated"] = False
     return out
+
+
+# ------------------------------------------------------------------------------------------------- hello
+# FT1 H b=<boot> fw=<version> rev=<board> k=<settings id> key=<fingerprint|none> h=<mac>   (sent at every start)
+HELLO_RE = re.compile(r"^FT1 H b=(\d{1,10}) fw=([0-9A-Za-z.\-]{1,20}) rev=(\d{1,5}) k=([0-9a-f]{8}) key=([0-9a-f]{8}|none)$")
+
+
+def key_fingerprint(key: bytes) -> str:
+    return hashlib.sha256(key).hexdigest()[:8]
+
+
+def parse_hello(line: str, key: Optional[bytes] = None) -> dict:
+    """boot, fw, rev, settings_id, key_fp (None if the target has no key), authenticated. A wrong signature raises."""
+    line = line.rstrip("\r\n")
+    head, sep, tag = line.rpartition(" h=")
+    m = HELLO_RE.match(head) if sep else None
+    if not m:
+        raise ProtoError("not a hello line")
+    out = {"boot": int(m.group(1)), "fw": m.group(2), "rev": int(m.group(3)), "settings_id": m.group(4),
+           "key_fp": None if m.group(5) == "none" else m.group(5), "authenticated": False}
+    if tag != "-" and not re.fullmatch(r"[0-9a-f]{16}", tag):
+        raise ProtoError("malformed signature")
+    if key is not None and tag != "-":
+        if not hmac.compare_digest(tag, mac(key, head.encode())):
+            raise ProtoError("signature does not match")
+        out["authenticated"] = True
+    return out

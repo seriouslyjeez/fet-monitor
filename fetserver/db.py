@@ -359,6 +359,27 @@ MIGRATIONS = [
     ALTER TABLE match_lanes ADD COLUMN out_place INTEGER;
     ALTER TABLE match_lanes ADD COLUMN out_ms INTEGER;
     """,
+    """
+    -- FeT target firmware (firmware/target, fetserver/targetproto.py): keys, what each target reported, and per
+    -- shot whether it was signed, how well the four microphone times agreed, which microphones triggered.
+    CREATE TABLE target_keys (
+        fingerprint TEXT PRIMARY KEY,                  -- first 4 bytes of SHA-256(key), hex: what a target reports
+        key_hex     TEXT NOT NULL,
+        created_ms  INTEGER NOT NULL,
+        note        TEXT
+    );
+    ALTER TABLE targets ADD COLUMN key_fp TEXT;              -- bound when a hello signed with that key arrives
+    ALTER TABLE targets ADD COLUMN target_boot INTEGER;      -- the target firmware's boot count (commands name it)
+    ALTER TABLE targets ADD COLUMN target_cmd_id INTEGER NOT NULL DEFAULT 0;   -- last command id used in that boot
+    ALTER TABLE targets ADD COLUMN target_settings_id TEXT;
+    ALTER TABLE targets ADD COLUMN target_settings_json TEXT;
+    ALTER TABLE targets ADD COLUMN geometry_json TEXT;       -- solver calibration (NULL = defaults)
+    ALTER TABLE shots ADD COLUMN auth INTEGER;               -- 1 signature checked, 0 not authenticated, NULL older
+    ALTER TABLE shots ADD COLUMN misfit_um INTEGER;          -- how far the four times are from one point, micrometres
+    ALTER TABLE shots ADD COLUMN mic_mask INTEGER;           -- microphones that triggered (bit 0 North)
+    ALTER TABLE shots ADD COLUMN face_us INTEGER;            -- face sensor's first edge relative to the stop
+    ALTER TABLE commands ADD COLUMN reply TEXT;              -- the target's own (signed) reply to a "target" command
+    """,
 ]
 
 
