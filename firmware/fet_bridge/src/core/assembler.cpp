@@ -32,7 +32,8 @@ void Assembler::feed(uint8_t c, uint64_t now) {
   }
   if (c == '\n') { finishLine(); return; }
   if (c == '\r') return;
-  if (line_.size() < 200) line_ += (char)c;
+  if (line_.size() < MAX_LINE) line_ += (char)c;
+  else lineOver_ = true;
 }
 
 void Assembler::finishObject() {
@@ -47,9 +48,13 @@ void Assembler::finishObject() {
 void Assembler::finishLine() {
   std::string l;
   l.swap(line_);
+  if (lineOver_) { lineOver_ = false; ignoredLines_++; return; }
   size_t s = 0;
   while (s < l.size() && (l[s] == ' ' || l[s] == '\t')) s++;
   if (l.compare(s, 10, "freETarget") == 0) sink_.onRecord("arduino_boot", l.substr(s));
+  else if (l.compare(s, 6, "FT1 S ") == 0) sink_.onRecord("target_shot", l.substr(s));
+  else if (l.compare(s, 6, "FT1 H ") == 0) sink_.onRecord("target_hello", l.substr(s));
+  else if (l.compare(s, 6, "FT1 R ") == 0) sink_.onRecord("target_reply", l.substr(s));
   else if (!l.empty()) ignoredLines_++;
 }
 
@@ -58,7 +63,7 @@ void Assembler::tick(uint64_t now) {
     discarded_++;
     obj_.clear(); depth_ = 0; inStr_ = esc_ = false;
   }
-  if (depth_ == 0 && !line_.empty() && now - last_ > SILENCE_MS) { line_.clear(); }   // a stray partial line
+  if (depth_ == 0 && (!line_.empty() || lineOver_) && now - last_ > SILENCE_MS) { line_.clear(); lineOver_ = false; }   // a stray partial line
 }
 
 }  // namespace fet

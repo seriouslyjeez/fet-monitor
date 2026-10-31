@@ -269,6 +269,54 @@ class FirmwareHost(unittest.TestCase):
         self.tick(10000)
         self.assertEqual(len(self.shots()), 1)
 
+    # ---- FeT target firmware lines (firmware/target), FeT Bridge 0.4
+    def test_target_lines_are_passed_on_byte_for_byte(self):
+        shot = "FT1 S b=3 q=1 t=4821 n=5123 e=4987 s=5401 w=5290 m=f f=- c=196 k=1234abcd d=0 h=0123456789abcdef"
+        hello = "FT1 H b=3 fw=0.1.0 rev=310 k=1234abcd key=9f86d081 h=-"
+        reply = "FT1 R b=3 i=7 r=ok k=1234abcd " + " ".join("x%d=%d" % (i, i) for i in range(30)) + " h=-"
+        self.assertGreater(len(reply), 200, "longer than the old 200-character line limit")
+        self.feed(hello)
+        self.feed("  " + shot)                                     # leading blanks are not part of the line
+        self.feed(reply)
+        self.feed("FT1 X something")                               # not one of ours
+        self.tick(3000)
+        got = [(e[2], e[3]) for e in self.events()]
+        self.assertEqual(got, [("target_hello", hello), ("target_shot", shot), ("target_reply", reply)])
+        self.tick(6000)                                            # the version travels with the next heartbeat
+        c = self.core.db.conn()
+        self.assertEqual(c.execute("SELECT arduino_version FROM targets").fetchone()[0], "FeT target 0.1.0")
+
+    def test_overlong_target_line_is_dropped_whole(self):
+        self.feed("FT1 S " + "x" * 450)
+        self.feed("FT1 S b=3 q=2 t=1 n=1 e=1 s=1 w=1 m=f f=- c=- k=00000000 d=0 h=-")
+        self.tick(3000)
+        self.assertEqual([e[2] for e in self.events()], ["target_shot"])
+        self.assertTrue(self.events()[0][3].endswith("q=2 t=1 n=1 e=1 s=1 w=1 m=f f=- c=- k=00000000 d=0 h=-"[-10:]))
+
+    def test_target_command_reaches_the_target_once(self):
+        line = "FT1 C b=3 i=1 get h=0123456789abcdef"
+        self.core.queue_target_line("fet-test01", line)
+        self.tick(20000)
+        self.assertEqual(self.h.run("uartlog"), line + "\\n")
+        self.h.run("boot")
+        self.tick(20000)
+        self.assertEqual(self.h.run("uartlog"), line + "\\n", "not replayed after a restart")
+
+    def test_target_command_checked_by_the_bridge_too(self):
+        with self.core.db.write() as c:                            # whatever the server sends
+            for line in ("FT1 C {bad} h=-", "FT1 X b=1 h=-", "FT1 C " + "x" * 300, "FT1 C b=1\tget"):
+                c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES ('fet-test01','target',?,0)", (line,))
+        self.tick(20000)
+        self.assertEqual(self.h.run("uartlog"), "")
+        res = [r[0] for r in self.core.db.conn().execute("SELECT result FROM commands ORDER BY id")]
+        self.assertEqual(res, ["refused: not a target command line"] * 4)
+
+    def test_server_checks_target_lines_too(self):
+        from fetserver.core import BadRequest
+        for line in ("FT1 C {x} h=-", "get", "FT1 C " + "x" * 300, "FT1 C a\nb"):
+            with self.assertRaises(BadRequest):
+                self.core.queue_target_line("fet-test01", line)
+
     # ---- commands
     def test_serial_command_reaches_arduino_once(self):
         self.core.enqueue_command("fet-test01", "serial", '{"ECHO":0}')

@@ -41,7 +41,10 @@ Request:
   each event's `uptime_ms` is when the event happened in the same clock.
 - An event may name its own `boot_count` (an event queued before a restart, sent after it); default: the request's.
 - `type`: `shot` (a shot line from the Arduino), `config` (its `{"ECHO":0}` settings block), `arduino_boot` (the
-  Arduino's start-up banner, e.g. `freETarget "4.3.0"`), `log`. Unknown types are rejected (that event only).
+  Arduino's start-up banner, e.g. `freETarget "4.3.0"`), `log`; from the FeT target firmware (firmware/target):
+  `target_shot` (`FT1 S ...`), `target_hello` (`FT1 H ...`), `target_reply` (`FT1 R ...`), each the line exactly as
+  the target sent it (signed by the target; see fetserver/targetproto.py). Unknown types are rejected (that event
+  only).
 - `raw`: the text line exactly as the Arduino printed it (at most 16384 characters), or `data`: the same as a JSON
   object. A shot needs `shot` (number) and, unless `miss` is 1, `x` and `y` in millimetres from the centre;
   optional `N E S W` (sensor counts), `time`, `V_REF`, `T`, `face`, `name`, `VERSION`.
@@ -98,6 +101,7 @@ result for its id arrives):
 | `wifi_portal` | — | restarts into its setup portal |
 | `reboot` | — | restarts |
 | `factory_reset` | `erase` (required) | erases its settings and queued events, restarts |
+| `target` | one `FT1 C ...` line (printable ASCII, no braces, at most 300 characters) | writes it to the target firmware, which checks its signature, boot and id itself (FeT Bridge 0.4+) |
 | `fw_update` | `<sha256> <size>` | fetches `GET /api/v1/firmware/<sha256>` (same token header), checks size and SHA-256, installs, restarts |
 
 The bridge never sends anything to the Arduino that contains other braces than these commands (it listens on the

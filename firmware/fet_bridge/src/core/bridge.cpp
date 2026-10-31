@@ -41,7 +41,11 @@ void Bridge::onByte(uint8_t c, uint64_t now) {
 
 void Bridge::learnVersion(const char* type, const std::string& text) {
   std::string v;
-  if (std::string(type) == "arduino_boot") {
+  if (std::string(type) == "target_hello") {             // "FT1 H b=.. fw=<version> ..."
+    size_t p = text.find(" fw=");
+    size_t e = p == std::string::npos ? p : text.find(' ', p + 4);
+    if (e != std::string::npos && e > p + 4) v = "FeT target " + text.substr(p + 4, e - p - 4);
+  } else if (std::string(type) == "arduino_boot") {
     size_t a = text.find('"');
     size_t b = a == std::string::npos ? a : text.find('"', a + 1);
     if (b != std::string::npos) v = text.substr(a + 1, b - a - 1);
@@ -207,6 +211,14 @@ void Bridge::runCommand(long long id, const std::string& type, const std::string
       for (size_t k = 7; ok && k + 1 < line.size(); k++) if (line[k] < '0' || line[k] > '9') ok = false;
     }
     if (!ok) { results_.push_back(Result{id, false, "refused: not an allowed command"}); return; }
+    uart_.write(line + "\n");
+    results_.push_back(Result{id, true, "sent"});
+  } else if (type == "target") {
+    // A command for the FeT target firmware: one "FT1 C ..." line, signed by the server (the target checks the
+    // signature; we only make sure it is one plain line). Printable ASCII, no braces, bounded.
+    bool ok = line.size() > 6 && line.size() <= 300 && line.compare(0, 6, "FT1 C ") == 0;
+    for (size_t k = 0; ok && k < line.size(); k++) ok = line[k] >= 0x20 && line[k] <= 0x7e && line[k] != '{' && line[k] != '}';
+    if (!ok) { results_.push_back(Result{id, false, "refused: not a target command line"}); return; }
     uart_.write(line + "\n");
     results_.push_back(Result{id, true, "sent"});
   } else if (type == "wifi_portal") {

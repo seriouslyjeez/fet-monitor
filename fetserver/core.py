@@ -22,7 +22,8 @@ from .corrections import Corrections
 
 log = logging.getLogger("fetserver.core")
 
-EVENT_TYPES = {"shot", "config", "arduino_boot", "log"}
+EVENT_TYPES = {"shot", "config", "arduino_boot", "log",
+               "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetserver/targetproto.py)
 MAX_EVENTS_PER_BATCH = 50
 MAX_RAW_CHARS = 16384
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -426,6 +427,19 @@ class Core:
                 raise NotFound(f"unknown target {device_id}")
             cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
                             (device_id, ctype, line, self.now_ms()))
+            return cur.lastrowid
+
+    def queue_target_line(self, device_id: str, line: str) -> int:
+        """One "FT1 C ..." line for a target running the FeT target firmware (built and signed by the server: the
+        target checks the signature, the bridge only that it is one plain line). Not reachable from Range Control."""
+        if not (isinstance(line, str) and 6 < len(line) <= 300 and line.startswith("FT1 C ")
+                and all(0x20 <= ord(ch) <= 0x7E and ch not in "{}" for ch in line)):
+            raise BadRequest("not a target command line")
+        with self.db.write() as c:
+            if c.execute("SELECT 1 FROM targets WHERE device_id=?", (device_id,)).fetchone() is None:
+                raise NotFound(f"unknown target {device_id}")
+            cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                            (device_id, "target", line, self.now_ms()))
             return cur.lastrowid
 
     def queue_firmware(self, device_id: str, image: dict) -> int:

@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.3.0"
+#define FET_FW_VERSION "0.4.0"
 // Sent as the User-Agent; the server also finds it inside an uploaded image to recognise our firmware and its version.
 #define FET_FW_ID "fet-monitor-bridge/" FET_FW_VERSION
 
