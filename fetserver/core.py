@@ -13,11 +13,11 @@ from .db import Database
 from .groupstats import group_stats
 from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
-from .shotsolve import Geometry, solve
+from .shotsolve import Geometry, solve, timers_from_reported
 from .targetproto import key_fingerprint, make_command, parse_hello, parse_reply, parse_shot
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 from .sightadj import suggest
-from .matches import Matches
+from .matches import Matches, _check
 from .competitions import Competitions
 from .resultstore import ResultStore
 from .corrections import Corrections
@@ -276,8 +276,29 @@ class Core:
 
     def _derive_shot(self, c, event_id, device_id, event_ms, raw, data) -> None:
         sl = parse_shot_line(raw) if raw else shot_from_dict(data or {})
+        if sl.unplaced:
+            self._store_unplaced(c, event_id, device_id, event_ms, sl.shot, (sl.n, sl.e, sl.s, sl.w))
+            return
+        misfit = None
+        if not sl.miss and None not in (sl.n, sl.e, sl.s, sl.w):     # do the four times agree on the position sent?
+            g = self._geometry(c, device_id)
+            sol = solve(timers_from_reported([sl.n, sl.e, sl.s, sl.w], sl.x_h / 100.0, sl.y_h / 100.0, g), g,
+                        20.0 if sl.temp_c is None else sl.temp_c)
+            misfit = int(round(sol.residual_mm * 1000)) if sol.ok and sol.residual_mm is not None else None
         self._store_shot(c, event_id, device_id, event_ms, sl.shot, sl.miss, sl.x_h, sl.y_h, sl.n, sl.e, sl.s, sl.w,
-                         sl.time_s, sl.v_ref, sl.temp_c, sl.face)
+                         sl.time_s, sl.v_ref, sl.temp_c, sl.face, misfit_um=misfit)
+
+    def _store_unplaced(self, c, event_id, device_id, event_ms, shot_number, counts) -> None:
+        """A shot heard but not placed: kept apart from the shots (it has no value and is not a miss), in the series
+        it was fired in. Never starts a new series."""
+        seg = c.execute("""SELECT * FROM segments WHERE device_id=? AND started_ms<=?
+                           AND (ended_ms IS NULL OR ended_ms>?) ORDER BY id DESC LIMIT 1""",
+                        (device_id, event_ms, event_ms)).fetchone()
+        series_id = self._series_of(c, seg)["id"] if seg is not None else None
+        stream = "sighter" if seg is not None and seg["mode"] == "sighter" else "scored"
+        c.execute("""INSERT INTO unplaced (event_id, device_id, event_ms, shot_number, n, e, s, w, segment_id, series_id, stream)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                  (event_id, device_id, event_ms, shot_number, *counts, seg["id"] if seg is not None else None, series_id, stream))
 
     # ---- the FeT target firmware (firmware/target): signed lines, raw times, the position solved here ----
     def _target_key(self, c, device_id: str) -> Optional[bytes]:
@@ -298,8 +319,11 @@ class Core:
         """A signed shot: wrong signature -> no shot at all (ProtoError); no key here -> stored, auth 0."""
         p = parse_shot(raw, self._target_key(c, device_id))
         sol = solve(p["counts"], self._geometry(c, device_id), 20.0 if p["temp_c"] is None else p["temp_c"])
-        miss = not sol.ok                                                   # never a position from a failed solve
         n, e, s, w = p["raw_counts"]
+        if not sol.ok and sum(1 for t in p["counts"] if t is not None) >= 3:   # heard by enough, but fits no point
+            self._store_unplaced(c, event_id, device_id, event_ms, p["seq"], (n, e, s, w))
+            return
+        miss = not sol.ok                                                   # never a position from a failed solve
         self._store_shot(c, event_id, device_id, event_ms, p["seq"], miss,
                          None if miss else int(round(sol.x * 100)), None if miss else int(round(sol.y * 100)),
                          n, e, s, w, p["ms"] / 1000.0, None, p["temp_c"], None,
@@ -885,13 +909,27 @@ class Core:
         return {"shots": r["n"], "misses": r["m"], "total_decimal": r["t"] / 10.0, "total_integer": r["ri"]}
 
     @staticmethod
-    def _brief(r, off=(0, 0)) -> dict:
+    def _brief(r, off=(0, 0), checks=None) -> dict:
         miss = bool(r["is_miss"])
         return {"id": r["id"], "n": r["series_no"] if r["series_no"] is not None else r["shot_number"],
                 "shot_number": r["shot_number"], "miss": miss, "ring": r["ring"], "decimal": r["tenths"] / 10.0,
                 "inner": (not miss) and is_inner_ten(r["tenths"]),
                 "x_mm": None if miss else (r["ax_h"] - off[0]) / 100.0,
-                "y_mm": None if miss else (r["ay_h"] - off[1]) / 100.0}
+                "y_mm": None if miss else (r["ay_h"] - off[1]) / 100.0,
+                "check": (checks or {}).get(r["id"])}      # may not be one clean shot (matches._check): look at the target
+
+    def _checks(self, c, series_id: int) -> tuple:
+        """({shot id: why}, [unplaced reports]) for one series: shots too soon after another report or whose
+        microphones disagree, and shots heard but not placed. Shown in practice too; only a match decides."""
+        shots = c.execute("SELECT id, event_ms, series_no, misfit_um, stream FROM shots WHERE series_id=?", (series_id,)).fetchall()
+        un = c.execute("SELECT id, event_ms, stream FROM unplaced WHERE series_id=? ORDER BY event_ms, id", (series_id,)).fetchall()
+        heard = [(r["event_ms"], r["id"], r["series_no"], False) for r in shots] + [(u["event_ms"], u["id"], None, True) for u in un]
+        out = {}
+        for r in shots:
+            ck = _check(dict(r), heard, self.matches.close_ms)
+            if ck:
+                out[r["id"]] = ck[0]
+        return out, [{"id": u["id"], "t": u["event_ms"], "stream": u["stream"]} for u in un]
 
     @staticmethod
     def _aggregate(rows) -> dict:
@@ -910,13 +948,17 @@ class Core:
         full = len(rows)
         if upto is not None:
             rows = rows[:max(0, upto)]
-        view = self._stream_view_rows(c, ser, stream, rows, bull)
+        checks, un = self._checks(c, ser["id"])
+        view = self._stream_view_rows(c, ser, stream, rows, bull, checks)
         view["full_count"] = full
+        if upto is not None:                                    # shot-by-shot review: only what was heard by then
+            un = [u for u in un if rows and u["t"] <= rows[-1]["event_ms"]]
+        view["unplaced"] = [u for u in un if u["stream"] == stream]
         return view
 
-    def _stream_view_rows(self, c, ser, stream: str, rows, bull=None) -> dict:
+    def _stream_view_rows(self, c, ser, stream: str, rows, bull=None, checks=None) -> dict:
         if ser["kind"] == "ammo":
-            return self._ammo_view(ser, rows)
+            return self._ammo_view(ser, rows, checks)
         n, bs, gs = len(rows), ser["bull_size"], ser["group_size"]
         groups = []
         for i in range(0, n, gs):
@@ -929,10 +971,10 @@ class Core:
                 "open": ser["ended_ms"] is None, "count": n, "total": ser["total"] if stream == "scored" else None,
                 "bull_size": bs, "group_size": gs, "agg": self._aggregate(rows), "groups": groups,
                 "bull_index": idx, "bull_count": bull_count,
-                "bull_shots": [self._brief(r) for r in rows[idx * bs:(idx + 1) * bs]],
-                "last_shot": self._brief(rows[-1]) if rows else None}
+                "bull_shots": [self._brief(r, checks=checks) for r in rows[idx * bs:(idx + 1) * bs]],
+                "last_shot": self._brief(rows[-1], checks=checks) if rows else None}
 
-    def _ammo_view(self, ser, rows) -> dict:
+    def _ammo_view(self, ser, rows, checks=None) -> dict:
         """An ammo test: every shot is drawn relative to the first one, with the live group statistics."""
         ref = next((r for r in rows if not r["is_miss"]), None)
         off = (ref["ax_h"], ref["ay_h"]) if ref else (0, 0)
@@ -941,8 +983,8 @@ class Core:
         return {"series_id": ser["id"], "kind": "ammo", "stream": "scored", "shooter": ser["shooter"], "label": ser["label"],
                 "open": ser["ended_ms"] is None, "count": n, "total": None,
                 "bull_size": max(1, n), "group_size": max(1, n), "agg": self._aggregate(rows), "groups": [],
-                "bull_index": 0, "bull_count": 1, "bull_shots": [self._brief(r, off) for r in rows],
-                "last_shot": self._brief(rows[-1], off) if rows else None,
+                "bull_index": 0, "bull_count": 1, "bull_shots": [self._brief(r, off, checks) for r in rows],
+                "last_shot": self._brief(rows[-1], off, checks) if rows else None,
                 "ammo": group_stats(pts, ser["projectile_h"]) | {"misses": sum(1 for r in rows if r["is_miss"])}}
 
     @staticmethod
@@ -1156,6 +1198,29 @@ class Core:
                 n += 1
             for g in c.execute("SELECT id FROM series WHERE kind='ammo'").fetchall():
                 n += self._rescore_series(c, g["id"])
+            n += self._recover_unplaced(c)
+            for r in c.execute("""SELECT id, device_id, x_h, y_h, n, e, s, w, temp_c FROM shots WHERE is_miss=0 AND misfit_um IS NULL
+                                  AND auth IS NULL AND n IS NOT NULL AND e IS NOT NULL AND s IS NOT NULL AND w IS NOT NULL""").fetchall():
+                g = self._geometry(c, r["device_id"])            # freETarget shots from before misfits were kept
+                sol = solve(timers_from_reported([r["n"], r["e"], r["s"], r["w"]], r["x_h"] / 100.0, r["y_h"] / 100.0, g), g,
+                            20.0 if r["temp_c"] is None else r["temp_c"])
+                if sol.ok and sol.residual_mm is not None:
+                    c.execute("UPDATE shots SET misfit_um=? WHERE id=?", (int(round(sol.residual_mm * 1000)), r["id"]))
+        return n
+
+    def _recover_unplaced(self, c) -> int:
+        """Shot lines once refused for "x":NAN (before unplaced shots were kept): kept now, the error cleared."""
+        n = 0
+        for ev in c.execute("""SELECT e.id, e.device_id, e.event_ms, e.raw FROM events e LEFT JOIN unplaced u ON u.event_id = e.id
+                               WHERE e.type='shot' AND e.parse_error IS NOT NULL AND e.raw IS NOT NULL AND u.id IS NULL""").fetchall():
+            try:
+                sl = parse_shot_line(ev["raw"])
+            except PARSE_ERRORS:
+                continue
+            if sl.unplaced:
+                self._store_unplaced(c, ev["id"], ev["device_id"], ev["event_ms"], sl.shot, (sl.n, sl.e, sl.s, sl.w))
+                c.execute("UPDATE events SET parse_error=NULL WHERE id=?", (ev["id"],))
+                n += 1
         return n
 
     @staticmethod

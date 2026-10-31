@@ -23,6 +23,7 @@ class DashboardLogic(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             now = [BASE]
             core = Core(Database(os.path.join(tmp, "t.db")), now_ms=lambda: now[0], lease_ms=10**9)
+            core.matches.close_ms = None      # shots 1 s apart here; tests.test_doubleload covers "too soon after a shot"
             hb = lambda did, name, **kw: core.handle_heartbeat({"device_id": did, "boot_count": 1, "uptime_ms": now[0] - BASE, "name": name, **kw})
             seq = [0]
 

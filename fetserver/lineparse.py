@@ -7,6 +7,7 @@ strings are never touched.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Optional
@@ -59,11 +60,20 @@ def normalise(text: str) -> str:
     return "".join(out).strip()
 
 
+# freETarget prints a position it could not compute as a bare NAN (or INF): as a value, that means "none"
+_NOT_A_NUMBER = re.compile(r'(:\s*)[-+]?(?:nan|inf)(?=\s*[,}\]])', re.IGNORECASE)
+
+
 def _loads(text: str, floats=Decimal):
+    norm = normalise(text)
     try:
-        return json.loads(normalise(text), parse_float=floats)
+        return json.loads(norm, parse_float=floats)
     except (ValueError, TypeError) as exc:
-        raise ParseError(f"not parseable as JSON after normalising: {exc}") from exc
+        first = exc
+    try:                                    # only if it did not parse as it is: never touches a string that did
+        return json.loads(_NOT_A_NUMBER.sub(r"\1null", norm), parse_float=floats)
+    except (ValueError, TypeError):
+        raise ParseError(f"not parseable as JSON after normalising: {first}") from first
 
 
 @dataclass(frozen=True)
@@ -82,6 +92,7 @@ class ShotLine:
     version: Optional[str]
     face: Optional[int]
     name: Optional[str]
+    unplaced: bool = False      # heard, but the target could not place it (x/y NAN): no position, not a miss
 
 
 def _opt_int(d, key):
@@ -103,15 +114,19 @@ def shot_from_dict(d) -> ShotLine:
         raise ParseError("not a shot line")
     miss = bool(int(d.get("miss", 0)))
     x_h = y_h = None
+    unplaced = False
     if not miss:
         if "x" not in d or "y" not in d:
             raise ParseError("shot line without x/y")
-        x_h, y_h = to_hundredths(d["x"]), to_hundredths(d["y"])
+        if d["x"] is None or d["y"] is None:
+            unplaced = True
+        else:
+            x_h, y_h = to_hundredths(d["x"]), to_hundredths(d["y"])
     return ShotLine(
         shot=int(d["shot"]), miss=miss, x_h=x_h, y_h=y_h,
         n=_opt_int(d, "N"), e=_opt_int(d, "E"), s=_opt_int(d, "S"), w=_opt_int(d, "W"),
         time_s=_opt_float(d, "time"), v_ref=_opt_float(d, "V_REF"), temp_c=_opt_float(d, "T"),
-        version=d.get("VERSION"), face=_opt_int(d, "face"), name=d.get("name"),
+        version=d.get("VERSION"), face=_opt_int(d, "face"), name=d.get("name"), unplaced=unplaced,
     )
 
 

@@ -29,7 +29,7 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw)|/flags/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
@@ -268,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
             mm = MATCH_RE.match(path)
             if mm:
                 mid = int(mm.group(1))
-                if method == "GET" and not mm.group(2) and not mm.group(3):
+                if method == "GET" and not mm.group(2) and not mm.group(3) and not mm.group(4):
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "start":
                     mc.start(mid, who)
@@ -337,6 +337,10 @@ class Handler(BaseHTTPRequestHandler):
                 if method == "POST" and mm.group(3):
                     need_director()
                     mc.decide(mid, int(mm.group(3)), str(payload.get("decision", "")), who)
+                    return self._send(200, mc.detail(mid))
+                if method == "POST" and mm.group(4):
+                    need_director()                        # a shot heard but not placed: noise, or a miss
+                    mc.decide_unplaced(mid, int(mm.group(4)), str(payload.get("decision", "")), who)
                     return self._send(200, mc.detail(mid))
         except MatchError as exc:
             return self._send(400, {"error": str(exc)})

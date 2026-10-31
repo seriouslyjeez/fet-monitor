@@ -156,7 +156,7 @@ class IntegerPenalty(CompCase):
         rid = self.cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
         self.m.start(rid, "ro")
         self.at(20)
-        self.shoot("lane-1", "0.00"); self.shoot("lane-1", "0.00"); self.shoot("lane-1", "0.00")     # the 3rd is one too many
+        self.shoot("lane-1", "0.00"); self.at(30); self.shoot("lane-1", "0.00"); self.at(40); self.shoot("lane-1", "0.00")   # the 3rd: one too many
         e = self.cc.results(cid)["classes"][0]["individuals"][0]
         self.assertEqual((e["total"], e["shots"]), (20, 2))
         flag = self.m.detail(rid)["flags"][0]

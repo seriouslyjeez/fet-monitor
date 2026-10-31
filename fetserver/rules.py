@@ -187,8 +187,12 @@ def guidance(code, kind, stream: str, book: str) -> dict:
                "not_in_shoot_off": "Fired during a shoot-off this finalist is not part of" + (f" ({so})" if so else "") + ": it does not count"
                                    + (f", no penalty ({NOT_FIRING_RULE[book]})." if book in NOT_FIRING_RULE else "."),
                "eliminated": "Fired after this finalist was eliminated: it does not count"
-                             + (f", no penalty ({NOT_FIRING_RULE[book]})." if book in NOT_FIRING_RULE else ".")}.get(code, "The match director decides.")
-        rule, text, suggest, todo = None, why, ("annul" if rec else "ignore"), None
+                             + (f", no penalty ({NOT_FIRING_RULE[book]})." if book in NOT_FIRING_RULE else "."),
+               "close": "Look at the target. One hole: an echo or noise, annul it (count the shot before). Two holes from one "
+                        "loading: a double load, record it under Shots (Double load). Two shots: count it.",
+               "inconsistent": "The target's microphones did not agree on where this shot hit. Look at the target: one clean "
+                               "hole, count it (check its value); two holes, a double load (Shots: Double load)."}.get(code, "The match director decides.")
+        rule, text, suggest, todo = None, why, (None if code in ("close", "inconsistent") else "annul" if rec else "ignore"), None
     elif book not in table:                            # the book does not cover it
         rule, text, suggest, todo = None, rb.director(book), None, None
     else:

@@ -297,7 +297,7 @@ against a dated edition before building.
 | Disabled rifle | 9.5, 9.2 c | the shooter's time stops until *Repaired*, then the time that remained and sighters |
 | Late arrival | not covered | available; the match director decides |
 | Shot does not register | 10.10.5 d; twice 10.10.5 d 3 | one more shot, settled after the relay; twice: move (5 min, sighters, both shots refired) |
-| Disturbance, double load | not covered | available; the match director decides |
+| Disturbance, double load | not covered | available; the match director decides. Shots within 3 s of another report, with disagreeing microphones, or heard but not placed are flagged |
 | Crossfire | 10.10.4 a-c | a record shot is a miss; a sighter onto a record target: 2 points off, first series |
 | Disclaimed shot | 10.10.4 e-f | annul if the RO confirms it |
 | Shot-value protest not upheld | not covered | no penalty suggested |
@@ -352,6 +352,23 @@ a competition; the final then runs by its own book.
   in sighting until the stage they left, then has the time they had left plus the book's extra time (the CMP books:
   2 minutes; others: none, the director decides), unlimited sighters, and only the record shots still owed; then the
   rest of the match with everyone. The results join both parts ("1 · 3 → 2 · 1").
+
+### Shots that may not be one clean shot (double load, echo, noise; 2026-10-31)
+Seen on a freETarget board at a low trip point: the paper drive, an echo or room noise heard as a shot; two pellets
+from one loading heard as one shot whose microphone times disagree, or as two reports milliseconds apart.
+- a shot fired in its time is flagged "*n* s after shot *m*: a double load, an echo or noise?" when another report on
+  the same firing point came at most 3 s before it (`matches.CLOSE_MS`: no air rifle or air pistol is loaded and
+  fired again that fast), and "the four microphones disagree by *x* mm" when the four times miss one point by more
+  than 2 mm (`MISFIT_FLAG_UM`; a good shot: about 0.4 mm). Nothing is suggested: the director looks at the target.
+  Undecided, it does not count and does not use up a record shot; decided *Count*, it counts (and can make a later
+  shot one too many). The flag offers *Double load…*: the existing correction, with the other shot already chosen;
+- a shot the target heard but could not place (freETarget sends `"x":NAN`; the FeT target firmware's times that fit
+  no point) is kept apart from the shots (table `unplaced`, migration 20) and counts as nothing. In a match the
+  director decides *Not a shot* (counts nothing) or *A shot: scored as a miss*; undecided, the results cannot be made
+  official. Before migration 20 such lines were refused as unreadable: `python3 -m fetserver rescore` recovers them
+  (and the misfits of older freETarget shots);
+- in practice nothing is decided: the shot list marks such shots with a red **?** (the reason on hover, and under the
+  last shot) and counts "heard, not placed" reports below the list; totals are what the target sent.
 
 ### Corrections (*Shots…*; fetserver/corrections.py)
 - range officers mark a shot *under review*, record a *protest*, a *disturbance* or a shot that *did not register*;

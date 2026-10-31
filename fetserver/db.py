@@ -380,6 +380,27 @@ MIGRATIONS = [
     ALTER TABLE shots ADD COLUMN face_us INTEGER;            -- face sensor's first edge relative to the stop
     ALTER TABLE commands ADD COLUMN reply TEXT;              -- the target's own (signed) reply to a "target" command
     """,
+    """
+    -- A shot the target heard but could not place (freETarget sends "x":NAN; the FeT target's times that fit no
+    -- point): never a shot with a value, never a miss on its own. In a match the director decides: 'ignore' (noise,
+    -- an echo) or 'miss' (it was a shot). Undecided, it counts as nothing and keeps the results from being official.
+    CREATE TABLE unplaced (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id    INTEGER NOT NULL UNIQUE REFERENCES events(id),
+        device_id   TEXT NOT NULL,
+        event_ms    INTEGER NOT NULL,
+        shot_number INTEGER,
+        n INTEGER, e INTEGER, s INTEGER, w INTEGER,
+        segment_id  INTEGER,
+        series_id   INTEGER,
+        stream      TEXT NOT NULL DEFAULT 'scored',
+        decision    TEXT,
+        decided_by  TEXT,
+        decided_ms  INTEGER
+    );
+    CREATE INDEX unplaced_series ON unplaced (series_id, event_ms);
+    CREATE INDEX unplaced_device ON unplaced (device_id, event_ms);
+    """,
 ]
 
 

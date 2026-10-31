@@ -33,6 +33,7 @@ class MatchCase(unittest.TestCase):
         self.clock = Clock()
         self.core = Core(Database(os.path.join(tmp.name, "t.db")), now_ms=self.clock, lease_ms=10 ** 9)
         self.m = self.core.matches
+        self.m.close_ms = None          # these tests fire several shots at one instant; tests.test_doubleload covers it
         self.seq = {}
         for did in ("lane-1", "lane-2"):
             self.core.handle_heartbeat({"device_id": did, "boot_count": 1, "uptime_ms": 0})

@@ -43,6 +43,10 @@ DECISIONS = ("count", "annul", "miss", "penalty2", "annul_penalty2")   # for a f
 SIGHTER_DECISIONS = ("ignore", "penalty2_first", "miss_first")    # for a flagged SIGHTING shot: it never becomes a record
 # shot, but rules punish some of them on the first record shot (e.g. ISSF 6.11.1.1 h, k)
 MAX_LANES = 100
+CLOSE_MS = 3000              # a second report this soon after a shot: a double load, an echo or noise (no air rifle or
+                             # air pistol is loaded and fired again in 3 s)
+MISFIT_FLAG_UM = 2000        # the four microphone times disagree by more: a double load or a disturbed shot
+UNPLACED_DECISIONS = ("ignore", "miss")   # a shot heard but not placed: noise (counts nothing), or a shot (a miss)
 
 
 class MatchError(ValueError):
@@ -53,6 +57,7 @@ class Matches:
     def __init__(self, core):
         self.core = core
         self.db = core.db
+        self.close_ms: Optional[int] = CLOSE_MS        # None: no "too soon after another report" flags (some tests)
 
     def _pub(self, match_id):
         self.core.hub.publish({"type": "match", "match_id": match_id})
@@ -820,6 +825,9 @@ class Matches:
         undecided = sum(1 for f in self.flags(c, m) if not f["decision"]) if m["state"] != "ready" else 0
         if undecided:
             out.append(f"{undecided} flagged shot{'s' if undecided != 1 else ''} not decided")
+        heard = sum(1 for u in self.unplaced(c, m) if not u["decision"]) if m["state"] != "ready" else 0
+        if heard:
+            out.append(f"{heard} shot{'s' if heard != 1 else ''} heard but not placed, not decided")
         n = self.core.corrections.open_count(c, m["id"])
         if n:
             out.append(f"{n} review{'s' if n != 1 else ''} or protest{'s' if n != 1 else ''} not settled")
@@ -957,10 +965,12 @@ class Matches:
                 return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies)
             counted: Dict[tuple, int] = {}
             eff = self.core.corrections.effects(c, m, ln["lane"])
-            items = [dict(r) for r in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring FROM shots WHERE series_id=? ORDER BY event_ms, id",
+            items = [dict(r) for r in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring, misfit_um FROM shots WHERE series_id=? ORDER BY event_ms, id",
                                                 (ln["series_id"],)) if r["id"] not in eff["annulled"]]      # an annulled shot needs no flag
             items += [{"id": None, "event_ms": a["at_ms"], "stream": "scored"} for a in eff["added"]]     # added shots count, never flagged
             items.sort(key=lambda r: (r["event_ms"], r["id"] or 0))
+            heard = [(r["event_ms"], r["id"], r["series_no"], False) for r in items if r["id"] is not None] + \
+                [(u["event_ms"], u["id"], None, True) for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=?", (ln["series_id"],))]
             for s in items:
                 t = s["event_ms"]
                 inside = lambda sp: sp["start"] <= t and (sp["end"] is None or t < sp["end"])
@@ -970,7 +980,7 @@ class Matches:
                          "live": not any(inside(pz) for pz in pauses), "superseded": o["superseded"]}
                 else:
                     w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
-                why, code, kind = None, None, None          # code + the phase's kind: what the rulebook guidance looks up
+                why, code, kind, pair = None, None, None, None   # code + the phase's kind: what the rulebook guidance looks up
                 stopped = next((sp for sp in moving if inside(sp)), None)
                 if stopped is not None:
                     why, code = stopped["why"], "moving"
@@ -996,6 +1006,7 @@ class Matches:
                     p = fmt["phases"][w["phase"]]
                     rec = s["stream"] == "scored"
                     kind = p["kind"]
+                    check = _check(s, heard, self.close_ms) if s["id"] is not None else None
                     if p["kind"] not in mf.FIRE_KINDS:
                         why, code = f"during {p['label'].lower()} (no firing)", "no_fire"
                     elif p["kind"] == "sight" and rec:
@@ -1004,17 +1015,51 @@ class Matches:
                         why, code = f"a sighting shot during {p['label'].lower()}", "sighter_in_record"
                     elif p["kind"] == "stage" and not rec and in_record(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
                         why, code = "a sighting shot after record started", "sighter_after_record"
+                    elif check and not (rec and decisions.get(s["id"]) in ("count", "miss", "penalty2")):
+                        why, code, pair = check                # not counted (yet): it does not use up a record shot
                     elif rec:
                         key = (w["phase"], w["attempt"])
                         counted[key] = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0) + 1   # a later relay: shots already fired
                         if counted[key] > p["shots"]:
                             why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
+                        elif check:                            # decided to count: still listed with its decision
+                            why, code, pair = check
                 if why and s["id"] is not None:
                     out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
                                 "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
-                                "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"],
+                                "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"], "code": code, "pair": pair,
                                 "guide": guidance(code, kind, s["stream"], rb.book_of(fmt))})
         return out
+
+    def unplaced(self, c, m) -> List[dict]:
+        """Record-time reports the target heard but could not place, on this match's firing points. They count as
+        nothing until the director decides: ignore (noise, an echo) or miss (it was a shot)."""
+        out = []
+        for ln in self._lanes(c, m["id"]):
+            if ln["series_id"] is None:
+                continue
+            shots = c.execute("SELECT id, event_ms, series_no FROM shots WHERE series_id=?", (ln["series_id"],)).fetchall()
+            for u in c.execute("SELECT * FROM unplaced WHERE series_id=? AND stream='scored' ORDER BY event_ms, id", (ln["series_id"],)):
+                before = [r for r in shots if self.close_ms is not None and r["event_ms"] <= u["event_ms"] <= r["event_ms"] + self.close_ms]
+                prev = max(before, key=lambda r: r["event_ms"]) if before else None
+                out.append({"id": u["id"], "lane": ln["lane"], "device_id": ln["device_id"], "event_ms": u["event_ms"],
+                            "why": "heard but not placed by the target" + (
+                                f", {(u['event_ms'] - prev['event_ms']) / 1000:.1f} s after shot {prev['series_no']}: a double load, an echo or noise?" if prev else ""),
+                            "pair": {"shot_id": prev["id"], "n": prev["series_no"]} if prev else None,
+                            "decision": u["decision"], "decided_by": u["decided_by"]})
+        return out
+
+    def decide_unplaced(self, mid: int, unplaced_id: int, decision: str, by: str) -> None:
+        if decision not in UNPLACED_DECISIONS and decision != "undecided":
+            raise MatchError(f"decision must be one of {', '.join(UNPLACED_DECISIONS)}")
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            self.not_official(m)
+            if not any(u["id"] == unplaced_id for u in self.unplaced(c, m)):
+                raise MatchError("that report is not in this match")
+            c.execute("UPDATE unplaced SET decision=?, decided_by=?, decided_ms=? WHERE id=?",
+                      (None, None, None, unplaced_id) if decision == "undecided" else (decision, by, self.core.now_ms(), unplaced_id))
+        self._pub(mid)
 
     def _clock(self, m, now: int) -> dict:
         fmt = json.loads(m["format_json"])
@@ -1064,6 +1109,7 @@ class Matches:
                 "interrupted": m["state"] == "paused" and bool(json.loads((c.execute("SELECT data FROM match_log WHERE match_id=? AND kind='pause' "
                                                                                      "ORDER BY id DESC LIMIT 1", (mid,)).fetchone() or {"data": "{}"})["data"] or "{}").get("interruption")),
                 "flags": self.flags(c, m) if m["state"] != "ready" else [],
+                "unplaced": self.unplaced(c, m) if m["state"] != "ready" else [],
                 "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid),
                 "open_items": self.open_items(c, m) if m["official_ms"] is None else [],
                 "final": self._final_view(m)}
@@ -1115,6 +1161,11 @@ class Matches:
                              "what": "Flagged %s shot %s (%s)" % ("record" if f["stream"] == "scored" else "sighting", f["n"], "miss" if f["miss"] else "%.1f" % f["decimal"]),
                              "detail": f["why"] + (" · decided: " + self.WORDS.get(f["decision"], f["decision"]) if f["decision"] else " · NOT DECIDED"),
                              "rule": (f["guide"] or {}).get("rule") or "", "by": dd["decided_by"] if dd else ""})
+            for u in self.unplaced(c, m):
+                rows.append({"at_ms": u["event_ms"], "lane": u["lane"], "competitor": who_of.get(u["lane"], ""),
+                             "what": "Shot heard but not placed", "detail": u["why"] + (" · decided: " + {"ignore": "not a shot (counts nothing)",
+                             "miss": "a shot, scored as a miss"}[u["decision"]] if u["decision"] else " · NOT DECIDED"),
+                             "rule": "", "by": u["decided_by"] or ""})
         for x in self.core.corrections.list(c, mid):
             d = x["data"]
             detail = "; ".join(v for v in (
@@ -1238,6 +1289,9 @@ class Matches:
                         "inner": decision == "count" and not miss and v["inner"], "decision": decision if f else None,
                         "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0,
                         "t": s["event_ms"], "orig": fired if o else None, "override": o["note"] if o else None})
+        for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=? AND stream='scored' AND decision='miss'", (ln["series_id"],)):
+            out.append({"id": None, "n": None, "tenths": 0, "ring": 0, "miss": True, "inner": False, "decision": "miss",
+                        "x_mm": None, "y_mm": None, "t": u["event_ms"], "unplaced": True})      # heard, not placed: decided a shot
         for a in eff["added"]:
             out.append({"id": None, "n": None, "tenths": 0 if a["miss"] else a["tenths"], "ring": 0 if a["miss"] else a["ring"], "miss": a["miss"],
                         "inner": a["inner"], "decision": None, "x_mm": None, "y_mm": None, "t": a["at_ms"],
@@ -1425,3 +1479,20 @@ def _lane_spans(log, devs, wins):
     for o in own:
         o["superseded"] = any(rid > o["start_id"] and to <= o["phase"] for to, rid in restarts)
     return moving, own
+
+
+def _check(s, heard, close_ms: Optional[int]) -> Optional[tuple]:
+    """(why, code, pair) for a shot fired in its time that may not be one clean shot: another report on the same firing
+    point within CLOSE_MS before it (a double load, an echo, the paper drive, noise), or four microphone times that
+    disagree (a double load, a disturbed shot). None if neither."""
+    t = s["event_ms"]
+    prev = [] if close_ms is None else [h for h in heard if (h[0], h[1] if not h[3] else 0) < (t, s["id"]) and t - h[0] <= close_ms
+                                        and not (h[1] == s["id"] and not h[3])]
+    if prev:
+        h = max(prev, key=lambda h: h[0])
+        what = "a report heard but not placed" if h[3] else f"shot {h[2]}"
+        return (f"{(t - h[0]) / 1000:.1f} s after {what}: a double load, an echo or noise?", "close",
+                None if h[3] else {"shot_id": h[1], "n": h[2]})
+    if s.get("misfit_um") is not None and s["misfit_um"] > MISFIT_FLAG_UM:
+        return (f"the four microphones disagree by {s['misfit_um'] / 1000:.1f} mm: a double load or a disturbed shot?", "inconsistent", None)
+    return None
