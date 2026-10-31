@@ -85,6 +85,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
 .notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
 #ver:hover{opacity:1;color:var(--fg)}.fwres{margin:6px 0;padding-left:18px;font-size:13px}.fwjob{font-size:12px}.fwjob.bad{color:var(--bad)}.fwjob.ok{color:var(--ok)}
+.tsgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px 16px;margin:6px 0}.tsgrid input{width:6em}
 /* match control */
 .mc table.t td,.mc table.t th{text-align:left}.cmdtext{font-size:22px;font-weight:700;margin:6px 0;min-height:1em}.cmdtext:empty{display:none}
 button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#111;border-radius:8px;padding:6px 10px}.mcclock{font-size:64px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}.mcclock.paused{color:var(--mut)}
@@ -126,6 +127,7 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 <div id="overlay"></div>
 <div id="toast"></div>
 <input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
+<input type="file" id="rcmegafile" accept=".hex" hidden>
 <input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
 <input type="file" id="pdffile" accept=".pdf,application/pdf" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
@@ -747,6 +749,7 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
     const pr = f.probes[p.port], busy = rc.flashBusy === p.port;
     const withCfg = pr && pr.offer && verAtLeast(pr.offer.version, '0.3.0');   // labels stay put while someone types (no redraw then)
     const canCfg = p.hint !== 'arduino' && (!pr || pr.device === 'esp8266');
+    if (pr && pr.device === 'mega') return megaRow(p, pr, running, busy, rc);
     return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td>' +
       (pr ? '<b>' + esc(pr.label) + '</b>' + (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcflashgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' +
           (running ? ' disabled' : '') + '>' + (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button>' +
@@ -759,7 +762,8 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
   };
   return '<div class="panel"><h3>Flash a device (USB)</h3>' +
     '<p class="mut">Plug a FeT Bridge (an ESP-01 or ESP-01S on a USB programmer) into a USB port of this Pi and press Identify: it gets the newest FeT Bridge ' +
-    'for its flash size. Arduino Mega and ESP32 boards are identified, not flashed (yet).</p>' +
+    'for its flash size. A target\'s <b>Arduino Mega</b> (by its USB port) gets FeT target firmware; its original program and settings are saved ' +
+    'first and can be put back. ESP32 boards are identified, not flashed (yet).</p>' +
     '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
     'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
     '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
@@ -778,8 +782,70 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
       (running && job.kind !== 'configure' ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--pri);border-radius:3px"></div></div>' : '') + '</div>' : '') +
     (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
     (f.backups.length ? '<h4>Saved original firmware</h4><ul>' + f.backups.map(b => '<li><a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' +
-      Math.round(b.size / 1024) + ' KB</span></li>').join('') + '</ul><p class="mut">The firmware a device had before its first FeT Bridge install (esptool write_flash 0x0 puts it back).</p>' : '') +
+      Math.round(b.size / 1024) + ' KB</span>' + (megaPort(f) && /^mega-.*\.hex$/.test(b.name) && f.backups.some(o => o.name === b.name.replace(/\.hex$/, '.eep'))
+        ? ' <button data-act="rcmegarestore" data-port="' + esc(megaPort(f)) + '" data-name="' + esc(b.name.replace(/\.hex$/, '')) + '"' + (running ? ' disabled' : '') + '>Put back on ' + esc(megaPort(f)) + '</button>' : '') +
+      '</li>').join('') + '</ul><p class="mut">What a device had before its first install. ESP: esptool write_flash 0x0 puts it back. Arduino Mega: ' +
+      'the program (.hex) and its settings (.eep, where freETarget keeps the calibration): <b>Put back</b> writes both.</p>' : '') +
+    '<h4>FeT target firmware for the Arduino Mega</h4>' + targetImages(rc) +
     '</div>';
+}
+const megaPort = f => Object.keys(f.probes || {}).find(k => f.probes[k].device === 'mega');
+function megaRow(p, pr, running, busy, rc) {   // an Arduino Mega on a USB port
+  const dis = running || rc.flashBusy ? ' disabled' : '';
+  return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td><b>' + esc(pr.label) + '</b>' +
+    (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcmegago" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + dis + '>' +
+      (pr.same ? 'Reinstall' : 'Install') + ' FeT target ' + esc(pr.offer.version) + '</button></div>' +
+      (pr.first_install ? '<div class="mut">First install: the original program and its settings (EEPROM: the calibration) are saved first ' +
+        '(listed below, and they can be put back), then FeT target firmware is written and checked, then the target gets its own key.</div>' : '')
+      : '<div class="mut">' + esc(pr.why_not || '') + '</div>') +
+    '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+    (pr.can_key ? ' <button data-act="rcmegakey" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : '') + '</td></tr>';
+}
+function targetImages(rc) {
+  const ims = rc.timages || [];
+  return (ims.length ? '<ul>' + ims.map(m => '<li>' + esc(m.version) + ' <span class="mut">' + Math.round(m.size / 1024) + ' KB · ' + esc(m.sha256.slice(0, 12)) + '</span></li>').join('') + '</ul>'
+    : '<p class="mut">None on this Pi yet.</p>') +
+    '<div class="bulk"><button data-act="rcmegapick"' + (rc.uploading ? ' disabled' : '') + '>Upload .hex…</button>' +
+    (rc.tfwMsg ? '<span class="' + (rc.tfwOk ? 'ok' : 'bad') + '">' + esc(rc.tfwMsg) + '</span>' : '') + '</div>' +
+    '<p class="mut">The .hex from the Arduino build of firmware/target/mega (not the one "with_bootloader"). It is checked: an intact Intel HEX ' +
+    'for the Mega that carries FeT target firmware\'s name and version.</p>';
+}
+const TARGET_SETTINGS = [['led_pct', 'Lights', '%', 0, 100], ['paper_ms', 'Paper motor (DC)', 'ms', 0, 5000], ['step_count', 'Stepper steps', '', 0, 2000],
+  ['step_ms', 'Stepper pulse', 'ms', 0, 100], ['paper_eco_mm', 'Paper only for shots inside', 'mm (0 = every shot)', 0, 100],
+  ['wait_ms', 'Wait for all microphones', 'ms', 1, 20], ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000], ['face', 'Face sensor fitted', '0 / 1', 0, 1],
+  ['face_alone_ms', 'Face-only event after', 'ms', 1, 100], ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300]];
+function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
+  const ts = (d.targets || []).filter(t => t.fet_target);
+  if (!ts.length) return '';
+  const kept = rc.tsf || {};
+  return '<div class="panel"><h3>Target settings (FeT target firmware)</h3>' +
+    '<p class="mut">What the target itself does. Where the microphones are (calibration) is kept on this Pi, not in the target. ' +
+    'Every change is signed for that target and refused while it is in a match; the target answers each command itself.</p>' +
+    ts.map(t => {
+      const ft = t.fet_target, cur = ft.settings || {}, id = t.device_id;
+      const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
+      return '<h4>' + esc(t.name) + ' <span class="mut">' + esc(id) + ' · key ' + esc(ft.key_fp || 'none') + ' · start ' + esc(ft.boot == null ? '?' : ft.boot) +
+        (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span></h4>' +
+        (ft.key_fp ? '' : '<p class="bad">No key this Pi knows: set one with the flash station (New key) before settings can change.</p>') +
+        '<div class="tsgrid">' + TARGET_SETTINGS.map(([k, label, unit, lo, hi]) => '<label>' + esc(label) + ' <input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k +
+          '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) + '"> <span class="mut">' + esc(unit) + '</span></label>').join('') + '</div>' +
+        '<div class="bulk"><button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
+        '<button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
+        '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' +
+        (ft.commands.length ? '<table class="t"><tr><th>Command</th><th>Sent</th><th>Target says</th></tr>' + ft.commands.map(c =>
+          '<tr><td>' + esc(c.verb) + '</td><td>' + esc(c.status) + '</td><td class="' + (c.reply && c.reply !== 'ok' ? 'bad' : '') + '">' + esc(c.reply || '–') + '</td></tr>').join('') + '</table>' : '');
+    }).join('') + (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') + '</div>';
+}
+function targetSettingsChanges(t, rc) {        // only what was typed and differs from what the target reported
+  const cur = (t.fet_target && t.fet_target.settings) || {}, kept = rc.tsf || {}, out = {}, bad = [];
+  for (const [k, label, , lo, hi] of TARGET_SETTINGS) {
+    const v = kept[t.device_id + ':' + k];
+    if (v == null || v === '' || String(v) === String(cur[k])) continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < lo || n > hi) bad.push(label + ' must be a whole number from ' + lo + ' to ' + hi);
+    else out[k] = n;
+  }
+  return {settings: out, errors: bad};
 }
 const SYS_STATE = {running: 'Working', done: 'Done', failed: 'Not done'};
 const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user', 'sy_upw'],      // what each request used
@@ -896,6 +962,7 @@ function rangeView(S) {
     }).join('') : '<tr><td colspan="8" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
+  h += targetSettingsPanel(d, rc);
   h += '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
     '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
     '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
@@ -1535,6 +1602,8 @@ async function refresh() {
         if (mu.status === 200) S.rc.musers = mu.data.users;
         const fl = await adminCall('/flash');
         if (fl.status === 200) S.rc.flash = fl.data;
+        const tf = await adminCall('/target-firmware');
+        if (tf.status === 200) S.rc.timages = tf.data.images;
         const sy = await adminCall('/system');
         if (sy.status === 200) S.rc.system = sy.data;
         const up = await adminCall('/updates');
@@ -1840,6 +1909,32 @@ async function rangeAct(el, a) {
     if (!confirm('Remove ' + el.dataset.u + ' from Match Control?')) return;
     const res = await adminCall('/match-users/' + encodeURIComponent(el.dataset.u) + '/delete', {});
     if (res.status === 200) rc.musers = res.data.users;
+    return refresh();
+  }
+  if (a === 'rcmegago' || a === 'rcmegakey' || a === 'rcmegarestore') {
+    const what = a === 'rcmegago' ? 'Install FeT target firmware on the Arduino Mega on ' + el.dataset.port + '?\n\nOn a first install its program and settings are saved first.'
+      : a === 'rcmegakey' ? 'Give the Arduino Mega on ' + el.dataset.port + ' a new key?\n\nIts old key stops working for this target.'
+      : 'Put ' + el.dataset.name + ' back on the Arduino Mega on ' + el.dataset.port + '?\n\nThis replaces its program and settings.';
+    if (!confirm(what + '\n\nDo not unplug it until it says done.')) return;
+    const path = a === 'rcmegago' ? '/flash/mega-install' : a === 'rcmegakey' ? '/flash/mega-key' : '/flash/mega-restore';
+    const res = await adminCall(path, {port: el.dataset.port, sha256: el.dataset.sha, name: el.dataset.name});
+    rc.flashMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
+    return refresh();
+  }
+  if (a === 'rcmegapick') { const f = document.getElementById('rcmegafile'); if (f && !rc.uploading) f.click(); return; }
+  if (a === 'rctget' || a === 'rctpaper' || a === 'rctset') {
+    const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
+    if (!t) return;
+    let body = {verb: a === 'rctget' ? 'get' : 'paper'};
+    if (a === 'rctset') {
+      const ch = targetSettingsChanges(t, rc);
+      if (ch.errors.length) { rc.tsMsg = ch.errors.join('; '); return render(true); }
+      if (!Object.keys(ch.settings).length) { rc.tsMsg = 'Nothing changed'; return render(true); }
+      body = {verb: 'set', settings: ch.settings};
+    }
+    const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/target-command', body);
+    rc.tsMsg = res.status === 200 ? '' : (res.data.error || 'error ' + res.status);
+    if (res.status === 200 && a === 'rctset' && rc.tsf) for (const k of Object.keys(body.settings)) delete rc.tsf[t.device_id + ':' + k];
     return refresh();
   }
   if (a === 'rcflashid') {
@@ -2322,8 +2417,24 @@ function boot() {
   const keepSys = e => {
     if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; }
     if (e.target.id && FLASH_FIELDS.includes(e.target.id) && S.rc) (S.rc.flashf = S.rc.flashf || {})[e.target.id] = e.target.value;   // kept for the next target
+    if (e.target.dataset && e.target.dataset.ts && S.rc) (S.rc.tsf = S.rc.tsf || {})[e.target.dataset.ts] = e.target.value;      // target settings being typed
   };
   document.addEventListener('input', keepSys); document.addEventListener('change', keepSys);
+  const megaPicker = document.getElementById('rcmegafile');
+  if (megaPicker) megaPicker.addEventListener('change', async () => {
+    const f = (megaPicker.files || [])[0];
+    megaPicker.value = '';
+    if (!f) return;
+    const rc = S.rc = S.rc || {sel: {}};
+    rc.uploading = true; rc.tfwMsg = 'uploading…'; rc.tfwOk = true; render(true);
+    const r = await fetch(API + '/admin/target-firmware', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    rc.tfwOk = !!r && r.status === 200;
+    rc.tfwMsg = rc.tfwOk ? 'stored FeT target ' + d.version : 'not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
+    rc.uploading = false;
+    return refresh();
+  });
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -2427,7 +2538,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, targetImages, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

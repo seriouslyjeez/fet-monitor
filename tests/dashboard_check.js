@@ -921,5 +921,42 @@ console.log('OK');
   assert(/rcflashcfg[^>]*disabled/.test(flashPanel(Object.assign({}, f3, {job: {state: 'running', port: 'x'}}), rcf)), 'one job at a time');
   const cfg = flashPanel(Object.assign({}, f3, {job: {state: 'running', kind: 'configure', what: 'Settings', port: '/dev/ttyUSB0', step: 'waiting for FeT Bridge to start', percent: 0}}), rcf);
   assert(cfg.includes('Settings:</b> waiting for FeT Bridge to start<') && !cfg.includes('width:0%'), 'configuring: a step, no progress bar');
+  // the Arduino Mega: install, new key, put back; FeT target firmware images
+  const megaPortRow = {port: '/dev/ttyACM0', adapter: '', product: 'Arduino Mega 2560', hint: 'arduino'};
+  const fm = {ports: [megaPortRow], job: null, server_host: '1.2.3.4',
+    probes: {'/dev/ttyACM0': {device: 'mega', label: 'Arduino Mega 2560, freETarget 4.3.1', first_install: true, same: false, can_key: false,
+                              offer: {sha256: 'ee', version: '0.1.0'}}},
+    backups: [{name: 'mega-ABC-20261031-120000.hex', size: 70000}, {name: 'mega-ABC-20261031-120000.eep', size: 9000},
+              {name: 'mega-XYZ-20261030-110000.hex', size: 70000}]};
+  const mh = flashPanel(fm, {timages: [{version: '0.1.0', size: 24748, sha256: 'ee'.repeat(32)}]});
+  assert(mh.includes('data-act="rcmegago" data-port="/dev/ttyACM0" data-sha="ee"') && mh.includes('Install FeT target 0.1.0'), 'Mega: install offered');
+  assert(mh.includes('EEPROM: the calibration') && !mh.includes('rcmegakey'), 'first install explained; no key button for upstream firmware');
+  assert(count(mh, /data-act="rcmegarestore"/g) === 1 && mh.includes('data-name="mega-ABC-20261031-120000"'), 'put back only where program AND settings were saved');
+  assert(!mh.includes('rcflashgo') && !mh.includes('rcflashcfg'), 'no ESP buttons on a Mega');
+  assert(mh.includes('24 KB') && mh.includes('data-act="rcmegapick"'), 'Mega images listed, upload offered');
+  fm.probes['/dev/ttyACM0'] = Object.assign({}, fm.probes['/dev/ttyACM0'], {first_install: false, same: true, can_key: true, label: 'Arduino Mega 2560, FeT target 0.1.0 (key ab12cd34)'});
+  const mk = flashPanel(fm, {});
+  assert(mk.includes('Reinstall FeT target') && mk.includes('data-act="rcmegakey"') && mk.includes('None on this Pi yet'), 'ours: reinstall and a new key');
+  assert(/rcmegago[^>]*disabled/.test(flashPanel(Object.assign({}, fm, {job: {state: 'running', port: 'x', what: 'y', step: 'z', percent: 1}}), {})), 'one job at a time');
   console.log('flash OK');
+}
+
+// Range Control: settings of targets that run FeT target firmware
+{
+  const {targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS} = X;
+  assert.strictEqual(targetSettingsPanel({targets: [{device_id: 'a', name: 'A'}]}, {}), '', 'no FeT targets: no panel');
+  const t = {device_id: 'fet-1', name: 'Lane <1>', fet_target: {key_fp: 'ab12cd34', boot: 4, settings_id: '1234abcd',
+    settings: {led_pct: 50, wait_ms: 2}, commands: [{verb: 'set', status: 'done', reply: 'out_of_range:led_pct'}, {verb: 'get', status: 'done', reply: 'ok'}]}};
+  const p = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});
+  assert(p.includes('Lane &lt;1&gt;') && p.includes('key ab12cd34') && p.includes('start 4'), 'which target, its key and start');
+  assert(p.includes('data-ts="fet-1:led_pct"') && p.includes('value="50"') && p.includes('value="300"'), 'reported values, typed values kept');
+  assert(p.includes('class="bad">out_of_range:led_pct') && count(p, /data-act="rct(get|set|paper)"/g) === 3, 'the target\'s own answers; three actions');
+  assert.strictEqual(TARGET_SETTINGS.length, 10);
+  const none = targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]}, {});
+  assert(none.includes('No key this Pi knows'), 'no key: said so');
+  assert.deepStrictEqual(targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '50', 'fet-1:paper_ms': '300', 'fet-1:wait_ms': ''}}),
+    {settings: {paper_ms: 300}, errors: []}, 'only what changed');
+  const bad = targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '101', 'fet-1:face': '1.5', 'fet-1:ring_ms': 'x'}});
+  assert.strictEqual(bad.errors.length, 3, 'out of range, not whole, not a number');
+  console.log('target settings OK');
 }
