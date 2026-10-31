@@ -37,6 +37,8 @@ class OverAPty(unittest.TestCase):
 
         def mega():                                     # the target: banner, then status lines once tested
             os.write(master, b'freETarget "4.3.0 December 21, 2023"\r\n')
+            time.sleep(0.3)                             # sent before this, a command would be cleared
+            os.write(master, b'\r7.981500: Finished startup\r\n')
             buf = b""
             while b'{"TEST":11}' not in buf:
                 buf += os.read(master, 64)
@@ -53,7 +55,9 @@ class OverAPty(unittest.TestCase):
         t.start()
         out, log = io.StringIO(), io.StringIO()
         s = tp.Session(link, out=out, log=log)
-        s.start(wait_banner=0.3)
+        t0 = time.monotonic()
+        s.start()
+        self.assertLess(time.monotonic() - t0, 2, "started as soon as the target was ready")
         end = time.monotonic() + 2
         while time.monotonic() < end and s.vmin != 1.0:
             line = link.readline(0.1)

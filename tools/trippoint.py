@@ -31,6 +31,7 @@ from fetserver.seriallink import SerialLink    # noqa: E402
 
 STATUS_RE = re.compile(r"Latch:([NESW.]{4}).*?V_Ref:\s*(-?\d+(?:\.\d+)?)")
 BANNER_RE = re.compile(r"freETarget")
+READY = "Finished startup"        # the Mega clears its serial input just before this: a command sent earlier is lost
 
 
 def find_port() -> str:
@@ -54,12 +55,16 @@ class Session:
         self.last_latch = "...."
         self.vmin = self.vmax = None
 
-    def start(self, wait_banner: float = 4.0) -> None:
-        end = self.clock() + wait_banner              # opening the port restarts the Mega: let it start
+    def start(self, wait_ready: float = 20.0) -> None:
+        end = self.clock() + wait_ready               # opening the port restarts the Mega: about 8 s without an ESP
         while self.clock() < end:
             line = self.link.readline(0.2)
             if line and BANNER_RE.search(line):
                 self.say("target: " + line.strip())
+            if line and READY in line:
+                break
+        else:
+            self.say("no 'Finished startup' from the target; trying anyway")
         self.link.write(b'{"TEST":11}\n')
         self.rearm()
 
@@ -99,6 +104,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("port", nargs="?")
     ap.add_argument("--log", default="trippoint.csv", help="CSV of every reading (time, volts, latch)")
+    ap.add_argument("--seconds", type=float, default=0, help="stop by itself after this long (0: run until q)")
     a = ap.parse_args(argv)
     port = a.port or find_port()
     print(f"opening {port} (the target restarts)")
@@ -107,13 +113,18 @@ def main(argv=None) -> int:
         s = Session(link, log=log)
         try:
             s.start()
-            while True:
-                r, _, _ = select.select([sys.stdin], [], [], 0)
+            keys = [sys.stdin]
+            end = time.monotonic() + a.seconds if a.seconds else None
+            while end is None or time.monotonic() < end:
+                r, _, _ = select.select(keys, [], [], 0)
                 if r:
-                    cmd = sys.stdin.readline().strip().lower()
-                    if cmd == "q":
+                    raw = sys.stdin.readline()
+                    cmd = raw.strip().lower()
+                    if not raw:
+                        keys = []                     # no keyboard (input closed): just watch
+                    elif cmd == "q":
                         break
-                    if cmd in ("", "r"):
+                    elif cmd in ("", "r"):
                         s.rearm()
                 line = link.readline(0.1)
                 if line:
