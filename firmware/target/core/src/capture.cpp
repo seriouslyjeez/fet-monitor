@@ -58,7 +58,7 @@ void Capture::tick(uint32_t nowMs, uint32_t nowUs) {
         }
         break;
       }
-      // fall through: every microphone triggered within the same tick
+      // fall through - every microphone triggered within the same tick
     case WAIT:
       if (run == ALL || (int32_t)(nowMs - until_) >= 0) {
         Shot s;

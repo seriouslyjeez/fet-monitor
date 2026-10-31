@@ -600,6 +600,14 @@ class CommandChannel(Case):
         self.h.run("rnext")
         self.assertEqual(self.h.run("rfeed def\\n"), "1 [def]")
 
+    def test_refused_without_a_boot_count(self):
+        from fetserver.targetproto import make_command, parse_reply
+        self.h.run("ckey " + KEY.hex())
+        self.h.run("cboot 0")                                      # the start could not be counted
+        r = parse_reply(self.send(make_command(0, 1, "paper", key=KEY)), KEY)
+        self.assertEqual(r["reason"], "no_boot_count")
+        self.assertEqual(self.h.run("acts"), "0 0")
+
     def test_not_ours(self):
         for line in ("hello", "FT1 S b=1", "FT1 R b=7 i=1 r=ok h=-", "FT1 C"):
             self.assertEqual(self.send(line), "none", line)
@@ -622,3 +630,166 @@ class CommandChannel(Case):
         self.h.run("replycap 60")
         from fetserver.targetproto import make_command
         self.assertEqual(self.send(make_command(7, 1, "get", key=KEY)), "none", "never a cut-off reply")
+
+
+class Paper(Case):
+    def test_nothing_configured(self):
+        self.assertEqual(self.h.run("preq"), "0")
+        self.h.run("pconf 0 3 0")                                  # steps without a pulse length: not a stepper
+        self.assertEqual(self.h.run("preq"), "0")
+
+    def test_dc_motor(self):
+        self.h.run("pconf 300 0 0")
+        self.assertEqual(self.h.run("preq"), "1")
+        self.h.run("ptick 0 400")
+        self.assertEqual(self.h.run("plog"), "+0 -300")
+        self.assertEqual(self.h.run("pbusy"), "0")
+
+    def test_stepper(self):
+        self.h.run("pconf 0 3 10")
+        self.h.run("preq")
+        self.h.run("ptick 0 100")
+        self.assertEqual(self.h.run("plog"), "+0 -10 +15 -25 +30 -40")
+
+    def test_requests_wait_their_turn(self):
+        self.h.run("pconf 100 0 0")
+        self.h.run("preq")
+        self.h.run("ptick 0 50")
+        self.h.run("preq")                                         # while running
+        self.assertEqual(self.h.run("pbusy"), "1")
+        self.h.run("ptick 51 400")
+        self.assertEqual(self.h.run("plog"), "+0 -100 +106 -206", "the second after the first (and its 5 ms gap)")
+
+    def test_too_many_requests(self):
+        self.h.run("pconf 100 0 0")
+        self.assertEqual([self.h.run("preq") for _ in range(6)], ["1"] * 5 + ["0"])
+
+    def test_switched_off_meanwhile(self):
+        self.h.run("pconf 100 0 0")
+        self.h.run("preq")
+        self.h.run("preq")
+        self.h.run("ptick 0 50")
+        self.h.run("pconf 0 0 0")
+        self.h.run("ptick 51 400")
+        self.assertEqual(self.h.run("plog"), "+0 -100", "the one running finishes, the waiting one is dropped")
+        self.assertEqual(self.h.run("pbusy"), "0")
+
+
+class IdentityStore(Case):
+    def setup(self, line):
+        return self.h.run("isetup " + line)
+
+    def key_line(self, key, crc=None):
+        import zlib
+        return "FT1 K %s %08x" % (key.hex(), zlib.crc32(key) if crc is None else crc)
+
+    def test_boot_count(self):
+        self.assertEqual(self.h.run("iload"), "0 none")
+        self.assertEqual([self.h.run("istart") for _ in range(3)], ["1", "2", "3"])
+        self.assertEqual(self.h.run("iload"), "3 none", "survives a restart")
+        self.h.run("nvmset 40 " + "00" * 8)                        # slot 0 (holds 1, then 3) damaged
+        self.assertEqual(self.h.run("iload"), "2 none", "the other slot still counts")
+        self.assertEqual(self.h.run("istart"), "3")
+
+    def test_counting_torn_by_a_power_cut(self):
+        self.h.run("istart")
+        self.h.run("istart")
+        self.h.run("nvmtear 3")
+        self.assertEqual(self.h.run("istart"), "0", "not counted: reported, not pretended")
+        self.assertEqual(self.h.run("iload"), "2 none")
+        self.assertEqual(self.h.run("istart"), "3")
+
+    def test_slots_cannot_be_swapped(self):
+        import struct
+        import zlib
+        rec = lambda slot, n: struct.pack("<I", n) + struct.pack("<I", zlib.crc32(b"FB" + bytes([slot]) + struct.pack("<I", n)))
+        self.h.run("nvmset 40 " + rec(1, 9).hex())
+        self.assertEqual(self.h.run("iload"), "0 none", "a slot-1 record in slot 0 is not valid")
+        self.h.run("nvmset 40 " + rec(0, 9).hex())
+        self.assertEqual(self.h.run("iload"), "9 none", "the same record in its own slot is")
+        self.h.run("nvmset 40 " + rec(0, 0xFFFFFFFF).hex())
+        self.assertEqual(self.h.run("iload"), "0 none", "the all-ones count is never valid")
+
+    def test_a_blank_chip_starts_at_one(self):
+        # erased EEPROM reads 0xFF everywhere, and crc32(ff ff ff ff) == 0xffffffff: must not pass as a count
+        self.assertEqual(self.h.run("iload"), "0 none")
+        self.assertEqual(self.h.run("istart"), "1")
+        self.assertEqual(self.h.run("istart"), "2")
+
+    def test_set_key_over_usb(self):
+        key = bytes(range(100, 132))
+        fp = hashlib.sha256(key).hexdigest()[:8]
+        self.assertEqual(self.setup(self.key_line(key)), "FT1 K ok fp=" + fp)
+        self.assertEqual(self.h.run("iload"), "0 " + fp)
+        self.assertEqual(self.h.run("ikeyhex"), key.hex())
+        self.assertNotIn(key.hex(), self.setup("FT1 I"), "the key is never shown")
+
+    def test_bad_key_lines(self):
+        key = bytes(range(1, 33))
+        good = self.key_line(key)
+        for line, why in ((self.key_line(key, 0), "checksum"), (good.upper().replace("FT1 K", "FT1 K"), "malformed"),
+                          (good[:-1], "malformed"), (good + "0", "malformed"), (good.replace(" ", "  ", 2)[1:], None),
+                          ("FT1 K " + key.hex() + "x" + good[-8:], "malformed"), (self.key_line(bytes(32)), "weak_key")):
+            if why is None:
+                continue
+            self.assertEqual(self.setup(line), "FT1 K err " + why, line[:30])
+        self.assertEqual(self.h.run("iload"), "0 none")
+        self.h.run("nvmfail 1")
+        self.assertEqual(self.setup(good), "FT1 K err not_saved")
+
+    def test_writes_are_read_back(self):
+        key = bytes(range(1, 33))
+        self.h.run("nvmlie 1")
+        self.assertEqual(self.setup(self.key_line(key)), "FT1 K err not_saved", "a bad cell is noticed")
+        self.h.run("istart")
+        self.h.run("nvmlie 1")
+        self.assertEqual(self.h.run("istart"), "0")
+
+    def test_counter_exhausted(self):
+        import struct
+        import zlib
+        n = 0xFFFFFFFE
+        self.h.run("nvmset 40 " + (struct.pack("<I", n) + struct.pack("<I", zlib.crc32(b"FB\x00" + struct.pack("<I", n)))).hex())
+        self.assertEqual(self.h.run("iload"), "%d none" % n)
+        self.assertEqual(self.h.run("istart"), "0", "never writes the all-ones count")
+
+    def test_key_block_needs_its_magic(self):
+        import struct
+        import zlib
+        body = bytes([ord("X"), ord("K"), 1, 32]) + bytes(range(1, 33))
+        self.h.run("nvmset 0 " + (body + struct.pack("<I", zlib.crc32(body))).hex())
+        self.assertEqual(self.h.run("iload"), "0 none")
+        body = b"FK" + bytes([1, 32]) + bytes(range(1, 33))
+        self.h.run("nvmset 0 " + (body + struct.pack("<I", zlib.crc32(body))).hex())
+        self.assertNotEqual(self.h.run("iload"), "0 none", "with it, the same block is a key")
+
+    def test_damaged_key_block(self):
+        key = bytes(range(1, 33))
+        self.setup(self.key_line(key))
+        self.h.run("nvmpoke 10 0")
+        self.assertEqual(self.h.run("iload"), "0 none")
+
+    def test_identity_line(self):
+        self.h.run("sload")
+        self.h.run("istart")
+        r = self.setup("FT1 I")
+        self.assertEqual(r, "FT1 I b=1 key=none fw=0.1.0 rev=310 k=" + settings_id(DEFAULTS))
+
+    def test_not_setup_lines(self):
+        for line in ("FT1 C b=1 i=1 get h=-", "FT1 I x", "FT1 KEY", "hello"):
+            self.assertEqual(self.setup(line), "none", line)
+
+
+@unittest.skipUnless(avr_core_installed(), "arduino-cli with the arduino:avr core not installed")
+class MegaSketch(unittest.TestCase):
+    def test_the_board_firmware_builds_without_warnings(self):
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run(["arduino-cli", "compile", "-b", "arduino:avr:mega", "--warnings", "all",
+                                "--library", os.path.join(TGT, "core"), "--output-dir", out,
+                                os.path.join(TGT, "mega", "fet_target_mega")], capture_output=True, text=True)
+        text = r.stdout + r.stderr
+        self.assertEqual(r.returncode, 0, text[-3000:])
+        ours = [l for l in text.splitlines() if "warning" in l and "Arduino15/packages" not in l]
+        self.assertEqual(ours, [], "no warnings in our code")
+        ram = int(r.stdout.split("Global variables use ")[1].split()[0])
+        self.assertLess(ram, 3072, "room left for the stack (command handling needs ~1.2 KB)")

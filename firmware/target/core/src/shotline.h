@@ -36,6 +36,10 @@ class LineBuf {
   bool over_ = false;
 };
 
+// Appends " h=<16 hex>" (HMAC of everything in b so far; "-" without a key) and "\n"; returns the length, or 0 if
+// the buffer was too small. b must write into out. Used for every signed line the target sends.
+size_t signLine(LineBuf& b, char* out, const uint8_t* key, size_t keyLen);
+
 // Writes the line (with "\n") into out; returns its length, or 0 if cap is too small. key may be null (h=-).
 size_t formatShot(const Shot& s, uint32_t boot, int16_t tempDeci, uint32_t settingsId, uint16_t dropped,
                   const uint8_t* key, size_t keyLen, char* out, size_t cap);

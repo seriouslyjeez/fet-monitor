@@ -49,6 +49,10 @@ size_t formatShot(const Shot& s, uint32_t boot, int16_t tempDeci, uint32_t setti
   if (tempDeci == NO_TEMP) b.add("-"); else b.addI(tempDeci);
   b.add(" k="); b.addHex(settingsId, 8);
   b.add(" d="); b.addU(dropped);
+  return signLine(b, out, key, keyLen);
+}
+
+size_t signLine(LineBuf& b, char* out, const uint8_t* key, size_t keyLen) {
   size_t signedLen = b.len();
   b.add(" h=");
   if (key) {

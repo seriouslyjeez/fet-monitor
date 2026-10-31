@@ -10,6 +10,8 @@
 #include <vector>
 #include "../core/src/capture.h"
 #include "../core/src/commands.h"
+#include "../core/src/identity.h"
+#include "../core/src/paper.h"
 #include "../core/src/settings.h"
 #include "../core/src/shotline.h"
 #include "../core/src/tgt_sha256.h"
@@ -28,7 +30,7 @@ struct FakeHw : CounterHw {
 
 struct FakeNvm : Nvm {                       // erased EEPROM reads 0xFF; a write can fail or tear partway
   std::vector<uint8_t> mem = std::vector<uint8_t>(4096, 0xFF);
-  int writes = 0, failNext = 0;
+  int writes = 0, failNext = 0, lieNext = 0;
   long tearNext = -1;
   bool read(size_t addr, uint8_t* buf, size_t n) override {
     if (addr + n > mem.size()) return false;
@@ -42,6 +44,7 @@ struct FakeNvm : Nvm {                       // erased EEPROM reads 0xFF; a writ
     size_t k = tearNext >= 0 && (size_t)tearNext < n ? (size_t)tearNext : n;
     memcpy(&mem[addr], buf, k);
     if (tearNext >= 0) { tearNext = -1; return false; }       // the power went: the caller never hears back
+    if (lieNext) { lieNext--; mem[addr + n / 2] ^= 0x01; }     // a bad cell: reports success, stores a flipped bit
     return true;
   }
 };
@@ -52,6 +55,12 @@ struct FakeActions : Actions {
   void settingsChanged(const Settings&) override { changes++; }
   uint32_t uptimeMs() override { return 123456; }
   uint16_t dropped() override { return 2; }
+};
+
+struct FakeMotor : MotorOut {
+  uint32_t now = 0;
+  std::string log;
+  void motor(bool on) override { log += (on ? "+" : "-") + std::to_string(now) + " "; }
 };
 
 static std::vector<uint8_t> unhex(const std::string& h) {
@@ -73,6 +82,9 @@ int main() {
   FakeNvm nvm;
   std::unique_ptr<Settings> st(new Settings(nvm, 64));
   FakeActions acts;
+  Identity ident(nvm);
+  FakeMotor motor;
+  PaperDrive paper(motor);
   uint32_t cboot = 7;
   std::unique_ptr<Commands> cmds(new Commands(*st, acts, cboot));
   std::vector<uint8_t> ckey;
@@ -127,10 +139,12 @@ int main() {
     else if (cmd == "sdirty") std::cout << (st->dirty() ? 1 : 0) << "\n";
     else if (cmd == "nvmfail") is >> nvm.failNext;
     else if (cmd == "nvmtear") is >> nvm.tearNext;
+    else if (cmd == "nvmlie") is >> nvm.lieNext;
     else if (cmd == "nvmset") { size_t a; std::string h; is >> a >> h; auto d = unhex(h); memcpy(&nvm.mem[a], d.data(), d.size()); }
     else if (cmd == "nvmpoke") { size_t a; int v; is >> a >> v; nvm.mem[a] = (uint8_t)v; }
     else if (cmd == "reboot") { st.reset(new Settings(nvm, 64)); st->load(); cboot++; cmds.reset(new Commands(*st, acts, cboot));
                                 if (!ckey.empty()) cmds->setKey(ckey.data(), ckey.size()); }
+    else if (cmd == "cboot") { is >> cboot; cmds.reset(new Commands(*st, acts, cboot)); if (!ckey.empty()) cmds->setKey(ckey.data(), ckey.size()); }
     else if (cmd == "ckey") { std::string hx; is >> hx; ckey = unhex(hx); cmds->setKey(ckey.data(), ckey.size()); }
     else if (cmd == "cmd") { std::string rest; std::getline(is, rest); if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1); answer(rest.c_str()); }
     else if (cmd == "replycap") is >> replyCap;
@@ -147,6 +161,17 @@ int main() {
       for (size_t k = 0; k < rest.size(); k++) { char c = rest[k]; if (c == '\\' && k + 1 < rest.size()) { char e = rest[++k]; c = e == 'n' ? '\n' : e; } r = reader.feed(c); }
       std::cout << (r ? 1 : 0) << " [" << reader.line() << "]\n"; }
     else if (cmd == "rnext") reader.next();
+    else if (cmd == "iload") { ident.load(); char fp[9]; ident.fingerprint(fp); std::cout << ident.boot() << " " << fp << "\n"; }
+    else if (cmd == "istart") std::cout << ident.startBoot() << "\n";
+    else if (cmd == "isetup") { std::string rest; std::getline(is, rest); if (!rest.empty() && rest[0] == ' ') rest.erase(0, 1);
+      char out[200]; size_t n = ident.setupLine(rest.c_str(), "0.1.0", 310, st->id(), out, sizeof out);
+      std::cout << (n ? std::string(out, n - 1) : std::string("none")) << "\n"; }
+    else if (cmd == "ikeyhex") { char b[3]; std::string h; for (size_t k = 0; k < Identity::KEY_LEN; k++) { snprintf(b, 3, "%02x", ident.key()[k]); h += b; } std::cout << h << "\n"; }
+    else if (cmd == "pconf") { int a, b, c; is >> a >> b >> c; paper.configure((uint16_t)a, (uint16_t)b, (uint16_t)c); }
+    else if (cmd == "preq") std::cout << (paper.request() ? 1 : 0) << "\n";
+    else if (cmd == "ptick") { uint32_t from, to; is >> from >> to; for (uint32_t t = from; t <= to; t++) { motor.now = t; paper.tick(t); } }
+    else if (cmd == "plog") { std::string l = motor.log; if (!l.empty()) l.pop_back(); std::cout << l << "\n"; motor.log.clear(); }
+    else if (cmd == "pbusy") std::cout << (paper.busy() ? 1 : 0) << "\n";
     else if (cmd == "acts") std::cout << acts.papers << " " << acts.changes << "\n";
     else if (cmd == "quit") break;
     else std::cout << "?\n";

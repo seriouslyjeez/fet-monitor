@@ -6,8 +6,15 @@ the position (fetserver/shotsolve.py). Plan and review of the upstream code: doc
 
 - `core/` platform-independent C++ (no STL, no heap), an Arduino library: shot capture (`capture.h`), signed shot
   lines (`shotline.h`), SHA-256/HMAC. Tested on the PC by tests/test_target_core.py.
-- `test/` the PC harness and a Mega compile check (`arduino-cli compile -b arduino:avr:mega --library core test/avr_compile`).
-- Not yet: the Mega and ESP32 layers, settings, commands. Nothing here has run on a target yet.
+  Also: settings (two slots, CRC), signed commands (`commands.h`), identity (key + boot count, USB setup lines,
+  `identity.h`), non-blocking paper drive (`paper.h`).
+- `mega/fet_target_mega` the Arduino Mega 2560 layer for boards v3.x (built for 3.1): counters, 1 kHz Timer1,
+  face sensor on D19, LM75, LEDs, paper, switches A (paper) and B (lights). Build:
+  `arduino-cli compile -b arduino:avr:mega --library firmware/target/core firmware/target/mega/fet_target_mega`
+- `test/` the PC harness and a Mega compile check.
+- Not yet: the ESP32 layer, FeT Bridge forwarding these lines, the server side. **Nothing here has run on a board
+  yet.** Before the first flash: back up the Mega's flash AND EEPROM (its calibration) with avrdude; the watchdog
+  stays off until the board's bootloader is known to handle it.
 
 ## Credits
 

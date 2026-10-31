@@ -102,6 +102,7 @@ size_t Commands::handle(const char* line, char* out, size_t cap) {
     sigOk = diff == 0;
   }
   if (!sigOk) { Reply r(out, cap, boot_, 0, "bad_signature"); return r.finish(out, key_, keyLen_); }
+  if (boot_ == 0) { Reply r(out, cap, boot_, 0, "no_boot_count"); return r.finish(out, key_, keyLen_); }   // no replay protection
   if (bad) { Reply r(out, cap, boot_, 0, "malformed"); return r.finish(out, key_, keyLen_); }
   if (boot != boot_) { Reply r(out, cap, boot_, id, "wrong_boot"); return r.finish(out, key_, keyLen_); }
   if (id <= last_) { Reply r(out, cap, boot_, id, "old_command"); return r.finish(out, key_, keyLen_); }
