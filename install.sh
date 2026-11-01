@@ -137,8 +137,8 @@ preflight() {
   esac
   [[ "$ver" =~ ^[0-9]+$ ]] || die "could not read the Debian version from /etc/os-release (VERSION_ID=$ver)"
   [ "$ver" -ge 12 ] || die "Debian $ver ($code) is too old: Raspberry Pi OS Bookworm (Debian 12) or later is needed"
-  if [ "$ver" -gt 12 ]; then
-    warn "Debian $ver ($code) has not been tested with FeT Monitor (tested target: Bookworm). Continuing."
+  if [ "$ver" -gt 13 ]; then            # the SD card image is Trixie (13)
+    warn "Debian $ver ($code) has not been tested with FeT Monitor (tested: Bookworm, Trixie). Continuing."
   fi
   info "OS: Debian $ver ($code)"
 

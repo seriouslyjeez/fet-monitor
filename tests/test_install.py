@@ -121,6 +121,7 @@ OS_RELEASE = {
     "bookworm": 'PRETTY_NAME="Raspbian GNU/Linux 12 (bookworm)"\nID=raspbian\nID_LIKE=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n',
     "bookworm64": 'PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"\nID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n',
     "trixie": 'PRETTY_NAME="Debian GNU/Linux 13 (trixie)"\nID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\n',
+    "forky": 'PRETTY_NAME="Debian GNU/Linux 14 (forky)"\nID=debian\nVERSION_ID="14"\nVERSION_CODENAME=forky\n',
     "bullseye": 'PRETTY_NAME="Raspbian GNU/Linux 11 (bullseye)"\nID=raspbian\nID_LIKE=debian\nVERSION_ID="11"\nVERSION_CODENAME=bullseye\n',
     "ubuntu": 'NAME="Ubuntu"\nID=ubuntu\nID_LIKE=debian\nVERSION_ID="24.04"\nVERSION_CODENAME=noble\n',
 }
@@ -329,8 +330,14 @@ class Installer(InstallerBase):
         self.assertIn("systemd is not running", r.stderr)
         self.assertFalse((self.root / "opt").exists(), "nothing installed after a failed check")
 
-    def test_trixie_warns_but_installs(self):
-        self.os("trixie")
+    def test_trixie_installs_without_a_warning(self):
+        self.os("trixie")                       # what the SD card image is built on
+        r = self.run_install("--no-password")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertNotIn("has not been tested", r.stderr)
+
+    def test_newer_than_trixie_warns_but_installs(self):
+        self.os("forky")
         r = self.run_install("--no-password")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("has not been tested", r.stderr)
