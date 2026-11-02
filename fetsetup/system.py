@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -71,8 +72,8 @@ def why(text: str) -> str:
 
 
 class System:
-    def __init__(self, run: Runner = real_run, root: str = "/"):
-        self.run_, self.root = run, root
+    def __init__(self, run: Runner = real_run, root: str = "/", sleep: Callable[[float], None] = time.sleep):
+        self.run_, self.root, self.sleep = run, root, sleep
 
     def run(self, argv: List[str], stdin: Optional[str] = None, timeout: float = 60.0, check: bool = True) -> str:
         code, out = self.run_(argv, stdin, timeout)
@@ -111,17 +112,30 @@ class System:
         return "0000"
 
     # ------------------------------------------------------------------------------------- network
+    SCAN_TRIES, SCAN_GAP_S = 5, 2.0
+
     def scan(self) -> List[dict]:
-        """Nearby WiFi networks, strongest first, one entry per name: {ssid, signal, secure}. Only while no AP runs."""
-        return self._wifi_list(True)
+        """Nearby WiFi networks, strongest first, one entry per name: {ssid, signal, secure}. Only while no AP runs.
+        The radio is switched on first (a new card keeps WiFi blocked until a country is set, so a scan before that
+        finds nothing), and an empty result is tried again: the WiFi chip needs a few seconds after it is unblocked."""
+        self.radio_on()
+        for i in range(self.SCAN_TRIES):
+            nets = self._wifi_list(True)
+            if nets:
+                return nets
+            if i + 1 < self.SCAN_TRIES:
+                self.sleep(self.SCAN_GAP_S)
+        return []
 
     def scan_cached(self) -> List[dict]:
         """The networks NetworkManager saw last (no new scan: works without root and keeps the radio as it is)."""
         return self._wifi_list(False)
 
     def _wifi_list(self, rescan: bool) -> List[dict]:
-        out = self.run(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes" if rescan else "no"],
-                       timeout=30 if rescan else 10, check=False)
+        code, out = self.run_(["nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY", "device", "wifi", "list", "--rescan", "yes" if rescan else "no"],
+                              None, 30 if rescan else 10)
+        if code != 0:                                    # e.g. "Scanning not allowed while unavailable": an error, no list
+            return []
         best = {}
         for line in out.splitlines():
             f = split_terse(line)
@@ -194,7 +208,8 @@ class System:
         self.radio_on()
         try:
             self.run(["nmcli", "connection", "add", "type", "wifi", "ifname", WIFI, "con-name", "fet-test", "autoconnect", "no",
-                      "ssid", ssid, "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", psk])
+                      "ssid", ssid, "802-11-wireless.hidden", "yes",    # also a hidden network (typed by hand)
+                      "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", psk])
             code, out = self.run_(["nmcli", "--wait", str(wait_s), "connection", "up", "fet-test"], None, wait_s + 10)
             if code != 0:
                 return {"ok": False, "why": why(out)}
@@ -221,7 +236,8 @@ class System:
             self.run(["nmcli", "connection", "up", "fet-eth"], timeout=40, check=False)
         elif mode == "wifi":
             self.run(["nmcli", "connection", "add", "type", "wifi", "ifname", WIFI, "con-name", "fet-wifi", "autoconnect", "yes",
-                      "connection.autoconnect-priority", "50", "ssid", net["ssid"], "wifi-sec.key-mgmt", "wpa-psk",
+                      "connection.autoconnect-priority", "50", "ssid", net["ssid"], "802-11-wireless.hidden", "yes",
+                      "wifi-sec.key-mgmt", "wpa-psk",
                       "wifi-sec.psk", net["psk"]] + self._ipv4(net["address"]))
             self.run(["nmcli", "connection", "up", "fet-wifi"], timeout=60, check=False)
         else:                                    # the Pi's own network: WPA2-CCMP on 2.4 GHz for the ESP-01 bridges

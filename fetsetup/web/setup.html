@@ -49,10 +49,14 @@ function networkPart() {
     return seg + (i.cable ? addressPart('Cable', i.cable) : '<p class="bad">No address on the cable yet: plug it into the club router, then reload this page.</p>');
   }
   if (n.mode === 'wifi') {
-    const tested = t && t.ssid === n.ssid;
+    const tested = t && t.ssid === n.ssid, none = !i.networks.length;
+    const typed = n.typed || none || (n.ssid && !i.networks.some(w => w.ssid === n.ssid));   // a name typed by hand
     return seg + '<label for="ssid">Club WiFi</label><select id="ssid"><option value="">choose…</option>' +
-      i.networks.map(w => '<option value="' + esc(w.ssid) + '"' + (w.ssid === n.ssid ? ' selected' : '') + '>' + esc(w.ssid) + (w.secure ? '' : ' (open: not usable)') + ' · ' + w.signal + '%</option>').join('') + '</select>' +
-      '<p class="mut">Not listed? It may be 5 GHz only: the Pi and the targets need 2.4 GHz.</p>' +
+      i.networks.map(w => '<option value="' + esc(w.ssid) + '"' + (!typed && w.ssid === n.ssid ? ' selected' : '') + '>' + esc(w.ssid) + (w.secure ? '' : ' (open: not usable)') + ' · ' + w.signal + '%</option>').join('') +
+      '<option value="__other__"' + (typed ? ' selected' : '') + '>Other network (type its name)…</option></select>' +
+      (typed ? '<label for="ssid_typed">Network name (exactly as written, capitals too)</label><input id="ssid_typed" maxlength="32" autocapitalize="none" autocomplete="off" spellcheck="false" value="' + esc(n.ssid || '') + '">' : '') +
+      (none ? '<p class="bad">The Pi found no WiFi networks nearby. Type the club WiFi\'s name, or use the cable or the Pi\'s own range network.</p>'
+        : '<p class="mut">Not listed? It may be 5 GHz only: the Pi and the targets need 2.4 GHz. A hidden network: choose <i>Other network</i>.</p>') +
       '<label for="psk">WiFi password</label><input id="psk" type="password" autocomplete="off" value="' + esc(n.psk || '') + '">' +
       '<button id="test">Test connection</button><p class="mut">The setup network goes away for up to a minute while the Pi tries. ' +
       'Then join <b>' + esc(i.setup_ssid) + '</b> again and reopen this page.</p>' +
@@ -126,7 +130,14 @@ function collect() {                           // the form's fields into S.f (ke
   set('director', 'dir'); set('director_password', 'dirpw'); set('admin', 'admin'); set('admin_password', 'apw'); set('admin_password2', 'apw2');
   if ($('ssh')) f.ssh = $('ssh').checked;
   const n = f.network;
-  if (n.mode === 'wifi') { if ($('ssid')) n.ssid = v('ssid'); if ($('psk')) n.psk = v('psk'); }
+  if (n.mode === 'wifi') {
+    if ($('ssid')) {
+      const pick = v('ssid');
+      n.typed = pick === '__other__';
+      n.ssid = n.typed ? ($('ssid_typed') ? v('ssid_typed') : '') : pick;
+    }
+    if ($('psk')) n.psk = v('psk');
+  }
   if (n.mode === 'own') { n.ssid = v('ossid'); n.psk = v('opsk'); n.channel = +v('ochan'); }
   remember();
 }

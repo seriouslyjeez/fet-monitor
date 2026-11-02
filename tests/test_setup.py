@@ -125,6 +125,31 @@ class Commands(unittest.TestCase):
         self.assertEqual(s.scan(), [{"ssid": "Open:Cafe", "signal": 90, "secure": False}, {"ssid": "Club", "signal": 70, "secure": True},
                                     {"ssid": "Other", "signal": 12, "secure": True}], "strongest first, one per name, hidden ones dropped")
 
+    def test_scan_unblocks_the_radio_first_and_waits_for_it(self):
+        """A new card keeps WiFi blocked until a country is set; the chip then needs a few seconds (seen on a Pi:
+        the setup page's list stayed empty)."""
+        answers = iter([(10, "Error: Scanning not allowed while unavailable."), (0, ""), (0, "Club:70:WPA2\n")])
+        s = self.sys({("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY"): lambda argv: next(answers)})
+        naps = []
+        s.sleep = naps.append
+        self.assertEqual(s.scan(), [{"ssid": "Club", "signal": 70, "secure": True}], "an error is not a network")
+        first_scan = self.rec.calls.index((self.rec.argvs("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY")[0], None))
+        self.assertLess(self.rec.calls.index((["rfkill", "unblock", "wifi"], None)), first_scan, "unblocked before the scan")
+        self.assertEqual(naps, [2.0, 2.0])
+        s = self.sys({("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY"): (0, "")})
+        s.sleep = naps.append
+        self.assertEqual(s.scan(), [], "nothing nearby: given up after a few tries")
+        self.assertEqual(len(self.rec.argvs("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY")), System.SCAN_TRIES)
+
+    def test_typed_networks_may_be_hidden(self):
+        s = self.sys({("nmcli", "-t", "-f", "GENERAL.STATE"): (0, SHOW_UP)})
+        s.try_wifi("Hidden Club", "pass-word")
+        add = self.rec.argvs("nmcli", "connection", "add")[0]
+        self.assertEqual(add[add.index("802-11-wireless.hidden") + 1], "yes")
+        s.use_network({"mode": "wifi", "ssid": "Hidden Club", "psk": "pass-word", "address": "dhcp"})
+        add = [a for a in self.rec.argvs("nmcli", "connection", "add") if "fet-wifi" in a][0]
+        self.assertEqual(add[add.index("802-11-wireless.hidden") + 1], "yes")
+
     def test_setup_network_is_open_and_answers_every_name(self):
         s = self.sys()
         s.hotspot_on("FeTMonitor-Setup-AB12")
