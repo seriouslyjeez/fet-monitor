@@ -11,18 +11,18 @@ also join the club WiFi, or run its own WiFi network for the targets (no router 
 
 ## 1. Download the FeT Monitor image
 
-On the [releases page](https://github.com/seriouslyjeez/fet-monitor/releases) open the newest **server** release
-(named `v<version>`; releases named `fw-...` are FeT Bridge firmware) and download **`fet-monitor-<version>-pi.img.xz`**.
-It is Raspberry Pi OS Lite (64-bit) with FeT Monitor installed.
+1. Open **<https://github.com/seriouslyjeez/fet-monitor/releases/latest>**. It always shows the newest FeT Monitor
+   release, titled *FeT Monitor* and a version number, marked **Latest**.
+2. Scroll down to **Assets** (click the word *Assets* if the list is folded away).
+3. Click **`fet-monitor-<version>-pi.img.xz`** (about 600 MB) to download it. Leave it as it is: do not unpack it.
+   Ignore the other files; they are for checking and for updates.
 
-*Optional, recommended: check it.* Download `IMAGE-SHA256SUMS` and `IMAGE-SHA256SUMS.sig` from the same release and,
-in a terminal in the download folder (Mac/Linux; the key line is the same as in step B7):
+The image is Raspberry Pi OS Lite (64-bit) with FeT Monitor installed.
 
-    echo 'release@fet-monitor namespaces="fet-monitor-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZo2o3OYW8M4gMSQXrY0/dBfgHDD5kQykvSefZcm5te' > signers
-    ssh-keygen -Y verify -f signers -I release@fet-monitor -n fet-monitor-release -s IMAGE-SHA256SUMS.sig < IMAGE-SHA256SUMS
-    shasum -a 256 -c IMAGE-SHA256SUMS
-
-The first must print `Good "fet-monitor-release" signature`, the second `OK`. If not, do not use the image.
+You do not need to check the download yourself: it comes from the project's GitHub page over a secure connection,
+Raspberry Pi Imager stops if the file is damaged (the `.xz` file carries its own check), and it checks the card after
+writing it. If you want proof that the image is the one the project signed, see
+[Advanced: check the image's signature](#advanced-check-the-images-signature) at the end (it needs a terminal).
 
 ## 2. Write the SD card
 
@@ -205,8 +205,8 @@ Wait a minute, then log in again as in step B5.
 
 ### B7. Download and check FeT Monitor
 
-On the [releases page](https://github.com/seriouslyjeez/fet-monitor/releases) find the newest **server** release
-(named `v<version>`, for example `v0.6.24`; releases named `fw-...` are FeT Bridge firmware). Download its three
+Open <https://github.com/seriouslyjeez/fet-monitor/releases/latest> (always the newest FeT Monitor release; its
+tag is `v<version>`, for example `v0.6.24`). Download its three
 files on the Pi, replacing `0.6.24` with that version:
 
     cd ~
@@ -273,6 +273,21 @@ FeT Monitor itself is updated separately:
   database, installs it and restarts. If the new version does not start, the previous one comes back by itself.
 - **By hand:** download, check and unpack a newer release as in steps B7 and B8, and run its `sudo ./install.sh`.
   Re-running the installer is the upgrade: it keeps the database, the device token and the password.
+
+---
+
+## Advanced: check the image's signature
+
+For someone comfortable with a terminal (Mac or Linux). From the same release's **Assets**, download
+`IMAGE-SHA256SUMS` and `IMAGE-SHA256SUMS.sig` next to the image, then in a terminal:
+
+    cd ~/Downloads
+    echo 'release@fet-monitor namespaces="fet-monitor-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICZo2o3OYW8M4gMSQXrY0/dBfgHDD5kQykvSefZcm5te' > signers
+    ssh-keygen -Y verify -f signers -I release@fet-monitor -n fet-monitor-release -s IMAGE-SHA256SUMS.sig < IMAGE-SHA256SUMS
+    shasum -a 256 -c IMAGE-SHA256SUMS
+
+The first command must print `Good "fet-monitor-release" signature`, the second `OK`. If not, do not use the image.
+The key line is the same as in step B7; its fingerprint is `SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`.
 
 ---
 

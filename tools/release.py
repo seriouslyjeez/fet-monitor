@@ -138,6 +138,8 @@ def main() -> int:
     files = [str(folder / n) for n in names] + [str(sums), str(sums.with_name("SHA256SUMS.sig"))]
     cmd = ["gh", "release", "create", tag, *files, "--title", title]
     cmd += ["--notes-file", a.notes] if a.notes else ["--notes", title]
+    # GitHub's "Latest" (and the /releases/latest link in docs/INSTALL.md) is always the newest FeT Monitor release
+    cmd += ["--latest"] if a.kind == "server" else ["--latest=false"]
     print("\nReady in", folder)
     print("Publish with:\n  " + " ".join(f'"{c}"' if " " in c else c for c in cmd))
     if a.publish:
