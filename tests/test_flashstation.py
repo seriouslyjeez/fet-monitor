@@ -2,7 +2,6 @@
 (recorded output, never run), and installing FeT Bridge with a backup, a full erase on first install, write and verify.
 On hardware only: real programmers (PROG switch vs auto-reset), timings, esptool versions on Raspberry Pi OS."""
 import binascii
-import binascii
 import hashlib
 import json
 import os
@@ -231,11 +230,11 @@ class Identify(Case):
         r = self.station(Tools(size="2MB")).identify("/dev/ttyUSB0")
         self.assertIn("built for 1 MB and 4 MB", r["why_not"])
 
-    def test_esp32_identified_not_flashed(self):
+    def test_esp32_without_images_here(self):
         r = self.station(Tools(chip_out=(0, ESP32))).identify("/dev/ttyUSB0")
         self.assertEqual((r["device"], r["offer"], r["flash_size"]), ("esp32", None, 8 << 20))
-        self.assertIn("freETarget's PC client", r["why_not"])
-        self.assertNotIn("read_flash", self.tools.subcmds())
+        self.assertIn("no ESP32 firmware on this Pi", r["why_not"])
+        self.assertNotIn("read_flash", self.tools.subcmds(), "identify reads no flash: the board answers over USB")
 
     def test_arduino_mega(self):
         avr = (0, "avrdude: AVR device initialized and ready to accept instructions\navrdude: device signature = 0x1e9801 (probably m2560)\n")
@@ -828,3 +827,145 @@ class MegaHex(unittest.TestCase):
             self.assertIsNone(st.get("../x"))
             self.assertTrue(st.delete(a["sha256"]))
             self.assertEqual([m["version"] for m in st.list()], ["0.10.0"])
+
+
+class FakeEsp32:
+    """The ESP32 target board on its USB-C port (FTDI, auto-reset). runs: "fet" (FeT target firmware: a hello when
+    restarted, answers FT1 I / FT1 K and FETCFG) or "upstream" (freETarget: JSON, never FT1)."""
+    def __init__(self, runs="fet", fw="0.2.0", key_fp=None):
+        self.runs, self.fw, self.key_fp = runs, fw, key_fp
+        self.out, self.written, self.keys, self.settings = [], [], [], None
+        self.restarts = 0
+
+    def open(self, port):
+        self.out = []                                  # no restart on open: the station restarts it
+        return self
+
+    def restart_esp(self):
+        self.restarts += 1
+        self.out.append("FT1 H b=7 fw=%s rev=620 k=1234abcd key=%s h=-" % (self.fw, self.key_fp or "none") if self.runs == "fet"
+                        else '{"NAME": "FET-TARGET", "VERSION": "6.4.2 July 19, 2026"}')
+        return True
+
+    def write(self, data):
+        self.written.append(data)
+        line = data.decode().rstrip("\n")
+        if self.runs != "fet":
+            return
+        if line == "FT1 I":
+            self.out.append("FT1 I b=7 key=%s fw=%s rev=620 k=1234abcd" % (self.key_fp or "none", self.fw))
+        elif line.startswith("FT1 K "):
+            key = bytes.fromhex(line[6:].split(" ")[0])
+            self.keys.append(key)
+            self.key_fp = hashlib.sha256(key).hexdigest()[:8]
+            self.out.append("FT1 K ok fp=" + self.key_fp)
+        elif line == "FETCFG HELLO":
+            self.out.append("FETCFG HELLO fet-db173c esp32/" + self.fw)
+        elif line.startswith("FETCFG "):
+            hexed, crc = line[7:].split(" ")
+            self.settings = json.loads(bytes.fromhex(hexed))
+            self.out.append("FETCFG OK fet-db173c")
+
+    def readline(self, timeout):
+        if self.out:
+            return self.out.pop(0)
+        time.sleep(min(timeout, 0.005))
+        return None
+
+    def close(self):
+        pass
+
+
+class Esp32(Case):
+    """FeT target firmware onto the ESP32 board: first install (the whole 8 MB saved, full image, key, settings),
+    reinstall (only the app: key, settings and queued shots stay), put back."""
+    def setUp(self):
+        super().setUp()
+        from fetserver.esp32fw import Esp32FirmwareStore
+        from tests.test_esp32fw import full_image
+        self.e32 = Esp32FirmwareStore(self.root)
+        self.img = self.e32.add(full_image("0.2.0")[0])
+        self.registered = []
+        usb_tree(self.sys, "ttyUSB0", "0403", "6015", "FT231X USB UART")
+
+    def station32(self, board):
+        st = self.station(Tools(chip_out=(0, ESP32)), board)
+        st.esp32_images = self.e32
+        st.register_key = lambda key, note: (self.registered.append(note), hashlib.sha256(key).hexdigest()[:8])[1]
+        return st
+
+    def esptool_args(self, sub):
+        return [c for c in self.tools.calls if sub in c]
+
+    def test_identify(self):
+        r = self.station32(FakeEsp32("upstream")).identify("/dev/ttyUSB0")
+        self.assertEqual((r["running"], r["first_install"], r["offer"]["version"]), (None, True, "0.2.0"))
+        self.assertIn("first install", r["label"])
+        self.assertIn("230400", self.esptool_args("flash_id")[0], "the board's FTDI link garbles faster transfers")
+        r = self.station32(FakeEsp32("fet", fw="0.2.0", key_fp="ab12cd34")).identify("/dev/ttyUSB0")
+        self.assertEqual((r["running"], r["key_fp"], r["same"], r["can_key"]), ("0.2.0", "ab12cd34", True, True))
+
+    def test_first_install_saves_writes_keys_and_configures(self):
+        board = FakeEsp32("upstream")
+        st = self.station32(board)
+        st.identify("/dev/ttyUSB0")
+        board.runs = "fet"                                       # what it runs once written
+        job = st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test", SETTINGS)
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertEqual(self.tools.subcmds(), ["version", "flash_id", "flash_id", "read_flash", "write_flash", "verify_flash"])
+        read = self.esptool_args("read_flash")[0]
+        self.assertEqual(read[-3:-1], ["0", hex(8 << 20)], "the whole 8 MB first")
+        self.assertTrue(job["backup"].startswith("7cdfa1001122-"))
+        self.assertIn(str(self.e32.full_path(self.img["sha256"])), self.esptool_args("write_flash")[0])
+        self.assertIn("0x0", self.esptool_args("write_flash")[0])
+        self.assertTrue(all("230400" in c for c in self.tools.calls if c[0] != "avrdude" and "version" not in c))
+        self.assertEqual(len(board.keys), 1, "the board got its key")
+        self.assertEqual(self.registered, ["installed ESP32 0.2.0 by test"], "the server knew it first")
+        self.assertEqual(board.settings["ssid"], "club")
+        self.assertIn("configured as fet-db173c", job["message"])
+
+    def test_reinstall_keeps_key_settings_and_shots(self):
+        board = FakeEsp32("fet", fw="0.1.1", key_fp="ab12cd34")
+        st = self.station32(board)
+        r = st.identify("/dev/ttyUSB0")
+        self.assertEqual((r["first_install"], r["same"]), (False, False))
+        job = st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        subs = [next((a for a in c if a in ("erase_region", "write_flash", "verify_flash", "read_flash")), None) for c in self.tools.calls]
+        self.assertNotIn("read_flash", subs, "no backup: it already runs FeT target firmware")
+        erase = self.esptool_args("erase_region")[0]
+        self.assertEqual(erase[-2:], [hex(0xE000), hex(0x2000)], "which slot boots: reset to the first, where the app goes")
+        self.assertIn(hex(0x10000), self.esptool_args("write_flash")[0])
+        self.assertIn(str(self.e32.app_path(self.img["sha256"])), self.esptool_args("write_flash")[0])
+        self.assertEqual((board.keys, self.registered), ([], []), "its key stays")
+        self.assertIn("key ab12cd34", job["message"])
+
+    def test_refusals(self):
+        board = FakeEsp32("upstream")
+        st = self.station32(board)
+        with self.assertRaisesRegex(FlashError, "identify"):
+            st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test")
+        st.identify("/dev/ttyUSB0")
+        with self.assertRaisesRegex(FlashError, "identify"):
+            st.start_esp32_flash("/dev/ttyUSB0", "0" * 64, "test")
+        self.tools.chip_out = (0, ESP32.replace("7c:df:a1:00:11:22", "7c:df:a1:00:11:99"))
+        job = st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test")
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("different board", job["message"])
+        self.assertNotIn("write_flash", self.tools.subcmds())
+        with self.assertRaisesRegex(FlashError, "settings|WiFi"):
+            st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test", {"ssid": ""})
+
+    def test_put_back_only_its_own_image(self):
+        board = FakeEsp32("fet", key_fp="ab12cd34")
+        st = self.station32(board)
+        st.identify("/dev/ttyUSB0")
+        (self.root / "flash-backups").mkdir(exist_ok=True)
+        (self.root / "flash-backups/7cdfa1001122-20261102-221212.bin").write_bytes(b"\xff" * (8 << 20))
+        (self.root / "flash-backups/84f3eb123456-20261102-221212.bin").write_bytes(b"\xff" * (8 << 20))
+        with self.assertRaisesRegex(FlashError, "this board"):
+            st.start_esp32_restore("/dev/ttyUSB0", "84f3eb123456-20261102-221212.bin", "test")
+        job = st.start_esp32_restore("/dev/ttyUSB0", "7cdfa1001122-20261102-221212.bin", "test")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertIn("0x0", self.esptool_args("write_flash")[0])
+        self.assertTrue(st.probes["/dev/ttyUSB0"]["first_install"], "upstream again: the next install saves it first")

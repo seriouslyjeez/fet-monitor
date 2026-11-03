@@ -545,6 +545,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: Arduino Mega on %s: %s", self.client_address[0], port, job["what"])
             return self._send(202, job)
+        if path in ("/api/v1/admin/flash/esp32-install", "/api/v1/admin/flash/esp32-key", "/api/v1/admin/flash/esp32-restore") and method == "POST":
+            port, fl = str(payload.get("port", "")), self.server.flash
+            settings = payload.get("settings")
+            if isinstance(settings, dict):                                # it reports to this server, with its token
+                settings = dict(settings, port=self.server.server_address[1], token=self.server.token)
+            try:
+                if path.endswith("install"):
+                    job = fl.start_esp32_flash(port, str(payload.get("sha256", "")), "Range Control", settings if isinstance(settings, dict) else None)
+                elif path.endswith("key"):
+                    job = fl.start_esp32_key(port, "Range Control")
+                else:
+                    job = fl.start_esp32_restore(port, str(payload.get("name", "")), "Range Control")
+            except FlashError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: ESP32 board on %s: %s", self.client_address[0], port, job["what"])
+            return self._send(202, job)
         if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start", "/api/v1/admin/flash/configure") and method == "POST":
             settings = payload.get("settings")
             if isinstance(settings, dict):                                # the bridge reports to this server, with its token

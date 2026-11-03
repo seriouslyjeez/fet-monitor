@@ -14,7 +14,10 @@ Identification, read-only:
   at start-up (or answers to {"VERSION":0}) names its freETarget version.
 FeT Bridge images come from the firmware store (signed releases or Range Control uploads; firmware.py checks them).
 A device that does not run FeT Bridge yet is first copied whole to flash-backups/, then erased (a first install
-needs a full erase), written and verified. Arduino Mega and ESP32 boards are identified only, not flashed (planned).
+needs a full erase), written and verified. A target's Arduino Mega gets FeT target firmware (avrdude). The ESP32 board
+(6.2, ESP32-S3, 8 MB) gets FeT target firmware too: a first install saves the whole 8 MB, writes the full image and
+gives the board its key (and WiFi settings, if filled in); a reinstall writes only the app and keeps the board's key,
+settings and queued shots. Its USB link (FTDI) is reliable only at ESP32_BAUD.
 
 Configure (FeT Bridge 0.3.0 and newer): the settings (WiFi, this server's address, port and token, the target's name)
 go over the serial port in the bridge's first minute after start (firmware src/core/provision.h): "FETCFG HELLO", then
@@ -41,6 +44,9 @@ from .seriallink import SerialLink
 
 SYS_TTY = "/sys/class/tty"
 BAUD = "460800"
+ESP32_BAUD = "230400"                  # the ESP32 board's FTDI garbled reads at 460800 and 921600 (board B59, 2026-11-02)
+ESP32_APP, ESP32_OTADATA = 0x10000, (0xE000, 0x2000)   # the 8 MB layout: app slot 0; which slot boots
+ESP32_FULL = 8 << 20
 APP_READ = 0x80000                     # the first 512 KB holds the application (and its identification string)
 ESP_ADAPTERS = {("1a86", "7523"): "CH340", ("1a86", "55d4"): "CH9102", ("10c4", "ea60"): "CP2102", ("0403", "6001"): "FTDI",
                 ("0403", "6015"): "FTDI"}
@@ -166,10 +172,11 @@ class FlashStation:
     def __init__(self, images, data_dir: Optional[Path], run: Runner = run_tool, sys_tty: str = SYS_TTY,
                  esptool: Optional[List[str]] = None, now: Callable[[], float] = time.time, background: bool = True,
                  opener: Callable[[str], SerialLink] = SerialLink, target_images=None,
-                 register_key: Optional[Callable[[bytes, str], str]] = None):
+                 register_key: Optional[Callable[[bytes, str], str]] = None, esp32_images=None):
         self.images, self.run, self.sys_tty, self.now, self.background = images, run, sys_tty, now, background
         self.opener = opener
         self.target_images = target_images          # FeT target firmware for the Mega (targetfw.TargetFirmwareStore)
+        self.esp32_images = esp32_images            # ... and for the ESP32 board (esp32fw.Esp32FirmwareStore)
         self.register_key = register_key            # Core.add_target_key: the server must know a key before the board does
         self.hello_wait, self.hello_every, self.reply_wait, self.mega_wait = 90.0, 1.5, 8.0, 6.0        # seconds
         self.backups = Path(data_dir) / "flash-backups" if data_dir is not None else None
@@ -189,8 +196,8 @@ class FlashStation:
                 raise FlashError("esptool is not installed on this Pi (sudo apt install esptool)")
         return self.esptool
 
-    def _esp(self, port: str, args: List[str], timeout: float, progress: bool = False) -> str:
-        code, out = self.run(self._esptool() + ["--port", port, "--baud", BAUD] + args, timeout,
+    def _esp(self, port: str, args: List[str], timeout: float, progress: bool = False, baud: str = BAUD) -> str:
+        code, out = self.run(self._esptool() + ["--port", port, "--baud", baud] + args, timeout,
                              self._progress if progress else None)
         if code != 0:
             raise FlashError(why_esptool(out))
@@ -211,7 +218,7 @@ class FlashStation:
             raise FlashError("that port is gone: plug the device in again")
         hint = next(p for p in list_ports(self.sys_tty) if p["port"] == port)["hint"]
         if hint != "arduino":
-            code, out = self.run(self._esptool() + ["--port", port, "--baud", BAUD, "--chip", "auto", "flash_id"], 60, None)
+            code, out = self.run(self._esptool() + ["--port", port, "--baud", ESP32_BAUD, "--chip", "auto", "flash_id"], 60, None)
             if code == 0:
                 return self._esp_found(port, out)
             esp_err = why_esptool(out)
@@ -228,11 +235,12 @@ class FlashStation:
         mac = (MAC_RE.search(out) or [None, ""])[1].lower()
         sm = SIZE_RE.search(out)
         size = int(sm.group(1)) * (1 << 20 if sm.group(2).upper() == "MB" else 1 << 10) if sm else 0
+        if chip.startswith("ESP32"):
+            return self._esp32_found(port, chip, mac, size)
         if not chip.startswith("ESP8266"):
-            return {"port": port, "device": "esp32" if chip.startswith("ESP32") else "esp", "chip": chip, "mac": mac, "flash_size": size,
+            return {"port": port, "device": "esp", "chip": chip, "mac": mac, "flash_size": size,
                     "label": f"{chip or 'An ESP chip'} ({flash_label(size)} flash)", "offer": None,
-                    "why_not": "ESP32 boards (freETarget version 5/6) are not flashed here yet: use freETarget's PC client or its "
-                               "over-the-air update. FeT Monitor connecting to them directly is planned."}
+                    "why_not": "not a chip FeT Monitor has firmware for"}
         running = self._fet_version(port)
         res = {"port": port, "device": "esp8266", "chip": chip, "mac": mac, "flash_size": size, "running": running,
                "label": f"ESP-01 / ESP-01S ({flash_label(size)} flash), " + (f"FeT Bridge {running}" if running else "not FeT Bridge (first install)"),
@@ -253,6 +261,137 @@ class FlashStation:
         with self.lock:
             self.probes[port] = res
         return res
+
+    # ------------------------------------------------------------------------------------- the ESP32 board
+    def _esp32_found(self, port: str, chip: str, mac: str, size: int) -> dict:
+        running, key = self._esp32_hello(port)
+        res = {"port": port, "device": "esp32", "chip": chip, "mac": mac, "flash_size": size, "running": running, "key_fp": key,
+               "label": f"{chip} board ({flash_label(size)} flash), " + (f"FeT target {running}" if running else
+                                                                          "not FeT target firmware (first install)"),
+               "can_key": running is not None, "configurable": running is not None}
+        best = self.esp32_images.best() if self.esp32_images is not None else None
+        if chip != "ESP32-S3" or size != ESP32_FULL:
+            res.update(offer=None, why_not="FeT target firmware is built for the ESP32-S3 board 6.2 with 8 MB flash")
+        elif best is None:
+            res.update(offer=None, why_not="no ESP32 firmware on this Pi yet: Check GitHub for ESP32 firmware, or upload one")
+        else:
+            res.update(offer={"sha256": best["sha256"], "version": best["version"], "size": best["size"]}, why_not="",
+                       first_install=running is None,
+                       same=running is not None and version_tuple(running) == version_tuple(best["version"]))
+        with self.lock:
+            self.probes[port] = res
+        return res
+
+    def _esp32_hello(self, port: str) -> tuple:
+        """(FeT target version, key fingerprint) if the board runs FeT target firmware: restarted, it says hello within
+        a second; asked "FT1 I", it answers. (None, None) otherwise (upstream freETarget, or nothing)."""
+        try:
+            link = self.opener(port)
+        except OSError:
+            return None, None
+        try:
+            link.restart_esp()
+            start = time.monotonic()
+            asked = False
+            while time.monotonic() - start < self.mega_wait:
+                got = link.readline(0.2)
+                info = ft_info(got) if got else None
+                if info:
+                    return info
+                if not asked and time.monotonic() - start > self.mega_wait / 2:
+                    link.write(b"FT1 I\n")
+                    asked = True
+            return None, None
+        except OSError:
+            return None, None
+        finally:
+            link.close()
+
+    def _same_esp32(self, port: str, probe: dict) -> None:
+        self._step("checking it is the same board")
+        out = self._esp(port, ["--chip", "auto", "flash_id"], 60, baud=ESP32_BAUD)
+        if (MAC_RE.search(out) or [None, ""])[1].lower() != probe["mac"]:
+            raise FlashError("a different board is plugged in now: identify it again")
+
+    def start_esp32_flash(self, port: str, sha: str, by: str, settings: Optional[dict] = None) -> dict:
+        """FeT target firmware on the ESP32 board identified on port. First install: the whole 8 MB is saved, then the
+        full image is written and verified, then a key (and the WiFi settings, if given) go in over USB. Reinstall:
+        only the app (and which slot boots), so the board keeps its key, settings and queued shots."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "esp32" or not probe.get("offer") or probe["offer"]["sha256"] != sha:
+            raise FlashError("identify the device again first")
+        img = self.esp32_images.get(sha) if self.esp32_images is not None else None
+        if img is None:
+            raise FlashError("that firmware is not on this Pi")
+        full, app = self.esp32_images.full_path(sha), self.esp32_images.app_path(sha)
+        line = settings_line(self._settings(settings)) if settings else None
+        first = probe["first_install"]
+        if first and self.backups is None:
+            raise FlashError("no data folder for the backup of the original firmware")
+
+        def work(job):
+            self._same_esp32(port, probe)
+            if first:
+                self.backups.mkdir(parents=True, exist_ok=True)
+                name = f"{probe['mac'].replace(':', '')}-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.now()))}.bin"
+                self._step("saving the original firmware (8 MB: about 7 minutes)")
+                self._esp(port, ["read_flash", "0", hex(ESP32_FULL), str(self.backups / name)], 1500, progress=True, baud=ESP32_BAUD)
+                with self.lock:
+                    job["backup"] = name
+                self._step("writing")
+                self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(full)], 900,
+                          progress=True, baud=ESP32_BAUD)
+                self._step("verifying")
+                self._esp(port, ["verify_flash", "0x0", str(full)], 900, baud=ESP32_BAUD)
+            else:
+                self._step("writing (the board keeps its key, settings and queued shots)")
+                self._esp(port, ["erase_region", hex(ESP32_OTADATA[0]), hex(ESP32_OTADATA[1])], 120, baud=ESP32_BAUD)
+                self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", hex(ESP32_APP), str(app)], 900,
+                          progress=True, baud=ESP32_BAUD)
+                self._step("verifying")
+                self._esp(port, ["verify_flash", hex(ESP32_APP), str(app)], 900, baud=ESP32_BAUD)
+            with self.lock:
+                probe.update(running=img["version"], first_install=False, same=True, can_key=True, configurable=True,
+                             label=f"{probe['chip']} board ({flash_label(probe['flash_size'])} flash), FeT target {img['version']}")
+            fp = probe.get("key_fp") if not first and probe.get("key_fp") else self._mega_key(port, f"installed ESP32 {img['version']} by {by}",
+                                                                                              restart=True)
+            msg = f"FeT target {img['version']} installed and verified, key {fp}"
+            if line:
+                self._step("sending the WiFi settings")
+                msg += f"; configured as {self._configure(port, line, self.hello_wait)}"
+            return msg + ": put the board back into the target"
+        return self._mega_job(port, f"FeT target ESP32 {img['version']}", by, work)
+
+    def start_esp32_key(self, port: str, by: str) -> dict:
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "esp32" or not probe.get("running"):
+            raise FlashError("identify the board first: it must run FeT target firmware")
+        return self._mega_job(port, "New key", by, lambda job: "new key " + self._mega_key(port, f"new key by {by}", restart=True) + " set")
+
+    def start_esp32_restore(self, port: str, name: str, by: str) -> dict:
+        """Write a saved original 8 MB image back (only onto the board it came from)."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "esp32":
+            raise FlashError("identify the board first")
+        path = self.backup_path(name)
+        if path is None or not name.startswith(probe["mac"].replace(":", "")) or path.stat().st_size != ESP32_FULL:
+            raise FlashError("no saved 8 MB image of this board with that name")
+
+        def work(job):
+            self._same_esp32(port, probe)
+            self._step("writing the saved firmware back")
+            self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(path)], 1500,
+                      progress=True, baud=ESP32_BAUD)
+            self._step("verifying")
+            self._esp(port, ["verify_flash", "0x0", str(path)], 900, baud=ESP32_BAUD)
+            with self.lock:
+                probe.update(running=None, first_install=True, same=False, key_fp=None, can_key=False, configurable=False,
+                             label=f"{probe['chip']} board, restored")
+            return f"the saved firmware ({name}) is back on the board"
+        return self._mega_job(port, "Restore " + name, by, work)
 
     def _mega_found(self, port: str) -> dict:
         info = self._mega_version(port)
@@ -385,8 +524,9 @@ class FlashStation:
             raise FlashError("identify the board first: it must run FeT target firmware")
         return self._mega_job(port, "New key", by, lambda job: "new key " + self._mega_key(port, f"new key by {by}") + " set")
 
-    def _mega_key(self, port: str, note: str) -> str:
-        """Make a key, give it to the server, then to the board over USB (the only way a key gets in)."""
+    def _mega_key(self, port: str, note: str, restart: bool = False) -> str:
+        """Make a key, give it to the server, then to the board over USB (the only way a key gets in). restart: the
+        ESP32 board does not restart when the port opens (the Mega does): the station restarts it."""
         if self.register_key is None:
             raise FlashError("this flash station cannot store keys (no server)")
         self._step("setting the target's key")
@@ -401,6 +541,8 @@ class FlashStation:
                 time.sleep(self.hello_every / 3)
                 continue
             try:
+                if restart:
+                    link.restart_esp()
                 end = time.monotonic() + self.mega_wait                    # it restarts when the port opens
                 while time.monotonic() < end:
                     got = link.readline(0.2)

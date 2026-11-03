@@ -45,7 +45,8 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     firmware = FirmwareStore(data_dir)
     target_firmware = TargetFirmwareStore(data_dir)
     esp32_firmware = Esp32FirmwareStore(data_dir)
-    flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key)
+    flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key,
+                         esp32_images=esp32_firmware)
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
                          firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
                          appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware,

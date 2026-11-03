@@ -758,6 +758,7 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
     const withCfg = pr && pr.offer && verAtLeast(pr.offer.version, '0.3.0');   // labels stay put while someone types (no redraw then)
     const canCfg = p.hint !== 'arduino' && (!pr || pr.device === 'esp8266');
     if (pr && pr.device === 'mega') return megaRow(p, pr, running, busy, rc);
+    if (pr && pr.device === 'esp32') return esp32Row(p, pr, running, busy, rc, f);
     return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td>' +
       (pr ? '<b>' + esc(pr.label) + '</b>' + (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcflashgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' +
           (running ? ' disabled' : '') + '>' + (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button>' +
@@ -771,7 +772,7 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
   return '<div class="panel"><h3>Flash a device (USB)</h3>' +
     '<p class="mut">Plug a FeT Bridge (an ESP-01 or ESP-01S on a USB programmer) into a USB port of this Pi and press Identify: it gets the newest FeT Bridge ' +
     'for its flash size. A target\'s <b>Arduino Mega</b> (by its USB port) gets FeT target firmware; its original program and settings are saved ' +
-    'first and can be put back. ESP32 boards are identified, not flashed (yet).</p>' +
+    'first and can be put back. A target\'s <b>ESP32 board</b> (6.2, by its USB-C port) gets FeT target firmware the same way; after that it updates over WiFi.</p>' +
     '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
     'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
     '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
@@ -809,6 +810,21 @@ function esp32Images(rc) {                       // the ESP32 board's firmware: 
     'Target settings → Update.</p>';
 }
 const megaPort = f => Object.keys(f.probes || {}).find(k => f.probes[k].device === 'mega');
+function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a USB port
+  const dis = running || rc.flashBusy ? ' disabled' : '', mine = (f.backups || []).filter(b => b.name.startsWith((pr.mac || '').replace(/:/g, '')) && /\.bin$/.test(b.name));
+  return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td><b>' + esc(pr.label) + '</b>' +
+    (pr.offer ? '<div class="bulk"><button class="pri" data-act="rce32go" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + dis + '>' +
+      (pr.same ? 'Reinstall' : pr.first_install ? 'Install' : 'Update to') + ' FeT target ' + esc(pr.offer.version) + '</button>' +
+      ' <span class="mut">and send it the settings below, if they have a WiFi name</span></div>' +
+      (pr.first_install ? '<div class="mut">First install: the board\'s whole flash (8 MB) is saved first, about 7 minutes (listed below, and it can be put back), ' +
+        'then FeT target firmware is written and checked, then the board gets its own key.</div>'
+        : '<div class="mut">Only the program is written: the board keeps its key, WiFi settings and stored shots.</div>')
+      : '<div class="mut">' + esc(pr.why_not || '') + '</div>') +
+    mine.map(b => '<div class="bulk"><button data-act="rce32restore" data-port="' + esc(p.port) + '" data-name="' + esc(b.name) + '"' + dis + '>Put back ' + esc(b.name) + '</button></div>').join('') +
+    '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+    (pr.can_key ? ' <button data-act="rce32key" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : '') +
+    (pr.configurable ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : '') + '</td></tr>';
+}
 function megaRow(p, pr, running, busy, rc) {   // an Arduino Mega on a USB port
   const dis = running || rc.flashBusy ? ' disabled' : '';
   return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td><b>' + esc(pr.label) + '</b>' +
@@ -1972,6 +1988,18 @@ async function rangeAct(el, a) {
     if (res.status === 200) rc.musers = res.data.users;
     return refresh();
   }
+  if (a === 'rce32go' || a === 'rce32key' || a === 'rce32restore') {
+    const what = a === 'rce32go' ? 'Install FeT target firmware on the ESP32 board on ' + el.dataset.port + '?\n\nOn a first install its whole flash is saved first (about 7 minutes).'
+      : a === 'rce32key' ? 'Give the ESP32 board on ' + el.dataset.port + ' a new key?\n\nIts old key stops working for this target.'
+      : 'Write the saved firmware ' + el.dataset.name + ' back onto the ESP32 board on ' + el.dataset.port + '?\n\nFeT target firmware, its key and settings are replaced.';
+    if (!confirm(what)) return;
+    const body = {port: el.dataset.port, sha256: el.dataset.sha, name: el.dataset.name};
+    const s = flashSettings(rc, rc.flash || {});
+    if (a === 'rce32go' && s) body.settings = s;
+    const res = await adminCall(a === 'rce32go' ? '/flash/esp32-install' : a === 'rce32key' ? '/flash/esp32-key' : '/flash/esp32-restore', body);
+    if (res.status !== 202) rc.flashMsg = res.data.error || 'not started';
+    return refresh();
+  }
   if (a === 'rcmegago' || a === 'rcmegakey' || a === 'rcmegarestore') {
     const what = a === 'rcmegago' ? 'Install FeT target firmware on the Arduino Mega on ' + el.dataset.port + '?\n\nOn a first install its program and settings are saved first.'
       : a === 'rcmegakey' ? 'Give the Arduino Mega on ' + el.dataset.port + ' a new key?\n\nIts old key stops working for this target.'
@@ -2630,7 +2658,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
