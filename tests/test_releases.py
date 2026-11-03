@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fetserver import releases
 from fetserver.firmware import FirmwareStore
-from fetserver.releases import GitHub, ReleaseError, Updates, check_archive, fetch_firmware, fetch_target_firmware, server_update_info, stage_server_update
+from fetserver.releases import GitHub, ReleaseError, Updates, check_archive, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware, server_update_info, stage_server_update
 from tests.test_firmware import image
 
 REPO = "someone/fet-monitor"
@@ -283,6 +283,24 @@ class Releases(ReleasesBase):
         with self.assertRaisesRegex(ReleaseError, "lists no fet-target-mega-0.1.6.hex"):
             fetch()
         self.assertEqual(store.list(), [])
+
+    def test_fetch_esp32_firmware(self):
+        from fetserver.esp32fw import Esp32FirmwareStore
+        from tests.test_esp32fw import full_image
+        store = Esp32FirmwareStore(self.d)
+        fetch = lambda: fetch_esp32_firmware(self.fake.gh(), store.has_full, lambda b: store.add(b, "GitHub"), self.signers)
+        self.assertIsNone(fetch()["version"])
+        self.release("esp32-0.1.1", {"fet-target-esp32-0.1.1.bin": full_image("0.1.1")[0]})
+        r = fetch()
+        self.assertEqual((r["version"], r["added"], [m["version"] for m in store.list()]), ("0.1.1", ["fet-target-esp32-0.1.1.bin"], ["0.1.1"]))
+        self.assertEqual(fetch()["already"], ["fet-target-esp32-0.1.1.bin"], "nothing downloaded twice")
+        self.release("esp32-0.1.2", {"fet-target-esp32-0.1.2.bin": full_image("0.1.1")[0]})       # claims 0.1.2
+        with self.assertRaisesRegex(ReleaseError, "really 0.1.1"):
+            fetch()
+        self.release("esp32-0.1.3", {"fet-target-esp32-0.1.3.bin": full_image("0.1.3")[0]}, key=self.other_key)
+        with self.assertRaisesRegex(ReleaseError, "NOT valid"):
+            fetch()
+        self.assertEqual([m["version"] for m in store.list()], ["0.1.1"])
 
     # ---- the server's side
     def test_updates_install_writes_the_request(self):

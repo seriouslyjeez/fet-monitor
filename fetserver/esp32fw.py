@@ -131,6 +131,10 @@ class Esp32FirmwareStore:
         imgs = self.list()
         return max(imgs, key=lambda m: (version_tuple(m["version"]) or (0, 0, 0), m.get("uploaded", 0))) if imgs else None
 
+    def has_full(self, full_sha: str) -> bool:
+        """An image with this whole-file SHA-256 is stored (a release lists the full image's hash)."""
+        return any(m.get("full_sha256") == full_sha for m in self.list())
+
     def delete(self, sha: str) -> bool:
         if not self.get(sha):
             return False

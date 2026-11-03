@@ -51,6 +51,8 @@ FW_TAG = re.compile(r"^fw-(\d{1,3}\.\d{1,3}\.\d{1,3})$")
 FW_ASSET = re.compile(r"^fet-bridge-(\d{1,3}\.\d{1,3}\.\d{1,3})-(1|2|4|8|16)MB\.bin$")
 TGT_TAG = re.compile(r"^tgt-(\d{1,3}\.\d{1,3}\.\d{1,3})$")                 # FeT target firmware (the Arduino Mega)
 TGT_ASSET = "fet-target-mega-{}.hex"
+E32_TAG = re.compile(r"^esp32-(\d{1,3}\.\d{1,3}\.\d{1,3})$")                 # FeT target firmware for the ESP32 board
+E32_ASSET = "fet-target-esp32-{}.bin"                                     # the full 8 MB image
 SUMS_LINE = re.compile(r"^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]{1,100})$")
 
 
@@ -316,6 +318,31 @@ def fetch_target_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable
     try:
         meta = inspect_hex(data)                      # every check BEFORE anything is stored
     except BadHex as exc:
+        raise ReleaseError(f"{name}: {exc}")
+    if meta["version"] != ver:
+        raise ReleaseError(f"{name} is really {meta['version']}: refusing it")
+    add(data)
+    return {"version": ver, "added": [name], "already": [], "message": f"downloaded {name}"}
+
+def fetch_esp32_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable[[bytes], dict], signers: Path = SIGNERS,
+                         fresh: bool = True) -> dict:
+    """The newest signed FeT target firmware release for the ESP32 board (esp32-<ver>, fet-target-esp32-<ver>.bin, the
+    full 8 MB image), if not stored yet (have: by the image's SHA-256). Every check of an upload applies too."""
+    from .esp32fw import FULL_SIZE, BadImage as BadEsp32, inspect as inspect_e32
+    found = newest(gh, E32_TAG, fresh)
+    if not found:
+        return {"version": None, "added": [], "already": [], "message": "no FeT target firmware release for the ESP32 on GitHub"}
+    ver, rel = found
+    sums = signed_sums(gh, rel, signers)
+    name = E32_ASSET.format(ver)
+    if name not in sums:
+        raise ReleaseError(f"release esp32-{ver} lists no {name}")
+    if have(sums[name]):
+        return {"version": ver, "added": [], "already": [name], "message": f"already have FeT target ESP32 {ver}"}
+    data = checked(gh, rel, name, FULL_SIZE, sums)
+    try:
+        meta = inspect_e32(data)
+    except BadEsp32 as exc:
         raise ReleaseError(f"{name}: {exc}")
     if meta["version"] != ver:
         raise ReleaseError(f"{name} is really {meta['version']}: refusing it")

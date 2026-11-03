@@ -5,17 +5,20 @@
     python3 tools/release.py firmware 0.2.2 [--notes NOTES.md] [--publish]
     python3 tools/release.py image 0.6.30 [--publish]
     python3 tools/release.py target 0.1.2 [--notes NOTES.md] [--publish]
+    python3 tools/release.py esp32 0.1.1 [--notes NOTES.md] [--publish]
 
 server   : the server archive from the committed tree (tools/make_release.py) -> dist/server-<ver>/
 firmware : the collected images dist/firmware/fet-bridge-<ver>-*.bin (tools/collect_firmware.py) -> dist/fw-<ver>/
 target   : the FeT target firmware for the Arduino Mega, dist/target-firmware/fet-target-mega-<ver>.hex -> dist/tgt-<ver>/
+esp32    : the FeT target firmware for the ESP32 board, dist/target-firmware/fet-target-esp32-<ver>.bin (the full 8 MB
+           image, fet_target_esp32.ino.merged.bin) -> dist/esp32-<ver>/
 image    : the SD card image GitHub Actions built for server release v<ver> (.github/workflows/image.yml): downloads it
            and its IMAGE-SHA256SUMS, checks the hash here, signs -> IMAGE-SHA256SUMS.sig, uploads that (with --publish)
 
 Each folder gets SHA256SUMS and SHA256SUMS.sig (ssh-keygen -Y sign with your release key; it asks for the key's
 passphrase), and the signature is checked against fetserver/release_signers before anything is published. Without
 --publish it prints the `gh release create` command; with --publish it runs it after you confirm. Tags: v<ver> for the
-server, fw-<ver> for FeT Bridge firmware, tgt-<ver> for FeT target firmware (that is what the Pi looks for).
+server, fw-<ver> for FeT Bridge firmware, tgt-<ver> / esp32-<ver> for FeT target firmware (what the Pi looks for).
 """
 from __future__ import annotations
 
@@ -109,6 +112,28 @@ def target(args) -> tuple:
     return folder, [name], f"tgt-{v}", f"FeT target firmware {v} (Arduino Mega)"
 
 
+def esp32(args) -> tuple:
+    from fetserver.esp32fw import BadImage as BadEsp32, inspect as inspect_e32
+    v = args.version
+    if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}", v or ""):
+        sys.exit("give the ESP32 firmware version, e.g. 0.1.1")
+    name = f"fet-target-esp32-{v}.bin"
+    src = ROOT / "dist/target-firmware" / name
+    if not src.is_file():
+        sys.exit(f"no dist/target-firmware/{name}: build firmware/target/esp32 and copy its .merged.bin there")
+    try:
+        meta = inspect_e32(src.read_bytes())
+    except BadEsp32 as exc:
+        sys.exit(f"{name}: {exc}")
+    if meta["version"] != v:
+        sys.exit(f"{name} says it is {meta['version']}")
+    folder = ROOT / "dist" / f"esp32-{v}"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    shutil.copyfile(src, folder / name)
+    return folder, [name], f"esp32-{v}", f"FeT target firmware {v} (ESP32 board)"
+
+
 def image(a) -> int:
     """Sign the image the workflow attached to release v<version>, after checking its hash on this computer."""
     if not a.version or not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
@@ -139,7 +164,7 @@ def image(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("kind", choices=["server", "firmware", "target", "image"])
+    ap.add_argument("kind", choices=["server", "firmware", "target", "esp32", "image"])
     ap.add_argument("version", nargs="?", help="firmware version (firmware), server version (image)")
     ap.add_argument("--notes", help="release notes (Markdown); shown in Range Control before updating")
     ap.add_argument("--key", default=str(KEY))
@@ -152,7 +177,7 @@ def main() -> int:
             print(f"not signed: {exc}", file=sys.stderr)
             return 1
     try:
-        folder, names, tag, title = {"server": server, "firmware": firmware, "target": target}[a.kind](a)
+        folder, names, tag, title = {"server": server, "firmware": firmware, "target": target, "esp32": esp32}[a.kind](a)
         sums = sums_for(folder, names)
         sign(sums, Path(a.key))
         assert set(parse_sums(sums.read_bytes())) == set(names)

@@ -129,6 +129,7 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 <div id="toast"></div>
 <input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
 <input type="file" id="rcmegafile" accept=".hex" hidden>
+<input type="file" id="rce32file" accept=".bin" hidden>
 <input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
 <input type="file" id="pdffile" accept=".pdf,application/pdf" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
@@ -794,7 +795,18 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
       '</li>').join('') + '</ul><p class="mut">What a device had before its first install. ESP: esptool write_flash 0x0 puts it back. Arduino Mega: ' +
       'the program (.hex) and its settings (.eep, where freETarget keeps the calibration): <b>Put back</b> writes both.</p>' : '') +
     '<h4>FeT target firmware for the Arduino Mega</h4>' + targetImages(rc) +
+    '<h4>FeT target firmware for the ESP32 board</h4>' + esp32Images(rc) +
     '</div>';
+}
+function esp32Images(rc) {                       // the ESP32 board's firmware: over the air from here (signed), or by USB
+  const ims = rc.e32images || [];
+  return (ims.length ? '<ul>' + ims.map(m => '<li>' + esc(m.version) + ' <span class="mut">' + Math.round(m.size / 1024) + ' KB · ' + esc(m.sha256.slice(0, 12)) + '</span></li>').join('') + '</ul>'
+    : '<p class="mut">None on this Pi yet.</p>') +
+    '<div class="bulk"><button data-act="rce32gh">Check GitHub for ESP32 firmware</button><button data-act="rce32pick"' + (rc.uploading ? ' disabled' : '') + '>Upload image…</button>' +
+    (rc.e32Msg ? '<span class="' + (rc.e32Ok ? 'ok' : 'bad') + '">' + esc(rc.e32Msg) + '</span>' : '') + '</div>' +
+    '<p class="mut">The full 8 MB image from the Arduino build of firmware/target/esp32 (fet_target_esp32.ino.merged.bin). It is checked: ' +
+    'an intact ESP32-S3 image that carries FeT target firmware\'s name and version. Targets with an ESP32 board update from here over WiFi: ' +
+    'Target settings → Update.</p>';
 }
 const megaPort = f => Object.keys(f.probes || {}).find(k => f.probes[k].device === 'mega');
 function megaRow(p, pr, running, busy, rc) {   // an Arduino Mega on a USB port
@@ -823,7 +835,7 @@ const TARGET_SETTINGS = [['led_pct', 'Lights', '%', 0, 100], ['paper_ms', 'Paper
   ['face_alone_ms', 'Face-only event after', 'ms', 1, 100], ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300]];
 function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
   const ts = (d.targets || []).filter(t => t.fet_target);
-  if (!ts.length && !(rc.timages || []).length) return '';   // a club not using FeT target firmware: nothing to say
+  if (!ts.length && !(rc.timages || []).length && !(rc.e32images || []).length) return '';   // no FeT target firmware here: nothing to say
   if (!ts.length) {                              // firmware on this Pi, no target heard yet: say why (user testing, 2026-11-02)
     const old = (d.targets || []).filter(t => /^\d+\.\d+\.\d+$/.test(t.bridge_fw || '') && !verAtLeast(t.bridge_fw, '0.4.0'));   // not esp32/...
     return '<div class="panel"><h3>Target settings (FeT target firmware)</h3><p class="mut">No target with FeT target firmware has reported yet. ' +
@@ -845,10 +857,23 @@ function targetSettingsPanel(d, rc) {          // Range Control: targets running
           '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) + '"> <span class="mut">' + esc(unit) + '</span></label>').join('') + '</div>' +
         '<div class="bulk"><button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
         '<button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
-        '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' +
+        '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' + esp32Update(t, rc) +
         (ft.commands.length ? '<table class="t"><tr><th>Command</th><th>Sent</th><th>Target says</th></tr>' + ft.commands.map(c =>
           '<tr><td>' + esc(c.verb) + '</td><td>' + esc(c.status) + '</td><td class="' + (c.reply && c.reply !== 'ok' ? 'bad' : '') + '">' + esc(c.reply || '–') + '</td></tr>').join('') + '</table>' : '');
     }).join('') + (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') + '</div>';
+}
+function esp32Update(t, rc) {                     // an ESP32 target: signed update over WiFi to the newest image here
+  const ft = t.fet_target;
+  if (!ft.esp32) return '';
+  const best = (rc.e32images || []).reduce((b, m) => !b || verAtLeast(m.version, b.version) && m.version !== b.version ? m : b, null);
+  const same = best && ft.version === best.version, newer = best && ft.version && !verAtLeast(best.version, ft.version);
+  return '<p>Firmware <b>' + esc(ft.version || '?') + '</b> on the ESP32 board' +
+    (best ? (same ? ' <span class="mut">(the newest on this Pi)</span>'
+      : ' <button data-act="rctupd" data-id="' + esc(t.device_id) + '"' + (ft.key_fp ? '' : ' disabled') + '>' + (newer ? 'Go back to ' : 'Update to ') + esc(best.version) + '</button>')
+      : ' <span class="mut">(no ESP32 firmware on this Pi to update to)</span>') +
+    (rc.updMsg && rc.updMsg.id === t.device_id ? ' <span class="' + (rc.updMsg.ok ? 'ok' : 'bad') + '">' + esc(rc.updMsg.text) + '</span>' : '') + '</p>' +
+    '<p class="mut">The target fetches the image from this Pi and installs it only if it is the one this Pi signed for it; if the new firmware does not ' +
+    'reach FeT Monitor, its next start goes back to the old one. Not during a match.</p>';
 }
 function targetSettingsChanges(t, rc) {        // only what was typed and differs from what the target reported
   const cur = (t.fet_target && t.fet_target.settings) || {}, kept = rc.tsf || {}, out = {}, bad = [];
@@ -1631,6 +1656,8 @@ async function refresh() {
         if (fl.status === 200) S.rc.flash = fl.data;
         const tf = await adminCall('/target-firmware');
         if (tf.status === 200) S.rc.timages = tf.data.images;
+        const e32 = await adminCall('/esp32-firmware');
+        if (e32.status === 200) S.rc.e32images = e32.data.images;
         const sy = await adminCall('/system');
         if (sy.status === 200) S.rc.system = sy.data;
         const up = await adminCall('/updates');
@@ -1956,6 +1983,20 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rcmegapick') { const f = document.getElementById('rcmegafile'); if (f && !rc.uploading) f.click(); return; }
+  if (a === 'rce32pick') { const f = document.getElementById('rce32file'); if (f && !rc.uploading) f.click(); return; }
+  if (a === 'rce32gh') {
+    rc.e32Msg = 'Asking GitHub…'; rc.e32Ok = true; render();
+    const res = await adminCall('/esp32-firmware/github', {});
+    rc.e32Msg = res.status === 200 ? 'GitHub: ' + res.data.message + '.' : 'GitHub: ' + (res.data.error || 'check failed');
+    rc.e32Ok = res.status === 200;
+    return refresh();
+  }
+  if (a === 'rctupd') {
+    if (!confirm('Update this target\'s firmware now? It restarts when the new firmware is in (a few minutes over WiFi).')) return;
+    const res = await adminCall('/targets/' + el.dataset.id + '/target-update', {sha256: 'best'});
+    rc.updMsg = {id: el.dataset.id, ok: res.status === 200, text: res.status === 200 ? 'sent: the target is updating to ' + res.data.version : (res.data.error || 'not sent')};
+    return refresh();
+  }
   if (a === 'rctget' || a === 'rctpaper' || a === 'rctset') {
     const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
     if (!t) return;
@@ -2470,6 +2511,21 @@ function boot() {
     rc.uploading = false;
     return refresh();
   });
+  const e32Picker = document.getElementById('rce32file');
+  if (e32Picker) e32Picker.addEventListener('change', async () => {
+    const f = (e32Picker.files || [])[0];
+    e32Picker.value = '';
+    if (!f) return;
+    const rc = S.rc = S.rc || {sel: {}};
+    rc.uploading = true; rc.e32Msg = 'uploading…'; rc.e32Ok = true; render(true);
+    const r = await fetch(API + '/admin/esp32-firmware', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    rc.e32Ok = !!r && r.status === 200;
+    rc.e32Msg = rc.e32Ok ? 'stored FeT target ESP32 ' + d.version : 'not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
+    rc.uploading = false;
+    return refresh();
+  });
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -2574,7 +2630,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, targetImages, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

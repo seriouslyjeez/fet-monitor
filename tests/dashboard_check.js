@@ -950,6 +950,16 @@ console.log('OK');
   assert(why.includes('Lane &lt;1&gt; (0.2.0)') && !why.includes('B (0.4.0)'), 'names the targets whose bridge is too old');
   assert(!targetSettingsPanel({targets: [{device_id: 'e', name: 'Esp', bridge_fw: 'esp32/0.1.0'}]}, {timages: [{version: '0.1.1'}]}).includes('Older FeT Bridge'),
     'an ESP32 target is not an old FeT Bridge');
+  const {esp32Update, esp32Images} = X;
+  const e32 = v => ({device_id: 'e1', name: 'E', fet_target: {esp32: true, version: v, key_fp: 'ab12cd34'}});
+  const imgs = {e32images: [{version: '0.1.1', size: 1116016, sha256: 'a'.repeat(64)}, {version: '0.2.0', size: 1116016, sha256: 'b'.repeat(64)}]};
+  assert(esp32Update(e32('0.1.1'), imgs).includes('Update to 0.2.0'), 'offers the newest image here');
+  assert(esp32Update(e32('0.2.0'), imgs).includes('the newest on this Pi') && !esp32Update(e32('0.2.0'), imgs).includes('rctupd'), 'nothing newer');
+  assert(esp32Update(e32('0.3.0'), imgs).includes('Go back to 0.2.0'), 'an older image is offered as going back');
+  assert(esp32Update(e32('0.1.1'), {}).includes('no ESP32 firmware on this Pi'));
+  assert(esp32Update({device_id: 'm', fet_target: {esp32: false, version: '0.1.2'}}, imgs) === '', 'Mega targets update by USB');
+  assert(esp32Update(Object.assign(e32('0.1.1'), {fet_target: {esp32: true, version: '0.1.1', key_fp: null}}), imgs).includes(' disabled'), 'no key: no update');
+  assert(esp32Images(imgs).includes('0.2.0') && esp32Images({}).includes('None on this Pi yet'));
   const t = {device_id: 'fet-1', name: 'Lane <1>', fet_target: {key_fp: 'ab12cd34', boot: 4, settings_id: '1234abcd',
     settings: {led_pct: 50, wait_ms: 2}, commands: [{verb: 'set', status: 'done', reply: 'out_of_range:led_pct'}, {verb: 'get', status: 'done', reply: 'ok'}]}};
   const p = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});

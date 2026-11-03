@@ -21,7 +21,7 @@ class LatestMark(unittest.TestCase):
             folder = Path(tmp)
             sums = folder / "SHA256SUMS"
             sums.write_bytes(b"")
-            built = lambda a: (folder, ["x.bin"], {"server": "v9.9.9", "firmware": "fw-9.9.9", "target": "tgt-9.9.9"}[kind], "T")
+            built = lambda a: (folder, ["x.bin"], {"server": "v9.9.9", "firmware": "fw-9.9.9", "target": "tgt-9.9.9", "esp32": "esp32-9.9.9"}[kind], "T")
             out = io.StringIO()
             with mock.patch.object(rt, kind, built), mock.patch.object(rt, "sums_for", lambda f, n: sums), \
                     mock.patch.object(rt, "sign", lambda s, k: None), mock.patch.object(rt, "parse_sums", lambda b: {"x.bin": ""}), \
@@ -43,6 +43,25 @@ class LatestMark(unittest.TestCase):
         cmd = self.command("target")
         self.assertIn("--latest=false", cmd)
         self.assertIn("tgt-9.9.9", cmd)
+
+    def test_esp32_firmware_releases_never_are(self):
+        cmd = self.command("esp32")
+        self.assertIn("--latest=false", cmd)
+        self.assertIn("esp32-9.9.9", cmd)
+
+    def test_esp32_kind_builds_a_checked_folder(self):
+        import tempfile
+        from tests.test_esp32fw import full_image
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "dist/target-firmware").mkdir(parents=True)
+            (root / "dist/target-firmware/fet-target-esp32-9.9.9.bin").write_bytes(full_image("9.9.9")[0])
+            (root / "dist/target-firmware/fet-target-esp32-9.9.8.bin").write_bytes(full_image("9.9.9")[0])
+            with mock.patch.object(rt, "ROOT", root):
+                folder, names, tag, _ = rt.esp32(mock.Mock(version="9.9.9"))
+                self.assertEqual((names, tag), (["fet-target-esp32-9.9.9.bin"], "esp32-9.9.9"))
+                with self.assertRaises(SystemExit):
+                    rt.esp32(mock.Mock(version="9.9.8"))
 
     def test_target_kind_builds_a_checked_folder(self):
         import tempfile
