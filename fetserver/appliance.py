@@ -16,7 +16,7 @@ ACTIONS = ("network", "hostname", "timezone", "clock", "country", "ssh", "admin"
 UNIT = Path("/etc/systemd/system/fet-system.path")
 REBOOT_REQUIRED = Path("/run/reboot-required")
 STALE_MS = 5 * 60 * 1000
-STALE_UPDATE_MS = 65 * 60 * 1000              # an OS update may take long on a Pi Zero
+STALE_UPDATE_MS = 65 * 60 * 1000              # an OS update may take long on a Pi 3
 OLD_DAYS = 30                                 # no successful OS update for this long: the page warns
 
 

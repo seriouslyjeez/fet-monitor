@@ -130,6 +130,8 @@ int main() {
     else if (cmd == "dropped") std::cout << cap.dropped() << "\n";
     else if (cmd == "quiet") { uint32_t ms; is >> ms; cap.quietFor(ms); }
     else if (cmd == "muted") std::cout << cap.muted() << "\n";
+    else if (cmd == "placeable") { Shot s; int m; uint32_t spread; is >> std::hex >> m >> std::dec;
+      for (int i = 0; i < 4; i++) is >> s.count[i]; is >> spread; s.mask = (uint8_t)m; std::cout << (placeable(s, spread) ? 1 : 0) << "\n"; }
     else if (cmd == "sha") { std::string h; is >> h; auto d = unhex(h); Sha256 s; s.update(d.data(), d.size()); uint8_t o[32]; s.finish(o); std::cout << hex(o, 32) << "\n"; }
     else if (cmd == "hmac") { std::string k, m; is >> k >> m; auto kk = unhex(k), mm = unhex(m); uint8_t o[32];
       hmacSha256(kk.data(), kk.size(), mm.data(), mm.size(), o); std::cout << hex(o, 32) << "\n"; }

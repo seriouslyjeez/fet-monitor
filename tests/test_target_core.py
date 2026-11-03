@@ -224,6 +224,17 @@ class Capture(Case):
         self.assertEqual((got["seq"], got["ms"]), (1, 400), "the next real shot is the first")
         self.assertIsNone(got["face_us"], "a face edge while the paper moved does not stick to it")
 
+    def test_placeable_moves_the_paper(self):
+        p = lambda mask, counts, spread=6000: self.h.run("placeable %x %s %d" % (mask, " ".join(map(str, counts)), spread))
+        self.assertEqual(p(0xF, (5123, 4987, 5401, 5290)), "1", "a real shot: four times within a few hundred ticks")
+        self.assertEqual(p(0xF, (1000, 7000, 1000, 1000)), "1", "exactly the limit")
+        self.assertEqual(p(0xF, (1000, 7001, 1000, 1000)), "0", "one tick beyond: sound cannot take that long across")
+        self.assertEqual(p(0xD, (5000, 99999, 5100, 5200)), "1", "three heard: the fourth's count is not looked at")
+        self.assertEqual(p(0x7, (5000, 5100, 5200, 99999)), "1")
+        self.assertEqual(p(0x3, (5000, 5100, 0, 0)), "0", "two microphones cannot place a shot")
+        self.assertEqual(p(0x0, (0, 0, 0, 0)), "0", "the face sensor alone")
+        self.assertEqual(p(0xB, (1321, 12639, 0, 2042)), "0", "the real #42 of 2026-10-31 (x:NAN; S did not trigger)")
+
     def test_a_shot_in_progress_is_finished(self):
         self.h.run("run 1")
         self.tick(10)                                              # North heard it: waiting for the others
@@ -381,7 +392,7 @@ class Mega(unittest.TestCase):
         self.assertLess(ram, 2048, "the core leaves the Mega most of its 8 KB")
 
 
-DEFAULTS = [0, 0, 0, 0, 50, 2, 50, 0, 5, 0]
+DEFAULTS = [50, 0, 0, 0, 50, 2, 50, 0, 5, 0]
 KEYS = ["paper_ms", "step_count", "step_ms", "paper_eco_mm", "led_pct", "wait_ms", "ring_ms", "face", "face_alone_ms", "vref_mv"]
 BASE, SLOT = 64, 8 + 4 * 10 + 4
 

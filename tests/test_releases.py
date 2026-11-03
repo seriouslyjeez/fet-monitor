@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fetserver import releases
 from fetserver.firmware import FirmwareStore
-from fetserver.releases import GitHub, ReleaseError, Updates, check_archive, fetch_firmware, server_update_info, stage_server_update
+from fetserver.releases import GitHub, ReleaseError, Updates, check_archive, fetch_firmware, fetch_target_firmware, server_update_info, stage_server_update
 from tests.test_firmware import image
 
 REPO = "someone/fet-monitor"
@@ -245,6 +245,43 @@ class Releases(ReleasesBase):
         with self.assertRaises(ReleaseError) as cm:
             fetch()
         self.assertIn("NOT valid", str(cm.exception))
+        self.assertEqual(store.list(), [])
+
+    # ---- FeT target firmware (the Arduino Mega)
+    @staticmethod
+    def mega_hex(version):
+        rec = lambda addr, data: ":" + (bytes([len(data), addr >> 8, addr & 0xFF, 0]) + data + bytes([(-sum(bytes([len(data), addr >> 8, addr & 0xFF, 0]) + data)) & 0xFF])).hex().upper() + "\n"
+        return (rec(0, b"\x0c\x94" * 8) + rec(16, b"fet-target-mega/" + version.encode()) + ":00000001FF\n").encode()
+
+    def test_fetch_target_firmware(self):
+        from fetserver.targetfw import TargetFirmwareStore
+        store = TargetFirmwareStore(self.d)
+        fetch = lambda: fetch_target_firmware(self.fake.gh(), lambda sha: store.get(sha) is not None, lambda b: store.add(b, "GitHub"), self.signers)
+        self.assertIsNone(fetch()["version"], "none published yet")
+        self.release("tgt-0.1.1", {"fet-target-mega-0.1.1.hex": self.mega_hex("0.1.1")})
+        self.release("tgt-0.1.2", {"fet-target-mega-0.1.2.hex": self.mega_hex("0.1.2")})
+        self.release("fw-9.9.9", {"x": b"y"})
+        r = fetch()
+        self.assertEqual((r["version"], r["added"]), ("0.1.2", ["fet-target-mega-0.1.2.hex"]))
+        self.assertEqual([(m["version"], m["uploaded_by"]) for m in store.list()], [("0.1.2", "GitHub")])
+        self.assertEqual(fetch()["already"], ["fet-target-mega-0.1.2.hex"], "nothing downloaded twice")
+
+    def test_target_firmware_refusals(self):
+        from fetserver.targetfw import TargetFirmwareStore
+        store = TargetFirmwareStore(self.d)
+        fetch = lambda: fetch_target_firmware(self.fake.gh(), lambda sha: store.get(sha) is not None, lambda b: store.add(b), self.signers)
+        self.release("tgt-0.1.3", {"fet-target-mega-0.1.3.hex": self.mega_hex("0.1.2")})        # claims 0.1.3, is 0.1.2
+        with self.assertRaisesRegex(ReleaseError, "really 0.1.2"):
+            fetch()
+        self.release("tgt-0.1.4", {"fet-target-mega-0.1.4.hex": b":00000001FF\n"})              # no program in it
+        with self.assertRaisesRegex(ReleaseError, "fet-target-mega-0.1.4.hex"):
+            fetch()
+        self.release("tgt-0.1.5", {"fet-target-mega-0.1.5.hex": self.mega_hex("0.1.5")}, key=self.other_key)
+        with self.assertRaisesRegex(ReleaseError, "NOT valid"):
+            fetch()
+        self.release("tgt-0.1.6", {"other.hex": self.mega_hex("0.1.6")})
+        with self.assertRaisesRegex(ReleaseError, "lists no fet-target-mega-0.1.6.hex"):
+            fetch()
         self.assertEqual(store.list(), [])
 
     # ---- the server's side

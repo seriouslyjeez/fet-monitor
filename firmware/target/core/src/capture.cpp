@@ -2,6 +2,18 @@
 
 namespace tgt {
 
+bool placeable(const Shot& s, uint32_t maxSpread) {
+  uint8_t n = 0;
+  uint32_t lo = 0xFFFFFFFFu, hi = 0;
+  for (int i = 0; i < 4; i++) {
+    if (!(s.mask & (1 << i))) continue;
+    n++;
+    if (s.count[i] < lo) lo = s.count[i];
+    if (s.count[i] > hi) hi = s.count[i];
+  }
+  return n >= 3 && hi - lo <= maxSpread;
+}
+
 void Capture::begin(uint32_t nowMs) {
   hw_.arm();
   state_ = IDLE;

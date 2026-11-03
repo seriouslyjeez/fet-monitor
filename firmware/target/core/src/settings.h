@@ -25,7 +25,7 @@ struct SettingDef {
 };
 
 enum SettingIndex {
-  S_PAPER_MS,        // DC motor: on-time per advance, ms (0 = no paper drive, or a stepper)
+  S_PAPER_MS,        // DC motor: on-time per advance, ms (0 = no paper drive, or a stepper); default 50 like freETarget
   S_STEP_COUNT,      // stepper: steps per advance (0 = DC motor)
   S_STEP_MS,         // stepper: pulse length, ms
   S_PAPER_ECO_MM,    // advance only when the shot is within this radius, mm (0 = always); needs the server's verdict

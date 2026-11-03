@@ -40,6 +40,12 @@ struct Shot {
   int32_t faceUs;        // its first edge relative to the stop (negative: before), if hasFace
 };
 
+// A shot worth moving the witness paper for: heard by at least three microphones (enough to place it), and no two
+// arrival times further apart than sound needs across the target (maxSpread counter ticks). A tap on the frame, an
+// echo or noise fails this (2026-10-31: such reports were up to 1.6 ms apart); it is still reported, and the server's
+// solve decides what it was. Not a score: the server places every shot.
+bool placeable(const Shot& s, uint32_t maxSpread);
+
 class Capture {
  public:
   static const uint8_t ALL = 0x0F;

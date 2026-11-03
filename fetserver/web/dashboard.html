@@ -812,7 +812,7 @@ function targetImages(rc) {
   const ims = rc.timages || [];
   return (ims.length ? '<ul>' + ims.map(m => '<li>' + esc(m.version) + ' <span class="mut">' + Math.round(m.size / 1024) + ' KB · ' + esc(m.sha256.slice(0, 12)) + '</span></li>').join('') + '</ul>'
     : '<p class="mut">None on this Pi yet.</p>') +
-    '<div class="bulk"><button data-act="rcmegapick"' + (rc.uploading ? ' disabled' : '') + '>Upload .hex…</button>' +
+    '<div class="bulk"><button data-act="rctfwgh">Check GitHub for FeT target firmware</button><button data-act="rcmegapick"' + (rc.uploading ? ' disabled' : '') + '>Upload .hex…</button>' +
     (rc.tfwMsg ? '<span class="' + (rc.tfwOk ? 'ok' : 'bad') + '">' + esc(rc.tfwMsg) + '</span>' : '') + '</div>' +
     '<p class="mut">The .hex from the Arduino build of firmware/target/mega (not the one "with_bootloader"). It is checked: an intact Intel HEX ' +
     'for the Mega that carries FeT target firmware\'s name and version.</p>';
@@ -1871,6 +1871,13 @@ async function rangeAct(el, a) {
     const res = await adminCall('/updates/install', {version: v});
     rc.updates.msg = res.status === 202 ? '' : (res.data.error || 'Not installed');
     if (res.status === 202) toast('Update to v' + v + ' started');
+    return refresh();
+  }
+  if (a === 'rctfwgh') {
+    rc.tfwMsg = 'Asking GitHub…'; rc.tfwOk = true; render();
+    const res = await adminCall('/target-firmware/github', {});
+    rc.tfwMsg = res.status === 200 ? 'GitHub: ' + res.data.message + '.' : 'GitHub: ' + (res.data.error || 'check failed');
+    rc.tfwOk = res.status === 200;
     return refresh();
   }
   if (a === 'rcfwgh') {

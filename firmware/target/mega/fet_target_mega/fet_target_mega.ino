@@ -20,7 +20,7 @@
 #include <settings.h>
 #include <shotline.h>
 
-#define FW_VERSION "0.1.1"
+#define FW_VERSION "0.1.2"
 // In the flash image, so the Pi's flash station can tell what a .hex file is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-mega/" FW_VERSION;
 #define USE_WATCHDOG 0   // off until the board's bootloader is known to clear the watchdog (old Mega bootloaders
@@ -33,6 +33,8 @@ static const uint8_t PIN_QUIET = 29, PIN_RCLK = 40, PIN_CLR_N = 39, PIN_STOP_N =
 static const uint8_t PIN_SW_A = 11, PIN_SW_B = 10;                         // multifunction switches (DIP_2, DIP_1)
 static const uint8_t PIN_LED_RDY = 4, PIN_LED_X = 3, PIN_LED_Y = 2;        // status LEDs, lit when LOW
 static const uint8_t PIN_LED_PWM = 5;                                      // face lighting
+// Sound needs about 670 us across the 230 mm sensor circle at 20 C (695 us at 0 C): 8 MHz counter ticks, with margin.
+static const uint32_t MAX_SPREAD_TICKS = 6000;                             // 750 us
 static const uint8_t PIN_PAPER = 18;                                       // paper motor FET
 static const uint8_t PIN_FACE = 19;                                        // face sensor (INT)
 static const uint8_t PIN_BD_REV = A5, PIN_VREF = A0;
@@ -258,7 +260,7 @@ void loop() {
     size_t n = tgt::formatShot(s, identity.boot(), tempDeci, settings.id(), capture.dropped(),
                                identity.hasKey() ? identity.key() : 0, tgt::Identity::KEY_LEN, out, sizeof out);
     sendAll(out, n);
-    if (s.mask && settings.get(tgt::S_PAPER_ECO_MM) == 0) paper.request();   // eco: the server asks (it knows where)
+    if (tgt::placeable(s, MAX_SPREAD_TICKS) && settings.get(tgt::S_PAPER_ECO_MM) == 0) paper.request();   // eco: the server asks
   }
   pollPort(Serial, usbIn, true);
   pollPort(Serial3, wifiIn, false);

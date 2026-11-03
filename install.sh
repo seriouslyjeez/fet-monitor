@@ -89,7 +89,7 @@ with urllib.request.urlopen("http://127.0.0.1:%s/api/v1/health" % sys.argv[1], t
 EOF
 }
 
-wait_healthy() {   # a Pi Zero 2 W can take a while to start Python
+wait_healthy() {   # a Pi 3 can take a while to start Python
   local tries=$1
   while [ "$tries" -gt 0 ]; do
     if health; then return 0; fi

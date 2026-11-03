@@ -3,8 +3,9 @@
 This guide is for a club volunteer; no Linux experience is needed, and you never need the Pi's command line. Allow
 about 20 minutes. Everything is done from a phone and, once, a computer that writes the SD card (Mac, Windows or Linux).
 
-**You need:** a Raspberry Pi (Zero 2 W, 3, 4 or 5) with its power supply, a microSD card (16 GB or larger, a good
-brand), a computer with an SD card reader, and a phone. A network cable to the club router is optional: the Pi can
+**You need:** a Raspberry Pi 3, 4 or 5 with its power supply (not a Pi Zero: the flash station needs full-size USB
+ports for the programmers and the targets' Arduino), a microSD card (16 GB or larger, a good brand), a computer with
+an SD card reader, and a phone. A network cable to the club router is optional: the Pi can
 also join the club WiFi, or run its own WiFi network for the targets (no router needed).
 
 ---

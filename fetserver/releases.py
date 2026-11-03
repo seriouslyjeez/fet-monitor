@@ -49,6 +49,8 @@ CACHE_S = 300
 SERVER_TAG = re.compile(r"^v(\d{1,3}\.\d{1,3}\.\d{1,3})$")
 FW_TAG = re.compile(r"^fw-(\d{1,3}\.\d{1,3}\.\d{1,3})$")
 FW_ASSET = re.compile(r"^fet-bridge-(\d{1,3}\.\d{1,3}\.\d{1,3})-(1|2|4|8|16)MB\.bin$")
+TGT_TAG = re.compile(r"^tgt-(\d{1,3}\.\d{1,3}\.\d{1,3})$")                 # FeT target firmware (the Arduino Mega)
+TGT_ASSET = "fet-target-mega-{}.hex"
 SUMS_LINE = re.compile(r"^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]{1,100})$")
 
 
@@ -294,6 +296,31 @@ def fetch_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable[[bytes
     return {"version": ver, "added": added, "already": already,
             "message": (f"downloaded {', '.join(added)}" if added else f"already have every {ver} image")}
 
+
+def fetch_target_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable[[bytes], dict], signers: Path = SIGNERS,
+                          fresh: bool = True) -> dict:
+    """The newest signed FeT target firmware release's Mega image (tgt-<ver>, fet-target-mega-<ver>.hex), if it is not
+    stored yet. It also has to pass every check of a manual upload (targetfw.inspect), and say the same version."""
+    from .targetfw import BadImage as BadHex, MAX_HEX, inspect as inspect_hex
+    found = newest(gh, TGT_TAG, fresh)
+    if not found:
+        return {"version": None, "added": [], "already": [], "message": "no FeT target firmware release on GitHub"}
+    ver, rel = found
+    sums = signed_sums(gh, rel, signers)
+    name = TGT_ASSET.format(ver)
+    if name not in sums:
+        raise ReleaseError(f"release tgt-{ver} lists no {name}")
+    if have(sums[name]):
+        return {"version": ver, "added": [], "already": [name], "message": f"already have FeT target {ver}"}
+    data = checked(gh, rel, name, MAX_HEX, sums)
+    try:
+        meta = inspect_hex(data)                      # every check BEFORE anything is stored
+    except BadHex as exc:
+        raise ReleaseError(f"{name}: {exc}")
+    if meta["version"] != ver:
+        raise ReleaseError(f"{name} is really {meta['version']}: refusing it")
+    add(data)
+    return {"version": ver, "added": [name], "already": [], "message": f"downloaded {name}"}
 
 
 # --------------------------------------------------------------------------------------------- the server's side

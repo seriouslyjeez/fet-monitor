@@ -8,13 +8,13 @@ Build the archive on the Mac first: commit, then `python3 tools/make_release.py`
 `dist/fet-monitor-<version>.tar.gz` and `dist/SHA256SUMS` to the Pi with `scp` (the repo is private, so `wget` from
 GitHub will not work yet).
 
-## A. Clean install (Pi Zero 2 W and, if available, a Pi 4/5)
+## A. Clean install (a Pi 3, 4 or 5; the Pi Zero is not supported: no full-size USB ports for the flash station)
 
 Fresh SD card, Raspberry Pi OS (Legacy, 32-bit) Lite, Bookworm, set up as in `docs/INSTALL.md` steps 1-6.
 
 - [ ] `sha256sum -c SHA256SUMS` prints `OK`.
 - [ ] `tar -xzf ...` then `ls -l fet-monitor-*/install.sh` shows it executable (`-rwxr-xr-x`).
-- [ ] `sudo ./install.sh` runs every step; note how long the whole run takes: ____ s (Zero 2 W).
+- [ ] `sudo ./install.sh` runs every step; note how long the whole run takes: ____ s (Pi model: ____).
 - [ ] The password prompt does not echo what you type, asks twice, and rejects a 5-character password.
 - [ ] The final box shows the Pi's real IP (compare with `hostname -I`) and a token.
 - [ ] `systemctl status fet-monitor` is `active (running)`; `systemctl list-timers fet-monitor-backup.timer` shows the next 03:30 run.
@@ -70,7 +70,7 @@ Use the Pi that runs the old install today (or recreate it: old README steps wit
 - Real `systemctl`/`journalctl`/`runuser`/`useradd` behaviour, the systemd sandboxing in the units
   (`ProtectSystem=strict` with `ReadWritePaths`) and file ownership (the tests cannot change owners on a Mac).
 - `getpass` on a real terminal (the tests feed the password through stdin without a terminal).
-- `ip -4 route get` output parsing on Raspberry Pi OS, and start-up time on a Pi Zero 2 W (the installer waits up to
+- `ip -4 route get` output parsing on Raspberry Pi OS, and start-up time on a Pi 3 (the slowest supported; the installer waits up to
   45 s for the server to answer).
 - Raspberry Pi Imager screen names in `docs/INSTALL.md` (they change between Imager versions).
 
@@ -100,7 +100,7 @@ The image (a spare SD card):
 - [ ] Two cards from the same image get different device tokens; SSH is off until switched on.
 
 Keeping the Pi's software up to date:
-- [ ] *This Pi → Update the Pi now* (with internet): "N packages updated" (several minutes on a Zero 2 W); FeT
+- [ ] *This Pi → Update the Pi now* (with internet): "N packages updated" (several minutes on a Pi 3); FeT
       Monitor keeps answering meanwhile; during a running match it is refused.
 - [ ] Without internet (own range network): "no internet: could not reach the update servers".
 - [ ] After a kernel update the page says *Restart needed*; *Restart the Pi* clears it.
@@ -119,7 +119,7 @@ Keeping the Pi's software up to date:
 - [ ] Swap the module between *Identify* and *Install*: refused ("a different device").
 - [ ] A programmer WITHOUT PROG mode set: *Identify* explains the switch.
 - [ ] The target's Arduino Mega by USB: identified as a Mega (no flashing); it keeps running afterwards.
-- [ ] On a Pi Zero 2 W: the ESP-01 has enough power from the USB port (otherwise note the powered hub).
+- [ ] The ESP-01 programmer and the Mega both have enough power from the Pi's USB ports (otherwise note the powered hub).
 - [ ] FeT Bridge 0.3.0 (export it first): with the settings filled in, *Install* on an **auto-reset** programmer ends
       "installed and verified and configured (fet-xxxxxx)"; the module joins the WiFi and appears under Targets.
       Note whether the reset pulse (RTS) restarted it, or esptool's own hard reset already had.

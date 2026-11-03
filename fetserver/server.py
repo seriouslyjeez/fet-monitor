@@ -18,7 +18,7 @@ from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
-from .releases import ReleaseError, Updates, fetch_firmware
+from .releases import ReleaseError, Updates, fetch_firmware, fetch_target_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
 from .rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
@@ -594,6 +594,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: server update to %s requested", self.client_address[0], meta["version"])
             return self._send(202, meta)
+        if path == "/api/v1/admin/target-firmware/github" and method == "POST":
+            store = self.server.target_firmware
+            try:
+                res = fetch_target_firmware(self.server.updates.gh, lambda sha: store.get(sha) is not None,
+                                            lambda data: store.add(data, uploaded_by="GitHub"), self.server.updates.signers)
+            except ReleaseError as exc:
+                return self._send(502, {"error": str(exc)})
+            log.info("Range Control from %s: FeT target firmware from GitHub: %s", self.client_address[0], res["message"])
+            return self._send(200, res)
         if path == "/api/v1/admin/firmware/github" and method == "POST":
             store = self.server.firmware
             try:

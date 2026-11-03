@@ -32,6 +32,19 @@ Fingerprint: `SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`.
 Range Control's *Check GitHub for FeT Bridge firmware* downloads the newest `fw-` release's images (after the same
 signature and image checks as a manual upload).
 
+## FeT target firmware release (tag `tgt-<version>`)
+
+1. Bump `FW_VERSION` in `firmware/target/mega/fet_target_mega/fet_target_mega.ino` (and `version=` in
+   `firmware/target/core/library.properties`), commit.
+2. Build: `arduino-cli compile -b arduino:avr:mega --library firmware/target/core --output-dir <dir>
+   firmware/target/mega/fet_target_mega`, then copy `<dir>/fet_target_mega.ino.hex` (not the one "with_bootloader") to
+   `dist/target-firmware/fet-target-mega-<version>.hex`.
+3. `python3 tools/release.py target <version> --notes notes.md [--publish]` (checks the .hex like the Pi does).
+
+Range Control's *Check GitHub for FeT target firmware* (flash station) downloads the newest `tgt-` release's image.
+Firmware releases are never marked GitHub's "Latest" (that is always the newest FeT Monitor release, which
+docs/INSTALL.md links to).
+
 ## Rules
 
 - Never publish an unsigned release, and never re-use a version number (the Pi compares versions).
