@@ -21,8 +21,8 @@ def signed(head, key=KEY):
     return f"{head} h={mac(key, head.encode()) if key else '-'}"
 
 
-def hello(boot, key=KEY, fp=FP, fw="0.1.0"):
-    return signed(f"FT1 H b={boot} fw={fw} rev=310 k=1234abcd key={fp or 'none'}", key)
+def hello(boot, key=KEY, fp=FP, fw="0.1.0", rev=310):
+    return signed(f"FT1 H b={boot} fw={fw} rev={rev} k=1234abcd key={fp or 'none'}", key)
 
 
 def shot(seq, counts, mask=15, temp="200", face="-", key=KEY):
@@ -114,6 +114,26 @@ class Shots(Base):
             self.assertLess(r["misfit_um"], 60)
             self.assertEqual(r["temp_c"], 20.0)
         self.assertEqual(rows[0]["ring"], 10)
+
+    def test_an_esp32_board_counts_at_10_mhz(self):
+        """The ESP32-S3 board 6.2 counts the 10 MHz oscillator (PCNT); upstream's circle there is 232 mm. The board
+        revision comes from the signed hello; an unsigned one cannot change it once a key is bound."""
+        self.core.add_target_key(KEY, "test")
+        self.send("target_hello", hello(3, rev=620))
+        self.assertEqual(self.target()["board_rev"], 620)
+        esp = Geometry.from_upstream({"SENSOR": 232, "ANGLE": 45}, clock_mhz=10.0)
+        self.send("target_shot", shot(1, forward(5.0, -8.0, esp, 20.0)))
+        r = self.shots()[0]
+        tx, ty = esp.to_target(5.0, -8.0)
+        self.assertLess(math.hypot(r["x_h"] / 100 - tx, r["y_h"] / 100 - ty), 0.06, "solved with the 10 MHz clock")
+        self.send("target_hello", signed("FT1 H b=4 fw=0.1.0 rev=310 k=1234abcd key=none", None))
+        self.assertEqual(self.target()["board_rev"], 620, "an unsigned hello does not change it")
+        self.send("target_hello", hello(4, rev=310))
+        self.assertEqual(self.target()["board_rev"], 310, "a signed one does")
+        self.send("target_shot", shot(2, forward(5.0, -8.0, GEOM, 20.0)))
+        r = self.shots()[1]
+        tx, ty = GEOM.to_target(5.0, -8.0)
+        self.assertLess(math.hypot(r["x_h"] / 100 - tx, r["y_h"] / 100 - ty), 0.06, "a Mega board: 8 MHz")
 
     def test_a_forged_shot_is_no_shot(self):
         self.bound()

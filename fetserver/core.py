@@ -306,13 +306,17 @@ class Core:
                       (device_id,)).fetchone()
         return bytes.fromhex(r["key_hex"]) if r else None
 
-    @staticmethod
-    def _geometry(c, device_id: str) -> Geometry:
-        r = c.execute("SELECT geometry_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
+    ESP32_REV = 500                                     # freETarget board revisions 500+ are ESP32 boards
+
+    @classmethod
+    def _geometry(cls, c, device_id: str) -> Geometry:
+        r = c.execute("SELECT geometry_json, board_rev FROM targets WHERE device_id=?", (device_id,)).fetchone()
         if r and r["geometry_json"]:
             g = json.loads(r["geometry_json"])
             return Geometry(sensors=[tuple(p) for p in g["sensors"]], z_mm=g["z_mm"], angle_deg=g["angle_deg"],
                             clock_mhz=g["clock_mhz"], walk_ticks=g["walk_ticks"])
+        if r and r["board_rev"] is not None and r["board_rev"] >= cls.ESP32_REV:   # upstream's ESP32 defaults: 10 MHz PCNT
+            return Geometry.from_upstream({"SENSOR": 232, "ANGLE": 45}, clock_mhz=10.0)
         return Geometry.from_upstream({"SENSOR": 230, "ANGLE": 45})       # freETarget's defaults, Mega 8 MHz
 
     def _derive_target_shot(self, c, event_id, device_id, event_ms, raw) -> None:
@@ -345,10 +349,11 @@ class Core:
         if h["authenticated"]:
             if t["key_fp"] != h["key_fp"] or t["target_boot"] is None or h["boot"] > t["target_boot"]:
                 c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=0, target_settings_id=?,
-                             arduino_version=? WHERE device_id=?""",
-                          (h["key_fp"], h["boot"], h["settings_id"], version, device_id))
-        elif t["key_fp"] is None:
-            c.execute("UPDATE targets SET arduino_version=? WHERE device_id=?", (version, device_id))
+                             arduino_version=?, board_rev=? WHERE device_id=?""",
+                          (h["key_fp"], h["boot"], h["settings_id"], version, h["rev"], device_id))
+        elif t["key_fp"] is None:                       # never from an unsigned hello once a key is bound: the board
+            c.execute("UPDATE targets SET arduino_version=?, board_rev=? WHERE device_id=?",   # revision picks the clock
+                      (version, h["rev"], device_id))
 
     def _derive_target_reply(self, c, device_id, raw) -> None:
         r = parse_reply(raw, self._target_key(c, device_id))

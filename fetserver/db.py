@@ -401,6 +401,11 @@ MIGRATIONS = [
     CREATE INDEX unplaced_series ON unplaced (series_id, event_ms);
     CREATE INDEX unplaced_device ON unplaced (device_id, event_ms);
     """,
+    """
+    -- The board revision a FeT target firmware reports in its signed hello (310 = Arduino Mega board 3.1, 620 = the
+    -- ESP32-S3 board 6.2): which counter clock its raw times are in (Mega 8 MHz, ESP32 10 MHz) and its default circle.
+    ALTER TABLE targets ADD COLUMN board_rev INTEGER;
+    """,
 ]
 
 

@@ -8,11 +8,14 @@
 // freETarget's for this board (Software/ESP32 6.4.2 drivers/gpio_define.c, gpio.c, dac.c, analog_io.c; MIT,
 // "Copyright 2020, ten-point-nine project").
 //
-// Phase E1 (this file): the hardware layer; lines go to the USB port (UART0, the board's FTDI). The WiFi side (the
-// FeT Bridge core built in, so the target talks to the Pi directly) follows in E2.
+// Lines go to the USB port (UART0, the board's FTDI) and to FeT Monitor over WiFi: the FeT Bridge core
+// (firmware/fet_bridge/src/core, the fet-bridge-core library) runs here in its own task (net_esp32.*, portal_esp32.*),
+// exactly as on an ESP-01 bridge: durable at-least-once queue, heartbeats, the server's commands, the setup portal
+// (unconfigured, or 3 quick power cycles), settings over USB from the Pi's flash station (FETCFG, first minute). The
+// main loop keeps the target running (capture, paper, switches) while the network task waits on the network.
 //
 // Build: arduino-cli compile -b esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,FlashMode=dio
-//        --library firmware/target/core firmware/target/esp32/fet_target_esp32
+//        --library firmware/target/core --library firmware/fet_bridge/src/core firmware/target/esp32/fet_target_esp32
 // The board's USB link is reliable only up to 230400 baud for flashing (2026-11-02).
 #include <Arduino.h>
 #include <Preferences.h>
@@ -26,11 +29,19 @@
 #include <paper.h>
 #include <settings.h>
 #include <shotline.h>
+#include <LittleFS.h>
+#include <bridge.h>
+#include <config.h>
+#include <provision.h>
+#include "net_esp32.h"
+#include "portal_esp32.h"
 
 #define FW_VERSION "0.1.0"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;
+namespace fete { const char* userAgent = "fet-target-esp32/" FW_VERSION; }
+static const char BRIDGE_FW[] = "esp32/" FW_VERSION;                    // the heartbeat's bridge_fw: not an ESP-01 bridge
 
 // ---------------------------------------------------------------------------------------------- pins (board 6.2)
 static const int PIN_RUN[4] = {5, 6, 7, 15};                               // RUN_NORTH/EAST/SOUTH/WEST_LO: PCNT gates
@@ -216,6 +227,21 @@ static Esp32Actions actions;
 static tgt::Commands* commands = 0;
 static tgt::LineReader usbIn;
 
+// ---------------------------------------------------------------------------------------------- the WiFi side
+static fete::Pipe toBridge(16384);                                         // target lines -> bridge (network task)
+static fete::Pipe toTarget(4096);                                          // server commands -> target (main loop)
+static fete::LfsFs lfs;
+static fet::Config cfg;
+static fete::Hooks hooks;
+static fete::UsbUart usbUart;
+static fete::PipeUart cmdUart(toTarget);
+static fete::WifiNet* net = 0;
+static fet::Bridge* bridge = 0;
+static fete::Portal* portal = 0;
+static fet::QuickBoot* quick = 0;
+static fet::Provision* prov = 0;
+static volatile uint8_t comState = 0;                                     // 0 no WiFi settings, 1 joining, 2 WiFi up, 3 server OK, 4 portal
+
 static void lights() { ledcWrite(PIN_LED_PWM, lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 4095L / 100)); }
 
 void Esp32Actions::settingsChanged(const tgt::Settings& s) {
@@ -237,8 +263,64 @@ static void onTick(void*) {                                                // 1 
   xSemaphoreGive(capLock);
 }
 
-static void sendAll(const char* line, size_t n) {                          // E2 adds the WiFi side (the bridge core)
-  if (n) Serial.write((const uint8_t*)line, n);
+static void sendAll(const char* line, size_t n) {                          // USB and FeT Monitor
+  if (!n) return;
+  Serial.write((const uint8_t*)line, n);
+  toBridge.put(line, n);
+}
+
+static void netTask(void*) {                                               // the bridge: may wait seconds on the network
+  for (;;) {
+    uint64_t now = fete::nowMs();
+    std::string b = toBridge.take();
+    for (size_t i = 0; i < b.size(); i++) bridge->onByte((uint8_t)b[i], now);
+    net->update(now);
+    bridge->tick(fete::nowMs());
+    quick->tick(fete::nowMs());
+    portal->loop(fete::nowMs());
+    if (hooks.portalWanted) { hooks.portalWanted = false; portal->open(fete::nowMs()); }
+    comState = portal->isOpen() ? 4 : !cfg.wifiConfigured() ? 0 : !net->wifiUp() ? 1 : bridge->lastStatus == 200 ? 3 : 2;
+    if (hooks.eraseAt && fete::nowMs() >= hooks.eraseAt) {                 // factory reset: WiFi/server settings and the queue;
+      fete::say("Factory reset: erasing the WiFi settings and the shot queue", "");   // the target's key stays (USB only)
+      LittleFS.format();
+      ESP.restart();
+    }
+    if (hooks.rebootAt && fete::nowMs() >= hooks.rebootAt) ESP.restart();
+    vTaskDelay(pdMS_TO_TICKS(2));
+  }
+}
+
+static void bridgeBegin() {
+  std::string id = fete::deviceIdFromChip();
+  bool fsOk = lfs.begin();
+  fet::loadConfig(lfs, cfg);                                                // missing/invalid -> unconfigured
+  if (!fet::validName(cfg.name)) cfg.name = id;
+  quick = new fet::QuickBoot(lfs);
+  bool wantPortal = fsOk && quick->onBoot();                               // third quick power cycle in a row
+  size_t cap = lfs.totalBytes() / 2;                                        // room for settings and wear-levelling
+  if (cap < 16000) cap = 16000;
+  net = new fete::WifiNet(cfg);
+  fet::BridgeInfo info{id, cfg.name, BRIDGE_FW};
+  bridge = new fet::Bridge(lfs, *net, cmdUart, hooks, info, cap, FET_LOG_SEGMENT_BYTES);
+  bridge->begin(fete::nowMs());
+  prov = new fet::Provision(lfs, usbUart, hooks, id, BRIDGE_FW);
+  bool openPortal = wantPortal || !cfg.wifiConfigured();
+  net->startWifi(cfg.name, openPortal);
+  portal = new fete::Portal(lfs, cfg, hooks, *net, id);
+  portal->begin(bridge);
+  if (openPortal) portal->open(fete::nowMs());
+  net->announce();
+  fete::say("Device: ", id + ", target " + cfg.name);
+}
+
+static uint32_t comColor() {
+  switch (comState) {
+    case 1: return YELLOW;                                                 // joining the WiFi
+    case 2: return BLUE;                                                   // WiFi up, FeT Monitor not answering (yet)
+    case 3: return GREEN;                                                  // delivering to FeT Monitor
+    case 4: return WHITE;                                                  // setup portal open
+    default: return OFF;                                                   // no WiFi settings
+  }
 }
 
 static void sendHello() {
@@ -325,8 +407,10 @@ void setup() {
   esp_timer_create(&ta, &t);
   esp_timer_start_periodic(t, 1000);
 
-  statusLeds(v12Volts() >= 10.0f ? GREEN : RED, OFF, countersOk ? GREEN : RED);
   diagLine();
+  bridgeBegin();
+  xTaskCreatePinnedToCore(netTask, "net", 12288, 0, 1, 0, 0);              // core 0, with the WiFi stack
+  statusLeds(v12Volts() >= 10.0f ? GREEN : RED, comColor(), countersOk ? GREEN : RED);
   sendHello();
 }
 
@@ -345,9 +429,24 @@ void loop() {
     if (tgt::placeable(s, MAX_SPREAD_TICKS) && settings.get(tgt::S_PAPER_ECO_MM) == 0) paper.request();
     shotFlashUntil = now + 200;
   }
-  while (Serial.available()) {
-    if (usbIn.feed((char)Serial.read())) { handleUsbLine(usbIn.line()); usbIn.next(); }
+  while (Serial.available()) {                                             // USB: provisioning first (it keeps its lines)
+    std::string pass;
+    prov->feed((uint8_t)Serial.read(), fete::nowMs(), pass);
+    for (size_t i = 0; i < pass.size(); i++)
+      if (usbIn.feed(pass[i])) { handleUsbLine(usbIn.line()); usbIn.next(); }
   }
+  std::string cmds = toTarget.take();                                      // the server's signed commands
+  static std::string partial;
+  partial += cmds;
+  for (size_t nl; (nl = partial.find('\n')) != std::string::npos;) {
+    std::string line = partial.substr(0, nl);
+    partial.erase(0, nl + 1);
+    if (!line.empty() && line[line.size() - 1] == '\r') line.erase(line.size() - 1);
+    char out[320];
+    size_t n = commands->handle(line.c_str(), out, sizeof out);
+    if (n) sendAll(out, n);
+  }
+  if (partial.size() > 1024) partial.clear();
   pollSwitches(now);
   paper.tick(now);
   if (paper.busy()) { xSemaphoreTake(capLock, portMAX_DELAY); capture.quietFor(now); xSemaphoreGive(capLock); }
@@ -357,7 +456,7 @@ void loop() {
   if (flash != flashing || now - lastLeds >= 1000) {                      // and once a second: the 12 V may come later
     flashing = flash;
     lastLeds = now;
-    statusLeds(v12Volts() >= 10.0f ? GREEN : RED, OFF, flash ? WHITE : GREEN);
+    statusLeds(v12Volts() >= 10.0f ? GREEN : RED, comColor(), flash ? WHITE : GREEN);
   }
   static uint32_t lastTemp = 0;
   if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); }
