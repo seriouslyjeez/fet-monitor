@@ -102,6 +102,10 @@ result for its id arrives):
 | `reboot` | — | restarts |
 | `factory_reset` | `erase` (required) | erases its settings and queued events, restarts |
 | `target` | one `FT1 C ...` line (printable ASCII, no braces, at most 300 characters) | writes it to the target firmware, which checks its signature, boot and id itself (FeT Bridge 0.4+) |
+
+FeT target firmware verbs inside `FT1 C` lines (firmware/target/core/src/commands.h): `get`, `set k=v ...`, `paper`,
+`status`, and `update sha=<64 hex> size=<bytes>`: an ESP32 target fetches `GET /api/v1/firmware/<sha>` (device token)
+and installs it only if its SHA-256 is the signed one; the Mega answers `r=not_supported`.
 | `fw_update` | `<sha256> <size>` | fetches `GET /api/v1/firmware/<sha256>` (same token header), checks size and SHA-256, installs, restarts |
 
 The bridge never sends anything to the Arduino that contains other braces than these commands (it listens on the

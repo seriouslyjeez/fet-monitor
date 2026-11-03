@@ -45,6 +45,16 @@ Range Control's *Check GitHub for FeT target firmware* (flash station) downloads
 Firmware releases are never marked GitHub's "Latest" (that is always the newest FeT Monitor release, which
 docs/INSTALL.md links to).
 
+## FeT target firmware for the ESP32 board (tag `esp32-<version>`)
+
+1. Bump `FW_VERSION` in `firmware/target/esp32/fet_target_esp32/fet_target_esp32.ino`, commit.
+2. Build (see firmware/target/README.md) and copy `fet_target_esp32.ino.merged.bin` (the full 8 MB image) to
+   `dist/target-firmware/fet-target-esp32-<version>.bin`.
+3. `python3 tools/release.py esp32 <version> --notes notes.md [--publish]` (checks the image like the Pi does).
+
+Range Control's *Check GitHub for ESP32 firmware* downloads it; targets then update over WiFi (Target settings →
+Update), signed by the Pi with each target's own key.
+
 ## Rules
 
 - Never publish an unsigned release, and never re-use a version number (the Pi compares versions).

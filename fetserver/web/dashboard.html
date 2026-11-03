@@ -778,7 +778,7 @@ function flashPanel(f, rc) {                    // Range Control: flash a device
     '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
     'set the switch to UART and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p></details>' +
     (f.ports.length ? '<table class="t"><tr><th>Port</th><th>Device</th><th></th></tr>' + f.ports.map(port).join('') + '</table>' : '<p class="mut">No USB serial device plugged in.</p>') +
-    '<h4>Settings for the target (FeT Bridge 0.3.0 and newer)</h4>' +
+    '<h4>Settings for the target (FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware)</h4>' +
     '<div class="bulk"><label>WiFi <input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label> <label>Password <input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
     ' <label>Target name <input id="fs_name" maxlength="32" size="10" placeholder="Lane-1" value="' + val('fs_name') + '"></label></div>' +
     '<div class="bulk"><label>This Pi\'s address <input id="fs_host" size="14" value="' + val('fs_host', f.server_host) + '"></label>' +
