@@ -37,7 +37,14 @@ int Settings::find(const char* key) {
 }
 
 void Settings::defaults() {
-  for (int i = 0; i < S_COUNT; i++) v_[i] = DEFS[i].def;
+  for (int i = 0; i < S_COUNT; i++) v_[i] = dflt_[i];
+}
+
+bool Settings::setDefault(int i, int32_t value) {
+  if (i < 0 || i >= S_COUNT || value < DEFS[i].min || value > DEFS[i].max) return false;
+  dflt_[i] = value;
+  v_[i] = value;
+  return true;
 }
 
 const char* Settings::set(int i, int32_t value) {

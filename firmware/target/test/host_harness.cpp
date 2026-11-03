@@ -140,6 +140,7 @@ int main() {
     else if (cmd == "sseti") { int i; long v; is >> i >> v; const char* r = st->set(i, (int32_t)v); std::cout << (r ? r : "ok") << "\n"; }
     else if (cmd == "sget") { std::string k; is >> k; int i = Settings::find(k.c_str()); std::cout << (i < 0 ? std::string("?") : std::to_string(st->get(i))) << "\n"; }
     else if (cmd == "ssave") { bool ok = st->save(); std::cout << (ok ? "saved" : "failed") << " " << nvm.writes << " " << st->generation() << "\n"; }
+    else if (cmd == "sdefault") { std::string k; long v; is >> k >> v; std::cout << (st->setDefault(Settings::find(k.c_str()), (int32_t)v) ? "ok" : "refused") << "\n"; }
     else if (cmd == "sid") { char b[9]; snprintf(b, sizeof b, "%08x", (unsigned)st->id()); std::cout << b << "\n"; }
     else if (cmd == "sdirty") std::cout << (st->dirty() ? 1 : 0) << "\n";
     else if (cmd == "nvmfail") is >> nvm.failNext;

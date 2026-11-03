@@ -44,7 +44,13 @@ class Settings {
   static const uint8_t VERSION = 1;
   static const size_t SLOT_SIZE = 8 + 4 * S_COUNT + 4;   // magic, version, count, generation, values, CRC
 
-  Settings(Nvm& nvm, size_t base) : nvm_(nvm), base_(base) { defaults(); }
+  Settings(Nvm& nvm, size_t base) : nvm_(nvm), base_(base) {
+    for (int i = 0; i < S_COUNT; i++) dflt_[i] = def(i).def;
+    defaults();
+  }
+  // This board's own default for one setting (e.g. the ESP32 board's paper motor wants 500 ms): call before load().
+  // False (nothing changed) if it is outside the setting's range.
+  bool setDefault(int i, int32_t value);
   static const SettingDef& def(int i);
   static int find(const char* key);               // index, or -1
 
@@ -63,6 +69,7 @@ class Settings {
   Nvm& nvm_;
   size_t base_;
   int32_t v_[S_COUNT];
+  int32_t dflt_[S_COUNT];
   uint16_t gen_ = 0;
   int8_t newest_ = -1;                            // slot holding the newest valid record, -1 none
   bool dirty_ = false;

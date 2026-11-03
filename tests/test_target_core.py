@@ -446,6 +446,18 @@ class SettingsStore(Case):
         self.assertEqual(self.h.run("ssave"), "saved 2 2", "loaded and unchanged: no write")
         self.assertEqual(self.h.run("sid"), settings_id(vals))
 
+    def test_a_board_sets_its_own_defaults(self):
+        self.assertEqual(self.h.run("sdefault paper_ms 500"), "ok")           # the ESP32 board's paper motor
+        self.assertEqual(self.h.run("sdefault paper_ms 9999"), "refused", "outside the setting's range")
+        self.assertEqual(self.h.run("sdefault nonsense 1"), "refused")
+        self.assertEqual(self.h.run("sload").split()[0], "defaults")
+        self.assertEqual(self.h.run("sget paper_ms"), "500", "a blank chip starts with the board's default")
+        self.assertEqual(self.h.run("sset paper_ms 300"), "ok")
+        self.h.run("ssave")
+        self.h.run("sdefault paper_ms 500")
+        self.assertEqual(self.h.run("sload").split()[0], "loaded")
+        self.assertEqual(self.h.run("sget paper_ms"), "300", "a saved value wins over any default")
+
     def test_reloading_discards_unsaved_changes(self):
         self.load()
         self.h.run("ssave")
