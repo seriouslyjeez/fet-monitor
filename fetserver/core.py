@@ -351,9 +351,12 @@ class Core:
         version = "FeT target " + h["fw"]
         if h["authenticated"]:
             if t["key_fp"] != h["key_fp"] or t["target_boot"] is None or h["boot"] > t["target_boot"]:
-                c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=0, target_settings_id=?,
+                c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=1, target_settings_id=?,
                              arduino_version=?, board_rev=? WHERE device_id=?""",
                           (h["key_fp"], h["boot"], h["settings_id"], version, h["rev"], device_id))
+                # a new start (or a newly bound key): ask for its settings, so Range Control shows them without a click
+                c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                          (device_id, "target", make_command(h["boot"], 1, "get", None, key).rstrip("\n"), self.now_ms()))
         elif t["key_fp"] is None:                       # never from an unsigned hello once a key is bound: the board
             c.execute("UPDATE targets SET arduino_version=?, board_rev=? WHERE device_id=?",   # revision picks the clock
                       (version, h["rev"], device_id))
