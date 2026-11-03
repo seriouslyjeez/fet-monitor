@@ -10,7 +10,10 @@
 //   - i is higher than the last command carried out in this boot (nor within it).
 // Verbs: get (all settings), set key=value ... (all checked first, then applied together and saved once), paper
 // (advance the witness paper now), status (k, up = uptime ms, d = shots dropped, q = triggers ignored while the paper
-// moved). Replies are signed with the same key and repeat b and i, so the server
+// moved), update sha=<64 hex> size=<bytes> (a board that can update itself fetches that image from FeT Monitor and
+// installs it only if its SHA-256 is this one: the command's signature, made with the target's own key, is what
+// makes the image trusted; r=ok means "started", the new version shows in the next hello; boards that cannot:
+// r=not_supported). Replies are signed with the same key and repeat b and i, so the server
 // can match them. Reasons have no spaces: r=bad_signature, old_command, wrong_boot, unknown_verb, malformed,
 // unknown_setting:<key>, out_of_range:<key>, save_failed, not_provisioned, no_boot_count (this start could not be
 // counted, so a recorded command could be replayed: nothing is carried out). Lines from fetserver/targetproto.py.
@@ -27,6 +30,8 @@ struct Actions {                                    // what the platform does fo
   virtual uint32_t uptimeMs() = 0;
   virtual uint16_t dropped() = 0;
   virtual uint16_t muted() = 0;                       // triggers ignored while the paper moved (Capture::muted)
+  // Start fetching and installing this image (in the background); 0 = started, else a reason without spaces.
+  virtual const char* firmwareUpdate(const uint8_t sha256[32], uint32_t size) { (void)sha256; (void)size; return "not_supported"; }
 };
 
 class Commands {

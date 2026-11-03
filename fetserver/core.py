@@ -14,7 +14,7 @@ from .groupstats import group_stats
 from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
 from .shotsolve import Geometry, solve, timers_from_reported
-from .targetproto import key_fingerprint, make_command, parse_hello, parse_reply, parse_shot
+from .targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
 from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 from .sightadj import suggest
 from .matches import Matches, _check
@@ -558,6 +558,30 @@ class Core:
                 c.execute("INSERT INTO target_keys (fingerprint, key_hex, created_ms, note) VALUES (?,?,?,?)",
                           (fp, key.hex(), self.now_ms(), note[:200]))
         return fp
+
+    def target_update(self, device_id: str, image: dict) -> int:
+        """Queue a signed "update" for an ESP32 target: fetch this image (esp32fw, by the app's SHA-256) from here and
+        install it. The command's signature is what makes the image trusted on the board. Never during a match."""
+        with self.db.write() as c:
+            t = c.execute("SELECT target_boot, target_cmd_id, board_rev FROM targets WHERE device_id=? AND removed=0 AND banned=0",
+                          (device_id,)).fetchone()
+            if t is None:
+                raise NotFound(f"unknown target {device_id}")
+            if t["board_rev"] is None or t["board_rev"] < self.ESP32_REV:
+                raise BadRequest(f"{device_id} is not an ESP32 target: its firmware is installed with the flash station")
+            key = self._target_key(c, device_id)
+            if key is None or t["target_boot"] is None:
+                raise BadRequest(f"{device_id} has not reported a key this server knows (set up with the flash station)")
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise BadRequest(f"{device_id} is in the match '{locked}': its firmware cannot change now")
+            cmd_id = t["target_cmd_id"] + 1
+            line = make_update(t["target_boot"], cmd_id, image["sha256"], image["size"], key).rstrip("\n")
+            c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+            cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                            (device_id, "target", line, self.now_ms()))
+        log.info("FeT target %s: update to %s (%s) queued", device_id, image.get("version"), image["sha256"][:12])
+        return cur.lastrowid
 
     def target_command(self, device_id: str, verb: str, settings: Optional[dict] = None) -> int:
         """Queue a signed command for a target running the FeT target firmware. Needs its key and the boot it

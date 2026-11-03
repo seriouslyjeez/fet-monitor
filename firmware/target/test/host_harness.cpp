@@ -49,6 +49,8 @@ struct FakeNvm : Nvm {                       // erased EEPROM reads 0xFF; a writ
   }
 };
 
+static std::string hex(const uint8_t* p, size_t n);
+
 struct FakeActions : Actions {
   int papers = 0, changes = 0;
   void paperAdvance() override { papers++; }
@@ -56,6 +58,15 @@ struct FakeActions : Actions {
   uint32_t uptimeMs() override { return 123456; }
   uint16_t dropped() override { return 2; }
   uint16_t muted() override { return 3; }
+  bool canUpdate = false;
+  std::string updSha;
+  uint32_t updSize = 0;
+  const char* firmwareUpdate(const uint8_t sha[32], uint32_t size) override {
+    if (!canUpdate) return Actions::firmwareUpdate(sha, size);
+    updSha = hex(sha, 32);
+    updSize = size;
+    return 0;
+  }
 };
 
 struct FakeMotor : MotorOut {
@@ -179,6 +190,8 @@ int main() {
     else if (cmd == "plog") { std::string l = motor.log; if (!l.empty()) l.pop_back(); std::cout << l << "\n"; motor.log.clear(); }
     else if (cmd == "pbusy") std::cout << (paper.busy() ? 1 : 0) << "\n";
     else if (cmd == "acts") std::cout << acts.papers << " " << acts.changes << "\n";
+    else if (cmd == "canupdate") { int v; is >> v; acts.canUpdate = v != 0; }
+    else if (cmd == "lastupdate") std::cout << (acts.updSha.empty() ? std::string("none") : acts.updSha) << " " << acts.updSize << "\n";
     else if (cmd == "quit") break;
     else std::cout << "?\n";
     std::cout << ".\n" << std::flush;

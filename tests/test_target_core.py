@@ -549,6 +549,28 @@ class CommandChannel(Case):
         r = self.send(make_command(boot, cmd_id, verb, settings, key))
         return parse_reply(r, KEY)
 
+    def test_update_is_only_for_a_board_that_can(self):
+        from fetserver.targetproto import make_update, parse_reply
+        self.h.run("ckey " + KEY.hex())
+        sha = hashlib.sha256(b"image").hexdigest()
+        r = parse_reply(self.send(make_update(7, 1, sha, 123456, KEY)), KEY)
+        self.assertEqual((r["ok"], r["reason"], r["authenticated"]), (False, "not_supported", True), "the Mega cannot")
+        self.h.run("canupdate 1")
+        r = parse_reply(self.send(make_update(7, 2, sha, 123456, KEY)), KEY)
+        self.assertTrue(r["ok"] and r["authenticated"])
+        self.assertEqual(self.h.run("lastupdate"), sha + " 123456", "the platform got exactly the signed image")
+        head = "FT1 C b=7 i=4 update sha=" + sha.upper() + " size=5"
+        from fetserver.targetproto import mac
+        r = parse_reply(self.send(head + " h=" + mac(KEY, head.encode())), KEY)
+        self.assertEqual(r["reason"], "malformed", "one spelling of an image: lowercase hex")
+        for i, (s, n) in enumerate(((sha[:-2], "5"), (sha, "0"), (sha, "-5"), (sha, "x"))):
+            head = f"FT1 C b=7 i={5 + i} update sha={s} size={n}"
+            r = parse_reply(self.send(head + " h=" + mac(KEY, head.encode())), KEY)
+            self.assertFalse(r["ok"], (s[-4:], n))
+        r = parse_reply(self.send(make_update(7, 20, sha, 99, KEY).replace(sha, "0" * 64)), KEY)
+        self.assertEqual(r["reason"], "bad_signature", "the image is part of what is signed")
+        self.assertEqual(self.h.run("lastupdate"), sha + " 123456", "nothing else reached the platform")
+
     def test_refused_until_a_key_is_set(self):
         from fetserver.targetproto import make_command, parse_reply
         r = parse_reply(self.send(make_command(7, 1, "paper", key=KEY)), KEY)

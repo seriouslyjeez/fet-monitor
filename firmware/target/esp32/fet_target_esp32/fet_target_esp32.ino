@@ -35,6 +35,7 @@
 #include <provision.h>
 #include "net_esp32.h"
 #include "portal_esp32.h"
+#include <esp_ota_ops.h>
 
 #define FW_VERSION "0.1.0"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
@@ -222,8 +223,25 @@ struct Esp32Actions : tgt::Actions {
   uint32_t uptimeMs() override { return millis(); }
   uint16_t dropped() override { return capture.dropped(); }
   uint16_t muted() override { return capture.muted(); }
+  const char* firmwareUpdate(const uint8_t sha[32], uint32_t size) override;
 };
 static Esp32Actions actions;
+static struct { volatile bool pending = false; uint8_t sha[32]; uint32_t size = 0; } upd;   // main loop -> network task
+
+const char* Esp32Actions::firmwareUpdate(const uint8_t sha[32], uint32_t size) {
+  if (upd.pending) return "busy";
+  const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
+  if (!next) return "no_ota_slot";
+  if (size > next->size) return "too_big";
+  memcpy(upd.sha, sha, 32);
+  upd.size = size;
+  upd.pending = true;                                                      // the network task takes it from here
+  return 0;
+}
+
+// A new image is on probation: the bootloader goes back to the previous one if it restarts before this firmware has
+// reached FeT Monitor once (esp_ota_mark_app_valid_cancel_rollback in netTask).
+extern "C" bool verifyRollbackLater() { return true; }
 static tgt::Commands* commands = 0;
 static tgt::LineReader usbIn;
 
@@ -280,6 +298,20 @@ static void netTask(void*) {                                               // th
     portal->loop(fete::nowMs());
     if (hooks.portalWanted) { hooks.portalWanted = false; portal->open(fete::nowMs()); }
     comState = portal->isOpen() ? 4 : !cfg.wifiConfigured() ? 0 : !net->wifiUp() ? 1 : bridge->lastStatus == 200 ? 3 : 2;
+    static bool confirmed = false;
+    if (!confirmed && bridge->lastStatus == 200) {                         // FeT Monitor answered: this firmware works
+      confirmed = true;
+      esp_ota_img_states_t st;
+      if (esp_ota_get_state_partition(esp_ota_get_running_partition(), &st) == ESP_OK && st == ESP_OTA_IMG_PENDING_VERIFY) {
+        esp_ota_mark_app_valid_cancel_rollback();
+        fete::say("Firmware update: confirmed (FeT Monitor reached)", "");
+      }
+    }
+    if (upd.pending) {
+      std::string err;
+      if (net->fetchImage(upd.sha, upd.size, err)) hooks.reboot();
+      upd.pending = false;
+    }
     if (hooks.eraseAt && fete::nowMs() >= hooks.eraseAt) {                 // factory reset: WiFi/server settings and the queue;
       fete::say("Factory reset: erasing the WiFi settings and the shot queue", "");   // the target's key stays (USB only)
       LittleFS.format();

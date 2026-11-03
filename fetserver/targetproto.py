@@ -81,6 +81,14 @@ def make_command(boot: int, cmd_id: int, verb: str, settings: Optional[dict] = N
     return f"{head} h={mac(key, head.encode())}\n"
 
 
+def make_update(boot: int, cmd_id: int, sha256: str, size: int, key: bytes) -> str:
+    """The signed "update" command: fetch this image from FeT Monitor and install it only if its SHA-256 matches."""
+    if not re.fullmatch(r"[0-9a-f]{64}", sha256 or "") or not isinstance(size, int) or isinstance(size, bool) or not 0 < size < 2 ** 32:
+        raise ProtoError("bad image")
+    head = f"FT1 C b={int(boot)} i={int(cmd_id)} update sha={sha256} size={size}"
+    return f"{head} h={mac(key, head.encode())}\n"
+
+
 def parse_reply(line: str, key: Optional[bytes] = None) -> dict:
     """boot, id, ok, reason ("" when ok), values {name: int, or str for k}, authenticated. A wrong signature raises."""
     line = line.rstrip("\r\n")

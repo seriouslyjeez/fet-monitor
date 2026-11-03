@@ -154,6 +154,23 @@ size_t Commands::handle(const char* line, char* out, size_t cap) {
     r.b.add(" k="); r.b.addHex(st_.id(), 8);
     return r.finish(out, key_, keyLen_);
   }
+  if (vl == 6 && memcmp(verb, "update", 6) == 0 && nt == 5 && tlen[3] == 4 + 64 && memcmp(tok[3], "sha=", 4) == 0 &&
+      tlen[4] > 5 && memcmp(tok[4], "size=", 5) == 0) {
+    uint8_t sha[32];
+    uint32_t size = 0;
+    bool ok = parseU32(tok[4] + 5, tlen[4] - 5, size) && size > 0;
+    for (int i = 0; i < 64 && ok; i++) {             // lowercase hex only: one spelling per image
+      char c = tok[3][4 + i];
+      int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+      if (v < 0) ok = false;
+      else if (i % 2 == 0) sha[i / 2] = (uint8_t)(v << 4);
+      else sha[i / 2] |= (uint8_t)v;
+    }
+    if (!ok) { Reply r(out, cap, boot_, id, "malformed"); return r.finish(out, key_, keyLen_); }
+    const char* why = act_.firmwareUpdate(sha, size);
+    Reply r(out, cap, boot_, id, why ? why : "ok");
+    return r.finish(out, key_, keyLen_);
+  }
   Reply r(out, cap, boot_, id, "unknown_verb");
   return r.finish(out, key_, keyLen_);
 }

@@ -18,6 +18,7 @@ from .core import Core
 from .db import Database
 from .firmware import FirmwareStore
 from .targetfw import TargetFirmwareStore
+from .esp32fw import Esp32FirmwareStore
 from .releases import Updates
 from .rulebookfiles import RulebookFiles
 from .appliance import Appliance
@@ -43,10 +44,12 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     rulebooks = RulebookFiles(data_dir)
     firmware = FirmwareStore(data_dir)
     target_firmware = TargetFirmwareStore(data_dir)
+    esp32_firmware = Esp32FirmwareStore(data_dir)
     flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key)
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
                          firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
-                         appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware)
+                         appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware,
+                         esp32_firmware=esp32_firmware)
     stop = threading.Event()
 
     def on_signal(signum, _frame):

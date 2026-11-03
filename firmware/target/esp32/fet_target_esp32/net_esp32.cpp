@@ -3,6 +3,8 @@
 #include <WiFiClient.h>
 #include <httpparse.h>
 #include <esp_mac.h>
+#include <Update.h>
+#include <tgt_sha256.h>
 
 namespace fete {
 
@@ -235,6 +237,75 @@ bool WifiNet::post(const char* path, const std::string& body, int& status, std::
     say("First report to FET: ", (got && status == 200) ? "success" : "fail");
   }
   return got;
+}
+
+bool WifiNet::fetchImage(const uint8_t sha[32], uint32_t size, std::string& err) {
+  static const char HX[] = "0123456789abcdef";
+  std::string shaHex;
+  for (int i = 0; i < 32; i++) { shaHex += HX[sha[i] >> 4]; shaHex += HX[sha[i] & 15]; }
+  if (!ready()) { err = "server not reachable"; return false; }
+  WiFiClient c;
+  if (!c.connect(ip_, (uint16_t)port_, FET_CONNECT_TIMEOUT_MS)) { err = "could not connect to the server"; return false; }
+  std::string req = "GET /api/v1/firmware/" + shaHex + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() + "\r\nUser-Agent: " +
+                    userAgent + "\r\nX-FET-Token: " + cfg_.token + "\r\nConnection: close\r\n\r\n";
+  if (c.write((const uint8_t*)req.data(), req.size()) != req.size()) { c.stop(); err = "request not sent"; return false; }
+  std::string head;
+  uint64_t t0 = nowMs(), last = t0;
+  while (head.find("\r\n\r\n") == std::string::npos) {                  // the response header, byte by byte
+    if (c.available() > 0) {
+      char ch;
+      if (c.read((uint8_t*)&ch, 1) == 1) { head += ch; last = nowMs(); }
+      if (head.size() > 2048) { c.stop(); err = "response header too long"; return false; }
+      continue;
+    }
+    if (!c.connected() || nowMs() - last > 15000) { c.stop(); err = "no answer from the server"; return false; }
+    delay(2);
+  }
+  int status = (head.compare(0, 9, "HTTP/1.1 ") == 0 || head.compare(0, 9, "HTTP/1.0 ") == 0) ? atoi(head.c_str() + 9) : 0;
+  std::string lower = head;
+  for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+  size_t cl = lower.find("\r\ncontent-length:");
+  long len = cl == std::string::npos ? -1 : atol(lower.c_str() + cl + 17);
+  if (status != 200) { c.stop(); err = "server answered " + std::to_string(status); return false; }
+  if (len != (long)size) { c.stop(); err = "wrong length from the server"; return false; }
+  if (!Update.begin(size, U_FLASH)) { c.stop(); err = std::string("updater: ") + Update.errorString(); return false; }
+  say("Firmware update: downloading ", std::to_string(size) + " bytes");
+  tgt::Sha256 h;
+  uint8_t buf[1024];
+  uint32_t got = 0;
+  bool failed = false;
+  while (got < size) {
+    int avail = c.available();
+    if (avail <= 0) {
+      if (!c.connected()) { err = "download cut off"; failed = true; break; }
+      if (nowMs() - last > 15000 || nowMs() - t0 > 300000) { err = "download too slow"; failed = true; break; }
+      delay(2);
+      continue;
+    }
+    size_t want = size - got < sizeof buf ? size - got : sizeof buf;
+    int n = c.read(buf, (size_t)avail < want ? (size_t)avail : want);
+    if (n <= 0) continue;
+    last = nowMs();
+    h.update(buf, (size_t)n);
+    if (Update.write(buf, (size_t)n) != (size_t)n) { err = std::string("flash write: ") + Update.errorString(); failed = true; break; }
+    got += (uint32_t)n;
+  }
+  c.stop();
+  uint8_t digest[32];
+  h.finish(digest);
+  if (!failed && memcmp(digest, sha, 32) != 0) { err = "SHA-256 mismatch: not the signed image"; failed = true; }
+  if (failed) {
+    Update.abort();                                         // the running firmware stays; the next start is unchanged
+    say("Firmware update failed: ", err);
+    return false;
+  }
+  if (!Update.end(true)) {                                  // checks the image itself, then makes it the next start
+    err = std::string("updater: ") + Update.errorString();
+    say("Firmware update failed: ", err);
+    return false;
+  }
+  say("Firmware update: verified and installed, restarting", "");
+  return true;
 }
 
 }  // namespace fete

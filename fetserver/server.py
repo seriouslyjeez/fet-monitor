@@ -8,6 +8,7 @@ import os
 import queue
 import re
 import sqlite3
+import time
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -24,6 +25,7 @@ from .rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
 from .flashstation import FlashError, FlashStation
 from .targetfw import BadImage as BadHex, TargetFirmwareStore
+from .esp32fw import FULL_SIZE as ESP32_FULL, BadImage as BadEsp32, Esp32FirmwareStore
 FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-\d{6}\.bin|mega-[0-9A-Za-z]{1,20}-\d{8}-\d{6}\.(?:hex|eep))$")
 
 log = logging.getLogger("fetserver.http")
@@ -40,10 +42,13 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command|target-command)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command|target-command|target-update)$")
+ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
+DEVICE_FW_CHUNK = 16 * 1024
+DEVICE_FW_MAX_S = 600
 FACTORY_RESET_MIN = (0, 2, 2)
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 
@@ -402,9 +407,9 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 self.wfile.write(chunk)
 
-    def _firmware_upload(self, store=None) -> None:
+    def _firmware_upload(self, store=None, max_size: int = MAX_IMAGE) -> None:
         """Raw image upload (application/octet-stream). Refused before reading the body when not logged in or too big.
-        store: FeT Bridge images (default) or the Mega's FeT target firmware (.hex)."""
+        store: FeT Bridge images (default), the Mega's FeT target firmware (.hex) or the ESP32's (the 8 MB image)."""
         try:
             length = int(self.headers.get("Content-Length", ""))
         except ValueError:
@@ -416,16 +421,16 @@ class Handler(BaseHTTPRequestHandler):
         if (self.headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/octet-stream":
             self.close_connection = True
             return self._send(415, {"error": "upload the .bin file itself (application/octet-stream)"})
-        if length <= 0 or length > MAX_IMAGE:
+        if length <= 0 or length > max_size:
             self.close_connection = True
-            return self._send(413, {"error": f"a firmware image is at most {MAX_IMAGE // 1024} KB"})
+            return self._send(413, {"error": f"a firmware image is at most {max_size // 1024} KB"})
         data = self.rfile.read(length)
         if len(data) != length:
             self.close_connection = True
             raise BadRequest("upload cut off")
         try:
             meta = (store or self.server.firmware).add(data, uploaded_by=self.client_address[0])
-        except (BadImage, BadHex) as exc:
+        except (BadImage, BadHex, BadEsp32) as exc:
             return self._send(400, {"error": str(exc)})
         log.info("Range Control from %s: firmware %s (%s, %d bytes) uploaded", self.client_address[0], meta["version"],
                  meta["sha256"][:12], meta["size"])
@@ -435,7 +440,7 @@ class Handler(BaseHTTPRequestHandler):
         """A target fetching an image it was told to install. Device token required; only stored images by SHA-256."""
         if not self._device_auth():
             return self._send(401, {"error": "bad token"})
-        path = self.server.firmware.path(sha)
+        path = self.server.firmware.path(sha) or self.server.esp32_firmware.app_path(sha)   # ESP-01 or ESP32 target
         if path is None:
             return self._send(404, {"error": "no such firmware image"})
         data = path.read_bytes()
@@ -444,7 +449,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(data)
+        # In pieces: the socket's 30 s timeout then applies to each piece, not to the whole image (an ESP32 image of
+        # 1.1 MB over a weak link took longer than that in one write; 2026-11-02). A stuck download still ends.
+        end = time.monotonic() + DEVICE_FW_MAX_S
+        for i in range(0, len(data), DEVICE_FW_CHUNK):
+            if time.monotonic() > end:
+                self.close_connection = True
+                return
+            self.wfile.write(data[i:i + DEVICE_FW_CHUNK])
 
     def _admin_token(self):
         try:
@@ -466,6 +478,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._firmware_upload()
         if path == "/api/v1/admin/target-firmware" and method == "POST":
             return self._firmware_upload(self.server.target_firmware)
+        if path == "/api/v1/admin/esp32-firmware" and method == "POST":
+            return self._firmware_upload(self.server.esp32_firmware, ESP32_FULL)
         if method == "POST":
             payload = self._read_json()
             if not isinstance(payload, dict):
@@ -498,6 +512,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, view)
         if path == "/api/v1/admin/target-firmware" and method == "GET":
             return self._send(200, {"images": self.server.target_firmware.list()})
+        if path == "/api/v1/admin/esp32-firmware" and method == "GET":
+            return self._send(200, {"images": self.server.esp32_firmware.list()})
+        e32d = ADMIN_E32_DELETE_RE.match(path)
+        if e32d and method == "POST":
+            if not self.server.esp32_firmware.delete(e32d.group(1)):
+                raise NotFound("no such firmware image")
+            log.info("Range Control from %s: deleted ESP32 firmware %s", self.client_address[0], e32d.group(1)[:12])
+            return self._send(200, {"ok": True})
         tfd = ADMIN_TFW_DELETE_RE.match(path)
         if tfd and method == "POST":
             if not self.server.target_firmware.delete(tfd.group(1)):
@@ -633,6 +655,14 @@ class Handler(BaseHTTPRequestHandler):
                                          "(or use its setup portal: Forget settings)")
                     log.warning("Range Control from %s: FACTORY RESET of %s", self.client_address[0], did)
                 return self._send(200, {"id": core.enqueue_command(did, payload.get("type"), payload.get("line"))})
+            if what == "target-update":               # an ESP32 target: signed "update" (fetches the image from here)
+                store = self.server.esp32_firmware
+                image = store.best() if payload.get("sha256") == "best" else store.get(payload.get("sha256"))
+                if image is None:
+                    raise NotFound("no ESP32 firmware image on this Pi" if payload.get("sha256") == "best" else "no such firmware image")
+                cid = core.target_update(did, image)
+                log.warning("Range Control from %s: %s update to FeT target ESP32 %s", self.client_address[0], did, image["version"])
+                return self._send(200, {"command_id": cid, "version": image["version"]})
             if what == "target-command":              # FeT target firmware: signed get/set/paper/status
                 cid = core.target_command(did, payload.get("verb"), payload.get("settings"))
                 log.info("Range Control from %s: %s %s %s", self.client_address[0], did, payload.get("verb"), payload.get("settings") or "")
@@ -896,8 +926,9 @@ class FetHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
                  rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None,
-                 target_firmware: TargetFirmwareStore = None):
+                 target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None):
         super().__init__(addr, Handler)
+        self.esp32_firmware = esp32_firmware if esp32_firmware is not None else Esp32FirmwareStore(None)
         self.target_firmware = target_firmware if target_firmware is not None else (
             flash.target_images if flash is not None and flash.target_images is not None else TargetFirmwareStore(None))
         self.flash = flash if flash is not None else FlashStation(firmware if firmware is not None else FirmwareStore(None), None)
@@ -928,5 +959,7 @@ class FetHTTPServer(ThreadingHTTPServer):
 
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
                 firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
-                appliance: Appliance = None, flash: FlashStation = None, target_firmware: TargetFirmwareStore = None) -> FetHTTPServer:
-    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash, target_firmware)
+                appliance: Appliance = None, flash: FlashStation = None, target_firmware: TargetFirmwareStore = None,
+                esp32_firmware: Esp32FirmwareStore = None) -> FetHTTPServer:
+    return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash, target_firmware,
+                         esp32_firmware)

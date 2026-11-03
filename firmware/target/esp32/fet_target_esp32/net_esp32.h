@@ -56,6 +56,9 @@ class WifiNet : public fet::Net {
   bool ready() override;
   int rssi() override;
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override;
+  // GET /api/v1/firmware/<sha> from FeT Monitor into the next OTA slot; installed (boots next start) only if every byte
+  // arrived and the SHA-256 is the one the signed "update" command named. False (reason in err): nothing changes.
+  bool fetchImage(const uint8_t sha[32], uint32_t size, std::string& err);
   void startWifi(const std::string& hostname, bool withAccessPoint);
   void announce();
   void update(uint64_t now);
