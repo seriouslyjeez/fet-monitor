@@ -823,7 +823,14 @@ const TARGET_SETTINGS = [['led_pct', 'Lights', '%', 0, 100], ['paper_ms', 'Paper
   ['face_alone_ms', 'Face-only event after', 'ms', 1, 100], ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300]];
 function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
   const ts = (d.targets || []).filter(t => t.fet_target);
-  if (!ts.length) return '';
+  if (!ts.length && !(rc.timages || []).length) return '';   // a club not using FeT target firmware: nothing to say
+  if (!ts.length) {                              // firmware on this Pi, no target heard yet: say why (user testing, 2026-11-02)
+    const old = (d.targets || []).filter(t => t.bridge_fw && !verAtLeast(t.bridge_fw, '0.4.0'));
+    return '<div class="panel"><h3>Target settings (FeT target firmware)</h3><p class="mut">No target with FeT target firmware has reported yet. ' +
+      'Paper, lights and the other target settings appear here once one does. After installing it on a target\'s Arduino Mega (Flash a device): ' +
+      'the target\'s WiFi module needs <b>FeT Bridge 0.4.0</b> or newer to carry its messages; then switch the target off and on.</p>' +
+      (old.length ? '<p class="bad">Older FeT Bridge on: ' + old.map(t => esc(t.name) + ' (' + esc(t.bridge_fw) + ')').join(', ') + '. Update them under FeT Bridge firmware.</p>' : '') + '</div>';
+  }
   const kept = rc.tsf || {};
   return '<div class="panel"><h3>Target settings (FeT target firmware)</h3>' +
     '<p class="mut">What the target itself does. Where the microphones are (calibration) is kept on this Pi, not in the target. ' +

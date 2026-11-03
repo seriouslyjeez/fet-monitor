@@ -142,8 +142,18 @@ def check_network(n) -> dict:
             raise SetupError("club WiFi password: 8 to 63 characters (a WPA2 network; the targets need one too)")
         out.update(ssid=ssid, psk=psk)
     addr = n.get("address", "dhcp")
-    out["address"] = "dhcp" if addr == "dhcp" else fixed_address(addr if isinstance(addr, dict) else {}, "address")
+    # "keep": make the address the Pi gets (the WiFi test's, or the cable's now) its fixed one (portal.resolve_keep)
+    out["address"] = addr if addr in ("dhcp", "keep") else fixed_address(addr if isinstance(addr, dict) else {}, "address")
     return out
+
+
+def resolve_keep(net: dict, lease: Optional[dict]) -> dict:
+    """The network with "keep" replaced by the lease as a fixed address (checked like a typed one)."""
+    if net.get("address") != "keep":
+        return net
+    if not lease:
+        raise SetupError("no address to keep yet: is the cable plugged in to the club router?")
+    return dict(net, address=fixed_address(lease, "address"))
 
 
 def plan(cfg: dict) -> List[tuple]:

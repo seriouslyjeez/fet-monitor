@@ -16,14 +16,15 @@ label{display:block;margin:8px 0 3px;font-weight:600}input,select{width:100%;fon
 button{font:inherit;font-weight:600;padding:11px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);margin-top:10px}
 button.pri{background:var(--pri);border-color:var(--pri);color:#fff;width:100%}.seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{flex:1;margin-top:0}
 .seg button.sel{background:var(--pri);border-color:var(--pri);color:#fff}.token{font:700 22px ui-monospace,Menlo,monospace;word-break:break-all}
-.big{font-size:20px;font-weight:700}
+.big{font-size:20px;font-weight:700}.req,.opt{font-size:12px;font-weight:600;padding:1px 7px;border-radius:9px;vertical-align:2px;margin-left:4px}
+.req{background:var(--pri);color:#fff}.opt{border:1px solid var(--line);color:var(--mut)}button:disabled{opacity:.5}
 </style>
 </head>
 <body>
 <main id="app"><p class="mut">Loading…</p></main>
 <script>
 'use strict';
-const S = {info: null, f: {hostname: 'range', ssh: false, network: {mode: 'cable', address: 'dhcp', channel: 6}}, msg: '', busy: false};
+const S = {info: null, f: {hostname: 'range', ssh: false, network: {mode: 'cable', address: 'dhcp', channel: 6}}, kept: [], loaded: false, msg: '', busy: false};
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 
@@ -57,15 +58,50 @@ function networkPart() {
       (typed ? '<label for="ssid_typed">Network name (exactly as written, capitals too)</label><input id="ssid_typed" maxlength="32" autocapitalize="none" autocomplete="off" spellcheck="false" value="' + esc(n.ssid || '') + '">' : '') +
       (none ? '<p class="bad">The Pi found no WiFi networks nearby. Type the club WiFi\'s name, or use the cable or the Pi\'s own range network.</p>'
         : '<p class="mut">Not listed? It may be 5 GHz only: the Pi and the targets need 2.4 GHz. A hidden network: choose <i>Other network</i>.</p>') +
-      '<label for="psk">WiFi password</label><input id="psk" type="password" autocomplete="off" value="' + esc(n.psk || '') + '">' +
-      '<button id="test">Test connection</button><p class="mut">The setup network goes away for up to a minute while the Pi tries. ' +
-      'Then join <b>' + esc(i.setup_ssid) + '</b> again and reopen this page.</p>' +
-      (tested ? (t.ok ? '<p class="ok">Connected to ' + esc(t.ssid) + '.</p>' + addressPart('WiFi', t.lease) : '<p class="bad">Could not connect to ' + esc(t.ssid) + ': ' + esc(t.why) + '</p>') : '');
+      '<label for="psk">WiFi password</label><input id="psk" type="password" autocomplete="off" placeholder="' + (keptPsk() ? 'kept' : '') + '" value="' + esc(n.psk || '') + '">' +
+      '<label class="chk"><input type="radio" name="addr" data-addr="keep"' + (n.address !== 'dhcp' ? ' checked' : '') + '><span>Keep the address the Pi gets as its fixed address (recommended: the targets need an address that never changes)</span></label>' +
+      '<label class="chk"><input type="radio" name="addr" data-addr="dhcp"' + (n.address === 'dhcp' ? ' checked' : '') + '><span>Automatic: then reserve its address for the Pi in the club router</span></label>' +
+      (tested && t.ok ? '<p class="ok">Tested: connected to ' + esc(t.ssid) + ' (' + esc(t.lease && t.lease.ip) + ').</p>' : '');
   }
   return seg + '<p class="mut">The Pi makes a WiFi network for the targets and phones (no router needed, no internet). The Pi is always <b>' + esc(i.own_ip) + '</b>.</p>' +
     '<label for="ossid">Range network name</label><input id="ossid" maxlength="32" value="' + esc(n.ssid || 'FeTMonitor-Range') + '">' +
     '<label for="opsk">Range network password (8 to 63 characters)</label><input id="opsk" autocomplete="off" value="' + esc(n.psk || '') + '">' +
     '<label for="ochan">Channel</label><select id="ochan">' + [1, 6, 11].map(c => '<option' + (n.channel === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select>';
+}
+function keptPsk() {                           // the Pi keeps this network's WiFi password from an earlier try
+  const d = S.info.draft, n = S.f.network;
+  return S.kept.includes('psk') && d && d.network && d.network.mode === n.mode && d.network.ssid === n.ssid;
+}
+function pw(id, key, ph, extra) {                // a password field; one the Pi kept is left empty (never sent back)
+  return '<input id="' + id + '" type="password" autocomplete="new-password" placeholder="' + (S.kept.includes(key) ? 'kept' : ph) + '"' +
+    (extra || '') + ' value="' + esc(S.f[key] || '') + '">';
+}
+function missing() {                           // what still has to be filled in before Save (the Pi checks it all again)
+  const f = S.f, n = f.network, i = S.info, out = [], kept = k => S.kept.includes(k);
+  const pair = (a, b, min, label) => { if (!(kept(a) && !f[a] && !f[b]) && ((f[a] || '').length < min || f[a] !== f[b])) out.push(label + ' (at least ' + min + ' characters, the same twice)'); };
+  if (!i.reopen) {
+    if (!/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test((f.hostname || '').trim().toLowerCase())) out.push('the Pi\'s name (letters, digits and dashes)');
+  }
+  if (!f.country) out.push('the country');
+  if (!i.reopen) {
+    if (!f.timezone) out.push('the time zone');
+    pair('range_password', 'range_password2', i.min_password, 'the Range Control password');
+    if (f.director && !/^[A-Za-z0-9._-]{2,32}$/.test(f.director)) out.push('the match director\'s name (2 to 32 letters or digits)');
+    if (f.director && !kept('director_password') && (f.director_password || '').length < i.min_password) out.push('the match director\'s password (at least ' + i.min_password + ' characters)');
+    if (!/^[a-z][a-z0-9_-]{1,31}$/.test((f.admin || '').trim())) out.push('the admin login name (lowercase letters and digits, starting with a letter)');
+    pair('admin_password', 'admin_password2', i.min_admin_password, 'the admin password');
+  }
+  const psk = p => (p || '').length >= 8 && (p || '').length <= 63;
+  if (n.mode === 'cable' && !i.cable && typeof n.address !== 'object') out.push('the cable plugged in to the club router');
+  if (n.mode === 'wifi') { if (!n.ssid) out.push('the club WiFi'); if (!psk(n.psk) && !keptPsk()) out.push('the WiFi password (8 to 63 characters)'); }
+  if (n.mode === 'own') { if (!n.ssid) out.push('the range network name'); if (!psk(n.psk)) out.push('the range network password (8 to 63 characters)'); }
+  return out;
+}
+function saveButton(label) {
+  const need = missing(), wifi = S.f.network.mode === 'wifi';
+  return '<button class="pri" id="save"' + (S.busy || need.length ? ' disabled' : '') + '>' + (wifi ? 'Test the WiFi and save' : label) + '</button>' +
+    '<p class="mut" id="need">' + (need.length ? 'Still needed: ' + need.map(esc).join('; ') + '.' : wifi ? 'The setup network goes away for up to a minute while the Pi tries the WiFi; then join <b>' +
+      esc(S.info.setup_ssid) + '</b> again and reopen this page.' : '') + '</p>';
 }
 function reopenForm() {                        // a set-up Pi that found no network: its network only
   const i = S.info, f = S.f;
@@ -75,31 +111,32 @@ function reopenForm() {                        // a set-up Pi that found no netw
     i.countries.map(c => '<option value="' + c.code + '"' + (f.country === c.code ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></section>' +
     '<section><h2>Network</h2>' + networkPart() + '</section>' +
     (S.msg ? '<p class="bad" id="msg">' + esc(S.msg) + '</p>' : '') + (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +
-    '<button class="pri" id="save"' + (S.busy ? ' disabled' : '') + '>Save network</button>';
+    saveButton('Save network');
 }
 function form() {
   const i = S.info, f = S.f;
   if (i.reopen) return reopenForm();
   const zone = f.timezone || (i.zones.includes(guessZone()) ? guessZone() : '');
   return '<h1>Set up FeT Monitor</h1><p class="mut">Everything here can be changed later in Range Control.</p>' +
-    '<section><h2>This Pi</h2><label for="hostname">Name</label><input id="hostname" value="' + esc(f.hostname) + '" autocapitalize="none">' +
+    (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +
+    (S.kept.length ? '<p class="mut">Password fields showing <i>kept</i>: the Pi has what you typed before. Leave them empty to keep it, or type a new one.</p>' : '') +
+    '<section><h2>This Pi <span class="req">required</span></h2><label for="hostname">Name</label><input id="hostname" value="' + esc(f.hostname) + '" autocapitalize="none">' +
     '<div class="row"><div><label for="country">Country</label><select id="country"><option value="">choose…</option>' +
     i.countries.map(c => '<option value="' + c.code + '"' + (f.country === c.code ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select></div>' +
     '<div><label for="tz">Time zone</label><select id="tz"><option value="">choose…</option>' + i.zones.map(z => '<option' + (zone === z ? ' selected' : '') + '>' + esc(z) + '</option>').join('') + '</select></div></div>' +
     '<p class="mut">The clock is set from this phone if the Pi has no internet.</p></section>' +
-    '<section><h2>Range Control password</h2><p class="mut">For the page that manages targets and updates. Use one you do not use anywhere else.</p>' +
-    '<input id="rp" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.range_password || '') + '">' +
-    '<input id="rp2" type="password" autocomplete="new-password" placeholder="Again" style="margin-top:6px" value="' + esc(f.range_password2 || '') + '"></section>' +
-    '<section><h2>First match director (optional)</h2><div class="row"><input id="dir" placeholder="Name" autocapitalize="none" value="' + esc(f.director || '') + '">' +
-    '<input id="dirpw" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.director_password || '') + '"></div></section>' +
-    '<section><h2>Admin login</h2><p class="mut">Only for someone who needs the Pi\'s command line.</p>' +
+    '<section><h2>Range Control password <span class="req">required</span></h2><p class="mut">For the page that manages targets and updates. At least ' + i.min_password +
+    ' characters; use one you do not use anywhere else.</p>' + pw('rp', 'range_password', 'Password') + pw('rp2', 'range_password2', 'Again', ' style="margin-top:6px"') + '</section>' +
+    '<section><h2>First match director <span class="opt">optional</span></h2><div class="row"><input id="dir" placeholder="Name" autocapitalize="none" value="' + esc(f.director || '') + '">' +
+    pw('dirpw', 'director_password', 'Password') + '</div></section>' +
+    '<section><h2>Admin login <span class="req">required</span></h2><p class="mut">The Pi\'s own login, for whoever looks after it (updates by hand, repairs). ' +
+    'Lowercase name; password at least ' + i.min_admin_password + ' characters. Keep both somewhere safe.</p>' +
     '<div class="row"><input id="admin" placeholder="Login name" autocapitalize="none" value="' + esc(f.admin || '') + '"></div>' +
-    '<div class="row" style="margin-top:6px"><input id="apw" type="password" autocomplete="new-password" placeholder="Password" value="' + esc(f.admin_password || '') + '">' +
-    '<input id="apw2" type="password" autocomplete="new-password" placeholder="Again" value="' + esc(f.admin_password2 || '') + '"></div>' +
+    '<div class="row" style="margin-top:6px">' + pw('apw', 'admin_password', 'Password') + pw('apw2', 'admin_password2', 'Again') + '</div>' +
     '<label class="chk"><input type="checkbox" id="ssh"' + (f.ssh ? ' checked' : '') + '> Allow SSH (remote login). Off is safer; it can be turned on later.</label></section>' +
-    '<section><h2>Network</h2>' + networkPart() + '</section>' +
-    (S.msg ? '<p class="bad" id="msg">' + esc(S.msg) + '</p>' : '') + (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +
-    '<button class="pri" id="save"' + (S.busy ? ' disabled' : '') + '>Save settings</button>';
+    '<section><h2>Network <span class="req">required</span></h2>' + networkPart() + '</section>' +
+    (S.msg ? '<p class="bad" id="msg">' + esc(S.msg) + '</p>' : '') + (i.error ? '<p class="bad">' + esc(i.error) + '</p>' : '') +   // also next to the button
+    saveButton('Save settings');
 }
 function summary() {
   const s = S.info.summary, own = s.mode === 'own';
@@ -111,12 +148,13 @@ function summary() {
     (own ? 'Join <b>' + esc(s.ssid) + '</b> on this phone and open the address above.'
       : 'Put this phone back on the ' + (s.mode === 'wifi' ? 'WiFi <b>' + esc(s.ssid) + '</b>' : 'club network') + ' and open the address above.') + '</p>' +
     (S.info.error ? '<p class="bad">' + esc(S.info.error) + '</p>' : '') +
-    '<button class="pri" id="switch">Switch now</button><button id="back">Change settings</button></section>';
+    '<button class="pri" id="switch">Save and switch</button><button id="back">Change settings</button></section>';
 }
 function render() {
   const i = S.info, app = $('app');
   if (!i) return;
-  if (i.phase === 'testing') { app.innerHTML = '<h1>Testing the WiFi…</h1><section><p>The setup network is gone for up to a minute. When <b>' + esc(i.setup_ssid) + '</b> is back, join it again: this page shows the result.</p></section>'; return; }
+  if (i.phase === 'testing' || i.phase === 'applying') { app.innerHTML = '<h1>Testing the WiFi…</h1><section><p>The setup network is gone for up to a minute. When <b>' + esc(i.setup_ssid) +
+    '</b> is back, join it again and reopen this page: it shows the address to write down, or what went wrong. Everything you typed is kept.</p></section>'; return; }
   if (i.phase === 'switching' || i.phase === 'done') { app.innerHTML = '<h1>Switching…</h1><section><p>The Pi is moving to its network. Open the address you wrote down from the network it uses. ' +
     'If the Pi cannot connect, <b>' + esc(i.setup_ssid) + '</b> comes back: join it and reopen this page.</p></section>'; return; }
   if (i.phase === 'saved' && !S.editing) { app.innerHTML = summary(); return; }
@@ -141,37 +179,54 @@ function collect() {                           // the form's fields into S.f (ke
   if (n.mode === 'own') { n.ssid = v('ossid'); n.psk = v('opsk'); n.channel = +v('ochan'); }
   remember();
 }
-const SECRET = ['range_password', 'range_password2', 'director_password', 'admin_password', 'admin_password2'];
-function remember() {                          // the phone may close this page while the WiFi is tested: keep what was typed
-  try { const keep = Object.assign({}, S.f, {network: Object.assign({}, S.f.network, {psk: undefined})}); SECRET.forEach(k => delete keep[k]);
-        sessionStorage.setItem('fet_setup', JSON.stringify(keep)); } catch (e) {}
+let saveTimer;
+function remember() {                          // the phone may close this page while the WiFi is tested: the Pi keeps what was
+  clearTimeout(saveTimer);                     // typed (no passwords from here; they go with Save and are kept there)
+  saveTimer = setTimeout(() => call('/api/draft', Object.assign({}, S.f, {network: Object.assign({}, S.f.network, {psk: undefined})})).catch(() => {}), 600);
 }
-try { const old = JSON.parse(sessionStorage.getItem('fet_setup') || 'null'); if (old && old.network) S.f = old; } catch (e) {}
+function adopt(d) {                            // the Pi's copy of what was typed, on opening the page again
+  if (!d) return;
+  ['hostname', 'country', 'timezone', 'director', 'admin', 'ssh'].forEach(k => { if (d[k] !== undefined) S.f[k] = d[k]; });
+  if (d.network) S.f.network = Object.assign({mode: 'cable', address: 'dhcp', channel: 6}, d.network);
+  S.kept = d.kept || [];
+}
 function leaseFor() { const n = S.f.network, i = S.info; return n.mode === 'cable' ? i.cable : (i.test && i.test.ok && i.test.ssid === n.ssid ? i.test.lease : null); }
 async function refresh() {
   const r = await call('/api/info').catch(() => null);
-  if (r && r.status === 200) { if (S.info) collect(); S.info = r.data; render(); }
+  if (r && r.status === 200) {
+    if (S.info) collect();
+    S.info = r.data;
+    if (!S.loaded) { adopt(r.data.draft); S.loaded = true; }
+    else S.kept = (r.data.draft && r.data.draft.kept) || [];
+    render();
+  }
 }
 document.addEventListener('click', async e => {
   const el = e.target.closest('button,input[data-addr]');
   if (!el) return;
   collect();
   const n = S.f.network;
-  if (el.dataset.mode) { e.preventDefault(); n.mode = el.dataset.mode; n.address = 'dhcp'; return render(); }
-  if (el.dataset.addr) { n.address = el.dataset.addr === 'fixed' ? Object.assign({}, leaseFor()) : 'dhcp'; return render(); }
-  if (el.id === 'test') { S.msg = ''; const r = await call('/api/test', {ssid: n.ssid, psk: n.psk}); if (r.status !== 200) S.msg = r.data.error || 'error'; return refresh(); }
+  if (el.dataset.mode) { e.preventDefault(); n.mode = el.dataset.mode; n.address = el.dataset.mode === 'wifi' ? 'keep' : 'dhcp'; remember(); return render(); }
+  if (el.dataset.addr) { n.address = el.dataset.addr === 'fixed' ? Object.assign({}, leaseFor()) : el.dataset.addr; remember(); return render(); }
   if (el.id === 'save') {
     S.msg = ''; S.busy = true; render();
     const body = Object.assign({}, S.f, {clock_ms: Date.now(), network: Object.assign({}, n, {address: n.address})});
     const r = await call('/api/finish', body).catch(() => null);
     S.busy = false; S.editing = false;
     if (!r || r.status !== 200) S.msg = (r && r.data.error) || 'no answer from the Pi';
+    ['range_password', 'range_password2', 'director_password', 'admin_password', 'admin_password2'].forEach(k => { S.f[k] = ''; });   // kept on the Pi now
     return refresh();
   }
   if (el.id === 'back') { S.editing = true; return render(); }
   if (el.id === 'switch') { const r = await call('/api/switch', {}); if (r.status !== 200) S.msg = r.data.error || 'error'; return refresh(); }
 });
-document.addEventListener('change', e => { if (e.target.id === 'ssid') { collect(); render(); } });
+document.addEventListener('change', e => { if (e.target.id === 'ssid' || e.target.id === 'country' || e.target.id === 'tz') { collect(); render(); } });
+document.addEventListener('input', () => {     // typing: what is still needed, and the button, without redrawing the field
+  if (!S.info || !$('save')) return;
+  collect();
+  const fresh = document.createElement('div'); fresh.innerHTML = saveButton(S.f.network.mode === 'own' || S.f.network.mode === 'cable' ? (S.info.reopen ? 'Save network' : 'Save settings') : '');
+  $('save').disabled = fresh.querySelector('#save').disabled; $('need').innerHTML = fresh.querySelector('#need').innerHTML;
+});
 refresh();
 setInterval(() => { if (S.info && ['testing', 'switching', 'applying'].includes(S.info.phase)) refresh(); }, 3000);
 </script>

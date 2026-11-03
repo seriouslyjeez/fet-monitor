@@ -296,24 +296,60 @@ class Flow(unittest.TestCase):
         fixed = {"mode": "cable", "address": {"ip": "192.168.1.20", "prefix": 24, "gateway": "192.168.1.1"}}
         self.assertEqual(p.finish(good(network=fixed))["address"], "192.168.1.20", "a fixed address needs no live one")
 
-    def test_club_wifi_must_be_tested_first(self):
+    def test_club_wifi_is_tested_then_saved(self):
+        """Everything filled in, then one button: the WiFi is tested and, if it works, everything is applied and the
+        address to write down is shown; if not, the form comes back with all of it kept (user testing, 2026-11-02)."""
         p = self.portal(wifi={"Club": "pass-word"})
-        net = {"mode": "wifi", "ssid": "Club", "psk": "pass-word", "address": "dhcp"}
-        with self.assertRaisesRegex(SetupError, "test the club WiFi"):
-            p.finish(good(network=net))
-        p.test_wifi("Club", "wrong-pw")
-        self.assertEqual((p.phase, p.test["ok"], p.sys.ap), ("form", False, True), "a failed test: the setup network is back")
-        self.assertEqual(p.info()["test"], {"ok": False, "why": "wrong WiFi password", "ssid": "Club"}, "the password is never sent back")
-        with self.assertRaisesRegex(SetupError, "test the club WiFi"):
-            p.finish(good(network=net))
-        p.test_wifi("Club", "pass-word")
+        net = {"mode": "wifi", "ssid": "Club", "psk": "wrong-pw", "address": "keep"}
+        self.assertIsNone(p.finish(good(network=net, country="DE")), "tested first: the page follows the phase")
         self.assertIn(("try", "Club", False), p.sys.log, "the trial runs with the setup network down (one radio)")
-        self.assertTrue(p.test["ok"] and p.sys.ap)
-        with self.assertRaisesRegex(SetupError, "test the club WiFi"):
-            p.finish(good(network=dict(net, psk="other-pw!")))
-        self.assertEqual(p.finish(good(network=net))["address"], "192.168.1.57")
+        self.assertEqual((p.phase, p.sys.ap, p.saved), ("form", True, None), "failed: the form again, the setup network back")
+        self.assertIn("Could not connect to Club: wrong WiFi password", p.error)
+        self.assertEqual([x for x in p.sys.log if x[0] == "apply"], [], "nothing applied")
+        d = p.info()["draft"]
+        self.assertEqual((d["country"], d["admin"], d["network"]["ssid"], d["network"]["address"]), ("DE", "clubadmin", "Club", "keep"))
+        self.assertEqual(sorted(d["kept"]), sorted(["admin_password", "admin_password2", "psk", "range_password", "range_password2"]))
+        self.assertNotIn("range-pass", json.dumps(p.info()), "passwords are never sent back over the open network")
+        self.assertNotIn("wrong-pw", json.dumps(p.info()), "nor the WiFi password")
+        blank = {k: "" for k in ("range_password", "range_password2", "admin_password", "admin_password2")}
+        s = p.finish(good(network=dict(net, psk="pass-word"), country="DE", **blank))   # only the WiFi password typed again
+        self.assertIsNone(s)
+        self.assertEqual((p.phase, p.error), ("saved", None))
+        self.assertEqual(p.summary["address"], "192.168.1.57")
+        self.assertTrue(p.summary["fixed"], "keep: the address it got is its fixed one")
+        self.assertEqual(p.saved["network"]["address"]["ip"], "192.168.1.57")
+        self.assertEqual(p.saved["range_password"], "range-pass", "kept passwords were used")
+        self.assertEqual(p.saved["country"], "DE")
         with self.assertRaisesRegex(SetupError, "choose the club WiFi"):
             p.test_wifi("Club", "short")
+
+    def test_what_was_typed_is_kept_without_passwords_coming_back(self):
+        now = [0.0]
+        p = Portal(FakeSystem(), self.done, sleep=lambda s: None, background=False, clock=lambda: now[0])
+        p.start()
+        p.remember({"hostname": "lane", "country": "US", "range_password": "sneaky-pw", "admin": "bob",
+                    "network": {"mode": "wifi", "ssid": "Club", "psk": "pass-word", "address": "keep"}, "junk": "x" * 9999})
+        d = p.info()["draft"]
+        self.assertEqual((d["hostname"], d["admin"], d["kept"], "junk" in d), ("lane", "bob", [], False),
+                         "saving as it goes takes no passwords")
+        p.remember(good(admin="bob"), secrets=True)
+        p.remember({"hostname": "lane2"})                       # the page saving as it goes: passwords stay kept
+        self.assertIn("admin_password", p.info()["draft"]["kept"])
+        self.assertEqual(p.remember({}, secrets=True)["admin_password"], "admin-pass")
+        full = p.remember(good(network={"mode": "wifi", "ssid": "Club", "psk": "pass-word"}), secrets=True)
+        self.assertEqual(p.remember(dict(full, network={"mode": "wifi", "ssid": "Other", "psk": ""}), secrets=True)["network"].get("psk"),
+                         "", "another network: its password is not the kept one")
+        now[0] += 30 * 60 + 1
+        self.assertIsNone(p.info()["draft"], "forgotten after 30 minutes without a change")
+        self.assertEqual(p.remember({}, secrets=True).get("admin_password"), None)
+
+    def test_draft_is_forgotten_once_set_up(self):
+        p = self.portal(cable={"ip": "192.168.1.30", "prefix": 24, "gateway": "192.168.1.1", "dns": []})
+        p.finish(good(network={"mode": "cable", "address": "keep"}))
+        self.assertEqual(p.saved["network"]["address"]["ip"], "192.168.1.30", "the cable's address kept as fixed")
+        self.assertIsNotNone(p.info()["draft"], "kept while the summary shows (Change settings)")
+        p.switch()
+        self.assertEqual((p.phase, p.draft), ("done", {}))
 
     def test_own_network(self):
         p = self.portal()
@@ -429,8 +465,11 @@ class OverHttp(unittest.TestCase):
         self.assertEqual(st, 403)
         st, _, body = self.req("POST", "/api/finish", good(admin="root"))
         self.assertEqual((st, "admin login" in json.loads(body)["error"]), (400, True))
+        st, _, body = self.req("POST", "/api/draft", {"hostname": "lane", "admin_password": "x" * 20})
+        self.assertEqual((st, self.portal.info()["draft"]["hostname"], self.portal.draft["admin_password"]), (200, "lane", "admin-pass"),
+                         "saving as it goes never sets a password (the one from the failed save above is kept)")
         st, _, body = self.req("POST", "/api/finish", good())
-        self.assertEqual((st, json.loads(body)["summary"]["token"]), (200, "tok-123"))
+        self.assertEqual((st, json.loads(body)["summary"]["token"], json.loads(body)["phase"]), (200, "tok-123", "saved"))
         st, _, body = self.req("POST", "/api/switch", {})
         self.assertEqual((st, self.portal.phase), (200, "done"))
 

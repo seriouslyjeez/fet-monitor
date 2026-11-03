@@ -1,9 +1,12 @@
 """The first-time setup portal: an open WiFi network "FeTMonitor-Setup-XXXX" and this page on port 80.
 
 Flow (one person, one phone):
-  form       the page; nearby WiFi networks were scanned before the setup network started (one radio)
-  testing    club WiFi only: the setup network goes down for up to a minute, the Pi joins the club WiFi, notes its
-             address and router, and the setup network comes back with the result (the phone rejoins it)
+  form       the page; nearby WiFi networks were scanned before the setup network started (one radio). What is typed
+             is kept here (draft) until the setup ends or DRAFT_TTL_S without a change: the phone's captive-portal
+             window often closes while the WiFi is tested. Passwords are kept but never sent back (open network).
+  testing    club WiFi only, after everything is filled in: the setup network goes down for up to a minute, the Pi
+             joins the club WiFi, notes its address and router, and the setup network comes back (the phone rejoins
+             it): saved if it worked, else the form again, filled in, with the reason
   saved      every setting except the network is applied; the page shows the address and device token to write down
   switching  the setup network goes away and the chosen network takes over; done (setup.done written) when it works,
              otherwise the setup network comes back with the reason
@@ -26,17 +29,21 @@ log = logging.getLogger("fetsetup")
 PAGE = Path(__file__).resolve().parent / "web" / "setup.html"
 MAX_BODY = 16 * 1024
 SERVER_PORT = 8080
+DRAFT_TTL_S = 30 * 60                     # what was typed is forgotten after this long without a change
+SECRETS = ("range_password", "range_password2", "director_password", "admin_password", "admin_password2")
+TEXT = ("hostname", "country", "timezone", "director", "admin")
 
 
 class Portal:
     def __init__(self, system: System, done_file: Path, sleep: Callable[[float], None] = time.sleep, background: bool = True,
-                 reopen: bool = False):
+                 reopen: bool = False, clock: Callable[[], float] = time.monotonic):
         """reopen: the Pi is set up but found no network at boot: only its country and network can be set here."""
         self.sys, self.done_file, self.sleep, self.background, self.reopen = system, Path(done_file), sleep, background, reopen
         self.lock = threading.Lock()
         self.phase, self.error, self.test, self.saved, self.summary = "form", None, None, None, None
         self.ssid = "FeTMonitor-Setup-" + system.serial_suffix()
         self.networks, self.stopped = [], threading.Event()
+        self.clock, self.draft, self.draft_at = clock, {}, 0.0
 
     def start(self) -> None:
         """Scan first (the radio is free), then open the setup network."""
@@ -56,10 +63,77 @@ class Portal:
             test = {k: v for k, v in self.test.items() if k != "psk"} if self.test else None     # never sent back: the network is open
             return {"phase": self.phase, "error": self.error, "test": test, "summary": self.summary, "setup_ssid": self.ssid, "reopen": self.reopen,
                     "networks": self.networks, "cable": self.sys.lease(ETH), "countries": [{"code": c, "name": n} for c, n in countries],
-                    "zones": self.sys.zones(), "own_ip": config.OWN_IP}
+                    "zones": self.sys.zones(), "own_ip": config.OWN_IP, "draft": self._draft_view(),
+                    "min_password": config.MIN_PASSWORD, "min_admin_password": config.MIN_ADMIN_PASSWORD}
+
+    # ------------------------------------------------------------------------------------- what was typed (draft)
+    def _draft_now(self) -> dict:
+        """The draft, or {} once it is DRAFT_TTL_S old (lock held)."""
+        if self.draft and self.clock() - self.draft_at > DRAFT_TTL_S:
+            self.draft = {}
+        return self.draft
+
+    def _draft_view(self) -> Optional[dict]:
+        """The draft for the page: everything but the passwords, which are only marked as kept (lock held)."""
+        d = self._draft_now()
+        if not d:
+            return None
+        out = {k: d[k] for k in TEXT + ("ssh",) if k in d}
+        n = d.get("network")
+        if isinstance(n, dict):
+            out["network"] = {k: v for k, v in n.items() if k != "psk"}
+        out["kept"] = [k for k in SECRETS if d.get(k)] + (["psk"] if isinstance(n, dict) and n.get("psk") else [])
+        return out
+
+    @staticmethod
+    def _clean(raw) -> dict:
+        """Only the form's own fields, of plausible size (anyone on the open setup network can send anything)."""
+        if not isinstance(raw, dict):
+            return {}
+        out = {k: raw[k][:200] for k in TEXT + SECRETS if isinstance(raw.get(k), str)}
+        if isinstance(raw.get("ssh"), bool):
+            out["ssh"] = raw["ssh"]
+        if isinstance(raw.get("clock_ms"), int):
+            out["clock_ms"] = raw["clock_ms"]
+        n = raw.get("network")
+        if isinstance(n, dict):
+            net = {k: n[k][:100] for k in ("mode", "ssid", "psk") if isinstance(n.get(k), str)}
+            if isinstance(n.get("channel"), int):
+                net["channel"] = n["channel"]
+            a = n.get("address")
+            if a in ("dhcp", "keep"):
+                net["address"] = a
+            elif isinstance(a, dict):
+                net["address"] = {k: (a[k][:40] if isinstance(a[k], str) else a[k]) for k in ("ip", "prefix", "gateway")
+                                  if isinstance(a.get(k), (str, int)) and not isinstance(a.get(k), bool)}
+            out["network"] = net
+        return out
+
+    def remember(self, raw, secrets: bool = False) -> dict:
+        """Keep what the page sent; an empty password keeps the one kept before (the page never has it back). Returns
+        the full settings to check. Without secrets (the page saving as it goes) passwords are not taken."""
+        new = self._clean(raw)
+        with self.lock:
+            old = self._draft_now()
+            if not secrets:
+                for k in SECRETS:
+                    new.pop(k, None)
+                if isinstance(new.get("network"), dict):
+                    new["network"].pop("psk", None)
+            for k in SECRETS:
+                if not new.get(k) and old.get(k):
+                    new[k] = old[k]
+            on, nn = old.get("network") or {}, new.get("network")
+            if isinstance(nn, dict) and not nn.get("psk") and on.get("psk") and on.get("mode") == nn.get("mode") \
+                    and on.get("ssid") == nn.get("ssid"):
+                nn["psk"] = on["psk"]                  # the same network: its kept password
+            self.draft, self.draft_at = new, self.clock()
+            return dict(new, network=dict(nn)) if isinstance(nn, dict) else dict(new)
 
     # ------------------------------------------------------------------------------------- test the club WiFi
-    def test_wifi(self, ssid: str, psk: str) -> None:
+    def test_wifi(self, ssid: str, psk: str, then: Optional[dict] = None) -> None:
+        """Join the club WiFi for a moment (one radio: the setup network goes down meanwhile). then: the checked
+        settings to apply if it works (the page goes straight to the address to write down); if not, the form again."""
         if not config.ssid_ok(ssid if isinstance(ssid, str) else "") or not config.wpa_psk_ok(psk if isinstance(psk, str) else ""):
             raise config.SetupError("choose the club WiFi and enter its password (8 to 63 characters)")
         with self.lock:
@@ -79,7 +153,16 @@ class Portal:
                 self._reopen()
                 with self.lock:
                     self.test = dict(result, ssid=ssid, psk=psk)
-                    self.phase = "form"
+                    if then is None or not result.get("ok"):  # worked, with settings to apply: straight on (no form)
+                        self.phase = "form"
+                    if then is not None and not result.get("ok"):
+                        self.error = f"Could not connect to {ssid}: {result.get('why')}. Nothing was changed; correct it and try again."
+            if then is not None and result.get("ok"):
+                try:
+                    self._apply(then, result.get("lease"))
+                except config.SetupError as exc:
+                    with self.lock:
+                        self.phase, self.error = "form", str(exc)
         self._bg(run)
 
     def _reopen(self) -> None:
@@ -92,26 +175,35 @@ class Portal:
                 self.sleep(5)
 
     # ------------------------------------------------------------------------------------- save, then switch
-    def finish(self, raw: dict) -> dict:
-        """Check and apply everything but the network; returns the summary to write down."""
+    def finish(self, raw: dict) -> Optional[dict]:
+        """Check everything; the club WiFi is tested first (then applied, in the background: None is returned and the
+        page follows the phase). Otherwise apply everything but the network and return the summary to write down."""
+        with self.lock:
+            if self.phase not in ("form", "saved"):
+                raise config.SetupError("busy: wait a moment")
+        raw = self.remember(raw, secrets=True)
         codes = sorted(c for c, _ in self.sys.countries())
         cfg = config.check_reopen(raw, codes) if self.reopen else config.check(raw, codes, self.sys.zones())
         net = cfg["network"]
-        live = None
         if net["mode"] == "wifi":
             t = self.test
-            if not t or not t["ok"] or t["ssid"] != net["ssid"] or t["psk"] != net["psk"]:
-                raise config.SetupError("test the club WiFi connection first (with this network and password)")
-            if net["address"] == "dhcp":
-                live = t["lease"]["ip"]
-        elif net["mode"] == "cable":
-            lease = self.sys.lease(ETH)
-            if net["address"] == "dhcp":
-                if not lease:
-                    raise config.SetupError("the cable has no address: is it plugged in to the club router?")
-                live = lease["ip"]
+            if t and t["ok"] and t["ssid"] == net["ssid"] and t["psk"] == net["psk"]:
+                return self._apply(cfg, t["lease"])
+            with self.lock:
+                self.error = None
+            self.test_wifi(net["ssid"], net["psk"], then=cfg)
+            return None
+        lease = self.sys.lease(ETH) if net["mode"] == "cable" else None
+        if net["mode"] == "cable" and net["address"] in ("dhcp", "keep") and not lease:
+            raise config.SetupError("the cable has no address: is it plugged in to the club router?")
+        return self._apply(cfg, lease)
+
+    def _apply(self, cfg: dict, lease: Optional[dict]) -> dict:
+        cfg = dict(cfg, network=config.resolve_keep(cfg["network"], lease))
+        net = cfg["network"]
+        live = lease["ip"] if lease and net["address"] == "dhcp" else None
         with self.lock:
-            if self.phase not in ("form", "saved"):
+            if self.phase not in ("form", "saved", "testing"):    # testing: the WiFi test that just worked
                 raise config.SetupError("busy: wait a moment")
             self.phase = "applying"
         try:
@@ -159,7 +251,7 @@ class Portal:
             self.done_file.parent.mkdir(parents=True, exist_ok=True)
             self.done_file.write_text(json.dumps({"at": int(time.time()), "mode": net["mode"], "reopened": self.reopen}))
             with self.lock:
-                self.phase = "done"
+                self.phase, self.draft = "done", {}          # set up: what was typed is not kept any longer
             self.stopped.set()
         self._bg(run)
 
@@ -246,7 +338,11 @@ class Handler(BaseHTTPRequestHandler):
                 p.test_wifi(body.get("ssid"), body.get("psk"))
                 return self._json(200, {"phase": "testing"})
             if self.path == "/api/finish":
-                return self._json(200, {"summary": p.finish(body)})
+                summary = p.finish(body)
+                return self._json(200, {"summary": summary, "phase": "saved" if summary else "testing"})
+            if self.path == "/api/draft":                # the page keeps what is typed here as it goes (no passwords)
+                p.remember(body)
+                return self._json(200, {"ok": True})
             if self.path == "/api/switch":
                 p.switch()
                 return self._json(200, {"phase": "switching"})

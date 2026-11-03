@@ -945,6 +945,9 @@ console.log('OK');
 {
   const {targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS} = X;
   assert.strictEqual(targetSettingsPanel({targets: [{device_id: 'a', name: 'A'}]}, {}), '', 'no FeT targets: no panel');
+  const why = targetSettingsPanel({targets: [{device_id: 'a', name: 'Lane <1>', bridge_fw: '0.2.0'}, {device_id: 'b', name: 'B', bridge_fw: '0.4.0'}]}, {timages: [{version: '0.1.1'}]});
+  assert(why.includes('No target with FeT target firmware has reported yet') && why.includes('FeT Bridge 0.4.0'), 'firmware here, nothing heard: says why');
+  assert(why.includes('Lane &lt;1&gt; (0.2.0)') && !why.includes('B (0.4.0)'), 'names the targets whose bridge is too old');
   const t = {device_id: 'fet-1', name: 'Lane <1>', fet_target: {key_fp: 'ab12cd34', boot: 4, settings_id: '1234abcd',
     settings: {led_pct: 50, wait_ms: 2}, commands: [{verb: 'set', status: 'done', reply: 'out_of_range:led_pct'}, {verb: 'get', status: 'done', reply: 'ok'}]}};
   const p = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});
