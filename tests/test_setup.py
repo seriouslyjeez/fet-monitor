@@ -151,6 +151,14 @@ class Commands(unittest.TestCase):
             self.assertEqual(add[add.index("802-11-wireless-security.pmf") + 1], "1")
         self.assertEqual(len([a for a in self.rec.argvs("nmcli", "connection", "add") if "fet-test" in a or "fet-wifi" in a]), 2)
 
+    def test_facts_name_the_wifi_network(self):
+        """This Pi showed "WiFi fet-wifi" (NetworkManager's name for it): it shows the network's own name now."""
+        s = self.sys({("nmcli", "-t", "-f", "NAME,TYPE,DEVICE"): (0, "fet-wifi:802-11-wireless:wlan0\nWired connection 1:802-3-ethernet:eth0\n"),
+                      ("nmcli", "-t", "-f", "802-11-wireless.ssid", "connection", "show", "fet-wifi"): (0, "802-11-wireless.ssid:My\\:Club\n"),
+                      ("nmcli", "-t", "-f", "GENERAL.STATE"): (0, SHOW_UP)})
+        conns = s.facts()["connections"]
+        self.assertEqual([(c["name"], c["ssid"]) for c in conns], [("fet-wifi", "My:Club"), ("Wired connection 1", None)])
+
     def test_typed_networks_may_be_hidden(self):
         s = self.sys({("nmcli", "-t", "-f", "GENERAL.STATE"): (0, SHOW_UP)})
         s.try_wifi("Hidden Club", "pass-word")

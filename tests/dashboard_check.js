@@ -855,12 +855,14 @@ console.log('OK');
   const {systemPanel} = X;
   const v = {helper_installed: true, busy: false, clock_ms: Date.now() - 3600000, zones: ['UTC', 'Europe/Berlin'], networks: [{ssid: '<b>Club</b>', signal: 70, secure: true}],
     status: {state: 'failed', action: 'network', message: 'could not join <i>Club</i>: wrong WiFi password; nothing changed', time: Date.now()},
-    facts: {hostname: 'range', timezone: 'Europe/Berlin', ntp: false, ssh: false, connections: [{name: 'fet-wifi', type: 'wifi', lease: {ip: '192.168.1.20', gateway: '192.168.1.1'}},
-      {name: 'fet-range', type: 'wifi', own: true, lease: null}]}};
+    facts: {hostname: 'range', timezone: 'Europe/Berlin', ntp: false, ssh: false, connections: [{name: 'fet-wifi', ssid: 'Club <5>', type: 'wifi', lease: {ip: '192.168.1.20', gateway: '192.168.1.1'}},
+      {name: 'fet-range', ssid: 'FeTMonitor-Range', type: 'wifi', own: true, lease: null}, {name: 'Wired connection 1', type: 'cable', lease: null}]}};
   const h = systemPanel(v, {sysf: {network: {mode: 'wifi'}}});
   assert(h.includes('Not done: could not join &lt;i&gt;Club') && h.includes('<option selected>Europe/Berlin</option>'), 'status escaped; current time zone chosen');
   assert(h.includes('differs from this device') && h.includes('data-a="clock"'), 'clock an hour off and no internet time: offer this device');
   assert(h.includes('192.168.1.20') && h.includes('Own range network') && h.includes('&lt;b&gt;Club'), 'connections listed; WiFi names escaped');
+  assert(h.includes('WiFi <b>Club &lt;5&gt;</b>: 192.168.1.20') && !h.includes('<b>fet-wifi</b>'), 'the WiFi network\'s own name, not NetworkManager\'s');
+  assert(h.includes('Own range network <b>FeTMonitor-Range</b>') && h.includes('<li>Cable</li>'), 'the range network by its name; a cable by itself');
   assert(h.includes('SSH is <b>off</b>') && h.includes('data-on="1"'), 'SSH: the switch turns it on');
   assert(!/data-act="rcsys"[^>]*disabled/.test(h) && h.includes('id="sy_psk"'), 'ready: buttons enabled; WiFi password field');
   const busy = systemPanel(Object.assign({}, v, {busy: true, facts: Object.assign({}, v.facts, {ntp: true})}), {sysf: {network: {mode: 'own'}}});

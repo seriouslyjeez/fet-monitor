@@ -282,6 +282,14 @@ class System:
     def ntp_synced(self) -> bool:
         return self.run(["timedatectl", "show", "-p", "NTPSynchronized", "--value"], check=False).strip() == "yes"
 
+    def ssid_of(self, name: str) -> Optional[str]:
+        """The WiFi network a connection joins or makes (its name in NetworkManager is ours, e.g. fet-wifi)."""
+        for line in self.run(["nmcli", "-t", "-f", "802-11-wireless.ssid", "connection", "show", name], check=False).splitlines():
+            f = split_terse(line)
+            if len(f) == 2 and f[0] == "802-11-wireless.ssid" and f[1]:
+                return f[1]
+        return None
+
     def facts(self) -> dict:
         """What Range Control's System page shows (read-only; works without root)."""
         conns = []
@@ -289,6 +297,7 @@ class System:
             f = split_terse(line)
             if len(f) >= 3 and f[1] in ("802-3-ethernet", "802-11-wireless") and f[2]:
                 conns.append({"name": f[0], "type": "cable" if f[1] == "802-3-ethernet" else "wifi", "device": f[2],
+                              "ssid": self.ssid_of(f[0]) if f[1] == "802-11-wireless" else None,
                               "own": f[0] == "fet-range", "setup": f[0] == "fet-setup", "lease": self.lease(f[2])})
         tz = self.run(["timedatectl", "show", "-p", "Timezone", "--value"], check=False).strip()
         ssh = self.run(["systemctl", "is-active", "ssh"], check=False).strip() == "active"

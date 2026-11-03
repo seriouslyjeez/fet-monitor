@@ -920,7 +920,8 @@ function systemPanel(v, rc) {                   // Range Control: the Pi itself 
   const f = v.facts || {}, st = v.status, sf = rc.sysf || {}, n = sf.network || {mode: 'wifi', address: 'dhcp', channel: 6}, off = !v.helper_installed;
   const dis = off ? ' disabled' : '', skew = Math.abs((v.clock_ms || 0) - Date.now()) > 60000;
   const kept = sf.vals || {}, val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));   // typed values survive redraws
-  const conn = (f.connections || []).map(c => '<li>' + (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') + ' <b>' + esc(c.name) + '</b>' +
+  const conn = (f.connections || []).map(c => '<li>' + (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') +
+    (c.type === 'cable' ? '' : ' <b>' + esc(c.ssid || c.name) + '</b>') +                 // the network's name, not NetworkManager's
     (c.lease ? ': ' + esc(c.lease.ip) + (c.lease.gateway ? ', router ' + esc(c.lease.gateway) : '') : c.own ? ': 10.42.0.1' : '') + '</li>').join('');
   const netForm = '<div class="seg">' + [['cable', 'Cable'], ['wifi', 'Club WiFi'], ['own', 'Own range network']].map(([k, l]) =>
       '<button data-act="rcsysmode" data-v="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div>' +
