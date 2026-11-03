@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <WiFiClient.h>
 #include <httpparse.h>
+#include <esp_mac.h>
 
 namespace fete {
 
@@ -9,9 +10,9 @@ extern const char* userAgent;                     // fet_target_esp32.ino: the f
 
 uint64_t nowMs() { return (uint64_t)(esp_timer_get_time() / 1000); }
 
-std::string deviceIdFromChip() {
-  uint8_t mac[6];
-  WiFi.macAddress(mac);
+std::string deviceIdFromChip() {                  // from the chip's factory MAC (eFuse): valid before WiFi starts
+  uint8_t mac[6] = {0};
+  esp_efuse_mac_get_default(mac);
   char b[16];
   snprintf(b, sizeof b, "fet-%02x%02x%02x", mac[3], mac[4], mac[5]);
   return b;
@@ -129,7 +130,9 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   hostname_ = hostname;
   WiFi.persistent(false);                         // our settings live in /config.json, not the SDK's NVS
   WiFi.setHostname(hostname.c_str());
-  WiFi.mode(withAccessPoint ? WIFI_AP_STA : WIFI_STA);
+  // Nothing to join: the access point alone. A station with nowhere to go scans channels, and the setup network's
+  // replies to a phone get lost meanwhile (B59, 2026-11-02: DHCP answered, the phone never got the answer).
+  WiFi.mode(!withAccessPoint ? WIFI_STA : cfg_.wifiConfigured() ? WIFI_AP_STA : WIFI_AP);
   WiFi.setSleep(false);                           // the radio stays awake: a reply sent while it dozes is lost
   WiFi.setAutoReconnect(true);
   if (!cfg_.wifiConfigured()) return;

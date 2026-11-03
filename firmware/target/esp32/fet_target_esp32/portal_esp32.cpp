@@ -5,6 +5,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <jmini.h>
+#include <esp_wifi.h>
 #define FET_STAGE(n) do {} while (0)
 
 namespace fete {
@@ -39,6 +40,11 @@ Portal::Portal(fet::Fs& fs, fet::Config& cfg, Hooks& hooks, WifiNet& net, const 
 
 void Portal::begin(fet::Bridge* bridge) {
   bridge_ = bridge;
+  WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {      // who joins the setup network (USB log)
+    if (e == ARDUINO_EVENT_WIFI_AP_STACONNECTED) say("Setup network: a device joined", "");
+    else if (e == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED) say("Setup network: address given: ", IPAddress(info.wifi_ap_staipassigned.ip.addr).toString().c_str());
+    else if (e == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) say("Setup network: a device left", "");
+  });
   routes();
   server.begin();
   started_ = true;
@@ -59,12 +65,23 @@ void Portal::open(uint64_t now) {
   deadline_ = now + (uint64_t)FET_PORTAL_MINUTES * 60000UL;
   FET_STAGE(100);
   if (!(WiFi.getMode() & WIFI_AP)) WiFi.mode(WIFI_AP_STA);   // keep the station side up so shots keep flowing
-  FET_STAGE(101);
-  WiFi.softAPConfig(apIp, apIp, IPAddress(255, 255, 255, 0));
   std::string ssid = "FeTMonitor-" + id_.substr(id_.size() > 6 ? id_.size() - 6 : 0);
-  FET_STAGE(102);
-  WiFi.softAP(ssid.c_str());
-  say("Setup portal open. Join WiFi: ", ssid);
+  // 192.168.4.1/24 with DHCP is the ESP32's own default: no softAPConfig (on core 3 it left DHCP not answering, so a
+  // phone joined but got no address; seen on board B59, 2026-11-02)
+  // iPhones got no address from the ESP32's access point (802.11n, both upstream's and ours; a laptop did, and the same
+  // iPhone did from the ESP-01's 802.11b/g one: B59, 2026-11-02). A setup page needs no speed: 802.11b/g, 20 MHz.
+  esp_err_t pe = esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
+  esp_err_t be = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+  bool up = WiFi.softAP(ssid.c_str(), nullptr, 6, 0, 4);    // channel 6 and 4 phones, as upstream's own setup network
+  if (pe != ESP_OK) pe = esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);   // once it runs, if not before
+  if (be != ESP_OK) be = esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20);
+  uint8_t proto = 0;
+  esp_wifi_get_protocol(WIFI_IF_AP, &proto);
+  bool opt = WiFi.AP.enableDhcpCaptivePortal();            // DHCP option 114: phones open the setup page by themselves
+  apIp = WiFi.softAPIP();
+  say("Setup portal open. Join WiFi: ", ssid + (up ? "" : " (the access point did not start)") + " at " + apIp.toString().c_str() +
+      ", channel " + std::to_string(WiFi.channel()) + ", mode " + std::to_string((int)WiFi.getMode()) + ", protocols " +
+      std::to_string((int)proto) + (pe == ESP_OK && be == ESP_OK ? "" : ", b/g or 20 MHz not set") + (opt ? "" : ", DHCP option 114 failed"));
   FET_STAGE(103);                              // open: it only exists for a few minutes, after a deliberate action
   dns.setErrorReplyCode(DNSReplyCode::NoError);
   dns.start(53, "*", apIp);                               // every name -> us, so phones show the setup page
@@ -99,11 +116,13 @@ void Portal::sendPage(int code, const std::string& body) {
 }
 
 void Portal::handleRoot() {
+  if (open_) say("Setup page: form sent to a phone", "");
   if (open_) deadline_ = now_ + (uint64_t)FET_PORTAL_MINUTES * 60000UL;
   sendPage(200, open_ ? form("") : statusPage());
 }
 
 void Portal::handleNotFound() {
+  if (open_) say("Setup page: redirecting ", std::string(server.hostHeader().c_str()) + server.uri().c_str());
   if (!open_) { server.send(404, "text/plain", "not found"); return; }
   deadline_ = now_ + (uint64_t)FET_PORTAL_MINUTES * 60000UL;
   server.sendHeader("Location", "http://192.168.4.1/", true);        // captive-portal probes land on the form
