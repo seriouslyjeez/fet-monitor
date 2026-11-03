@@ -141,6 +141,16 @@ class Commands(unittest.TestCase):
         self.assertEqual(s.scan(), [], "nothing nearby: given up after a few tries")
         self.assertEqual(len(self.rec.argvs("nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY")), System.SCAN_TRIES)
 
+    def test_wifi_suits_the_pi_3(self):
+        """Power saving off, no protected management frames: the Pi 3 joined the club WiFi only in 802.11b mode."""
+        s = self.sys({("nmcli", "-t", "-f", "GENERAL.STATE"): (0, SHOW_UP)})
+        s.try_wifi("Club", "pass-word")
+        s.use_network({"mode": "wifi", "ssid": "Club", "psk": "pass-word", "address": "dhcp"})
+        for add in [a for a in self.rec.argvs("nmcli", "connection", "add") if "fet-test" in a or "fet-wifi" in a]:
+            self.assertEqual(add[add.index("802-11-wireless.powersave") + 1], "2", add[:8])
+            self.assertEqual(add[add.index("802-11-wireless-security.pmf") + 1], "1")
+        self.assertEqual(len([a for a in self.rec.argvs("nmcli", "connection", "add") if "fet-test" in a or "fet-wifi" in a]), 2)
+
     def test_typed_networks_may_be_hidden(self):
         s = self.sys({("nmcli", "-t", "-f", "GENERAL.STATE"): (0, SHOW_UP)})
         s.try_wifi("Hidden Club", "pass-word")

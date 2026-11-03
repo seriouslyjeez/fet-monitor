@@ -43,8 +43,11 @@ from .firmware import ID_RE, flash_label, version_tuple
 from .seriallink import SerialLink
 
 SYS_TTY = "/sys/class/tty"
-BAUD = "460800"
-ESP32_BAUD = "230400"                  # the ESP32 board's FTDI garbled reads at 460800 and 921600 (board B59, 2026-11-02)
+BAUD = "230400"                        # 460800 garbled transfers: the ESP32 board's FTDI (B59) and an ESP-01 on a Pi 3 (2026-11)
+ESP32_BAUD = "230400"
+SLOW_BAUD = "115200"                   # once more at this speed when a transfer still arrives garbled
+GARBLED_RE = re.compile(r"Invalid SLIP escape|Corrupt data|Invalid head of packet|Packet content transfer stopped|"
+                        r"MD5 of file does not match|checksum mismatch", re.I)
 ESP32_APP, ESP32_OTADATA = 0x10000, (0xE000, 0x2000)   # the 8 MB layout: app slot 0; which slot boots
 ESP32_FULL = 8 << 20
 APP_READ = 0x80000                     # the first 512 KB holds the application (and its identification string)
@@ -199,6 +202,10 @@ class FlashStation:
     def _esp(self, port: str, args: List[str], timeout: float, progress: bool = False, baud: str = BAUD) -> str:
         code, out = self.run(self._esptool() + ["--port", port, "--baud", baud] + args, timeout,
                              self._progress if progress else None)
+        if code != 0 and GARBLED_RE.search(out) and baud != SLOW_BAUD:    # the USB link, not the chip: the step once more, slower
+            self._set_step(f"the USB link garbled the data: once more at {SLOW_BAUD} baud")
+            code, out = self.run(self._esptool() + ["--port", port, "--baud", SLOW_BAUD] + args, timeout * 2,
+                                 self._progress if progress else None)
         if code != 0:
             raise FlashError(why_esptool(out))
         return out

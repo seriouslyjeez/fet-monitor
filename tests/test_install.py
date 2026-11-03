@@ -261,6 +261,15 @@ class Installer(InstallerBase):
         self.assertFalse((self.root / "var/lib/fet-monitor/device_token").exists(), "no token in the image: every Pi makes its own")
         self.assertIn("fet-system.path", state["enabled"])
 
+    def test_wifi_defaults_for_the_pi_3(self):
+        (self.root / "etc/NetworkManager").mkdir(parents=True)            # Raspberry Pi OS has NetworkManager
+        self.os("trixie")
+        r = self.run_install("--image")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        conf = (self.root / "etc/NetworkManager/conf.d/fet-wifi.conf").read_text()
+        self.assertIn("wifi.powersave=2", conf)
+        self.assertIn("wifi-sec.pmf=1", conf)
+
     def test_no_network_now_means_setup_on_next_start(self):
         (self.bin / "ip").write_text("#!/bin/sh\nexit 2\n")
         r = self.run_install("--no-password")

@@ -269,6 +269,10 @@ install_units() {
   local u
   for u in "${UNITS[@]}"; do install -m 0644 "$HERE/deploy/$u" "$UNIT_DIR/$u"; done
   if [ -d "$AVAHI_DIR" ]; then install -m 0644 "$HERE/deploy/fet-monitor.avahi.service" "$AVAHI_DIR/fet-monitor.service"; fi
+  if [ -d "$R/etc/NetworkManager" ]; then                # WiFi defaults that suit the Pi 3's chip too (deploy/fet-wifi.nm.conf)
+    install -d "$R/etc/NetworkManager/conf.d"
+    install -m 0644 "$HERE/deploy/fet-wifi.nm.conf" "$R/etc/NetworkManager/conf.d/fet-wifi.conf"
+  fi
   [ "$IMAGE" -eq 1 ] || systemctl daemon-reload            # a chroot has no running systemd; enable still works
   systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path fet-os-update.timer >/dev/null 2>&1
   info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup),"

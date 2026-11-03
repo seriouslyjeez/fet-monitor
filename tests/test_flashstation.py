@@ -373,6 +373,46 @@ class Flash(Case):
             st.start_flash("/dev/ttyUSB0", sha, "rc")
 
 
+class GarbledLink(Case):
+    """A slow or noisy USB link (an ESP-01 on a Pi 3, 2026-11-03: "Invalid SLIP escape (0xdb, 0x32)"): the step is done
+    once more at 115200 baud; garbled again, the reason is shown."""
+    def setUp(self):
+        super().setUp()
+        usb_tree(self.sys, "ttyUSB0", "1a86", "7523")
+
+    def flaky(self, times):
+        tools = Tools()
+        left = [times]
+
+        def run(argv, timeout, cb):
+            if "verify_flash" in argv and left[0] > 0:
+                left[0] -= 1
+                tools.calls.append(argv)
+                return 2, "Verifying...\nA fatal error occurred: Invalid SLIP escape (0xdb, 0x32)"
+            return tools(argv, timeout, cb)
+        st = self.station(tools)
+        st.run = run
+        return st, tools
+
+    def test_once_more_slower(self):
+        st, tools = self.flaky(1)
+        sha = self.image("a", "0.4.0", 1)
+        st.identify("/dev/ttyUSB0")
+        job = st.start_flash("/dev/ttyUSB0", sha, "test")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        verifies = [c for c in tools.calls if "verify_flash" in c]
+        self.assertEqual([c[c.index("--baud") + 1] for c in verifies], ["230400", "115200"])
+
+    def test_garbled_twice_is_reported(self):
+        st, tools = self.flaky(2)
+        sha = self.image("a", "0.4.0", 1)
+        st.identify("/dev/ttyUSB0")
+        job = st.start_flash("/dev/ttyUSB0", sha, "test")
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("Invalid SLIP escape", job["message"])
+        self.assertEqual(len([c for c in tools.calls if "verify_flash" in c]), 2, "once more, not forever")
+
+
 class Configure(Case):
     def setUp(self):
         super().setUp()

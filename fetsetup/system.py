@@ -22,6 +22,9 @@ DATA_DIR = "/var/lib/fet-monitor"
 CODE_DIR = "/opt/fet-monitor"
 SVC_USER = "fet-monitor"
 OURS = ("fet-setup", "fet-test", "fet-wifi", "fet-eth", "fet-range")
+# Power saving off and no protected management frames: the Raspberry Pi 3's WiFi chip (BCM43438) otherwise missed
+# replies or failed with some routers (it joined only in 802.11b mode; 2026-11-03). Also deploy/fet-wifi.nm.conf.
+WIFI_COMPAT = ("802-11-wireless.powersave", "2", "802-11-wireless-security.pmf", "1")
 
 Runner = Callable[[List[str], Optional[str], float], Tuple[int, str]]
 
@@ -209,6 +212,7 @@ class System:
         try:
             self.run(["nmcli", "connection", "add", "type", "wifi", "ifname", WIFI, "con-name", "fet-test", "autoconnect", "no",
                       "ssid", ssid, "802-11-wireless.hidden", "yes",    # also a hidden network (typed by hand)
+                      *WIFI_COMPAT,
                       "wifi-sec.key-mgmt", "wpa-psk", "wifi-sec.psk", psk])
             code, out = self.run_(["nmcli", "--wait", str(wait_s), "connection", "up", "fet-test"], None, wait_s + 10)
             if code != 0:
@@ -236,7 +240,7 @@ class System:
             self.run(["nmcli", "connection", "up", "fet-eth"], timeout=40, check=False)
         elif mode == "wifi":
             self.run(["nmcli", "connection", "add", "type", "wifi", "ifname", WIFI, "con-name", "fet-wifi", "autoconnect", "yes",
-                      "connection.autoconnect-priority", "50", "ssid", net["ssid"], "802-11-wireless.hidden", "yes",
+                      "connection.autoconnect-priority", "50", "ssid", net["ssid"], "802-11-wireless.hidden", "yes", *WIFI_COMPAT,
                       "wifi-sec.key-mgmt", "wpa-psk",
                       "wifi-sec.psk", net["psk"]] + self._ipv4(net["address"]))
             self.run(["nmcli", "connection", "up", "fet-wifi"], timeout=60, check=False)
