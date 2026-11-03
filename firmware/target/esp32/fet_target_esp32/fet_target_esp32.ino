@@ -216,7 +216,7 @@ static Esp32Actions actions;
 static tgt::Commands* commands = 0;
 static tgt::LineReader usbIn;
 
-static void lights() { ledcWrite(PIN_LED_PWM, lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 8191L / 100)); }
+static void lights() { ledcWrite(PIN_LED_PWM, lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 4095L / 100)); }
 
 void Esp32Actions::settingsChanged(const tgt::Settings& s) {
   lights();
@@ -295,7 +295,7 @@ void setup() {
   for (int i = 0; i < 4; i++) pinMode(PIN_RUN[i], INPUT);
   pinMode(PIN_REF_CLK, INPUT);
   pinMode(PIN_SW_A, INPUT_PULLUP); pinMode(PIN_SW_B, INPUT_PULLUP);
-  ledcAttach(PIN_LED_PWM, 5000, 13);                                       // upstream pwm.c: 5 kHz, 13 bits
+  ledcAttach(PIN_LED_PWM, 5000, 12);                                       // 5 kHz like upstream; 13 bits is not possible here
   ledcWrite(PIN_LED_PWM, 0);
   rmtInit(PIN_STATUS, RMT_TX_MODE, RMT_MEM_NUM_BLOCKS_1, 10000000);
   statusLeds(YELLOW, OFF, OFF);                                            // starting
@@ -352,9 +352,11 @@ void loop() {
   paper.tick(now);
   if (paper.busy()) { xSemaphoreTake(capLock, portMAX_DELAY); capture.quietFor(now); xSemaphoreGive(capLock); }
   static bool flashing = false;
+  static uint32_t lastLeds = 0;
   bool flash = (int32_t)(shotFlashUntil - now) > 0;
-  if (flash != flashing) {
+  if (flash != flashing || now - lastLeds >= 1000) {                      // and once a second: the 12 V may come later
     flashing = flash;
+    lastLeds = now;
     statusLeds(v12Volts() >= 10.0f ? GREEN : RED, OFF, flash ? WHITE : GREEN);
   }
   static uint32_t lastTemp = 0;
