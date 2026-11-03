@@ -20,7 +20,7 @@
 #include <settings.h>
 #include <shotline.h>
 
-#define FW_VERSION "0.1.2"
+#define FW_VERSION "0.1.3"
 // In the flash image, so the Pi's flash station can tell what a .hex file is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-mega/" FW_VERSION;
 #define USE_WATCHDOG 0   // off until the board's bootloader is known to clear the watchdog (old Mega bootloaders
@@ -269,4 +269,13 @@ void loop() {
   if (paper.busy()) { noInterrupts(); capture.quietFor(now); interrupts(); }   // the motor is not a shot
   static uint32_t lastTemp = 0;
   if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); }
+  // The hello again: the WiFi module starts with the Mega and may not listen yet at the first one (then the server never
+  // learns this target's key: 2026-11-03). At 3 s and 15 s, then every 10 minutes; the server ignores a repeat.
+  static uint8_t hellos = 1;
+  static uint32_t nextHello = 3000;
+  if ((int32_t)(now - nextHello) >= 0) {
+    sendHello();
+    hellos = hellos < 3 ? hellos + 1 : 3;
+    nextHello = now + (hellos == 2 ? 12000UL : 600000UL);
+  }
 }

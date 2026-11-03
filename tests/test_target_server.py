@@ -115,6 +115,21 @@ class Shots(Base):
             self.assertEqual(r["temp_c"], 20.0)
         self.assertEqual(rows[0]["ring"], 10)
 
+    def test_a_target_whose_key_this_pi_does_not_know_is_listed(self):
+        """The key was set by another Pi (or the hello was lost): the target still shows in Range Control, with what it
+        says its key is, so the page can say what to do (2026-11-03)."""
+        other = bytes(range(32, 64))
+        from fetserver.targetproto import key_fingerprint
+        self.send("target_hello", hello(3, key=other, fp=key_fingerprint(other)))
+        t = self.target()
+        self.assertEqual((t["key_fp"], t["hello_key_fp"]), (None, key_fingerprint(other)), "not bound, but noted")
+        self.assertIsNotNone(t["target_seen_ms"])
+        ft = next(x for x in self.core.admin_view()["targets"] if x["device_id"] == "t1")["fet_target"]
+        self.assertEqual((ft["key_fp"], ft["hello_key_fp"]), (None, key_fingerprint(other)))
+        self.send("target_shot", shot(1, forward(1.0, 2.0, GEOM, 20.0), key=other), dev="t2")   # shots only, no hello yet
+        ft2 = next(x for x in self.core.admin_view()["targets"] if x["device_id"] == "t2")["fet_target"]
+        self.assertEqual((ft2["hello_key_fp"], ft2["key_fp"]), (None, None), "listed from its shots alone")
+
     def test_an_esp32_board_counts_at_10_mhz(self):
         """The ESP32-S3 board 6.2 counts the 10 MHz oscillator (PCNT); upstream's circle there is 232 mm. The board
         revision comes from the signed hello; an unsigned one cannot change it once a key is bound."""

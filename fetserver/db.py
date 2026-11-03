@@ -406,6 +406,12 @@ MIGRATIONS = [
     -- ESP32-S3 board 6.2): which counter clock its raw times are in (Mega 8 MHz, ESP32 10 MHz) and its default circle.
     ALTER TABLE targets ADD COLUMN board_rev INTEGER;
     """,
+    """
+    -- What a FeT target firmware says about itself even when this Pi cannot check it: the key fingerprint in its hello
+    -- (a key set by another Pi is not known here), and when a FeT target line last arrived (hello, shot or reply).
+    ALTER TABLE targets ADD COLUMN hello_key_fp TEXT;
+    ALTER TABLE targets ADD COLUMN target_seen_ms INTEGER;
+    """,
 ]
 
 

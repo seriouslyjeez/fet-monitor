@@ -322,6 +322,7 @@ class Core:
     def _derive_target_shot(self, c, event_id, device_id, event_ms, raw) -> None:
         """A signed shot: wrong signature -> no shot at all (ProtoError); no key here -> stored, auth 0."""
         p = parse_shot(raw, self._target_key(c, device_id))
+        c.execute("UPDATE targets SET target_seen_ms=? WHERE device_id=?", (self.now_ms(), device_id))
         sol = solve(p["counts"], self._geometry(c, device_id), 20.0 if p["temp_c"] is None else p["temp_c"])
         n, e, s, w = p["raw_counts"]
         if not sol.ok and sum(1 for t in p["counts"] if t is not None) >= 3:   # heard by enough, but fits no point
@@ -344,6 +345,8 @@ class Core:
             r = c.execute("SELECT key_hex FROM target_keys WHERE fingerprint=?", (h["key_fp"],)).fetchone()
             key = bytes.fromhex(r["key_hex"]) if r else None
         h = parse_hello(raw, key)                                          # raises on a wrong signature
+        c.execute("UPDATE targets SET hello_key_fp=?, target_seen_ms=? WHERE device_id=?",   # what it says, checked or not
+                  (h["key_fp"] or "none", self.now_ms(), device_id))
         t = c.execute("SELECT key_fp, target_boot FROM targets WHERE device_id=?", (device_id,)).fetchone()
         version = "FeT target " + h["fw"]
         if h["authenticated"]:
@@ -1074,14 +1077,15 @@ class Core:
             r = self.db.conn().execute("SELECT ota_space, flash_size FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
             t["fw_job"] = jobs.get(t["device_id"])
-            ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version
-                                           FROM targets WHERE device_id=?""", (t["device_id"],)).fetchone()
-            if ft["key_fp"] or ft["target_settings_json"]:                   # FeT target firmware: its own settings
+            ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
+                                                  hello_key_fp, target_seen_ms FROM targets WHERE device_id=?""", (t["device_id"],)).fetchone()
+            if ft["key_fp"] or ft["target_settings_json"] or ft["target_seen_ms"] or (ft["arduino_version"] or "").startswith("FeT target "):
                 cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
                                                  WHERE device_id=? AND type='target' ORDER BY id DESC LIMIT 5""", (t["device_id"],))
                 v = ft["arduino_version"] or ""
                 t["fet_target"] = {"key_fp": ft["key_fp"], "boot": ft["target_boot"], "settings_id": ft["target_settings_id"],
                                    "board_rev": ft["board_rev"], "esp32": (ft["board_rev"] or 0) >= self.ESP32_REV,
+                                   "hello_key_fp": ft["hello_key_fp"], "seen": iso(ft["target_seen_ms"]) if ft["target_seen_ms"] else None,
                                    "version": v[len("FeT target "):] if v.startswith("FeT target ") else None,
                                    "settings": json.loads(ft["target_settings_json"]) if ft["target_settings_json"] else None,
                                    "commands": [{"id": c["id"], "verb": c["line"].split(" ")[4], "status": c["status"],

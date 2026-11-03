@@ -968,7 +968,12 @@ console.log('OK');
   assert(p.includes('class="bad">out_of_range:led_pct') && count(p, /data-act="rct(get|set|paper)"/g) === 3, 'the target\'s own answers; three actions');
   assert.strictEqual(TARGET_SETTINGS.length, 10);
   const none = targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]}, {});
-  assert(none.includes('No key this Pi knows'), 'no key: said so');
+  assert(none.includes('its hello has not') && none.includes('New key'), 'no key, no hello yet: said so, and what to do');
+  const fk = ft => targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, ft)})]}, {});
+  assert(fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('signs with key 1a2b3c4d, which this Pi does not know') &&
+         fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('its Arduino Mega'), 'a key from another Pi: named, with the fix');
+  assert(fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('no key yet') && fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('ESP32 board'),
+         'no key at all (an ESP32 board)');
   assert.deepStrictEqual(targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '50', 'fet-1:paper_ms': '300', 'fet-1:wait_ms': ''}}),
     {settings: {paper_ms: 300}, errors: []}, 'only what changed');
   const bad = targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '101', 'fet-1:face': '1.5', 'fet-1:ring_ms': 'x'}});
