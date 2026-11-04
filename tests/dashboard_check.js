@@ -467,6 +467,17 @@ assert(!matchBanner(Object.assign({}, info, {kind: 'record'}), mine, state()).in
   assert(!mcConsole({status: {role: 'officer'}, detail: inRec, speak: false}).includes('mcsighters'));
   assert(mcConsole({status: {role: 'officer'}, detail: Object.assign({}, inRec, {rb: {sighters_any_time: true}}), speak: false}).includes('data-act="mcsighters" data-id="lane-1"'),
     'the console: back to sighters for a lane in record');
+  // ISSF 3-position (7.7.3): the switch between positions on one clock
+  const p3 = Object.assign({}, info, {kind: 'record', position: 'kneeling', pos_shots: 20, pos_of: 20, between: false, can_back: true});
+  assert(matchBanner(p3, mine, state()).includes('data-act="mcmysighters"') && matchBanner(p3, mine, state()).includes('Kneeling: 20 of 20 MATCH shots'),
+    'a position done: Back to sighters');
+  assert(!matchBanner(Object.assign({}, p3, {can_back: false, pos_shots: 12}), mine, state()).includes('mcmysighters'), 'not in the middle of a position');
+  const p3s = Object.assign({}, p3, {between: true, can_back: false, position: 'prone'});
+  assert(matchBanner(p3s, mine, state()).includes('data-act="mcmyrecord"') && matchBanner(p3s, mine, state()).includes('Sighting for prone'),
+    'sighting for the next position: Start record');
+  const l3 = Object.assign({}, DET().lanes[0], {position: 'prone', between: true, can_back: false, pos_shots: 0, pos_of: 20});
+  const c3 = mcConsole({status: {role: 'officer'}, detail: DET({lanes: [l3]}), speak: false});
+  assert(c3.includes('sighting for prone') && c3.includes('data-act="mcrecord" data-id="lane-1"'), 'the console: the position and the switch');
 }
 assert(matchBanner(Object.assign({}, info, {state: 'ready'}), mine, state()).includes('Waiting for the start'));
 assert.strictEqual(matchBanner(null, mine, state()), '');

@@ -11,7 +11,7 @@ anywhere (electronic targets). Times are minutes unless marked.
 
 | Book (id) | Source | Formats | Finals built |
 |---|---|---|---|
-| **ISSF** (`ISSF`) | ISSF Rule Book, 2026 edition (2025), third print, effective 19 October 2026. USA Shooting applies ISSF rules for these events (its 2025 extract for NCAA quotes the same 6.11.1). | 10 m Air Rifle 60 | none yet (6.17.2 written up below) |
+| **ISSF** (`ISSF`) | ISSF Rule Book, 2026 edition (2025), third print, effective 19 October 2026. USA Shooting applies ISSF rules for these events (its 2025 extract for NCAA quotes the same 6.11.1). | 10 m Air Rifle 60, 10 m Air Pistol 60, 50 m Rifle 3 Positions (indoor, outdoor), 50 m Rifle Prone 60 | 10 m Air Rifle Final (6.17.2) |
 | **CMP Air Gun** (`CMP-AG`) | CMP Air Rifle and Air Pistol Competition Rules, 5th edition 2026 (effective 1 March 2026), with the CMP Range Officer scripts "60-shot event on electronic targets" (7 Jan 2025) and "Air gun final on EST" (20 Feb 2026), from https://thecmp.org/competitions/cmp-competitions-rulebooks/ (authoritative for CMP, the user's choice). Standing only. | AR60 | Air Gun Final (10.2) |
 | **CMP 3PAR** (`CMP-3PAR`) | CMP National Standard Three-Position Air Rifle Rules, 16th edition, October 2026 to September 2028, with the RO scripts on https://thecmp.org/air/national-standard-three-position-air-rifle-rules/. Also the book NFHS / high-school 3-position air rifle uses. | 3x10, 3x20, 60 standing, 3x20 standing | Standard Final (10.4); Standing Start-from-Zero (10.5, after a standing event); Three-Position Start-from-Zero (10.3, after 3x10 / 3x20) |
 | **NRA** (`NRA`) | NRA Precision Air Rifle Rules, 2025. | 3x10, 3x20, 3x40, 40 and 60 standing | NRA Final (7.1.2) |
@@ -71,6 +71,26 @@ before the start); officer-paced by default, or spoken (20 s for the announcer's
 e). Every series and shot stops at its time or as soon as every finalist still in it has fired. After shots 12-22 the
 lowest finalist is out (only places that exist), shot 24 decides gold and silver; a tie at a decision inserts a
 one-shot shoot-off (LOAD, 5 s, START, 50 s) for the tied right away, repeated until broken (6.17.2 h).
+
+### 50 m Rifle and 10 m Air Pistol qualifications (6.11.1, 6.11.9.1-3, 7.7)
+
+| Event | Face | Scoring | Phases |
+|---|---|---|---|
+| 50 m Rifle 3 Positions | 50 m Rifle | whole rings (6.11.9.2) | set-up 10, preparation and sighting 15 (kneeling), pause 30 s, MATCH 60 shots: 20 kneeling, 20 prone, 20 standing (7.7.1) in 1:30 indoor / 1:45 outdoor (7.7.4) |
+| 50 m Rifle Prone | 50 m Rifle | decimal (6.11.9.3) | set-up 10, preparation and sighting 15, pause 30 s, MATCH 60 shots in 50 (7.7.4); no final |
+| 10 m Air Pistol | 10 m Air Pistol | whole rings (6.11.9.1) | set-up 10, preparation and sighting 15, pause 30 s, MATCH 60 shots in 75 |
+
+Time announced at 10 and 5 minutes (6.11.1.2 e), 30 seconds before the end of sighting (6.11.1.1 i).
+
+**Between positions (7.7.3).** The 3-position MATCH firing is one phase on one clock, in three blocks of 20. After a
+position's 20 MATCH shots the athlete switches to sighting (*Back to sighters*, on their own screen, or the range
+officer on the console), fires unlimited sighters in the new position (no extra time) and switches back (*Start
+record*), which moves the target to the next position. *Back to sighters* is refused in the middle of a position and
+after standing has started. A MATCH shot after a position's 20 without that switch is flagged as an extra shot in
+that position: ISSF 7.7.3 nullifies it and resets the target to sighting (suggested: annul; then *Back to
+sighters*). A pause and resume keeps a lane that is sighting between positions in sighting.
+
+Finals for 50 m 3 Positions (6.17.3) and 10 m Air Pistol are not built yet.
 
 ### ISSF procedures
 

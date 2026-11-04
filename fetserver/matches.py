@@ -219,7 +219,43 @@ class Matches:
                 continue
             out = (ln["start_phase"] > phase and not everyone) or (only_lanes is not None and ln["lane"] not in only_lanes and not only) \
                 or ln["out_place"] is not None
+            if mode == "record" and 0 <= phase < len(phases) and mf.blocks(phases[phase]) and self._position_state(c, m["id"], ln, phase)[2]:
+                out = True                              # sighting between positions (ISSF 7.7.3): stays so until Start record
             self.core._set_mode_in(c, ln["device_id"], "sighter" if out else mode, self._session(m, ln), now)
+
+    def _position_view(self, c, m, ln, fmt) -> dict:
+        """For the screens, during a record phase in several positions: which position this lane is in, whether it is
+        sighting between positions, and whether it may switch to sighting now (its position's MATCH shots are done)."""
+        phase = ln["own_phase"] if ln["own_phase"] is not None else m["phase"]
+        p = fmt["phases"][phase] if 0 <= phase < len(fmt["phases"]) else None
+        blk = mf.blocks(p) if p else None
+        if not blk:
+            return {}
+        n, pos, between = self._position_state(c, m["id"], ln, phase)
+        pos = min(pos, len(blk) - 1)
+        return {"position": p["positions"][pos + 1 if between and pos + 1 < len(blk) else pos]["position"], "between": between,
+                "can_back": not between and pos < len(blk) - 1 and n >= blk[pos] and m["state"] == "running",
+                "pos_shots": max(0, min(n, blk[pos]) - (blk[pos - 1] if pos else 0)), "pos_of": p["positions"][pos]["shots"]}
+
+    def _position_state(self, c, mid, ln, phase) -> tuple:
+        """A record phase in several positions (ISSF 7.7.3), for one lane: (record shots so far in it, the position it is
+        in (0, 1, 2), sighting between positions now?). Going to sighting and back to MATCH moves on to the next."""
+        start = c.execute("SELECT id, at_ms FROM match_log WHERE match_id=? AND kind='phase_start' AND phase=? ORDER BY id DESC LIMIT 1",
+                          (mid, phase)).fetchone()
+        if start is None:
+            return 0, 0, False
+        devs = self._lane_devs(c, mid, ln["device_id"])
+        q = ",".join("?" * len(devs))
+        pos, between = 0, False
+        for r in c.execute(f"SELECT kind FROM match_log WHERE match_id=? AND kind IN ('to_sighters','start_record') AND phase=? "
+                           f"AND device_id IN ({q}) AND id>? ORDER BY id", (mid, phase, *devs, start["id"])):
+            if r["kind"] == "to_sighters":
+                between = True
+            elif between:
+                pos, between = pos + 1, False
+        n = 0 if ln["series_id"] is None else c.execute("SELECT COUNT(*) FROM shots WHERE series_id=? AND stream='scored' AND event_ms>=?",
+                                                       (ln["series_id"], start["at_ms"])).fetchone()[0]
+        return n, pos, between
 
     @staticmethod
     def _clear_lanes(c, mid) -> None:
@@ -803,7 +839,10 @@ class Matches:
                 if ln["moving_since_ms"] is not None:
                     raise MatchError("the shooter is moving to another target: press Ready first")
                 counting = ln["own_phase"] is not None or m["state"] == "running"
-                if ln["sighting"]:
+                if p["kind"] == "record" and mf.blocks(p) and self._position_state(c, mid, ln, phase)[2]:
+                    if not counting:
+                        raise MatchError("record can start only while this shooter's time is running")
+                elif ln["sighting"]:
                     if p["kind"] not in ("record", "stage") or not counting:
                         raise MatchError("record can start only while this shooter's time is running")
                 else:
@@ -814,6 +853,22 @@ class Matches:
                 c.execute("UPDATE match_lanes SET sighting=0 WHERE match_id=? AND device_id=?", (mid, device_id))
                 self._log(c, mid, now, "start_record", phase, device_id, {"by": by})
                 self._set_modes(c, m, "record", now, only=device_id)
+            elif action == "back_to_sighters" and p["kind"] == "record" and mf.blocks(p):
+                # ISSF 7.7.3: after a position's MATCH shots the athlete switches to sighting for the next position
+                blk = mf.blocks(p)
+                n, pos, between = self._position_state(c, mid, ln, phase)
+                if m["state"] != "running" and ln["own_phase"] is None:
+                    raise MatchError("only while this shooter's time is running")
+                if between:
+                    raise MatchError("already sighting for the next position")
+                if pos >= len(blk) - 1:
+                    raise MatchError(f"{p['positions'][-1]['position']} is the last position: no sighters after its MATCH shots started")
+                if n < blk[pos]:
+                    done = n - (blk[pos - 1] if pos else 0)
+                    raise MatchError(f"finish the {p['positions'][pos]['position']} shots first ({done} of {p['positions'][pos]['shots']}): "
+                                     "sighters only between positions")
+                self._log(c, mid, now, "to_sighters", phase, device_id, {"by": by, "rule": rb.cite(rb.book_of(fmt), "7.7.3")})
+                self._set_modes(c, m, "sighter", now, only=device_id)
             elif action == "back_to_sighters":                 # NRA SB 9.2: sighting shots at any time; record goes on later
                 book = rb.book_of(fmt)
                 if not rb.sighters_any_time(book):
@@ -971,7 +1026,8 @@ class Matches:
             devs = set(self._lane_devs(c, m["id"], ln["device_id"]))
             mine = [r for r in log if r["device_id"] in devs]
             switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
-            backs = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "to_sighters"]       # NRA SB 9.2
+            backs = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "to_sighters"]       # NRA SB 9.2, ISSF 7.7.3
+            pos_log = [(r["phase"], r["at_ms"], 1 if r["kind"] == "to_sighters" else 0) for r in mine if r["kind"] in ("to_sighters", "start_record")]
             readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] in ("lane_ready", "sighters")] + \
                 [(r["phase"], r["at_ms"]) for r in log if r["kind"] == "sighters" and r["device_id"] is None]
             stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
@@ -981,6 +1037,24 @@ class Matches:
                 rejoin = [a_start] if ph == ln["start_phase"] and ln["from_match"] is not None else []   # unlimited sighters
                 ready = max([at for q, at in readies if q == ph and a_start <= at <= t] + rejoin, default=None)   # until record starts
                 return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
+
+            def pos_events(ph, a_start, t, sighter):  # ISSF 7.7.3: to sighting (1) and back to MATCH (0), in log order. A
+                # command in the same millisecond as the shot came before it when it explains the shot's stream: a
+                # sighter after "to sighting", a record shot after "back to MATCH"
+                return [k for q, at, k in pos_log if q == ph and a_start <= at and (at < t or (at == t and k == (1 if sighter else 0)))]
+
+            def between_at(ph, a_start, t):           # sighting between positions when the shot was fired
+                ev = pos_events(ph, a_start, t, True)
+                return bool(ev) and ev[-1] == 1
+
+            def pos_at(ph, a_start, t):               # the position a record shot belongs to: one more after each switch back
+                pos, btw = 0, False
+                for k in pos_events(ph, a_start, t, False):
+                    if k:
+                        btw = True
+                    elif btw:
+                        pos, btw = pos + 1, False
+                return pos
 
             def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move, nor back to sighters, since)
                 sw = max((at for q, at in switches if q == ph and at >= a_start and t > at), default=None)
@@ -1033,7 +1107,8 @@ class Matches:
                         why, code = f"during {p['label'].lower()} (no firing)", "no_fire"
                     elif p["kind"] == "sight" and rec:
                         why, code = f"a record shot during {p['label'].lower()}", "record_in_sight"
-                    elif p["kind"] == "record" and not rec and not sighting_ok(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
+                    elif p["kind"] == "record" and not rec and not sighting_ok(w["phase"], attempt_start[(w["phase"], w["attempt"])], t) \
+                            and not (mf.blocks(p) and between_at(w["phase"], attempt_start[(w["phase"], w["attempt"])], t)):
                         why, code = f"a sighting shot during {p['label'].lower()}", "sighter_in_record"
                     elif p["kind"] == "stage" and not rec and in_record(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
                         why, code = "a sighting shot after record started", "sighter_after_record"
@@ -1041,11 +1116,18 @@ class Matches:
                         why, code, pair = check                # not counted (yet): it does not use up a record shot
                     elif rec:
                         key = (w["phase"], w["attempt"])
-                        counted[key] = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0) + 1   # a later relay: shots already fired
-                        if counted[key] > p["shots"]:
-                            why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
-                        elif check:                            # decided to count: still listed with its decision
-                            why, code, pair = check
+                        base = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0)   # a later relay: shots already fired
+                        blk = mf.blocks(p)
+                        pos = pos_at(w["phase"], attempt_start[key], t) if blk else 0
+                        if blk and pos < len(blk) and blk[pos] <= base < p["shots"]:
+                            why, code = (f"an extra {p['positions'][pos]['position']} shot: after its {p['positions'][pos]['shots']} MATCH shots, "
+                                         "without switching to sighting", "extra_in_position")
+                        else:
+                            counted[key] = base + 1
+                            if counted[key] > p["shots"]:
+                                why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
+                            elif check:                        # decided to count: still listed with its decision
+                                why, code, pair = check
                 if why and s["id"] is not None:
                     out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
                                 "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
@@ -1122,7 +1204,8 @@ class Matches:
                           "online": bool(t) and now - t["last_seen_ms"] <= self.core.offline_after_ms,
                           "sighters": counts["sighter"], "record": counts["scored"],
                           "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False,
-                          "installed_face": faces.face(t["face_id"] if t else None).id})   # the mask on it (Range Control)
+                          "installed_face": faces.face(t["face_id"] if t else None).id,    # the mask on it (Range Control)
+                          **self._position_view(c, m, ln, fmt)})
         return {"id": m["id"], "name": m["name"], "format": fmt, "face": faces.view(faces.face(fmt.get("face"))), "state": m["state"], "created_by": m["created_by"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
@@ -1279,6 +1362,7 @@ class Matches:
         if lc["sighting"]:
             clock.update(in_record=False, sighting=True)
         clock["moved_from"] = lc["moved_from"]
+        clock.update(self._position_view(c, r, ln, json.loads(r["format_json"])))   # ISSF 3-position: the position, the switch
         return clock
 
     # ------------------------------------------------------------------------------------------- results

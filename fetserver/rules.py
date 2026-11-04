@@ -182,6 +182,9 @@ _TOO_MANY = {rb.ISSF: ("ISSF 6.11.5", "Too many shots: the extra shots are annul
                      "Annul the highest-value record shot instead if that is not this one.")}
 _PAUSED = {rb.ISSF: ("ISSF 6.11.1.3 a", "A shot after a STOP is scored as a miss.", "miss", None),
            rb.PAR: ("CMP 3PAR 7.17.3", "A shot fired by mistake after an emergency STOP: a warning; a match shot counts (more shots after that: misses).", "count", None)}
+_EXTRA_POSITION = {rb.ISSF: ("ISSF 7.7.3", "A shot recorded as an extra shot in the previous position (the athlete did not switch to sighting "
+                             "after changing position) is nullified, and the target reset to sighting.", "annul",
+                             "Then press Back to sighters for this firing point, if it is not sighting already.")}
 SHOOT_OFF_RULE = {rb.AG: "CMP AG 10.3.5", rb.PAR: "CMP 3PAR 10.2.9 n", rb.ISSF: "ISSF 6.17.2 h", rb.NRA: "NRA 7.1.2 q"}
 NOT_FIRING_RULE = {rb.ISSF: "ISSF 6.17.1.14 m"}     # a finalist not in the shoot-off (or out) who fires: nullified, no penalty
 
@@ -203,6 +206,8 @@ def guidance(code, kind, stream: str, book: str) -> dict:
         table = _EXTRA_SIGHTER
     elif code == "too_many":
         table = _TOO_MANY
+    elif code == "extra_in_position":
+        table = _EXTRA_POSITION
     elif code == "paused":
         table = _PAUSED if rec else {b: (None, "A sighting shot while the clock was stopped does not count.", "ignore", None) for b in rb.BOOKS}
     if table is None:                                  # restarted, moving, a record shot during sighting: no rule says it

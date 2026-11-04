@@ -1216,14 +1216,17 @@ function remainingNow(clock, offset) {                 // ms left in the current
 }
 function matchBanner(info, t, S) {                      // on a shooter's own screen
   if (!info) return '';
-  const canRecord = ((info.kind === 'stage' && !info.in_record) || info.sighting) && info.state === 'running' && t.lease && t.lease.mine;
-  const canSight = info.kind === 'stage' && info.in_record && info.sighters_any_time && info.state === 'running' && t.lease && t.lease.mine;
+  const canRecord = ((info.kind === 'stage' && !info.in_record) || info.sighting || info.between) && info.state === 'running' && t.lease && t.lease.mine;
+  const canSight = ((info.kind === 'stage' && info.in_record && info.sighters_any_time) || info.can_back) && info.state === 'running' && t.lease && t.lease.mine;
   const label = info.state === 'ready' ? 'Waiting for the start' : info.state === 'paused' ? 'Paused: ' + info.label :
     info.state === 'holding' ? 'Waiting for START: ' + info.label : info.label;
   return '<div class="mcbanner"><div><div class="mut">' + esc(info.name) + (info.competitor ? ' · ' + esc(info.competitor) : '') + ' · firing point ' + esc(info.lane) +
     (info.moved_from && info.moved_from.length ? ' (moved here from ' + info.moved_from.map(esc).join(', ') + ')' : '') + '</div>' +
     '<div class="mcphase">' + esc(label || '') + '</div>' + (info.next ? '<div class="mut">Next: ' + esc(info.next) + '</div>' : '') +
-    (info.sighting ? '<div class="mut">Sighting after the move: unlimited sighters, then start record (no sighters after that).</div>'
+    (info.position ? '<div class="mut">' + (info.between ? 'Sighting for ' + esc(info.position) + ': unlimited sighters, then Start record (ISSF 7.7.3).'
+        : esc(info.position[0].toUpperCase() + info.position.slice(1)) + ': ' + esc(info.pos_shots) + ' of ' + esc(info.pos_of) + ' MATCH shots' +
+          (info.can_back ? '. Change position, then Back to sighters.' : '')) + '</div>'
+      : info.sighting ? '<div class="mut">Sighting after the move: unlimited sighters, then start record (no sighters after that).</div>'
       : info.kind === 'stage' ? '<div class="mut">' + (info.in_record ? 'Record shots: ' + esc(info.shots) + ' in this stage' +
           (info.sighters_any_time ? '. Back to sighters at any time (NRA SB 9.2); record goes on where it was.' : '')
         : info.sighters_any_time ? 'Sighting. Start record when ready; you may go back to sighters later.' : 'Sighting. Start record when ready: no sighters after that.') + '</div>' : '') +
@@ -1441,6 +1444,9 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
     return '<tr><td>' + (l.pos ? '<b>' + esc(l.pos) + '</b> ' : '') + l.lane + '</td><td><span class="dot ' + (l.online ? 'on' : '') + '"></span>' + esc(l.target) +
       (l.moved_from && l.moved_from.length ? '<div class="mut">moved from ' + l.moved_from.map(esc).join(', ') + '</div>' : '') + '</td>' +
       '<td>' + esc(l.competitor || '–') + laneTime(l, d) + '</td><td>' + l.sighters + '</td><td>' + l.record + ' / ' + d.record_shots + '</td><td><div class="mcbar" style="margin:0">' +
+      (l.position ? '<span class="mut">' + esc(l.between ? 'sighting for ' + l.position : l.position + ' ' + l.pos_shots + '/' + l.pos_of) + '</span>' +
+        (l.can_back ? ' <button data-act="mcsighters" data-id="' + esc(l.device_id) + '">Back to sighters</button>' : '') +
+        (l.between ? ' <button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') : '') +
       (stage ? (l.in_record ? (d.rb && d.rb.sighters_any_time ? '<span class="mut">in record</span> <button data-act="mcsighters" data-id="' + esc(l.device_id) + '">Back to sighters</button>'
                                 : '<span class="mut">in record</span>') : '<button data-act="mcrecord" data-id="' + esc(l.device_id) + '">Start record</button>') : '') +
       (l.own === 'moving' && !l.stop ? '<label class="mut">extra <input type="number" min="0" max="60" step="0.5" style="width:56px" id="rdy_' + esc(l.device_id) + '" value="' + mins + '"> min</label>' +

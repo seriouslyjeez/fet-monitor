@@ -31,9 +31,25 @@ MAX_SECONDS = 4 * 3600
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
 
-def P(kind, label, minutes=0, seconds=0, *, shots=0, position="", warnings=(), start="", end="", rule=""):
-    return {"kind": kind, "label": label, "seconds": int(minutes * 60 + seconds), "shots": shots, "position": position,
-            "warnings": [{"at": int(a), "say": s} for a, s in warnings], "start": start, "end": end, "rule": rule}
+def P(kind, label, minutes=0, seconds=0, *, shots=0, position="", warnings=(), start="", end="", rule="", positions=None):
+    out = {"kind": kind, "label": label, "seconds": int(minutes * 60 + seconds), "shots": shots, "position": position,
+           "warnings": [{"at": int(a), "say": s} for a, s in warnings], "start": start, "end": end, "rule": rule}
+    if positions:                  # ISSF 3-position (7.7.3): one clock for all; the athlete goes to sighting between positions
+        out["positions"] = [{"position": q, "shots": n} for q, n in positions]
+    return out
+
+
+def blocks(p: dict) -> Optional[List[int]]:
+    """A record phase fired in several positions on one clock: the record shot count at the end of each position
+    ([20, 40, 60]); None otherwise."""
+    ps = p.get("positions")
+    if not ps:
+        return None
+    out, n = [], 0
+    for q in ps:
+        n += q["shots"]
+        out.append(n)
+    return out
 
 
 def _issf_qual():
@@ -50,6 +66,49 @@ def _issf_qual():
             P("record", "Match firing", 75, shots=60, position="standing", rule="6.11.9.1, 6.11.1.2 e",
               warnings=[(600, "Ten minutes"), (300, "Five minutes")], start="Match firing. Start.", end="Stop. Unload."),
         ]}
+
+
+ISSF_ED = "ISSF Rule Book 2026 (third print, eff. 19 Oct 2026)"
+
+
+def _issf_qual60(fid, name, face, scoring, minutes, notes, position="standing", positions=None, rule="6.11.9.1"):
+    """ISSF 6.11.1: athletes called to the line 25 minutes before the start, 10 minutes set-up, 15 minutes preparation
+    and sighting (30 s announced, 6.11.1.1 i), a 30 s pause while the targets are reset for MATCH (j), then MATCH
+    firing with the time announced at 10 and 5 minutes (6.11.1.2 e)."""
+    first = positions[0][0] if positions else position
+    return {
+        "id": fid, "name": name, "book": "ISSF", "rulebook": "ISSF", "tie_rules": "ISSF", "edition": ISSF_ED, "face": face,
+        "scoring": scoring, "team_size": 3, "notes": notes,
+        "phases": [
+            P("setup", "Equipment set-up", 10, rule="6.11.1.1", start="Athletes to the line. Ten minutes to set up your equipment."),
+            P("sight", "Preparation and sighting", 15, position=first, warnings=[(30, "Thirty seconds")], rule="6.11.1.1 g-j",
+              start="Preparation and sighting time. Start.", end="End of preparation and sighting. Stop."),
+            P("pause", "Targets to match", 0, 30, rule="6.11.1.1 j"),
+            P("record", "Match firing", minutes, shots=60, position="" if positions else position, rule=f"{rule}, 6.11.1.2",
+              warnings=[(600, "Ten minutes"), (300, "Five minutes")], start="Match firing. Start.", end="Stop. Unload.",
+              positions=positions),
+        ]}
+
+
+def _issf_50m():
+    k = (("kneeling", 20), ("prone", 20), ("standing", 20))
+    note3 = ("20 shots kneeling, prone, standing, in that order (7.7.1), in one time limit. After kneeling and after prone the "
+             "athlete switches to sighting (Back to sighters), fires unlimited sighters in the new position and switches back to "
+             "MATCH (Start record); no extra time (7.7.3). A record shot after a position's 20 without that switch is an extra "
+             "shot in that position: it is nullified and the target reset to sighting (7.7.3). Full ring scoring (6.11.9.2). "
+             "The final (6.17.3) is not built yet.")
+    return (
+        _issf_qual60("issf-r3p-in", "50m Rifle 3 Positions, indoor (ISSF)", "issf-r50", "integer", 90, note3 + " Indoor range: 1 hour 30 minutes.",
+                     positions=k, rule="6.11.9.2, 7.7.4"),
+        _issf_qual60("issf-r3p-out", "50m Rifle 3 Positions, outdoor (ISSF)", "issf-r50", "integer", 105, note3 + " Outdoor range: 1 hour 45 minutes.",
+                     positions=k, rule="6.11.9.2, 7.7.4"),
+        _issf_qual60("issf-r50p", "50m Rifle Prone 60 (ISSF)", "issf-r50", "decimal", 50,
+                     "60 shots prone in 50 minutes on electronic targets, decimal scoring (6.11.9.3, 7.7.4). No final: the ranking after "
+                     "the qualification decides the medals.", position="prone", rule="6.11.9.3, 7.7.4"),
+        _issf_qual60("issf-ap60", "10m Air Pistol 60 shots (ISSF)", "issf-ap10", "integer", 75,
+                     "60 shots in 1 hour 15 minutes, full ring (integer) scoring (6.11.9.1). The final is not built yet.",
+                     rule="6.11.9.1"),
+    )
 
 
 def _cmp_3p(n):
@@ -261,13 +320,17 @@ def _ag_ar60():
 
 BUILTIN: Dict[str, dict] = {f["id"]: f for f in (
     _issf_qual(), _ag_ar60(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
-    _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60)) + tuple(f() for f in SB_FORMATS)}
+    _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60)) + _issf_50m() + tuple(f() for f in SB_FORMATS)}
 
 
 def layout(fmt: dict) -> dict:
     """What the NRA smallbore tie-breaks need (ranking.summary): the record stages in order with their positions, and
     the shots per bull of the format's face."""
-    return {"stages": [(p["shots"], p.get("position") or "") for p in fmt["phases"] if p["kind"] in ("record", "stage")],
+    stages = []
+    for p in fmt["phases"]:
+        if p["kind"] in ("record", "stage"):
+            stages += [(q["shots"], q["position"]) for q in p["positions"]] if p.get("positions") else [(p["shots"], p.get("position") or "")]
+    return {"stages": stages,
             "bull": faces.face(fmt.get("face")).bull}
 
 
@@ -348,6 +411,15 @@ def validate(fmt) -> dict:
                 out["phases"][-1][key] = p[key]
         if isinstance(p.get("out"), list) and p["out"] and all(isinstance(x, int) and not isinstance(x, bool) for x in p["out"]):
             out["phases"][-1]["out"] = list(p["out"])      # several places, lowest first (3PAR 10.3.1: 8th and 7th)
+        if p.get("positions") is not None:           # several positions on one clock (ISSF 7.7.3)
+            ps = p["positions"]
+            if kind != "record" or not isinstance(ps, list) or not 2 <= len(ps) <= 4 or not all(
+                    isinstance(q, dict) and q.get("position") in POSITIONS - {""} and isinstance(q.get("shots"), int)
+                    and not isinstance(q.get("shots"), bool) and q["shots"] >= 1 for q in ps):
+                raise ValueError(f"phase {i}: positions are 2 to 4 of standing, prone, kneeling, sitting, each with its shots, in a record phase")
+            if sum(q["shots"] for q in ps) != shots:
+                raise ValueError(f"phase {i}: the positions' shots must add up to the phase's {shots}")
+            out["phases"][-1]["positions"] = [{"position": q["position"], "shots": q["shots"]} for q in ps]
         if isinstance(p.get("lanes"), list) and all(isinstance(x, int) and not isinstance(x, bool) for x in p["lanes"]):
             out["phases"][-1]["lanes"] = sorted(set(p["lanes"]))   # a shoot-off: only these firing points fire
     if not any(p["kind"] in ("record", "stage") for p in out["phases"]):
