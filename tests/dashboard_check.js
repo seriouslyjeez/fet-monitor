@@ -425,9 +425,19 @@ assert.strictEqual(remainingNow({state: 'paused', remaining_ms: 5000, ends_at_ms
 assert(Math.abs(remainingNow({state: 'running', ends_at_ms: Date.now() + 10000}, 0) - 10000) < 100);
 const MCS = (o) => state({mc: Object.assign({status: {logged_in: true, user: 'md', role: 'director', users_defined: true}, matches: [], formats: [], targets: []}, o || {})});
 assert(matchView(state({mc: {status: {logged_in: false, users_defined: false}}})).includes('data-act="mclogin"') && matchView(state({mc: {status: {logged_in: false, users_defined: false}}})).includes('match-user add'));
-assert(matchView(MCS()).includes('data-act="mcnew"') && matchView(MCS()).includes('Design your own match'));
+{
+  const tab = t => matchView(Object.assign(MCS(), {mcTab: t}));
+  assert(/<nav class="tabs"><a href="#\/match" class="on" aria-current="page">Competitions<\/a>/.test(tab('comps')) && tab('comps').includes('data-act="mccnew"'), 'Competitions: the default tab');
+  assert(tab('singles').includes('data-act="mcnew"') && !tab('singles').includes('data-act="mccnew"'), 'Single matches: their own tab');
+  assert(tab('formats').includes('Design your own match') && tab('formats').includes('None of your own yet'));
+  assert(tab('results').includes('<h3>Results</h3>') && tab('rulebooks').includes('<h3>Rulebooks</h3>') && !tab('rulebooks').includes('data-act="mcback"'));
+  ['#/match/singles', '#/match/results', '#/match/formats', '#/match/rulebooks'].forEach(u => assert(tab('comps').includes('href="' + u + '"'), u));
+  assert(matchView(Object.assign(MCS({view: 'new'}), {mcTab: 'singles'})).includes('New match') && matchView(Object.assign(MCS({view: 'new'}), {mcTab: 'singles'})).includes('class="tabs"'),
+    'a new match opens inside the tab, under the tabs');
+}
 const roView = matchView(MCS({status: {logged_in: true, user: 'ro', role: 'officer'}}));
 assert(!roView.includes('data-act="mcnew"') && roView.includes('Range officers run matches'), 'officers do not create matches');
+assert(!roView.includes('href="#/match/results"') && !roView.includes('href="#/match/formats"') && roView.includes('href="#/match/rulebooks"'), 'officers: no Results or Formats tab');
 const FMT = {name: 'Quick', edition: 'Test', record_shots: 2, phases: [{kind: 'sight', label: '<b>Sighting</b>', seconds: 60, shots: 0, rule: '7.8', warnings: []},
   {kind: 'stage', label: 'Stage', seconds: 120, shots: 2, rule: '9.2', warnings: [{at: 30, say: 'Thirty'}]}]};
 const DET = (o) => Object.assign({id: 1, name: '<i>Club</i>', state: 'running', format: FMT, record_shots: 2,
@@ -595,11 +605,12 @@ console.log('OK');
   const pl = placeSection({comp: ready, targets: D.mtargets, editp: {id: ames.id}}, ames);
   assert(pl.includes('data-pm="mrel"') && pl.includes('here now') && pl.includes('(swap)'), 'relay and target choice, swap shown');
   // Match Control home: relays are listed with their competition, not as single matches
-  const home = mcList({status: {user: 'md', role: 'director'}, comps: [{id: 1, name: 'L', format_name: 'F', competitors: 3, active: true, relays: [{id: 7, relay: 1, state: 'running'}]}],
+  const home = (m) => mcList(m, 'comps') + mcList(m, 'singles');
+  const hm = home({status: {user: 'md', role: 'director'}, comps: [{id: 1, name: 'L', format_name: 'F', competitors: 3, active: true, relays: [{id: 7, relay: 1, state: 'running'}]}],
     matches: [{id: 7, name: 'L - relay 1', format_name: 'F', state: 'running', competition_id: 1, relay: 1, clock: {}}, {id: 8, name: 'Solo', format_name: 'F', state: 'ready', competition_id: null, clock: {}}], formats: []});
-  assert(home.includes('data-act="mcopen" data-id="7"') && home.includes('Relay 1: running') && home.includes('Competitors &amp; relays'));
-  assert.strictEqual(count(home, /L - relay 1/g), 0, 'the relay is not repeated as a single match');
-  assert(home.includes('Solo'));
+  assert(hm.includes('data-act="mcopen" data-id="7"') && hm.includes('Relay 1: running') && hm.includes('Competitors &amp; relays'));
+  assert.strictEqual(count(hm, /L - relay 1/g), 0, 'the relay is not repeated as a single match');
+  assert(hm.includes('Solo'));
   assert(mcList({status: {user: 'md', role: 'director'}, compsErr: 'boom', matches: []}).includes('Could not load the competitions: boom'));
   console.log('moves OK');
 }
@@ -621,14 +632,18 @@ console.log('OK');
             {id: 2, name: 'Old', format_name: 'F', competitors: 2, active: false, busy: false, results_hidden: true, relays: []}],
     matches: [{id: 8, name: 'Solo', format_name: 'F', state: 'done', competition_id: null, results_hidden: false, clock: {}}],
     results: [{key: 'c2', kind: 'competition', name: 'Old', at_ms: 0, hidden: true}, {key: 'a3', kind: 'frozen', name: 'Gone', at_ms: 0, hidden: false}]};
-  const h = mcList(Object.assign({}, base, {msel: {c2: true, m8: true, c1: true}, rsel: {a3: true}}));
+  const mb = Object.assign({}, base, {msel: {c2: true, m8: true, c1: true}, rsel: {a3: true}});
+  const h = mcList(mb, 'comps') + mcList(mb, 'singles') + mcList(mb, 'results');
   assert(/data-msel="c1" disabled/.test(h), 'a running competition cannot be selected');
   assert(/data-msel="c2" checked/.test(h) && /data-msel="m8" checked/.test(h) && !/data-msel="c1" checked/.test(h));
-  assert(h.includes('Delete selected (2)'), 'a running competition ticked earlier is not counted: ' + h.match(/Delete selected[^<]*/)[0]);
-  assert.deepStrictEqual(X.deletable(Object.assign({}, base, {msel: {c2: true, m8: true, c1: true, m99: true}})).map(x => x[0]), ['c2', 'm8'], 'only what can be deleted is sent');
+  assert(mcList(mb, 'comps').includes('data-kind="c">Delete selected (1)') && mcList(mb, 'singles').includes('data-kind="m">Delete selected (1)'),
+    'each tab deletes only what it lists (a running competition ticked earlier is not counted)');
+  assert.deepStrictEqual(X.deletable(Object.assign({}, base, {msel: {c2: true, m8: true, c1: true, m99: true}}), 'c').map(x => x[0]), ['c2'], 'only what can be deleted is sent');
+  assert.deepStrictEqual(X.deletable(Object.assign({}, base, {msel: {c2: true, m8: true}}), 'm').map(x => x[0]), ['m8']);
   assert(h.includes('(results deleted)') && h.includes('data-act="mcresshow" data-key="c2"') && !/data-rsel="c2"/.test(h), 'deleted results: show again, not selectable');
   assert(h.includes('Delete selected results (1)') && h.includes('#/results/m8'));
-  const ro = mcList(Object.assign({}, base, {status: {user: 'ro', role: 'officer'}}));
+  const rb = Object.assign({}, base, {status: {user: 'ro', role: 'officer'}});
+  const ro = mcList(rb, 'comps') + mcList(rb, 'singles') + mcList(rb, 'results');
   assert(!ro.includes('data-msel') && !ro.includes('mcresdel') && !ro.includes('<h3>Results</h3>'), 'officers do not delete');
   console.log('delete OK');
 }

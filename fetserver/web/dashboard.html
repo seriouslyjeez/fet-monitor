@@ -1260,7 +1260,7 @@ function bookLink(mc, rbx) {                     // "Rulebook: CMP Air Gun", ope
 }
 function mcRulebooks(mc) {                       // the rulebooks: local copies on this server, and the publishers' pages
   const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin'), r = mc.rulebooks;
-  let h = '<div class="panel"><div class="row"><span class="title">Rulebooks</span><button data-act="mcback">All matches</button></div>' +
+  let h = '<div class="panel"><h3>Rulebooks</h3>' +
     '<p class="mut">Each match follows one rulebook. The copies below are stored on this server, so they open without internet at the range. ' +
     'They are the publishers\' copyright and not part of FeT Monitor: the server downloads them from the publishers\' own sites (when it has internet), ' +
     'or a match director uploads the PDF. Each copy is checked against the edition FeT Monitor follows.</p>';
@@ -1306,41 +1306,58 @@ function mcFormatEditor(mc) {
     '"Sighting + record" is NRA style: one clock, the shooter starts record. No target-change time is needed with electronic targets.</p></div>';
 }
 const RUNNING = ['running', 'paused', 'holding', 'overtime'];
-function deletable(mc) {                        // ticked matches and competitions that can be deleted now (not running)
+function deletable(mc, kind) {                  // ticked competitions ('c') or single matches ('m') that can be deleted now (not running)
   const sel = mc.msel || {};
-  return (mc.comps || []).filter(c => sel['c' + c.id] && !c.busy).map(c => ['c' + c.id, c.name])
-    .concat((mc.matches || []).filter(m => m.competition_id == null && sel['m' + m.id] && !RUNNING.includes(m.state)).map(m => ['m' + m.id, m.name]));
+  return (kind === 'm' ? [] : (mc.comps || []).filter(c => sel['c' + c.id] && !c.busy).map(c => ['c' + c.id, c.name]))
+    .concat(kind === 'c' ? [] : (mc.matches || []).filter(m => m.competition_id == null && sel['m' + m.id] && !RUNNING.includes(m.state)).map(m => ['m' + m.id, m.name]));
 }
-function mcList(mc) {
-  const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
-  const custom = (mc.formats || []).filter(f => !f.builtin), sel = mc.msel || {}, rsel = mc.rsel || {};
+const MC_TABS = [['comps', 'Competitions'], ['singles', 'Single matches'], ['results', 'Results', true], ['formats', 'Formats', true], ['rulebooks', 'Rulebooks']];
+const mcDirector = mc => !!(mc.status && (mc.status.role === 'director' || mc.status.role === 'admin'));
+const mcTab = mc => {                            // #/match/<tab>; Competitions when none, or one this user does not have
+  const m = typeof location !== 'undefined' && location.hash.match(/^#\/match\/(\w+)/), t = m && MC_TABS.find(x => x[0] === m[1]);
+  return t && (!t[2] || mcDirector(mc)) ? t[0] : 'comps';
+};
+function mcList(mc, tab) {                       // one Match Control tab (the lists; a match or competition opens over it)
+  const director = mcDirector(mc), sel = mc.msel || {}, rsel = mc.rsel || {};
   const singles = (mc.matches || []).filter(m => m.competition_id == null || mc.compsErr);   // relays are listed with their competition
   const tick = (key, busy, what) => director ? '<td><input type="checkbox" data-msel="' + key + '"' + (sel[key] && !busy ? ' checked' : '') + (busy ? ' disabled title="Running: stop it first"' : '') +
     ' aria-label="Select ' + esc(what) + '"></td>' : '';
-  const nsel = deletable(mc).length, nrsel = Object.keys(rsel).filter(k => rsel[k]).length;
-  const res = mc.results || [];
-  return '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') <button data-act="mclogout">Log out</button></span></div>' +
-    (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><button data-act="mcnew">Single match (no competitors)</button><button data-act="mcfnew">Design your own match</button><button data-act="mcrb">Rulebooks</button></div>'
-      : '<p class="mut">Range officers run matches a match director has created. <button data-act="mcrb">Rulebooks</button></p>') +
-    '<h3>Competitions</h3>' + (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Competition</th><th>Format</th><th>Competitors</th><th>Relays</th><th></th></tr>' + mc.comps.map(c =>
-      '<tr>' + tick('c' + c.id, c.busy, c.name) + '<td>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(c.format_name) + '</td><td>' + c.competitors + '</td><td>' +
-      c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(r.state) + '</button>').join(' ') + '</td>' +
-      '<td><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' + (c.results_hidden ? '' : ' <a href="#/results/c' + c.id + '">Results</a>') + '</td></tr>').join('') + '</table>' : '<p class="mut">No competitions yet.</p>') +
-    '<h3>Single matches</h3>' + (singles.length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Match</th><th>Format</th><th>State</th><th></th></tr>' + singles.map(m =>
+  const delBar = (kind, n, what) => director && n ? '<div class="mcbar"><button class="danger" data-act="mcdelsel" data-kind="' + kind + '"' + (deletable(mc, kind).length ? '' : ' disabled') + '>Delete selected' +
+    (deletable(mc, kind).length ? ' (' + deletable(mc, kind).length + ')' : '') + '</button><span class="mut">' + what + ' Their results stay on the Results page as a saved copy (unless you deleted ' +
+    'the results already). Shots stay in each target\'s history. A running match must be stopped first.</span></div>' : '';
+  const msg = mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '';
+  if (tab === 'singles') return '<div class="panel"><h3>Single matches</h3>' +
+    (director ? '<div class="mcbar"><button class="pri" data-act="mcnew">New single match</button><span class="mut">A match on its own, without a competitor list.</span></div>' : '') +
+    (singles.length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Match</th><th>Format</th><th>State</th><th></th></tr>' + singles.map(m =>
       '<tr>' + tick('m' + m.id, RUNNING.includes(m.state), m.name) + '<td>' + esc(m.name) + (m.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(m.format_name) + '</td><td>' + esc(m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '') + '</td>' +
-      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button>' + (m.state !== 'ready' && !m.results_hidden ? ' <a href="#/results/m' + m.id + '">Results</a>' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No single matches. A competition\'s relays are listed with it above.</p>') +
-    (director && ((mc.comps || []).length || singles.length) ? '<div class="mcbar"><button class="danger" data-act="mcdelsel"' + (nsel ? '' : ' disabled') + '>Delete selected' + (nsel ? ' (' + nsel + ')' : '') + '</button>' +
-      '<span class="mut">Their results stay on the Results page as a saved copy (unless you deleted the results already). Shots stay in each target\'s history. A running match must be stopped first.</span></div>' : '') +
-    (director ? '<h3>Results</h3>' + (res.length ? '<table class="t"><tr><th></th><th>Name</th><th>Kind</th><th>Date</th><th>On the Results page</th></tr>' + res.map(r =>
+      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button>' + (m.state !== 'ready' && !m.results_hidden ? ' <a href="#/results/m' + m.id + '">Results</a>' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No single matches. A competition\'s relays are on Competitions.</p>') +
+    delBar('m', singles.length, '') + msg + '</div>';
+  if (tab === 'results' && director) {
+    const res = mc.results || [], nrsel = Object.keys(rsel).filter(k => rsel[k]).length;
+    return '<div class="panel"><h3>Results</h3><p class="mut">What the public Results page, the TV and the print-outs show.</p>' + (res.length ? '<table class="t"><tr><th></th><th>Name</th><th>Kind</th><th>Date</th><th>On the Results page</th></tr>' + res.map(r =>
       '<tr><td>' + (r.hidden ? '' : '<input type="checkbox" data-rsel="' + esc(r.key) + '"' + (rsel[r.key] ? ' checked' : '') + ' aria-label="Select the results of ' + esc(r.name) + '">') + '</td>' +
       '<td>' + (r.hidden ? esc(r.name) : '<a href="#/results/' + esc(r.key) + '">' + esc(r.name) + '</a>') + '</td><td class="mut">' + esc(RES_KIND[r.kind] || '') + '</td><td class="mut">' + esc(fmtDay(r.at_ms)) + '</td>' +
       '<td>' + (r.hidden ? 'deleted <button data-act="mcresshow" data-key="' + esc(r.key) + '">Show again</button>' : 'yes') + '</td></tr>').join('') + '</table>' +
       '<div class="mcbar"><button class="danger" data-act="mcresdel"' + (nrsel ? '' : ' disabled') + '>Delete selected results' + (nrsel ? ' (' + nrsel + ')' : '') + '</button>' +
-      '<span class="mut">Off the Results page, TV, print-outs and CSV. The matches stay here, and their results can be shown again; a saved copy is deleted for good.</span></div>'
-      : '<p class="mut">No results yet.</p>') : '') +
-    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
-    (director && custom.length ? '<h3>Your formats</h3><table class="t">' + custom.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + f.phases.length + ' phases</td>' +
-      '<td><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button> <button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></td></tr>').join('') + '</table>' : '') + '</div>';
+      '<span class="mut">Off the Results page, TV, print-outs and CSV. The matches stay in Match Control, and their results can be shown again; a saved copy is deleted for good.</span></div>'
+      : '<p class="mut">No results yet.</p>') + msg + '</div>';
+  }
+  if (tab === 'formats' && director) {
+    const custom = (mc.formats || []).filter(f => !f.builtin);
+    return '<div class="panel"><h3>Formats</h3><div class="mcbar"><button class="pri" data-act="mcfnew">Design your own match</button>' +
+      '<span class="mut">The rulebook formats are built in; your own appear here.</span></div>' +
+      (custom.length ? '<table class="t">' + custom.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + f.phases.length + ' phases</td>' +
+        '<td><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button> <button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></td></tr>').join('') + '</table>'
+        : '<p class="mut">None of your own yet.</p>') + msg + '</div>';
+  }
+  return '<div class="panel"><h3>Competitions</h3>' +
+    (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><span class="mut">Competitors, classes, teams and relays, with results and score cards.</span></div>'
+      : '<p class="mut">Range officers run matches a match director has created: open a relay.</p>') +
+    (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Competition</th><th>Format</th><th>Competitors</th><th>Relays</th><th></th></tr>' + mc.comps.map(c =>
+      '<tr>' + tick('c' + c.id, c.busy, c.name) + '<td>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(c.format_name) + '</td><td>' + c.competitors + '</td><td>' +
+      c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(r.state) + '</button>').join(' ') + '</td>' +
+      '<td><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' + (c.results_hidden ? '' : ' <a href="#/results/c' + c.id + '">Results</a>') + '</td></tr>').join('') + '</table>' : '<p class="mut">No competitions yet.</p>') +
+    delBar('c', (mc.comps || []).length, 'Competitions go with their relays and competitor lists.') + msg + '</div>';
 }
 function mcConsole(mc) {
   const d = mc.detail;
@@ -1712,12 +1729,17 @@ function placeSection(mc, p) {                   // relay and target, before the
     '<button data-act="mcpmove">' + (r ? 'Move here' : on ? 'Take off relay ' + esc(on.relay) : 'Move here') + '</button></div>' +
     '<p class="mut">Before a relay starts. Choosing someone else\'s target swaps the two.</p>';
 }
-function matchView(S) {
+function matchView(S) {                          // Match Control: tabs; a match, competition or editor opens inside the tab
   const mc = S.mc || {};
-  const inner = !mc.status ? '<div class="panel"><p class="mut">Loading…</p></div>' : !mc.status.logged_in ? mcLogin(mc) :
-    mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) :
-    mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : mc.view === 'rulebooks' ? mcRulebooks(mc) : mcList(mc);
-  return '<div class="mc">' + inner + '</div>';
+  if (!mc.status) return '<div class="mc"><div class="panel"><p class="mut">Loading…</p></div></div>';
+  if (!mc.status.logged_in) return '<div class="mc">' + mcLogin(mc) + '</div>';
+  const tab = S.mcTab || mcTab(mc), director = mcDirector(mc);
+  const head = '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') ' +
+    '<button data-act="mclogout">Log out</button></span></div><nav class="tabs">' + MC_TABS.filter(t => !t[2] || director).map(([k, l]) =>
+      '<a href="#/match' + (k === 'comps' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
+  const body = mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) :
+    mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : tab === 'rulebooks' ? mcRulebooks(mc) : mcList(mc, tab);
+  return '<div class="mc">' + head + body + '</div>';
 }
 function matchUsersPanel(users, msg) {          // Range Control: who may use Match Control
   return '<div class="panel"><h3>Match Control users</h3>' + (users.length ? '<table class="t">' + users.map(u =>
@@ -1829,7 +1851,7 @@ async function refresh() {
         const cs = await matchCall('/competitions');
         if (cs.status === 200) { mc.comps = cs.data.competitions; mc.compsErr = ''; }
         else mc.compsErr = (cs.data && cs.data.error) || 'error ' + cs.status;
-        if (mc.view === 'rulebooks' || !mc.rulebooks) mc.rulebooks = await get('/rulebooks').catch(() => mc.rulebooks);
+        if (mcTab(mc) === 'rulebooks' || !mc.rulebooks) mc.rulebooks = await get('/rulebooks').catch(() => mc.rulebooks);
         if (mc.view === 'comp' && mc.copen) {
           const cd = await matchCall('/competitions/' + mc.copen);
           if (cd.status === 200) mc.comp = cd.data;
@@ -2371,7 +2393,7 @@ async function matchAct(el, a) {
   }
   if (a === 'mclogout') { await matchCall('/logout', {}); mc.view = 'list'; return refresh(); }
   if (a === 'mcback') { mc.view = 'list'; mc.open = null; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; mc.shotp = null; return refresh(); }
-  if (a === 'mcrb') { mc.view = 'rulebooks'; mc.msg = ''; return refresh(); }
+  if (a === 'mcrb') { mc.view = 'list'; mc.msg = ''; location.hash = '#/match/rulebooks'; return; }
   if (a === 'mcrbdl') {
     mc.rbBusy = el.dataset.id; mc.msg = ''; render(true);
     const res = await matchCall('/rulebooks/' + el.dataset.id + '/download', {});
@@ -2495,7 +2517,7 @@ async function matchAct(el, a) {
   }
   if (a === 'mcspeak') { mc.speak = !mc.speak; if (mc.speak) say('Sound is on. Commands will be spoken.'); return render(); }   // a tap unlocks sound in the browser
   if (a === 'mcdelsel') {                        // delete matches and competitions; their results are kept as a saved copy
-    const pick = deletable(mc), keys = pick.map(x => x[0]), names = pick.map(x => x[1]);
+    const pick = deletable(mc, el.dataset.kind), keys = pick.map(x => x[0]), names = pick.map(x => x[1]);
     if (!keys.length || !confirm('Delete ' + (keys.length === 1 ? '"' + names[0] + '"' : keys.length + ' matches and competitions (' + names.join(', ') + ')') +
       ' from Match Control?\n\nCompetitions go with their relays and competitor lists. Their results stay on the Results page as a saved copy (unless you deleted the results already). This cannot be undone.')) return;
     const res = await matchCall('/delete', {matches: keys.filter(k => k[0] === 'm').map(k => +k.slice(1)), competitions: keys.filter(k => k[0] === 'c').map(k => +k.slice(1))});
@@ -2862,7 +2884,7 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; } S.printAt = null; S.menu = false; if (S.rc) S.rc.tsOpen = null; if (S.printing) endPrint(); else refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; if (route().match) { S.mc.view = 'list'; S.mc.msg = ''; } } S.printAt = null; S.menu = false; if (S.rc) S.rc.tsOpen = null; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   openStream();
   window.addEventListener('afterprint', endPrint);
