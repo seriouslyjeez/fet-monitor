@@ -59,7 +59,7 @@ class Migrations(unittest.TestCase):
             self.assertEqual(core.matches.detail(mid)["state"], "running")
 
     def test_migrations_that_ran_somewhere_are_unchanged(self):
-        """Fingerprints of every migration that has left this machine (v1-v8 released, v9-v10 ran on a Pi, v11-v18 reported, v19-v24 released). If this fails,
+        """Fingerprints of every migration that has left this machine (v1-v8 released, v9-v10 ran on a Pi, v11-v18 reported, v19-v25 released). If this fails,
         do not edit the old migration: put it back and add a new one."""
         import hashlib
         for i, fp in enumerate(FROZEN):
@@ -67,7 +67,8 @@ class Migrations(unittest.TestCase):
 
 
 FROZEN = ['58bb67ed1ccce334', '24a5d89bea995aa9', 'a18f52b1c4efba6b', '5d4bb11e4baeb999', 'e44a05e58bd4b4f8', '446e1e8368f51072', 'cd825dfc2285a344', 'c1eddbfe1f2e9dba', 'd4601e483a6c5bff', '65323a43f0cdc3aa', 'b46244a5306832f2', '695784f7e931f966', 'ddf8be689bfcbb72', '5139bdbbdf7024a2', '5b4b72f1b211f552', '212a3540e6d21b00', 'b1b1a2561b5699f8', '6a2b5487df8f0ba1',
-          '14dfa8290ccc6ae7', '18d3074dd2e97323', '267362784d14823e', 'e001ac58c9c98ed9', 'db9d41ceb1e04ef5', 'f0b7caef8f0c2d65']   # v19-v24: released up to 0.7.0
+          '14dfa8290ccc6ae7', '18d3074dd2e97323', '267362784d14823e', 'e001ac58c9c98ed9', 'db9d41ceb1e04ef5', 'f0b7caef8f0c2d65',   # v19-v24: released up to 0.7.0
+          '8636589dfde14ec1']                                                                                    # v25: released in 0.7.3
 
 
 if __name__ == "__main__":

@@ -434,6 +434,18 @@ MIGRATIONS = [
     ALTER TABLE shots ADD COLUMN inner INTEGER NOT NULL DEFAULT 0;
     UPDATE shots SET inner = CASE WHEN is_miss = 0 AND tenths >= 102 THEN 1 ELSE 0 END;
     """,
+    """
+    -- TV displays (fetserver/displays.py), set up in Range Control: a saved view a TV opens by its 5-character address
+    -- (http://<pi>/<code>). config_json: what it shows (targets or a scoreboard) and what it follows (the range, a
+    -- competition with its relays and finals, one match, or targets only), and its light or dark look.
+    CREATE TABLE displays (
+        code        TEXT PRIMARY KEY,
+        name        TEXT NOT NULL,
+        config_json TEXT NOT NULL,
+        created_ms  INTEGER NOT NULL,
+        updated_ms  INTEGER NOT NULL
+    );
+    """,
 ]
 
 

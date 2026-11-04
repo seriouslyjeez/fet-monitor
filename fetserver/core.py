@@ -22,6 +22,7 @@ from .matches import ACTIVE_SQL, Matches, _check
 from .competitions import Competitions
 from .resultstore import ResultStore
 from .corrections import Corrections
+from .displays import Displays
 
 log = logging.getLogger("fetserver.core")
 STATUS_KEYS = ("up", "d", "q", "vr", "sl")            # a FeT target's status reply: counts, the measured trip point, asleep
@@ -146,6 +147,7 @@ class Core:
         self.matches = Matches(self)
         self.competitions = Competitions(self)
         self.results = ResultStore(self)
+        self.displays = Displays(self)
         self.corrections = Corrections(self)
 
     # ---- target bookkeeping -------------------------------------------------

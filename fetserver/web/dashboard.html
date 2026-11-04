@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FeT Monitor</title>
-<script id="early-theme">try { const th = localStorage.getItem('fet_theme'); if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; } catch (e) {}</script>
+<script id="early-theme">try { const th = /^\/[A-Za-z0-9]{5}\/?$/.test(location.pathname) ? null : localStorage.getItem('fet_theme'); if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; } catch (e) {}</script>
 <style>
 :root{color-scheme:light;--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea;--last:#e11d48;--link:#1d4ed8;--on-accent:#fff}
 /* dark: follows the system unless the viewer chose (header toggle sets data-theme on <html>) */
@@ -120,7 +120,13 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 .board tr.out td{opacity:.45}.board tr.so td{background:var(--hi)}.board td.last{font-weight:800;font-size:30px}.board .sotag{font-size:13px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--bad);color:#fff;margin-left:8px}
 .medal{display:inline-block;min-width:1.6em;text-align:center;border-radius:999px;font-weight:800;padding:0 6px}.medal.m1{background:#d4af37;color:#000}.medal.m2{background:#c0c0c0;color:#000}.medal.m3{background:#cd7f32;color:#000}
 .finalnote{font-size:18px;margin:4px 0 10px}.board td.tot{font-weight:800;font-size:24px}.board td.l10{font-size:15px;color:var(--mut)}.board tr.top td{background:var(--hi)}.board .ser{font-size:15px}
-.tvcfg label{display:block;margin:2px 0}.tvcfg .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.dvedit label{display:block;margin:2px 0}.dvedit .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}.dvedit p{margin:10px 0 2px}
+.dvsub{margin:2px 0 6px 24px}.dvcode{font:700 20px/1.2 ui-monospace,Menlo,monospace;letter-spacing:2px}.dvlist td{vertical-align:top}
+/* a TV display (http://<pi>/<code>): read only, nothing to click or focus */
+body.display header,body.display #ver,body.display #printbar,body.display #overlay,body.display #toast{display:none!important}
+body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}body.display{cursor:none;overflow-x:hidden}
+.dvmsg{font-size:28px;text-align:center;margin-top:20vh}.dvmsg .mut{font-size:20px;margin-top:8px}
+.dvstale{position:fixed;right:10px;bottom:8px;font-size:14px;color:var(--bad);background:var(--card);padding:2px 8px;border-radius:6px}
 .sheet h4{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
@@ -305,9 +311,8 @@ function coachCard(t) {
 }
 function coachView(targets, S) {
   if (!targets.length) return '<p class="mut">No targets have reported yet. Power one on and check its WiFi setup.</p>';
-  return '<div class="row"><p class="mut">' + targets.filter(t => t.online).length + ' of ' + targets.length + ' targets online</p>' +
-    '<button data-act="tvcfg">' + (S && S.tvcfg ? 'Close TV display setup' : 'TV display…') + '</button></div>' +
-    (S && S.tvcfg ? tvConfig(targets, S) : '') + '<div class="grid">' + targets.map(coachCard).join('') + '</div>';
+  return '<p class="mut">' + targets.filter(t => t.online).length + ' of ' + targets.length + ' targets online</p>' +
+    '<div class="grid">' + targets.map(coachCard).join('') + '</div>';
 }
 // ---- results (public): #/results, #/results/<key>, #/print/results/<key>, #/print/cards/<key>[?p=<competitor>] ----
 // key: c<id> a competition, m<id> a single match, a<id> a saved copy (its match was deleted); a plain number = c
@@ -418,24 +423,69 @@ function tvUrl(cfg) {
   if (cfg.targets && cfg.targets.length) q.push('t=' + cfg.targets.map(encodeURIComponent).join(','));
   return '#/tv/targets' + (q.length ? '?' + q.join('&') : '');
 }
-function tvConfig(targets, S) {
-  const cfg = S.tvcfg, boards = S.board || [], kind = cfg.kind || 'targets';
-  let h = '<div class="panel tvcfg"><h3>TV display</h3><div class="seg"><button data-act="tvkind" data-k="targets" class="' + (kind === 'targets' ? 'sel' : '') + '">Targets and match clock</button>' +
-    '<button data-act="tvkind" data-k="board" class="' + (kind === 'board' ? 'sel' : '') + '">Scoreboard (scrolling list)</button></div><div class="cols" style="margin-top:8px">';
-  if (kind === 'targets') {
-    h += '<div><b>Match clock</b>' + '<label><input type="radio" name="tvm" data-act="tvmatch" data-id=""' + (!cfg.match ? ' checked' : '') + '> none</label>' +
-      boards.map(b => '<label><input type="radio" name="tvm" data-act="tvmatch" data-id="' + b.id + '"' + (+cfg.match === b.id ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') + '</div>' +
-      '<div><b>Targets</b> <span class="mut">(none ticked = all, or the match\'s targets)</span>' + targets.map(t => '<label><input type="checkbox" data-act="tvtarget" data-id="' + esc(t.device_id) + '"' +
-        ((cfg.targets || []).includes(t.device_id) ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('') + '</div>';
-  } else {
-    h += '<div><b>Competitions</b> <span class="mut">(all relays together, by class)</span>' + ((S.compList || []).length ? S.compList.map(c => '<label><input type="checkbox" data-act="tvbc" data-id="' + c.id + '"' +
-      ((cfg.comps || []).includes(c.id) ? ' checked' : '') + '> ' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + '</label>').join('') : '<p class="mut">None.</p>') + '</div>';
-    h += '<div><b>Single matches</b> <span class="mut">(none ticked and no competition = all current matches)</span>' + (boards.length ? boards.map(b => '<label><input type="checkbox" data-act="tvbm" data-id="' + b.id + '"' +
-      ((cfg.matches || []).includes(b.id) ? ' checked' : '') + '> ' + esc(b.name) + ' <span class="mut">(' + esc(b.state) + ')</span></label>').join('') : '<p class="mut">No current matches.</p>') + '</div>';
+// ---- TV displays: saved views (Range Control → TV displays) at http://<pi>/<code>; read only (fetserver/displays.py) ----
+const DISPLAY_RE = /^\/([A-Za-z0-9]{5})\/?$/;
+const DV_SHOW = {targets: 'Targets and match clock', board: 'Scoreboard'};
+const DV_FOLLOW = {range: 'Whatever is on the range', competition: 'A competition: its relays, then its finals', match: 'One match', none: 'No match: targets only'};
+const DV_THEME = [['auto', 'Auto (the TV\'s setting)'], ['dark', 'Dark'], ['light', 'Light']];
+function displayAddress(code) { return (typeof location !== 'undefined' ? location.host : '<pi>') + '/' + code; }
+function displayFollows(v, ch) {                  // what a saved view follows, in words
+  const comp = ((ch || {}).competitions || []).find(c => c.id === v.competition_id), m = ((ch || {}).matches || []).find(x => x.id === v.match_id);
+  return v.follow === 'competition' ? 'Competition: ' + (comp ? comp.name : '#' + v.competition_id) : v.follow === 'match' ? 'Match: ' + (m ? m.name : '#' + v.match_id)
+    : v.follow === 'none' ? 'No match' : 'The range';
+}
+function displaysTab(rc) {                        // Range Control → TV displays: the saved views, and one being edited
+  const D = rc.displays;
+  if (!D) return '';
+  const list = D.displays || [];
+  let h = '<div class="panel"><div class="row"><h3>Saved views</h3>' + (rc.dv ? '' : '<button class="pri" data-act="rcdvnew">New view</button>') + '</div>' +
+    (list.length ? '<table class="t dvlist"><tr><th>Name</th><th>Address</th><th>Shows</th><th>Follows</th><th>Showing now</th><th></th></tr>' + list.map(v =>
+      '<tr><td>' + esc(v.name) + '</td><td><a class="dvcode" href="/' + esc(v.code) + '" target="_blank" rel="noopener">' + esc(v.code) + '</a><div class="mut">' + esc(displayAddress(v.code)) + '</div></td>' +
+      '<td>' + esc(DV_SHOW[v.show]) + '</td><td>' + esc(displayFollows(v, D)) + (v.targets && v.targets.length ? '<div class="mut">' + v.targets.length + ' target' + (v.targets.length === 1 ? '' : 's') + ' chosen</div>' : '') + '</td>' +
+      '<td>' + (v.now.length ? v.now.map(m => esc(m.name) + ' <span class="mut">(' + esc(m.state) + ')</span>').join('<br>') : '<span class="mut">' + (v.follow === 'none' ? 'targets' : 'nothing yet') + '</span>') + '</td>' +
+      '<td><button data-act="rcdvedit" data-code="' + esc(v.code) + '">Edit</button> <button class="danger" data-act="rcdvdel" data-code="' + esc(v.code) + '">Delete</button></td></tr>').join('') + '</table>'
+      : '<p class="mut">No saved views yet. A view is what one TV shows; each has a 5-character address to type into the TV\'s browser.</p>') +
+    '<p class="mut">On the TV, open <b>' + esc(displayAddress('XXXXX')) + '</b> with the view\'s address. A display is read only: no menus, nothing to click. ' +
+    'A view that follows a competition moves to the next relay when one is finished, and to the final when it is set up: the TV\'s address never changes.</p></div>';
+  return h + (rc.dv ? displayEditor(rc.dv, D, (rc.data || {}).targets || []) : '');
+}
+function displayEditor(dv, D, targets) {
+  const radio = (name, k, v, label, on) => '<label><input type="radio" name="' + name + '" data-act="rcdvset" data-k="' + k + '" data-v="' + v + '"' + (on ? ' checked' : '') + '> ' + label + '</label>';
+  const comps = D.competitions || [], matches = D.matches || [];
+  const sel = (k, items, cur, label) => '<select data-dvsel="' + k + '"><option value="">' + label + '</option>' + items.map(x => '<option value="' + x.id + '"' + (x.id === cur ? ' selected' : '') + '>' +
+    esc(x.name) + (x.state ? ' (' + esc(x.state) + ')' : '') + '</option>').join('') + '</select>';
+  let h = '<div class="panel dvedit"><h3>' + (dv.code ? 'Edit view ' + esc(dv.code) : 'New view') + '</h3><div class="cols">' +
+    '<div><label>Name <input data-dvk="name" value="' + esc(dv.name || '') + '" maxlength="60" placeholder="e.g. Hall TV"></label>' +
+    '<label>Address <input data-dvk="newcode" value="' + esc(dv.newcode || '') + '" maxlength="5" size="7" placeholder="' + (dv.code ? esc(dv.code) : 'auto') + '" style="text-transform:uppercase"></label>' +
+    '<div class="mut">5 letters or digits; ' + (dv.code ? 'a new address means typing it again on the TV.' : 'leave empty for a random one (no 0/O or 1/I/L).') + '</div>' +
+    '<p><b>Shows</b></p>' + Object.entries(DV_SHOW).map(([k, l]) => radio('dvshow', 'show', k, l, dv.show === k)).join('') +
+    '<p><b>Look</b></p>' + DV_THEME.map(([k, l]) => radio('dvtheme', 'theme', k, l, dv.theme === k)).join('') + '</div>' +
+    '<div><p><b>Follows</b></p>' + Object.entries(DV_FOLLOW).filter(([k]) => !(k === 'none' && dv.show === 'board')).map(([k, l]) => radio('dvfollow', 'follow', k, l, dv.follow === k) +
+      (k === 'competition' && dv.follow === k ? '<div class="dvsub">' + (comps.length ? sel('competition_id', comps, dv.competition_id, 'Choose the competition') : '<span class="mut">No competitions yet.</span>') + '</div>' : '') +
+      (k === 'match' && dv.follow === k ? '<div class="dvsub">' + (matches.length ? sel('match_id', matches, dv.match_id, 'Choose the match') : '<span class="mut">No matches yet.</span>') + '</div>' : '')).join('') +
+    '<div class="mut">' + (dv.follow === 'range' ? 'The match under way (all of them, if several); else the next one to start; else the one that finished last (up to 6 h).' :
+      dv.follow === 'competition' ? 'The relay under way, then the next relay, then the final as soon as it is set up.' : dv.follow === 'match' ? 'This match, whatever else is on.' : 'Only the targets ticked (all, if none).') + '</div></div>';
+  if (dv.show === 'targets') h += '<div><p><b>Targets</b></p><div class="mut">' + (dv.follow === 'none' ? 'None ticked = all targets.' : 'None ticked = the targets of the match being shown.') + '</div>' +
+    (targets.length ? targets.map(t => '<label><input type="checkbox" data-act="rcdvtgt" data-id="' + esc(t.device_id) + '"' + ((dv.targets || []).includes(t.device_id) ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('') : '<p class="mut">No targets.</p>') + '</div>';
+  return h + '</div><div class="mcbar"><button class="pri" data-act="rcdvsave">Save</button><button data-act="rcdvcancel">Cancel</button>' +
+    (dv.msg ? '<span class="bad">' + esc(dv.msg) + '</span>' : '') + '</div></div>';
+}
+function displayPage(P, targets) {                // what a TV shows (read only): P = /api/v1/displays/<code>
+  if (!P) return '<p class="mut dvmsg">Loading…</p>';
+  if (P.missing) return '<div class="dvmsg"><b>No display at ' + esc(P.code) + '</b><div class="mut">Set one up in Range Control → TV displays, or check the address.</div></div>';
+  const v = P.view, ms = P.matches || [];
+  if (v.show === 'board') {
+    if (!ms.length) return '<div class="dvmsg"><b>' + esc(v.name) + '</b><div class="mut">No match right now.</div></div>';
+    const own = ms.filter(m => m.relay_of == null);              // a single match or a final (a relay is on its competition's board)
+    return (P.competitions || []).map(tvCompBoard).join('') + (own.length ? tvBoard(own, []) : '');
   }
-  const url = tvUrl(Object.assign({kind: kind}, cfg));
-  return h + '</div><div class="mcbar"><a class="pri" style="padding:8px 14px;border-radius:8px;background:var(--accent);color:var(--on-accent);text-decoration:none" href="' + esc(url) + '" target="_blank" rel="noopener">Open the display</a>' +
-    '<span class="mut">Bookmark that page on the TV: it remembers the choice. Address: ' + esc(location.origin + '/' + url) + '</span></div></div>';
+  const pick = ids => ids && ids.length ? targets.filter(t => ids.includes(t.device_id)) : null;
+  const chosen = pick(v.targets), cards = list => '<div class="tvgrid">' + list.map(coachCard).join('') + '</div>' + (list.length ? '' : '<p class="mut">No targets to show.</p>');
+  if (!ms.length) return (v.follow === 'none' ? '' : '<div class="tvclock"><div><div class="mcphase">' + esc(v.name) + '</div><div class="mut">No match right now.</div></div></div>') + cards(chosen || targets);
+  return ms.map(m => { const own = targets.filter(t => m.rows.some(r => r.device_id === t.device_id)); return tvClock(m) + cards(chosen ? own.filter(t => chosen.includes(t)) : own); }).join('');
+}
+function readOnly(html) {                         // a display: no links, no buttons, nothing a TV remote can focus
+  return html.replace(/(<a\b[^>]*?)\s+href="[^"]*"/g, '$1').replace(/ data-act="[^"]*"/g, '').replace(/ tabindex="[^"]*"/g, '');
 }
 function tvClock(b) {
   if (!b) return '';
@@ -455,7 +505,7 @@ function tvTargets(targets, boards, params) {
 }
 function tvCompBoard(res) {
   const n = Math.max(1, Math.ceil(res.record_shots / 10)), fmt = v => fmtScore(res, v);
-  const running = res.relays.find(r => ['running', 'paused', 'holding'].includes(r.state));
+  const running = res.relays.find(r => r.match_id === res.current_relay) || res.relays.find(r => ['running', 'paused', 'holding', 'overtime'].includes(r.state));
   const clock = running ? tvClock({id: 'c' + res.id + '-' + running.match_id, name: res.name + ' · relay ' + running.relay, format_name: res.format_name, state: running.state, clock: running.clock}) :
     '<div class="tvclock"><div><div class="mcphase">' + esc(res.name) + '</div><div class="mut">' + esc(res.format_name) + '</div>' + statusLine(res) + '</div></div>';
   return '<div class="board">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
@@ -1127,8 +1177,8 @@ const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
   targets: ['/targets', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
   firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/updates'],
-  users: ['/match-users', '/updates']};
-const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
+  users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
+const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['tv', 'TV displays'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
   ['updates', 'Updates'], ['pi', 'This Pi'], ['users', 'Users']];
 const rcTab = () => {                           // #/range/<tab>; Targets when none (or an unknown one) is named
   const m = typeof location !== 'undefined' && location.hash.match(/^#\/range\/(\w+)/);
@@ -1149,7 +1199,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
   h += '<nav class="tabs">' + RC_TABS.map(([k, l]) => '<a href="#/range' + (k === 'targets' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
   const d = rc.data || {targets: [], banned: []};
   const body = tab === 'settings' ? targetSettingsPanel(d, rc) : tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
-    : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+    : tab === 'tv' ? displaysTab(rc) : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
@@ -1828,6 +1878,8 @@ async function post(p, body) {
 }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
 const route = () => {
+  const dp = location.pathname.match(DISPLAY_RE);              // a TV display: its own address, read only
+  if (dp) return {display: dp[1].toUpperCase()};
   const tv = location.hash.match(/^#\/tv\/(targets|board)(?:\?(.*))?$/);
   if (tv) { const params = {}; (tv[2] || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); params[k] = v || ''; }); return {tv: tv[1], params: params}; }
   const pr = location.hash.match(/^#\/print\/(results|cards|incidents)\/([cma]?\d+)(?:\?p=(\d+))?$/);   // c competition, m match, a saved copy; incidents: a match id
@@ -1842,6 +1894,20 @@ async function refresh() {
   if (S.busy) { S.again = true; return; }
   S.busy = true;
   try {
+    const dr = route();
+    if (dr.display) {                              // a TV display: its view, and the targets only when it shows them
+      const r = await fetch(API + '/displays/' + dr.display);
+      if (r.status === 404) S.disp = {missing: true, code: dr.display};
+      else if (r.ok) {
+        S.disp = await r.json();
+        if (S.version && S.disp.version && S.disp.version !== S.version) location.reload();   // the server was updated: the TV loads the new page
+        if (S.disp.view.show === 'targets') S.targets = (await get('/targets?client_id=' + CID)).targets;
+        S.board = S.disp.matches; S.boardComps = S.disp.competitions; S.boardOffset = S.disp.server_time_ms - Date.now();
+      } else throw new Error(r.status);
+      S.dispAt = Date.now();
+      render();
+      return;
+    }
     S.targets = (await get('/targets?client_id=' + CID)).targets;
     const t = current();
     if (t && S.review) {
@@ -1876,6 +1942,7 @@ async function refresh() {
         if (ok('/target-firmware')) S.rc.timages = r['/target-firmware'].data.images;
         if (ok('/esp32-firmware')) S.rc.e32images = r['/esp32-firmware'].data.images;
         if (ok('/system')) S.rc.system = r['/system'].data;
+        if (ok('/displays')) S.rc.displays = r['/displays'].data;
         const up = r['/updates'];
         if (up && up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
@@ -1911,13 +1978,12 @@ async function refresh() {
     }
     if (t && t.match) S.offset = t.match.server_time_ms - Date.now();
     const rr = route();
-    if (rr.tv || (!rr.id && !rr.range && !rr.match && !rr.results && !rr.print && S.tvcfg)) {   // TV pages and their setup
+    if (rr.tv) {                                   // the older TV pages (#/tv/...): read only too
       const q = [];
-      if (rr.tv && rr.params.m) q.push('m=' + encodeURIComponent(rr.params.m));
-      if (rr.tv && rr.params.c) q.push('c=' + encodeURIComponent(rr.params.c));
+      if (rr.params.m) q.push('m=' + encodeURIComponent(rr.params.m));
+      if (rr.params.c) q.push('c=' + encodeURIComponent(rr.params.c));
       const b = await get('/board' + (q.length ? '?' + q.join('&') : ''));
       S.board = b.matches; S.boardComps = b.competitions || []; S.boardOffset = b.server_time_ms - Date.now();
-      if (!rr.tv) S.compList = (await get('/competitions')).competitions;
     }
     if (rr.results || rr.print) {
       if (rr.print === 'incidents') {             // the Range Incident Report needs a Match Control login
@@ -1930,9 +1996,11 @@ async function refresh() {
     }
     if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
     render();
-  } catch (e) { document.getElementById('live').textContent = 'server unreachable'; }
-  S.busy = false;
-  if (S.again) { S.again = false; refresh(); }
+  } catch (e) { document.getElementById('live').textContent = 'server unreachable'; if (route().display) render(); }
+  finally {
+    S.busy = false;
+    if (S.again) { S.again = false; refresh(); }
+  }
 }
 
 let drawn = null;                          // the page as last drawn (only render() writes #app)
@@ -1997,7 +2065,15 @@ function render(force) {                  // force: a structural change (e.g. an
   const ae = document.activeElement;
   if (!force && pressing) { held = true; return; }
   if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') { held = true; return; }   // never redraw under typing: after it
-  document.body.classList.toggle('tv', !!r.tv);
+  document.body.classList.toggle('tv', !!(r.tv || r.display));
+  document.body.classList.toggle('display', !!(r.tv || r.display));
+  if (r.display) {                                // a TV display: its view's look, and only the data
+    const th = S.disp && S.disp.view && S.disp.view.theme;
+    if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; else delete document.documentElement.dataset.theme;
+    const stale = S.dispAt && Date.now() - S.dispAt > 30000 ? '<div class="dvstale">not updated since ' + esc(new Date(S.dispAt).toLocaleTimeString()) + '</div>' : '';
+    setApp(app, readOnly(displayPage(S.disp, S.targets || [])) + stale);
+    return;
+  }
   S.phone = !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches);
   document.body.classList.toggle('rangemode', !!(r.id && t && t.lease && t.lease.mine));   // holding a target: only its screen
   document.body.classList.toggle('print', !!r.print);
@@ -2012,7 +2088,7 @@ function render(force) {                  // force: a structural change (e.g. an
     return;
   }
   if (r.results) { setApp(app, r.cid ? resultsPage(S.res) : resultsIndex(S.resList)); return; }
-  if (r.tv) { setApp(app, r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params)); return; }
+  if (r.tv) { setApp(app, readOnly(r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params))); return; }
   setApp(app, r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S));
   renderOverlay(t);
 }
@@ -2088,17 +2164,6 @@ async function act(el) {
   if (a === 'rnav') return reviewMove(el.dataset.move);
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
-  if (/^tv/.test(a)) {                              // TV display setup on All targets
-    if (a === 'tvcfg') { S.tvcfg = S.tvcfg ? null : {kind: 'targets', targets: [], matches: []}; return refresh(); }
-    const c = S.tvcfg;
-    if (!c) return;
-    if (a === 'tvkind') c.kind = el.dataset.k;
-    if (a === 'tvmatch') c.match = el.dataset.id ? +el.dataset.id : null;
-    if (a === 'tvtarget') c.targets = el.checked ? c.targets.concat(el.dataset.id) : c.targets.filter(x => x !== el.dataset.id);
-    if (a === 'tvbm') c.matches = el.checked ? c.matches.concat(+el.dataset.id) : c.matches.filter(x => x !== +el.dataset.id);
-    if (a === 'tvbc') { c.comps = c.comps || []; c.comps = el.checked ? c.comps.concat(+el.dataset.id) : c.comps.filter(x => x !== +el.dataset.id); }
-    return render();
-  }
   if (!id) return;
   if (a === 'exitrange') {                       // leave the shooter screen: release the target
     if (!confirm('Are you sure you want to exit?')) return;
@@ -2230,6 +2295,34 @@ async function rangeAct(el, a) {
     else toast(res.data.error || 'Factory reset not sent');
     rc.tsOpen = null;
     return refresh();
+  }
+  if (/^rcdv/.test(a)) {                            // TV displays: the saved views
+    const D = rc.displays || {}, dv = rc.dv;
+    if (a === 'rcdvnew') rc.dv = {name: '', newcode: '', show: 'targets', follow: 'range', theme: 'auto', targets: []};
+    if (a === 'rcdvedit') { const v = (D.displays || []).find(x => x.code === el.dataset.code); if (v) rc.dv = Object.assign({}, v, {targets: (v.targets || []).slice(), newcode: ''}); }
+    if (a === 'rcdvcancel') rc.dv = null;
+    if (a === 'rcdvset' && dv) { dv[el.dataset.k] = el.dataset.v; if (dv.show === 'board' && dv.follow === 'none') dv.follow = 'range'; }
+    if (a === 'rcdvtgt' && dv) dv.targets = el.checked ? dv.targets.concat(el.dataset.id) : dv.targets.filter(x => x !== el.dataset.id);
+    if (a === 'rcdvsave' && dv) {
+      const body = {name: dv.name, show: dv.show, follow: dv.follow, theme: dv.theme, targets: dv.targets};
+      if (dv.follow === 'competition') body.competition_id = dv.competition_id;
+      if (dv.follow === 'match') body.match_id = dv.match_id;
+      if ((dv.newcode || '').trim()) body.code = dv.newcode.trim();
+      const res = await adminCall('/displays' + (dv.code ? '/' + dv.code : ''), body);
+      if (res.status !== 200) { dv.msg = res.data.error || 'Not saved'; return render(true); }
+      rc.dv = null;
+      rc.displays = Object.assign({}, D, {displays: res.data.displays});
+      toast('Saved: ' + displayAddress(res.data.code));
+    }
+    if (a === 'rcdvdel') {
+      const v = (D.displays || []).find(x => x.code === el.dataset.code);
+      if (!v || !confirm('Delete the view "' + v.name + '" (' + v.code + ')? A TV showing it will say there is no display at that address.')) return;
+      const res = await adminCall('/displays/' + v.code + '/delete', {});
+      if (res.status !== 200) return toast(res.data.error || 'Not deleted');
+      if (rc.dv && rc.dv.code === v.code) rc.dv = null;
+      rc.displays = Object.assign({}, D, {displays: res.data.displays});
+    }
+    return render(true);
   }
   if (a === 'rcmuadd' || a === 'rcmurole' || a === 'rcmupw') {
     let body;
@@ -2916,10 +3009,18 @@ function boot() {
     if (el.dataset.mcunp) { const res = await matchCall('/matches/' + mc.open + '/unplaced/' + el.dataset.mcunp, {decision: el.value}); if (res.status !== 200) toast(res.data.error || 'Not saved'); refresh(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'mcpw') matchAct(e.target, 'mclogin'); });
+  const dvField = e => {                          // Range Control → TV displays: the view being edited keeps what is typed and chosen
+    const dv = S.rc && S.rc.dv, el = e.target;
+    if (!dv || !el.dataset) return;
+    if (el.dataset.dvk) dv[el.dataset.dvk] = el.value;
+    if (el.dataset.dvsel && e.type === 'change') { dv[el.dataset.dvsel] = el.value ? +el.value : null; render(true); }
+  };
+  document.addEventListener('input', dvField); document.addEventListener('change', dvField);
   setInterval(clockTick, 250);
   let pauseUntil = 0;
   setInterval(() => {                               // the scoreboard scrolls itself when it is taller than the screen
-    if (route().tv !== 'board' || Date.now() < pauseUntil) return;
+    const sr = route();
+    if (!(sr.tv === 'board' || (sr.display && S.disp && S.disp.view && S.disp.view.show === 'board')) || Date.now() < pauseUntil) return;
     const max = document.documentElement.scrollHeight - window.innerHeight;
     if (max <= 4) return;
     if (window.scrollY >= max - 1) { pauseUntil = Date.now() + 4000; setTimeout(() => window.scrollTo(0, 0), 3500); return; }
@@ -2938,7 +3039,7 @@ function boot() {
   document.addEventListener('pointerup', released, true); document.addEventListener('pointercancel', released, true);
   document.addEventListener('focusout', released, true);                  // done typing: catch up
   const redrawAll = () => { drawn = null; const o = document.getElementById('overlay'); if (o) o._drawn = null; };
-  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) { redrawAll(); act(el); } });   // after an action: redraw all
+  document.addEventListener('click', e => { if (route().display || route().tv) return; const el = e.target.closest('[data-act]'); if (el) { redrawAll(); act(el); } });   // after an action: redraw all
   document.addEventListener('change', redrawAll, true);                    // a choice the server refuses is put back by the next redraw
   document.addEventListener('keydown', e => {                    // review with the arrow keys: left/right = one shot, up/down or PageUp/PageDown = one target
     if (!S.review || S.gear || S.sight || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
@@ -2985,7 +3086,7 @@ function renew() {                                               // keep the con
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
 if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
-  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
+  statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
 </html>

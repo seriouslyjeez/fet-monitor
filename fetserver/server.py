@@ -47,6 +47,9 @@ ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mod
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
+DISPLAY_PAGE_RE = re.compile(r"^/([A-Za-z0-9]{5})/?$")                    # a TV display's address (displays.py)
+DISPLAY_RE = re.compile(r"^/api/v1/displays/([A-Za-z0-9]{5})$")
+ADMIN_DISPLAY_RE = re.compile(r"^/api/v1/admin/displays/([A-Za-z0-9]{5})(/delete)?$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
 DEVICE_FW_CHUNK = 16 * 1024
 DEVICE_FW_MAX_S = 600
@@ -602,6 +605,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: system request %s", self.client_address[0], payload.get("action"))
             return self._send(202, {"requested": payload.get("action")})
+        if path == "/api/v1/admin/displays" and method == "GET":          # TV displays (displays.py)
+            return self._send(200, dict(core.displays.choices(), displays=core.displays.list()))
+        ad = ADMIN_DISPLAY_RE.match(path)
+        if (path == "/api/v1/admin/displays" or ad) and method == "POST":
+            try:
+                if ad and ad.group(2):
+                    core.displays.delete(ad.group(1))
+                    code = None
+                else:
+                    code = core.displays.save(payload, ad.group(1) if ad else None)
+            except MatchError as exc:
+                return self._send(404 if str(exc) == "no such display" else 400, {"error": str(exc)})
+            log.info("Range Control from %s: TV display %s %s", self.client_address[0], ad.group(1) if ad else code,
+                     "deleted" if code is None else "saved")
+            return self._send(200, {"code": code, "displays": core.displays.list()})
         if path == "/api/v1/admin/match-users" and method == "GET":
             return self._send(200, {"users": core.matches.users()})
         if path == "/api/v1/admin/match-users" and method == "POST":
@@ -781,7 +799,7 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         core: Core = self.server.core
         q = parse_qs(url.query)
-        if url.path in ("/", "/index.html"):
+        if url.path in ("/", "/index.html") or DISPLAY_PAGE_RE.match(url.path):
             return self._page()
         if url.path.startswith("/api/v1/admin/"):
             return self._admin(url.path, "GET")
@@ -816,6 +834,12 @@ class Handler(BaseHTTPRequestHandler):
                     continue
             return self._send(200, {"matches": core.matches.board(ids) if ids or not cids else [], "competitions": comps,
                                     "server_time_ms": core.now_ms()})
+        dp = DISPLAY_RE.match(url.path)
+        if dp:                                         # public: what a TV display shows now (read only)
+            try:
+                return self._send(200, dict(core.displays.show(dp.group(1)), version=__version__))
+            except MatchError as exc:
+                raise NotFound(str(exc))
         if url.path == "/api/v1/competitions":         # public: the competition list (TV set-up)
             return self._send(200, {"competitions": [x for x in core.competitions.list() if not x["results_hidden"]]})
         if url.path == "/api/v1/results":              # public: everything on the Results page

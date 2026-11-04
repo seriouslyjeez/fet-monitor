@@ -63,7 +63,7 @@ assert(corner(coachView([sighterT])) && !corner(coachView([recordT])));
 
 // --- 8. All Targets card
 const card = X.coachCard(recordT);
-assert(coachView([recordT], state()).includes('data-act="tvcfg"'), 'the TV display setup is next to the cards');
+assert(!coachView([recordT], state()).includes('tvcfg') && !coachView([recordT], state()).includes('TV display'), 'TV displays are set up in Range Control, not on All targets');
 const v = recordT.view;
 assert(card.includes('>' + dec(v.agg.decimal) + '<') && card.includes('>' + v.agg.integer + '<') && card.includes('X ' + v.agg.x), 'total, integer and X count');
 assert(card.indexOf('class="tot"') < card.indexOf('class="rows"'), 'total box is on the left');
@@ -519,6 +519,40 @@ const tt = tvTargets(D.targets, [B], {m: '2'});
 assert(tt.includes('data-clock="tv-2"') && count(tt, /class="card/g) === D.targets.filter(t => ['lane-1', 'lane-2'].includes(t.device_id)).length, 'the match\'s targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {t: 'lane-4'}), /class="card/g), 1, 'a chosen list of targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.targets.length, 'all targets');
+// TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>
+{
+  assert(X.RC_TABS.some(t => t[0] === 'tv' && t[1] === 'TV displays'), 'a Range Control tab');
+  assert(X.DISPLAY_RE.test('/K7M3Q') && X.DISPLAY_RE.test('/k7m3q/') && !X.DISPLAY_RE.test('/K7M3QQ') && !X.DISPLAY_RE.test('/K7-3Q'));
+  const V = (o) => Object.assign({code: 'K7M3Q', name: '<b>Hall</b>', show: 'targets', follow: 'range', theme: 'auto', targets: [], now: []}, o);
+  const D2 = {displays: [V({now: [{id: 2, name: 'League', state: 'running'}]}), V({code: 'BOARD', name: 'Board', show: 'board', follow: 'competition', competition_id: 7})],
+              competitions: [{id: 7, name: 'Club <i>cup</i>'}], matches: [{id: 2, name: 'League', state: 'running'}]};
+  const tab = X.displaysTab({displays: D2, data: {targets: D.targets}});
+  assert(tab.includes('href="/K7M3Q"') && tab.includes('&lt;b&gt;Hall') && !tab.includes('<b>Hall') && tab.includes('League <span class="mut">(running)'), 'saved views, escaped, with what they show now');
+  assert(tab.includes('Competition: Club &lt;i&gt;cup') && tab.includes('data-act="rcdvnew"') && !tab.includes('panel dvedit'), 'no editor until asked');
+  const ed = X.displaysTab({displays: D2, data: {targets: D.targets}, dv: {name: '', show: 'board', follow: 'competition', theme: 'dark', targets: []}});
+  assert(ed.includes('panel dvedit') && !ed.includes('data-act="rcdvnew"') && ed.includes('data-dvsel="competition_id"') && !ed.includes('data-v="none"'), 'a scoreboard cannot follow no match');
+  assert(!ed.includes('data-act="rcdvtgt"') && /data-k="theme" data-v="dark" checked/.test(ed), 'no target list on a scoreboard');
+  const ed2 = X.displayEditor({name: 'x', show: 'targets', follow: 'none', theme: 'auto', targets: ['lane-1']}, D2, D.targets);
+  assert(ed2.includes('data-v="none" checked') && /data-id="lane-1" checked/.test(ed2) && ed2.includes('None ticked = all targets'));
+  // the page on the TV
+  const P = (o, ms, cs) => ({view: V(o), matches: ms || [], competitions: cs || []});
+  assert(X.displayPage({missing: true, code: 'ZZZZZ'}, []).includes('No display at ZZZZZ'));
+  const pt = X.readOnly(X.displayPage(P({}, [B]), D.targets));
+  assert(pt.includes('data-clock="tv-2"') && count(pt, /class="card/g) === D.targets.filter(t => ['lane-1', 'lane-2'].includes(t.device_id)).length, 'the match now, with its targets');
+  assert(!/href=|data-act=|<button|<input|<select/.test(pt), 'read only: no links, no actions, no controls');
+  assert.strictEqual(count(X.displayPage(P({targets: ['lane-2']}, [B]), D.targets), /class="card/g), 1, 'only the targets chosen');
+  assert.strictEqual(count(X.displayPage(P({follow: 'none'}), D.targets), /class="card/g), D.targets.length, 'no match: all targets');
+  assert(X.displayPage(P({}), D.targets).includes('No match right now'));
+  const pb = X.displayPage(P({show: 'board'}, [B]), []);
+  assert(pb.includes('&lt;i&gt;Bob') && pb.includes('data-clock="tv-2"'), 'a scoreboard');
+  assert(X.displayPage(P({show: 'board'}), []).includes('No match right now'));
+  const relay = Object.assign({}, B, {id: 99, relay_of: D.comp.id});
+  const pc = X.displayPage(P({show: 'board'}, [relay], [Object.assign({}, D.comp, {current_relay: D.comp.relays[0].match_id})]), []);
+  assert(pc.includes('<h2>Junior</h2>') && !pc.includes('&lt;i&gt;Bob') && !pc.includes('No current matches') && pc.includes('data-clock="tv-c' + D.comp.id + '-' + D.comp.relays[0].match_id + '"'),
+         'a relay of a competition: the competition board (all relays), with the clock of the relay on now');
+  const ro = X.readOnly('<a class="card" href="#/t/x"><button data-act="take" tabindex="0">x</button></a>');
+  assert.strictEqual(ro, '<a class="card"><button>x</button></a>');
+}
 // the console says how commands are given and can switch to the other two
 const spk = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
 assert(spk.includes('Commands: Spoken commands') && spk.includes('data-v="officer"') && spk.includes('data-v="auto"') && !spk.includes('data-a="pacing" data-v="spoken"'));

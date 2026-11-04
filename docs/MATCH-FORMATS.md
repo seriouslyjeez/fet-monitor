@@ -508,7 +508,8 @@ competitor (countback lists added position by position). The built-in team size 
 per competition; "best count" is optional.
 
 ## Finals on the TV board
-*TV board* (Results → TV, or *TV board for this final* on a final's console) shows a running final: the finalists in
+A scoreboard *TV display* (Range Control → TV displays) that follows the competition switches to its final as soon as
+the final is set up (or *TV board for this final* on a final's console). It shows a running final: the finalists in
 their current places, everyone's last shot, the final (and for the added finals the qualification and total), shot
 k of n fired, which place is decided next and after which shot, who is in a shoot-off and which decision it settles,
 eliminated finalists greyed with their place, and the medals as they are decided.

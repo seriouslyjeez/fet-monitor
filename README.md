@@ -2,6 +2,7 @@
 
 - Match Control (beta): competitions, corrections and official results
 - Finals by the rulebook (ISSF, CMP Air Gun, CMP 3PAR, NRA) and a finals TV board
+- TV displays: saved read-only views at a 5-character address that follow a competition from relay to relay and into its final
 - One rulebook per match; rulebooks stored on the Pi
 - Signed updates from GitHub
 - Firmware updates from the Pi
@@ -71,10 +72,17 @@ director decides: a record shot can be counted, annulled, scored as a miss or co
 sighting shot can be let go, or cost 2 points (or a miss) on the first record shot. Targets in a match are locked
 against other mode changes.
 
-**TV displays** (All targets → *TV display…*; no login, bookmark the address on the TV): *targets and match clock*
-(`#/tv/targets?m=<match>&t=<target,target>`: a match's countdown over its targets or a chosen list) and the
-*scoreboard* (`#/tv/board?m=<match,match>`, or every current match): everyone in place order with total, inner tens /
-X, 10-shot aggregates, the last 10 shots and shots fired; it scrolls by itself when it does not fit. The ranking is
+**TV displays** (Range Control → *TV displays*): saved views, each at its own 5-character address
+(`http://<pi>/<code>`, e.g. `192.168.1.20:8080/K7M3Q`; not case sensitive; random from letters and digits that cannot
+be mixed up, or one of your own) that is easy to type into a TV's browser. A view shows *targets and match clock* (a
+match's countdown over its targets, or a chosen list) or the *scoreboard* (everyone in place order with total, inner
+tens / X, 10-shot aggregates, the last 10 shots and shots fired; it scrolls by itself when it does not fit). It follows
+*the range* (the match under way, all of them if several; else the next one to start; else the one that finished last,
+up to 6 h), *a competition* (the relay under way, then the next relay, then its final as soon as it is set up: the TV's
+address never changes between relays and finals), *one match*, or no match (targets only). A display is read only: no
+header, menus, links, buttons or light/dark switch, nothing a TV remote can focus; its light or dark look is part of
+the view. It reloads itself after a server update. The older `#/tv/targets` and `#/tv/board` addresses still work,
+read only too. The ranking is
 provisional (total, inner tens, then 10-shot series from the last) until each rulebook's tie-break rules are built.
 **Competitions** (Match Control → *New competition*): a format, competitors (family name, given name, optional class
 and team; add one by one, paste a list, or upload a CSV file, which is read in memory and never stored; edit with the
@@ -292,6 +300,8 @@ backup from /var/backups/fet-monitor in that case.
 | GET, POST /match/competitions; GET, POST /match/competitions/<n>; POST /match/competitions/<n>/competitors[/<id>[/delete]], /relays; POST /match/competitions/<n>/competitors/import | Match Control (director to change) | Competitions, competitors, relays (`{lanes: [{device_id, competitor_id}]}`); import takes a raw CSV body (Family, Given, Class, Team; header optional; all or nothing; max 256 KB) |
 | GET /competitions; GET /results; GET /results/<key>[?shots=1]; GET /results/<key>.csv, /results/<key>-teams.csv | anyone | Competition list (TV set-up); every result; one result by class with teams (key: `c<n>` competition, `m<n>` single match, `a<n>` saved copy; a plain number = competition); CSV (UTF-8 with BOM, formula-like cells kept as text) |
 | GET /board?c=<n,n> | anyone | Scoreboard data for competitions (also `m=` for single matches) |
+| GET /displays/<code> | anyone | What a TV display shows now: `view` (name, `show` targets\|board, `follow` range\|competition\|match\|none, `theme`, `targets`), `now` (match ids), `matches` (scoreboard data, each with `relay_of`), `competitions` (for a scoreboard: a relay's competition, all relays together, with `current_relay`) |
+| GET, POST /admin/displays; POST /admin/displays/<code>, /admin/displays/<code>/delete | Range Control | The saved views (with `now`, and the competitions and matches to choose from); create or change `{name, code, show, follow, competition_id, match_id, targets, theme}` |
 | POST /targets/<id>/start-record | the shooter holding the lane | NRA-style stage: start record shots |
 | GET, POST /admin/match-users; POST /admin/match-users/<name>/delete | Range Control | Match Control users and roles |
 | GET /stream | browser | Server-sent events: small "something changed" hints that make pages refresh |
