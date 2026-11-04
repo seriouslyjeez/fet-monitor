@@ -635,11 +635,6 @@ function overlayView(t, S, name) {
   else if (L.held_by) h += '<p><b>' + esc(L.held_by) + '</b> is in control.</p><button data-act="takeover">Take over</button>';
   else h += '<p class="mut">Nobody is in control.</p><div class="row"><input id="who" value="' + who + '" placeholder="Your name" maxlength="40" style="flex:1"> <button class="pri" data-act="take">Take control</button></div>';
   h += '</section>';
-  const su = statusUrl(t.ip);
-  h += '<section><h4>Target</h4>' + (su ? '<p><a href="' + su + '" target="_blank" rel="noopener">Status page (' + esc(t.ip) + ')</a></p><p class="mut">The target\'s own page: WiFi, signal, server, shots waiting. Works from the same network.</p>'
-                                       : '<p class="mut">No address yet: the target has not reported.</p>') +
-    (t.v_ref ? '<p>Trip point (V_REF) <b>' + esc(Number(t.v_ref.volts).toFixed(2)) + ' V</b> <span class="mut">' +
-      (t.v_ref.from === 'target' ? 'measured by the target' : 'with its last shot') + (t.v_ref.at ? ', ' + esc(when(t.v_ref.at)) : '') + '</span></p>' : '') + '</section>';
   if (L.mine) {
     h += '<section><h4>Mode</h4><div class="seg"><button data-act="kind" data-kind="practice" class="' + (t.kind === 'practice' ? 'sel' : '') + '">Practice</button>' +
          '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button>' +
@@ -899,6 +894,18 @@ function targetSettingsPanel(d, rc) {          // Range Control → Target setti
         '<td><button class="pri" data-act="rctopen" data-id="' + esc(t.device_id) + '">Settings…</button></td></tr>';
     }).join('') + '</table></div></div>';
 }
+function deviceSection(t) {                    // the target as a device: trip point, its own page, setup portal, factory reset
+  const su = statusUrl(t.ip), id = esc(t.device_id);
+  return '<h4>Device</h4>' +
+    (t.v_ref ? '<p>Trip point (V_REF) <b>' + esc(Number(t.v_ref.volts).toFixed(2)) + ' V</b> <span class="mut">' +
+      (t.v_ref.from === 'target' ? 'measured by the target' : 'with its last shot') + (t.v_ref.at ? ', ' + esc(when(t.v_ref.at)) : '') + '</span></p>' : '') +
+    '<p>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">Its own status page (' + esc(t.ip) + ')</a> <span class="mut">WiFi, signal, server, shots waiting</span>'
+                : '<span class="mut">No address yet: the target has not reported.</span>') + '</p>' +
+    '<div class="bulk"><button data-act="rccmd" data-type="wifi_portal" data-id="' + id + '">Setup portal</button>' +
+    '<button class="danger" data-act="rcreset" data-id="' + id + '">Factory reset</button></div>' +
+    '<p class="mut">Setup portal opens the target\'s own setup WiFi (FeTMonitor-xxxxxx) for 15 minutes; shots keep flowing. Factory reset erases its ' +
+    'WiFi settings, server address and stored shots, for selling or disposing of a target.</p>';
+}
 function targetSettingsSheet(t, d, rc) {       // one target's settings (the overlay sheet over Target settings)
   const kept = rc.tsf || {}, ft = t.fet_target, cur = ft.settings || {}, id = t.device_id;
   const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
@@ -916,6 +923,7 @@ function targetSettingsSheet(t, d, rc) {       // one target's settings (the ove
     '<button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
     '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' +
     (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') +
+    deviceSection(t) +
     (others.length ? '<h4>Copy to other targets</h4><div class="bulk">' + others.map(o => '<label><input type="checkbox" data-act="rctapply" data-id="' + esc(o.device_id) + '"' +
         (apply[o.device_id] ? ' checked' : '') + '> ' + esc(o.name) + '</label>').join('') + '</div>' +
       '<div class="bulk"><button data-act="rctcopy" data-id="' + esc(id) + '"' + (napply ? '' : ' disabled') + '>Copy these settings to ' + napply + ' target' + (napply === 1 ? '' : 's') + '</button></div>' +
@@ -1144,10 +1152,8 @@ function targetsTab(d, rc) {                     // the targets: mode, session, 
     '<button data-act="rcnew"' + dis + '>New series</button>' +
     '<button data-act="rcsleepsel" data-v="sleep"' + dis + '>Sleep</button><button data-act="rcsleepsel" data-v="wake"' + dis + '>Wake</button>' +
     '<button data-act="rccmd" data-type="reboot"' + dis + '>Restart</button>' +
-    '<button data-act="rccmd" data-type="wifi_portal"' + dis + '>Setup portal</button>' +
     '<button class="danger" data-act="rcremove"' + dis + '>Remove</button>' +
-    '<button class="danger" data-act="rcban"' + dis + '>Ban</button>' +
-    '<button class="danger" data-act="rcreset"' + (nsel === 1 ? '' : ' disabled') + ' title="One target at a time">Factory reset</button></div>' +
+    '<button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
     '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
@@ -2140,8 +2146,8 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rcreset') {                      // for selling or disposing of a target: one at a time, with the name typed in
-    const ids = chosen(), t = ((rc.data || {}).targets || []).find(x => x.device_id === ids[0]);
-    if (ids.length !== 1 || !t) return toast('Select exactly one target');
+    const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
+    if (!t) return;
     const q = t.queue_depth || 0;
     if (!confirm('FACTORY RESET ' + t.name + ' (' + t.device_id + ')?\n\n' +
         'Its FeT Bridge erases everything it stored: club WiFi name and password, server address and token, its name' +
@@ -2154,7 +2160,7 @@ async function rangeAct(el, a) {
     const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/command', {type: 'factory_reset'});
     if (res.status === 200) toast(t.name + ': factory reset sent; it erases itself at its next report');
     else toast(res.data.error || 'Factory reset not sent');
-    delete sel[t.device_id];
+    rc.tsOpen = null;
     return refresh();
   }
   if (a === 'rcmuadd' || a === 'rcmurole' || a === 'rcmupw') {
@@ -2307,7 +2313,7 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
-  const ids = a === 'rcunban' ? [el.dataset.id] : chosen();
+  const ids = el.dataset.id ? [el.dataset.id] : chosen();          // one target (Unban, its settings sheet), or the selected
   if (!ids.length) return;
   const names = ids.map(i => { const t = ((rc.data || {}).targets || []).find(x => x.device_id === i); return t ? t.name : i; }).join(', ');
   if (a === 'rcremove' && !confirm('Remove ' + names + '?\nIts history is kept. It comes back by itself if it reports again.')) return;

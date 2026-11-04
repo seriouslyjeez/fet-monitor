@@ -320,8 +320,7 @@ assert(overlayView(unnamed, state(), 'Alice').includes('value="Alice – Practic
 // the target's status page link
 assert.deepStrictEqual(['192.168.1.20', '10.0.0.255', 'fe80::1', '::1'].map(statusUrl), ['http://192.168.1.20/', 'http://10.0.0.255/', 'http://[fe80::1]/', 'http://[::1]/']);
 assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', null, undefined, ''].map(statusUrl), Array(8).fill(null));
-[asFree, asMine, asOther].forEach(f => assert(overlayView(f(Object.assign({}, practiceT, {ip: '192.168.1.20'})), state(), '').includes('href="http://192.168.1.20/"'), 'shown to everyone'));
-assert(overlayView(Object.assign({}, practiceT, {ip: null}), state(), '').includes('No address yet'));
+[asFree, asMine, asOther].forEach(f => assert(!overlayView(f(Object.assign({}, practiceT, {ip: '192.168.1.20'})), state(), '').includes('192.168.1.20'), 'not on the shooter\'s page (Range Control has it)'));
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));
 assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));
@@ -339,9 +338,14 @@ assert(!rangeView(state({rc: {status: {password_set: true, logged_in: true}, dat
 {
   const tg = Object.assign({}, D.targets[0], {v_ref: {volts: 0.65, from: 'target', at: '2026-11-03T20:00:00Z'}});
   const sheet = overlayView(tg, state({gear: true}), 'Jo');
-  assert(sheet.includes('Trip point (V_REF) <b>0.65 V</b>') && sheet.includes('measured by the target'), 'the target\'s page shows its trip point');
-  assert(overlayView(Object.assign({}, tg, {v_ref: {volts: 4.93, from: 'shot'}}), state({gear: true}), '').includes('4.93 V</b> <span class="mut">with its last shot'));
-  assert(!overlayView(Object.assign({}, tg, {v_ref: null}), state({gear: true}), '').includes('Trip point'));
+  assert(!sheet.includes('<h4>Target</h4>') && !sheet.includes('Trip point') && !sheet.includes('Status page'), 'shooters see no device details');
+  const ft = Object.assign({}, tg, {ip: '192.168.1.7', fet_target: {key_fp: 'ab12cd34', commands: [], settings: {}}});
+  const rs = targetSettingsSheet(ft, {targets: [ft]}, {});
+  assert(rs.includes('Trip point (V_REF) <b>0.65 V</b>') && rs.includes('measured by the target'), 'Range Control: the target\'s trip point');
+  assert(targetSettingsSheet(Object.assign({}, ft, {v_ref: {volts: 4.93, from: 'shot'}}), {targets: [ft]}, {}).includes('4.93 V</b> <span class="mut">with its last shot'));
+  assert(rs.includes('data-act="rccmd" data-type="wifi_portal" data-id="' + ft.device_id + '"') && rs.includes('data-act="rcreset" data-id="' + ft.device_id + '"'),
+    'setup portal and factory reset for this target');
+  assert(rs.includes('Its own status page (192.168.1.7)'));
 }
 {
   const hdr = html.match(/<header>[\s\S]*?<\/header>/)[0];             // the Pi's power, quick to find, hidden until logged in
@@ -381,7 +385,7 @@ assert(fwJobText(Object.assign(fwT(null), {fw_best: {version: '0.2.4'}}), [IMG])
 assert(!fwJobText(Object.assign(fwT({status: 'sent', sha256: IMG.sha256}), {fw_best: {version: '0.2.4'}}), [IMG]).includes('available'), 'not while updating');
 assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 to the best image'));
 assert(/data-act="rcbest"[^>]*disabled/.test(fwPanel({images: []})), 'no images: disabled');
-assert(one.includes('data-act="rccmd" data-type="reboot"') && one.includes('data-type="wifi_portal"'));
+assert(one.includes('data-act="rccmd" data-type="reboot"') && !one.includes('data-type="wifi_portal"') && !one.includes('data-act="rcreset"'), 'setup portal and factory reset: in the target\'s settings');
 assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)'), 'the Targets tab shows only targets');
 // tabs
 {
@@ -401,9 +405,8 @@ assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)
   assert(/data-act="rcsleep" data-v="sleep" disabled/.test(rcIn({sel: {}})), 'no target can sleep: disabled');
   assert.strictEqual(sleepers(sd).length, 2, 'only targets with a key');
 }
-// factory reset: exactly one target
-assert(/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {}})) && /data-act="rcreset"[^>]*disabled/.test(rcIn({sel: every})));
-assert(!/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}})));
+
+
 // server updates panel
 const U = (o) => Object.assign({current: '0.6.24', helper_installed: true, pending: false, status: null, last_check: null}, o || {});
 assert.strictEqual(updatesPanel(null), '');
