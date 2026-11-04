@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-ISSF, AG, PAR, NRA, NONE = "ISSF", "CMP-AG", "CMP-3PAR", "NRA", "NONE"
+ISSF, AG, PAR, NRA, SB, NONE = "ISSF", "CMP-AG", "CMP-3PAR", "NRA", "NRA-SB", "NONE"
+SB_EDITION = "NRA Smallbore Rifle Rules, revised February 2026"
 AG_EDITION = "CMP Air Rifle and Air Pistol Competition Rules, 5th ed. (2026)"
 PAR_EDITION = "CMP National Standard 3PAR Rules, 16th ed. (2026-2028)"
 BOOKS = {
@@ -21,6 +22,8 @@ BOOKS = {
           "url": "https://thecmp.org/air/national-standard-three-position-air-rifle-rules/", "tie": "CMP"},
     NRA: {"name": "NRA", "title": "NRA Precision Air Rifle Rules 2025", "cite": "NRA",
           "url": "https://competitions.nra.org/competition-resources/rule-books/", "tie": "NRA"},
+    SB: {"name": "NRA Smallbore", "title": SB_EDITION, "cite": "NRA SB",
+         "url": "https://competitions.nra.org/competition-resources/rule-books/", "tie": "NRA-SB"},
     NONE: {"name": "No rulebook", "title": "No rulebook: the match director decides", "cite": "", "url": "", "tie": None},
 }
 # The documents FeT Monitor was built against, from each publisher's own site (fetched 2026-10-28; sha256 of those
@@ -51,9 +54,13 @@ DOCS = (
      "edition": "revised February 2025", "url": "https://competitions.nra.org/media/10004/2025-precisionairrifle_rulebook.pdf",
      "page": "https://competitions.nra.org/competition-resources/rule-books/", "size": 1992105,
      "sha256": "02076a0b05f7749ec21ee9fe33ac733eecf696a78de3e46f8e149ff33068f313"},
+    {"id": "nra-sb-2026", "book": SB, "publisher": "NRA", "title": "NRA Smallbore Rifle Rules",
+     "edition": "revised February 2026 (fetched 2026-11-03)", "url": "https://competitions.nra.org/media/10575/2026-smallbore_rulebook.pdf",
+     "page": "https://competitions.nra.org/competition-resources/rule-books/", "size": 3688620,
+     "sha256": "f48a116c99a7b5399a7a78bf8538cdd279f27efa8b01361cdb00d7d75f8b295d"},
 )
 DOC_BY_ID = {d["id"]: d for d in DOCS}
-BOOK_DOC = {ISSF: "issf-2026", AG: "cmp-ag-2026", PAR: "cmp-3par-2026", NRA: "nra-par-2025"}     # the book itself
+BOOK_DOC = {ISSF: "issf-2026", AG: "cmp-ag-2026", PAR: "cmp-3par-2026", NRA: "nra-par-2025", SB: "nra-sb-2026"}     # the book itself
 REPOSITORIES = (                                     # where each publisher keeps its rulebooks (Match Control links)
     ("ISSF rules", "https://www.issf-sports.org/rules"),
     ("USA Shooting resource center", "https://usashooting.org/resource-center/"),
@@ -63,7 +70,7 @@ REPOSITORIES = (                                     # where each publisher keep
     ("NRA rule books", "https://competitions.nra.org/competition-resources/rule-books/"),
 )
 LEGACY = {"ISSF": ISSF, "CMP": PAR, "CMP 3PAR": PAR, "CMP Air Gun": AG, "NRA": NRA}
-TIE_RULES = ("ISSF", "CMP", "NRA")
+TIE_RULES = ("ISSF", "CMP", "NRA", "NRA-SB")
 
 
 def book_of(fmt: dict) -> str:
@@ -132,6 +139,17 @@ PROC = {
         "incident": "Range Officer's Notation", "best_count": None, "finals": ("nra",),
         "malfunction": "9.5", "malfunction_allowable": None, "range": "9.2 b, 10.3.2",
     },
+    SB: {                                            # NRA Smallbore Rifle Rules 2026 (electronic targets: 10.10)
+        "move": (300, "10.10.5 c", "their time stops while they move; when they are ready they get 5 minutes extra and unlimited sighting shots before they go on with record."),
+        "later_relay": None,
+        "too_many": "10.10.4 d",
+        "not_registered": "10.10.5 d", "not_registered_move": "10.10.5 d 3",
+        "double_load": None, "not_upheld": None, "shot_protest": None, "disturbance": None,
+        "crossfire": "10.10.4", "sighter_crossfire": "10.10.4 a",
+        "penalty_example": "9.30", "dq": "9.30", "late": None, "protest_min": (None, "16.1"),
+        "incident": "Range Report (10.10.4 f)", "best_count": None, "finals": (),
+        "malfunction": "9.5 a", "malfunction_allowable": None, "range": "10.10.5 b",
+    },
     NONE: {
         "move": (0, None, "their time stops while they move; when they are ready, the match director gives any extra time (Extra time…)."),
         "later_relay": (0, None),
@@ -150,6 +168,12 @@ def rule(book: str, key: str) -> Optional[str]:
     """The cited rule for a procedure in this book ("CMP AG 7.11.8"), or None when the book does not cover it."""
     v = PROC[book][key]
     return cite(book, v if isinstance(v, str) else None)
+
+
+def sighter_crossfire_points(book: str) -> int:
+    """Points off the firer's first series for a sighter on another competitor's record target: 1 in NRA Smallbore
+    (10.10.4 a), 2 in the other books that cover it (ISSF 6.11.6.3, NRA Precision Air Rifle 10.10.4 a)."""
+    return 1 if book == SB else 2
 
 
 def move_extra(book: str) -> tuple:
@@ -183,8 +207,10 @@ def interruption_time(book: str, reason: str, left_ms: int, lost_s: int) -> tupl
     CMP 3PAR 7.18.1-2: the time lost; over 5 minutes + 2 minutes and unlimited sighters.
     NRA 9.2 b: over 3 minutes equal time, over 5 unlimited sighters; 9.5 (disabled rifle): the time that remained, sighters.
     No rulebook: the time lost is given back; the match director adds anything else."""
-    if reason == "malfunction":                              # only NRA stops the clock for a malfunction
-        return left_ms, True, "NRA 9.5"
+    if reason == "malfunction":                              # only the NRA books stop the clock for a malfunction
+        return left_ms, True, "NRA SB 9.5 a" if book == SB else "NRA 9.5"
+    if book == SB:                                          # 10.3.2: halted 2 minutes or more: 1 minute added, for sighters
+        return (left_ms + 60_000, True, "NRA SB 10.3.2") if lost_s >= 120 else (left_ms, False, "NRA SB 10.3.2")
     if book == PAR:
         return (left_ms + 120_000, True, "CMP 3PAR 7.18.2") if lost_s > 300 else (left_ms, False, "CMP 3PAR 7.18.1")
     if book == AG:
@@ -214,6 +240,8 @@ def range_interruption(book: str, lost_s: int) -> tuple:
         return (120 if over else 0), over, rule(book, "range")
     if book == NRA:
         return 0, over, "NRA 10.3.2" if over else "NRA 9.2 b"
+    if book == SB:                                          # 10.3.2: halted 2 minutes or more: 1 minute more, for sighters
+        return (60, True, "NRA SB 10.3.2") if lost_s >= 120 else (0, False, "NRA SB 10.3.2")
     return 0, False, None
 
 
@@ -257,7 +285,8 @@ def texts(book: str) -> dict:
                         if r("shot_protest") else d,
         "not_upheld": r("not_upheld"),
         "crossfire": "It is annulled here. A record shot is scored as a miss for the firing point that fired it" +
-                     ("; a sighter on a record target costs that firing point 2 points" if r("sighter_crossfire") else "; a sighter has no penalty") +
+                     (f"; a sighter on a record target costs that firing point {sighter_crossfire_points(book)} point" +
+                      ("s" if sighter_crossfire_points(book) > 1 else "") if r("sighter_crossfire") else "; a sighter has no penalty") +
                      (f" ({r('crossfire')})." if r("crossfire") else ". " + d),
         "penalty_example": r("penalty_example") or "the rule or reason",
         "dq_rule": r("dq"),
@@ -267,15 +296,18 @@ def texts(book: str) -> dict:
         "challenge": pm is None,
         "incident": r("incident"),
         "best_count": r("best_count"),
-        "interrupt": "This shooter's time stops" + (f" ({b['cite']} " + {ISSF: "6.11.3", AG: "7.12", PAR: "7.18", NRA: "9.2 b"}[book] + ")" if book != NONE else ""),
-        "malfunction": {ISSF: "ask_allowable", NRA: "stops_clock"}.get(book, "sighters"),
+        "interrupt": "This shooter's time stops" + (f" ({b['cite']} " + {ISSF: "6.11.3", AG: "7.12", PAR: "7.18", NRA: "9.2 b", SB: "10.3.2"}[book] + ")" if book != NONE else ""),
+        "malfunction": {ISSF: "ask_allowable", NRA: "stops_clock", SB: "stops_clock"}.get(book, "sighters"),
         "malfunction_text": {ISSF: "Is it an ALLOWABLE malfunction (ISSF 6.13.2.1)? OK: yes, sighters allowed after the repair. Cancel: no (no sighters). No extra time either way (6.13.4).",
                              AG: "Malfunction (CMP AG 7.13): sighters within the time left; 2 minutes extra if it happened in the last 5 minutes. Continue?",
                              PAR: "Malfunction (CMP 3PAR 7.19.1): sighters on request; 2 minutes extra if it happened after the 5-minute warning. Continue?",
                              NRA: "Disabled rifle (NRA 9.5): the shooter's time stops until you press Repaired; then the time that remained and sighters.",
+                             SB: "Disabled rifle (NRA SB 9.5 a, 10.9): the shooter's time stops until you press Repaired; then the time that remained in the stage, and sighters.",
                              NONE: d + " Allow sighters after the repair? OK: yes. Cancel: no. No extra time (use Extra time… if the match director gives it)."}[book],
         "range_interrupt": "Interrupt the whole range now? Every clock stops. When it ends, the time is given back" +
-                           (f"; over 5 minutes the {b['name']} rules add " + {ISSF: "5 minutes and sighters (6.10.9.1).", AG: "2 minutes and sighters (7.12.3).",
+                           ("; from 2 minutes the NRA Smallbore rules add 1 minute and sighters (10.3.2). If all the targets failed, add 5 minutes "
+                            "with Extra time (10.10.5 b)." if book == SB else
+                            f"; over 5 minutes the {b['name']} rules add " + {ISSF: "5 minutes and sighters (6.10.9.1).", AG: "2 minutes and sighters (7.12.3).",
                                                                              PAR: "2 minutes and sighters (7.18.4).", NRA: "sighters (10.3.2)."}[book]
                             if book != NONE else ". " + d),
         "finals": list(finals(book)),

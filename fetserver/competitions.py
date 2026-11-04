@@ -609,7 +609,7 @@ class Competitions:
             f = found.get(pid, {"shots": [], "x": {"dq": None, "penalties": [], "removed": []}, "relay": None, "lane": None, "device_id": None, "pending": 0})
             if f.get("moved_from"):
                 f["x"] = dict(f["x"], moved_from=f["moved_from"])
-            e = dict(self.matches.entry_view(f["shots"], decimal), summary=ranking.summary(f["shots"]), sort_name=p["family"], **f["x"],
+            e = dict(self.matches.entry_view(f["shots"], decimal), summary=ranking.summary(f["shots"], mf.layout(fmt)), sort_name=p["family"], **f["x"],
                      id=pid, name=display_name(p), family=p["family"], given=p["given"], cls=p["class"] or "", team=p["team"] or "",
                      relay=f["relay"], lane=f["lane"], device_id=f["device_id"], pending=f["pending"], fired=bool(f["shots"]))
             if with_shots:

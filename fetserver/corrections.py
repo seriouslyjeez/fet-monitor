@@ -263,7 +263,7 @@ class Corrections:
                     out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": 0, "ring": 0, "inner": False, "miss": True,
                                          "crossfire_to": r["lane"], "note": "crossfire onto firing point %d" % r["lane"]})
                 elif d.get("hit_stream") == "scored" and rb.rule(book, "sighter_crossfire"):
-                    out["penalties"].append({"corr": r["id"], "points": 2, "rule": rb.rule(book, "sighter_crossfire"),
+                    out["penalties"].append({"corr": r["id"], "points": rb.sighter_crossfire_points(book), "rule": rb.rule(book, "sighter_crossfire"),
                                              "note": "sighter crossfired onto the record target of firing point %d" % r["lane"], "shot_id": None})
         return out
 

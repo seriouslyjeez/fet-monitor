@@ -1,4 +1,4 @@
-# 10 m Air Rifle match formats and procedures, one rulebook at a time (built in; please check against your copies)
+# Match formats and procedures, one rulebook at a time (built in; please check against your copies)
 
 Every format belongs to ONE rulebook, and its procedures, rule references, screen texts, tie-breaks and finals come
 from that book only (fetserver/rulebooks.py). A book that does not cover something leaves it available, with no rule
@@ -15,6 +15,7 @@ anywhere (electronic targets). Times are minutes unless marked.
 | **CMP Air Gun** (`CMP-AG`) | CMP Air Rifle and Air Pistol Competition Rules, 5th edition 2026 (effective 1 March 2026), with the CMP Range Officer scripts "60-shot event on electronic targets" (7 Jan 2025) and "Air gun final on EST" (20 Feb 2026), from https://thecmp.org/competitions/cmp-competitions-rulebooks/ (authoritative for CMP, the user's choice). Standing only. | AR60 | Air Gun Final (10.2) |
 | **CMP 3PAR** (`CMP-3PAR`) | CMP National Standard Three-Position Air Rifle Rules, 16th edition, October 2026 to September 2028, with the RO scripts on https://thecmp.org/air/national-standard-three-position-air-rifle-rules/. Also the book NFHS / high-school 3-position air rifle uses. | 3x10, 3x20, 60 standing, 3x20 standing | Standard Final (10.4); Standing Start-from-Zero (10.5, after a standing event); Three-Position Start-from-Zero (10.3, after 3x10 / 3x20) |
 | **NRA** (`NRA`) | NRA Precision Air Rifle Rules, 2025. | 3x10, 3x20, 3x40, 40 and 60 standing | NRA Final (7.1.2) |
+| **NRA Smallbore** (`NRA-SB`) | NRA Smallbore Rifle Rules, revised February 2026 (competitions.nra.org/media/10575). Electronic targets are authorized for all events (10.10). | 20 courses: conventional 50 ft (A-17) and 50 yd (A-23, A-27), 50 m (A-26); metric prone and position (A-50, A-51, NRA/USAS-50); see below | none (the book has no finals) |
 | **No rulebook** (`NONE`) | — | custom only | any built final (each follows its own book) |
 
 The documents themselves are not in this repository (each is its publisher's copyright). The Pi downloads them from
@@ -325,6 +326,44 @@ How FeT Monitor runs it: the top n of the class on the targets in qualification 
 for the scores before each LOAD, n); after the last shot the console offers a shoot-off for every tie (LOAD,
 ATTENTION 3 2 1, START, 75 s). A finalist who does not report is placed last (i): the match director leaves them out.
 
+## NRA Smallbore (Smallbore Rifle Rules, revised February 2026)
+
+Each course is scored in whole rings with X's (center shots on targets without an X ring) on its own face
+(fetserver/faces.py, the dimensions of 4.2-4.10, the .224 in gauge of 14.3 a). Every course starts with a 3-minute
+preparation period (10.3.1). Sighters are allowed at any time (9.2): each stage is one clock, sighters until the
+shooter starts record. No time warnings are given (8.4). The commands are 10.7's ("Load. Commence firing." /
+"Cease firing. Bolts open, insert your ECIs.").
+
+| Course (rule) | Face | Positions (order as the rule's table lists them; the program may change it, 5) | Time per record shot |
+|---|---|---|---|
+| 50 ft Conventional 4-Position 4x10, 4x20 (7.3) | A-17 | prone, sitting, kneeling, standing | 1 min; standing 1 1/2 (8.2 a) |
+| 50 ft Conventional 3-Position 3x10, 3x20 (7.3, sitting left out) | A-17 | prone, kneeling, standing | as above |
+| 50 yd Conventional Prone 20 (7.2.1), 40 (7.2) | A-23 | prone | 1 min; a 40-shot stage on e-targets 45 min (8.1.1) |
+| 50 yd Conventional 4-Position 4x10, 4x20 (7.3) | A-23 | prone, sitting, kneeling, standing | 1 min prone; 1 1/2 the others (8.2 b) |
+| 50 yd / 50 m Conventional Prone 40 (7.2) | A-27 / A-26 | prone | 45 min (8.1.1) |
+| 50 m / 50 yd Metric Prone 40, 60 (7.4) | A-50 (= ISSF 50 m) / A-51 | prone | 45 / 65 min (8.1.1) |
+| NRA Metric Position 3x20, 3x40 at 50 ft, 50 m, 50 yd (7.5) | NRA/USAS-50, A-50, A-51 | prone, standing, kneeling | 1 min prone, 1 1/2 kneeling, 2 standing (8.2 c) |
+
+Position change: 5 minutes (8.2: at least 5 more minutes for each). Team size: 4 by default (the program decides).
+
+### NRA Smallbore procedures
+
+| Situation | NRA SB rule | What FeT Monitor does |
+|---|---|---|
+| Early or late shots | 14.5 | the highest-value shots become misses (by hand) |
+| Sighter during record | 9.2 | allowed: no penalty (unless the program prohibits sighters) |
+| Too many hits | 10.10.4 d | annul the highest-value hit |
+| Target fails: move | 10.10.5 c | time stops while moving; 5 min extra and unlimited sighters |
+| One shooter or the range interrupted | 10.3.2 | the clock stops; 2 minutes or more: 1 minute more and sighters. All targets failed (10.10.5 b): + 5 min, use *Extra time* |
+| Disabled rifle | 9.5 a, 10.9 | the shooter's time stops until *Repaired*, then the time that remained in the stage, and sighters |
+| Shot does not register | 10.10.5 d; twice 10.10.5 d 3 | one more shot, settled after the relay; twice: move (5 min, sighters) |
+| Crossfire | 10.10.4 a-c | a record shot is a miss; a sighter onto a record target: **1 point** off, first series |
+| Disclaimed shot | 10.10.4 e-f | annul if the RO confirms it |
+| Results challenge | 16.1 | the challenge time set for the competition |
+| Penalties / DQ | 9.30 | warning, deduction, DQ |
+| Ties | 15.7 | see Ranking: X's, stages from the last, bulls from the last, X's of higher value; positions: standing, kneeling, prone |
+| Finals, later relay, late arrival, double load, disturbance | not covered | available; the match director decides |
+
 ## No rulebook
 
 A custom format may say "No rulebook". Nothing is cited and nothing is suggested: every flagged shot shows "the match
@@ -417,6 +456,12 @@ length: 30 s is our choice). NRA 3-position: one clock per position (sighting ti
 | CMP 3PAR, decimal | 8.6.1 e | as ISSF decimal (inner tens are not used with decimals, 8.6.1 a) |
 | CMP 3PAR, whole rings | 8.6.1 a-d | total; inner tens; 10-shot series backwards (score, then that series' inner tens); shot by shot backwards, inner ten above a ten; then duplicate awards |
 | NRA | 15.3 | total; last 10-shot string backwards; most 10s, then 9s, 8s ...; most inner 10s; then equal rank alphabetically |
+| NRA Smallbore, one position | 15.7.1 a, 15.7.2 a | total; X's (center shots); each stage from the last (score, then X's); each bull from the last (prone: its score; other positions: score, then X's); X's of higher value (14.3 e, g) and the stages again with them; then tied (15.17: the match director decides) |
+| NRA Smallbore, several positions | 15.7.2 b | total; X's; standing, kneeling, prone totals (with X's); stages from the last, then bulls from the last, standing first, then kneeling, sitting, prone |
+
+Smallbore stages are the format's record phases in order, and bulls are runs of the face's shots per bull (7.1:
+1 at 50 ft, 5 at 50 yd / m). An X of higher value is an X whose hole clears the X ring's edge (14.3 e); on the A-17
+a center shot of higher value covers the whole ten ring (14.3 g). Both are decided from the shot's position.
 
 Teams (ISSF 6.15.5, CMP AG 8.5.4, CMP 3PAR 8.6.4, NRA 15.7): the members' results totalled and ranked like one
 competitor (countback lists added position by position). The built-in team size follows the book and can be changed

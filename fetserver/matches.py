@@ -758,8 +758,9 @@ class Matches:
                 left = ln["moving_left_ms"] + seconds * 1000
                 self._resume_lane(c, m, ln, p, left, True, now)
                 self._log(c, mid, now, "lane_ready", phase, device_id, {"extra_s": seconds, "left_ms": left, "by": by})
-            elif action in ("interrupt", "malfunction") and (action == "interrupt" or rb.book_of(fmt) == rb.NRA):
-                # the shooter's time stops: an interruption (ISSF 6.11.3, CMP AG 7.12, CMP 3PAR 7.18, NRA 9.2 b), or an NRA disabled rifle (9.5)
+            elif action in ("interrupt", "malfunction") and (action == "interrupt" or rb.book_of(fmt) in (rb.NRA, rb.SB)):
+                # the shooter's time stops: an interruption (ISSF 6.11.3, CMP AG 7.12, CMP 3PAR 7.18, NRA 9.2 b, NRA SB 10.3.2), or an
+                # NRA disabled rifle (NRA 9.5, NRA SB 9.5 a)
                 if ln["moving_since_ms"] is not None:
                     raise MatchError("this shooter's time is already stopped")
                 if m["state"] not in LIVE or m["state"] == "holding":
@@ -1275,6 +1276,7 @@ class Matches:
         if ln["series_id"] is None:
             return out
         eff = self.core.corrections.effects(c, m, ln["lane"])
+        face = faces.face(json.loads(m["format_json"]).get("face"))     # X's of higher value (NRA SB ties) from the position
         for s in c.execute("""SELECT id, is_miss, tenths, ring, inner, ax_h, ay_h, series_no, event_ms FROM shots
                               WHERE series_id=? AND stream='scored' ORDER BY event_ms, id""", (ln["series_id"],)):
             if s["id"] in eff["annulled"]:
@@ -1290,8 +1292,9 @@ class Matches:
             tenths, ring = (0, 0) if miss else (v["tenths"], v["ring"])
             if decision == "penalty2":
                 tenths, ring = max(0, tenths - 20), max(0, ring - 2)
+            inner = decision == "count" and not miss and v["inner"]
             out.append({"id": s["id"], "n": s["series_no"], "tenths": tenths, "ring": ring, "miss": miss,
-                        "inner": decision == "count" and not miss and v["inner"], "decision": decision if f else None,
+                        "inner": inner, "higher": inner and not o and faces.higher(face, s["ax_h"], s["ay_h"]), "decision": decision if f else None,
                         "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0,
                         "t": s["event_ms"], "orig": fired if o else None, "override": o["note"] if o else None})
         for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=? AND stream='scored' AND decision='miss'", (ln["series_id"],)):
@@ -1370,7 +1373,7 @@ class Matches:
             shots, x = self.counted_row(c, m, ln, flags)
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             name = ln["competitor"] or ""
-            entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1], **x,
+            entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots, mf.layout(fmt)), sort_name=(name.split() or [""])[-1], **x,
                                 lane=ln["lane"], device_id=ln["device_id"], competitor=name,
                                 target=(t["name"] if t and t["name"] else ln["device_id"]),
                                 pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])))

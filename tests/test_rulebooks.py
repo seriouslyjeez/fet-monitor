@@ -9,8 +9,8 @@ from fetserver import rules
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase, tiny
 
-CITE = re.compile(r"\b(ISSF|USAS|CMP AG|CMP Air Gun|CMP 3PAR|3PAR|NRA|CMP)\b(?= ?[0-9]+(?:\.|\b))")   # a book, then a rule number
-OWN = {rb.ISSF: {"ISSF"}, rb.AG: {"CMP AG"}, rb.PAR: {"CMP 3PAR"}, rb.NRA: {"NRA"}, rb.NONE: set()}
+CITE = re.compile(r"\b(ISSF|USAS|CMP AG|CMP Air Gun|CMP 3PAR|3PAR|NRA SB|NRA|CMP)\b(?= ?[0-9]+(?:\.|\b))")   # a book, then a rule number
+OWN = {rb.ISSF: {"ISSF"}, rb.AG: {"CMP AG"}, rb.PAR: {"CMP 3PAR"}, rb.NRA: {"NRA"}, rb.SB: {"NRA SB"}, rb.NONE: set()}
 
 
 def strings(x):
@@ -51,7 +51,11 @@ class NoCrossing(unittest.TestCase):
                         self.assertIsNone(g["suggest"], (book, code))     # no borrowed suggestion either
 
     def test_summaries_are_per_book(self):
-        self.assertEqual(set(rules.SUMMARIES), {rb.ISSF, rb.AG, rb.PAR, rb.NRA})
+        self.assertEqual(set(rules.SUMMARIES), {rb.ISSF, rb.AG, rb.PAR, rb.NRA, rb.SB})
+        self.assertIn("1 point", rules.explain("NRA SB 10.10.4 a")["text"], "the smallbore book's own crossfire rule")
+        self.assertIn("2 points", rules.explain("NRA 10.10.4 a")["text"])
+        self.assertEqual(rules.explain("9.2", rb.SB)["book"], rb.SB, "a bare number: the match's book")
+        self.assertEqual(rules.explain("NRA 9.30", rb.SB)["book"], rb.SB, "plain NRA in a smallbore match: the smallbore book")
         self.assertIsNone(rules.explain("7.17.8", rb.AG)["text"], "a 3PAR number is not looked up in the Air Gun book")
         self.assertIsNone(rules.explain("7.11.8", rb.PAR)["text"])
 

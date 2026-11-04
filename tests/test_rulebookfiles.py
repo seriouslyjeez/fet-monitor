@@ -25,14 +25,14 @@ def known(data):
 
 class Manifest(unittest.TestCase):
     def test_every_book_has_its_document_from_its_publisher(self):
-        self.assertEqual({d["id"] for d in DOCS}, {"issf-2026", "usas-2025", "cmp-ag-2026", "cmp-3par-2026", "nra-par-2025"})
+        self.assertEqual({d["id"] for d in DOCS}, {"issf-2026", "usas-2025", "cmp-ag-2026", "cmp-3par-2026", "nra-par-2025", "nra-sb-2026"})
         for book, doc in BOOK_DOC.items():
             self.assertEqual(DOC_BY_ID[doc]["book"], book)
             self.assertEqual(texts(book)["doc"], doc)
         self.assertIsNone(texts(NONE)["doc"])
         self.assertNotIn(NONE, BOOK_DOC)
         hosts = {"issf-2026": "backoffice.issf-sports.org", "usas-2025": "ncaaorg.s3.amazonaws.com", "cmp-ag-2026": "thecmp.org",
-                 "cmp-3par-2026": "thecmp.org", "nra-par-2025": "competitions.nra.org"}
+                 "cmp-3par-2026": "thecmp.org", "nra-par-2025": "competitions.nra.org", "nra-sb-2026": "competitions.nra.org"}
         for d in DOCS:
             self.assertTrue(d["url"].startswith("https://" + hosts[d["id"]] + "/"), d["id"])
             self.assertTrue(d["page"].startswith("https://") and len(d["sha256"]) == 64 and d["size"] > 100_000, d["id"])
@@ -99,7 +99,7 @@ class Store(unittest.TestCase):
     def test_missing_ones_at_start_up(self):
         s = self.store()
         s.add("issf-2026", PDF, "upload")
-        self.assertEqual(s.download_missing(), ["usas-2025", "cmp-ag-2026", "cmp-3par-2026", "nra-par-2025"])
+        self.assertEqual(s.download_missing(), ["usas-2025", "cmp-ag-2026", "cmp-3par-2026", "nra-par-2025", "nra-sb-2026"])
         self.assertNotIn(DOC_BY_ID["issf-2026"]["url"], self.fetched, "a stored copy is not fetched again")
         self.assertEqual(s.download_missing(), [])
         off = self.store(fail="cannot reach thecmp.org")
@@ -147,7 +147,7 @@ class OverHttp(MatchHttpBase):
 
     def test_public_list_and_files(self):
         st, body, _ = self.req("GET", "/api/v1/rulebooks", header=False)
-        self.assertEqual((st, len(body["docs"]), len(body["repositories"])), (200, 5, 6))
+        self.assertEqual((st, len(body["docs"]), len(body["repositories"])), (200, 6, 6))
         self.assertIn({"name": "CMP competition rulebooks", "url": "https://thecmp.org/competitions/cmp-competitions-rulebooks/"}, body["repositories"])
         self.assertEqual(self.raw("/api/v1/rulebooks/cmp-ag-2026.pdf")[0], 404)
         self.files.add("cmp-ag-2026", PDF, "upload")

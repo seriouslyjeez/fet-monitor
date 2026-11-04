@@ -2,6 +2,7 @@
 being tested, and must be split by exactly that rule."""
 import unittest
 
+from fetserver import ranking
 from fetserver.ranking import combine, rank, summary
 
 
@@ -124,3 +125,78 @@ class OrderOfTheRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NraSmallbore(unittest.TestCase):
+    """NRA Smallbore Rifle Rules 2026, 15.7 (whole rings, X's; stages, bulls, positions)."""
+    def s(self, rings, x=(), higher=(), layout=None):
+        shots = [{"tenths": r * 10, "ring": r, "inner": i in x, "higher": i in higher} for i, r in enumerate(rings)]
+        return ranking.summary(shots, layout)
+
+    def order(self, **named):
+        es = [{"summary": sm, "sort_name": n} for n, sm in named.items()]
+        return [(e["sort_name"], e["place"]) for e in ranking.rank(es, "NRA-SB", False)]
+
+    PRONE2 = {"stages": [(4, "prone"), (4, "prone")], "bull": 2}
+
+    def test_prone_x_count_first(self):
+        a = self.s([10] * 8, x={0}, layout=self.PRONE2)
+        b = self.s([10] * 8, x={0, 1}, layout=self.PRONE2)
+        self.assertEqual(self.order(a=a, b=b), [("b", 1), ("a", 2)], "15.7.1 a (1)")
+
+    def test_prone_last_stage_then_bulls_then_higher(self):
+        L = self.PRONE2
+        a = self.s([10, 10, 10, 9, 10, 10, 10, 10], layout=L)      # stage 1: 39, stage 2: 40
+        b = self.s([10, 10, 10, 10, 10, 10, 10, 9], layout=L)      # stage 1: 40, stage 2: 39
+        self.assertEqual(self.order(a=a, b=b)[0][0], "a", "15.7.1 a (3): the last stage decides")
+        c = self.s([10, 9, 10, 10, 10, 10, 10, 10], layout={"stages": [(8, "prone")], "bull": 2})   # one stage: bulls 19,20,20,20
+        d = self.s([10, 10, 10, 10, 10, 10, 10, 9], layout={"stages": [(8, "prone")], "bull": 2})   # bulls 20,20,20,19
+        self.assertEqual(self.order(d=d, c=c)[0][0], "c", "15.7.1 a (4): bulls from the last")
+        e = self.s([10] * 8, x={0, 1}, higher={0}, layout=L)
+        f = self.s([10] * 8, x={0, 1}, higher={0, 1}, layout=L)
+        self.assertEqual(self.order(e=e, f=f)[0][0], "f", "15.7.1 a (5): X's of higher value")
+        g = self.s([10] * 8, x={0}, higher={0, 1}, layout=L)       # a 'higher' that is not an X does not count
+        self.assertEqual(ranking.summary([{"tenths": 100, "ring": 10, "inner": False, "higher": True}])["highers"], 0)
+        self.assertEqual(self.order(g=g, e=e)[0][0], "e", "more X's win before any higher value")
+
+    def test_prone_bulls_by_score_position_bulls_with_x(self):
+        one = lambda pos: {"stages": [(4, pos)], "bull": 2}
+        # same total, X count and stage (score, X): bull 1 has the X for a, bull 2 for b
+        for pos, winner in (("prone", "tie"), ("standing", "b")):
+            a = self.s([10, 10, 10, 10], x={0}, layout=one(pos))
+            b = self.s([10, 10, 10, 10], x={3}, layout=one(pos))
+            got = self.order(a=a, b=b)
+            if winner == "tie":
+                self.assertEqual([p for _, p in got], [1, 1], "15.7.1 a (4): a prone bull by its score only")
+            else:
+                self.assertEqual(got[0][0], "b", "15.7.2 a (3): a position bull with its X's, from the last")
+
+    def test_positions(self):
+        L = {"stages": [(2, "prone"), (2, "sitting"), (2, "kneeling"), (2, "standing")], "bull": 1}
+        a = self.s([10, 10, 10, 10, 10, 9, 10, 10], layout=L)      # kneeling 19, standing 20
+        b = self.s([10, 10, 10, 10, 10, 10, 10, 9], layout=L)      # kneeling 20, standing 19
+        self.assertEqual(self.order(b=b, a=a)[0][0], "a", "15.7.2 b (2): standing first")
+        c = self.s([10, 9, 10, 10, 10, 10, 10, 10], layout=L)      # prone 19
+        d = self.s([10, 10, 10, 9, 10, 10, 10, 10], layout=L)      # sitting 19
+        self.assertEqual(self.order(c=c, d=d)[0][0], "d", "15.7.2 b (2): standing, kneeling, prone: d's prone is better (its point went in sitting, not in (2))")
+        e = self.s([10, 10, 9, 10, 10, 10, 10, 10], x={3}, layout=L)   # sitting 9, 10X
+        f = self.s([10, 10, 10, 9, 10, 10, 10, 10], x={2}, layout=L)   # sitting 10X, 9: same totals, X's and stages
+        self.assertEqual(self.order(f=f, e=e), [("e", 1), ("f", 2)], "15.7.2 b (4): bulls from the last, with their X's")
+
+    def test_teams_add_the_countback(self):
+        L = self.PRONE2
+        t = ranking.combine([self.s([10] * 8, x={0}, layout=L), self.s([9] * 8, layout=L)])
+        self.assertEqual((t["total_rings"], t["inners"], t["stage"][1][:2], t["bulls"][0]), (152, 1, [76, 0], [38, 1]))
+        self.assertEqual(ranking.sort_key(t, "NRA-SB", False)[0], 152)
+
+    def test_higher_value_count_before_its_stages(self):
+        L = self.PRONE2
+        a = self.s([10] * 8, x={0, 1, 4}, higher={0, 1}, layout=L)     # X's of higher value: 2, both in stage 1
+        b = self.s([10] * 8, x={0, 1, 4}, higher={4}, layout=L)        # 1, in the last stage
+        self.assertEqual(self.order(a=a, b=b)[0][0], "a", "15.7.1 a (5): the count of X's of higher value (1), then the stages")
+
+    def test_positions_x_count_before_standing(self):
+        L = {"stages": [(2, "prone"), (2, "kneeling"), (2, "standing")], "bull": 1}
+        a = self.s([10, 10, 10, 10, 10, 9], x={0, 1}, layout=L)        # standing 19 but 2 X's
+        b = self.s([10, 10, 9, 10, 10, 10], x={4}, layout=L)           # standing 20, 1 X
+        self.assertEqual(self.order(a=a, b=b)[0][0], "a", "15.7.2 b (1): X's over the whole course first")

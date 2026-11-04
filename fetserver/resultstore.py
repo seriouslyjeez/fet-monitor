@@ -75,7 +75,7 @@ class ResultStore:
             shots, x = self.matches.counted_row(c, m, ln, flags)
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             name = ln["competitor"] or (t["name"] if t and t["name"] else ln["device_id"])
-            e = dict(self.matches.entry_view(shots, decimal), summary=ranking.summary(shots), sort_name=(name.split() or [""])[-1], **x,
+            e = dict(self.matches.entry_view(shots, decimal), summary=ranking.summary(shots, mf.layout(fmt)), sort_name=(name.split() or [""])[-1], **x,
                      id=ln["lane"], name=name, family=name, given="", cls="", team="", relay=None, lane=ln["lane"], device_id=ln["device_id"],
                      pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"]), fired=bool(shots))
             if with_shots:

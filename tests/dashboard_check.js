@@ -864,7 +864,7 @@ console.log('OK');
   const {mcRulebooks, bookLink, bookFile, guideRow} = X;
   const R = D.rulebooks, base = {status: {user: 'md', role: 'director'}, rulebooks: R};
   const pg = mcRulebooks(base);
-  assert(R.docs.length === 5 && pg.includes('USA Shooting Rules') && pg.includes('ISSF Rule Book 2026'), 'every document, USA Shooting listed separately');
+  assert(R.docs.length === 6 && pg.includes('NRA Smallbore Rifle Rules') && pg.includes('USA Shooting Rules') && pg.includes('ISSF Rule Book 2026'), 'every document, USA Shooting listed separately');
   assert(pg.includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && !pg.includes('/api/v1/rulebooks/issf-2026.pdf'), 'Open only for stored copies');
   assert.strictEqual(count(pg, /<b>Open<\/b>/g), 1, 'one stored copy, one Open');
   assert(pg.includes('A different file than the edition FeT Monitor follows') && pg.includes('uploaded by &lt;b&gt;md&lt;/b&gt;'), 'a different file is marked; who stored it, escaped');
@@ -1043,6 +1043,15 @@ console.log('OK');
     targets: [{device_id: 'a', name: 'A', online: true, installed_face: 'issf-ar10'}, {device_id: 'b', name: 'B', online: true, installed_face: 'issf-r50'}],
     draft: {format_id: 'f1', lanes: {a: {on: true}, b: {on: true}}}}), {mcTab: 'singles'}));
   assert(nm.includes('Target face: <b>50 m Rifle') && count(nm, /swap its mask and faceplate/g) === 1, 'new match: the face, and which chosen target needs a swap');
+  {                                                           // whole rings on NRA conventional faces
+    const v0 = D.targets.find(t => t.view.bull_shots.length).view, va = Object.assign({}, v0, {face: a17}), vr = Object.assign({}, v0, {face: ar});
+    assert(!shotsTable(va).includes('<th>Int</th>') && shotsTable(vr).includes('<th>Int</th>'), 'one score column on a whole-ring face');
+    assert(!lastPanel(va).includes('<th>Decimal</th>') && lastPanel(va).includes('<th>Score</th>') && lastPanel(vr).includes('<th>Decimal</th>'));
+    const s0 = v0.bull_shots.find(x => !x.miss);
+    assert(strip(va).includes('>' + s0.ring + '</span>') && !strip(va).includes('>' + s0.decimal.toFixed(1) + '</span>'), 'the strip: rings');
+    assert(v0.groups.length && X.groupsRow(va).includes('<b>' + v0.groups[0].integer + '</b>') && X.groupsRow(vr).includes('<b>' + dec(v0.groups[0].decimal) + '</b>'),
+      'groups: whole rings on the A-17, decimals on air rifle');
+  }
   delete S.faces;
   console.log('faces OK');
 }

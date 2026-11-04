@@ -90,6 +90,15 @@ class NraFaces(unittest.TestCase):
         self.assertEqual((at("nra-a17", 328).inner, at("nra-a17", 329).inner), (True, False))
         self.assertFalse(F.FACES["nra-a17"].decimal, "conventional: whole rings")
 
+    def test_x_of_higher_value(self):
+        # 14.3 e: an X clear of the X ring's edge: r < 0.195 - 0.112 in = 2.1082 mm; 14.3 g (A-17): the hole covers the
+        # ten ring: r <= 0.112 - 0.075 in = 0.9398 mm. Not on targets without (A-51, ISSF).
+        h = lambda fid, x: F.higher(F.FACES[fid], x, 0)
+        self.assertEqual((h("nra-a23", 210), h("nra-a23", 211)), (True, False))
+        self.assertEqual((h("nra-a17", 93), h("nra-a17", 94)), (True, False))
+        self.assertFalse(h("nra-a51", 0) or h("issf-r50", 0) or h("issf-ar10", 0))
+        self.assertEqual([F.FACES[f].bull for f in ("nra-a17", "nra-usas50", "nra-a23", "nra-a51", "issf-r50")], [1, 1, 5, 5, 5], "NRA 7.1")
+
     def test_reduced_targets(self):
         self.assertEqual((at("nra-usas50", 322).ring, at("nra-usas50", 323).ring), (10, 9), "0.38 + 2.8448 mm")
         self.assertFalse(at("nra-usas50", 0).inner, "no center shots on the NRA/USAS-50")

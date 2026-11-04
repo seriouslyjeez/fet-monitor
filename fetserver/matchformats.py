@@ -160,6 +160,81 @@ def _nra_standing(n):
             "phases": [_nra_stage("standing", n, True)]}
 
 
+# ------------------------------------------------------------------------------------------- NRA Smallbore Rifle (2026)
+# Courses of fire 7.2-7.5, time 8.1.1 / 8.2 (per record shot; sighters within it, 9.2: permitted at any time), a 3-minute
+# preparation period 10.3.1, at least 5 minutes per position change 8.2, no time warnings 8.4, commands 10.7.
+SB_POS_S = {                       # seconds per record shot, 8.2 a (indoor conventional), b (outdoor), c (NRA metric position)
+    "a": {"prone": 60, "sitting": 60, "kneeling": 60, "standing": 90},
+    "b": {"prone": 60, "sitting": 90, "kneeling": 90, "standing": 90},
+    "c": {"prone": 60, "kneeling": 90, "standing": 120},
+}
+SB_END = "Cease firing. Bolts open, insert your ECIs."
+
+
+def _sb_prep():
+    return P("setup", "Preparation period", 3, rule="10.3.1, 10.7", start="Your three minute preparation period starts now.",
+             end="Your preparation period has ended.")
+
+
+def _sb_stage(position, shots, seconds, rule):
+    mins = seconds // 60 if seconds % 60 == 0 else seconds / 60
+    return P("stage", f"{position.title()}: {shots} shots", 0, seconds, shots=shots, position=position, rule=rule,
+             start=f"{position.title()}, {shots} record shots, {mins} minutes. Sighters until you start record. Is the line ready? "
+                   "The line is ready. Load. Commence firing.", end=SB_END)
+
+
+def _sb(fid, name, face, phases, notes):
+    return {"id": fid, "name": name, "book": rb.SB, "rulebook": "NRA", "tie_rules": "NRA-SB", "edition": rb.SB_EDITION,
+            "scoring": "integer", "team_size": 4, "face": face, "notes": notes, "phases": [_sb_prep()] + phases}
+
+
+def _sb_positions(fid, name, face, positions, n, table, course):
+    phases = []
+    for i, pos in enumerate(positions):
+        if i:
+            phases.append(P("changeover", f"Position change to {pos}", 5, rule="8.2",
+                            start=f"Cease firing. Five minutes to change to {pos}."))
+        phases.append(_sb_stage(pos, n, n * SB_POS_S[table][pos], f"{course}, 8.2 {table}, 9.2"))
+    secs = {p: SB_POS_S[table][p] for p in positions}
+    return _sb(fid, name, face, phases,
+               f"{', '.join(p.title() for p in positions)} ({course}), {n} shots each. Time per record shot (8.2 {table}): " +
+               ", ".join(f"{p} {secs[p] // 60 if secs[p] % 60 == 0 else secs[p] / 60} min" for p in positions) +
+               "; sighters within it until the shooter starts record (9.2); 5 minutes per position change (8.2). The match "
+               "program names the positions and their order (5): change them with Design your own match. No time warnings (8.4).")
+
+
+def _sb_prone(fid, name, face, n, course):
+    one = {20: 20 * 60, 40: 45 * 60, 60: 65 * 60}[n]            # 8.2 b: 1 minute a shot; 8.1.1: one stage of 40 / 60 on e-targets
+    return _sb(fid, name, face, [_sb_stage("prone", n, one, f"{course}, 8.1.1, 8.2 b, 9.2")],
+               f"Prone, {n} shots ({course}) in one stage on electronic targets: " +
+               ("1 minute per record shot (8.2 b)." if n == 20 else f"{one // 60} minutes (8.1.1; fired in 20-shot stages it is 20 minutes each).") +
+               " Sighters until the shooter starts record (9.2). No time warnings (8.4).")
+
+
+SB_FORMATS = (
+    lambda: _sb_positions("nra-sb-a17-4x10", "50 ft Conventional 4-Position 4x10 (NRA A-17)", "nra-a17", ("prone", "sitting", "kneeling", "standing"), 10, "a", "7.3"),
+    lambda: _sb_positions("nra-sb-a17-4x20", "50 ft Conventional 4-Position 4x20 (NRA A-17)", "nra-a17", ("prone", "sitting", "kneeling", "standing"), 20, "a", "7.3"),
+    lambda: _sb_positions("nra-sb-a17-3x10", "50 ft Conventional 3-Position 3x10 (NRA A-17)", "nra-a17", ("prone", "kneeling", "standing"), 10, "a", "7.3"),
+    lambda: _sb_positions("nra-sb-a17-3x20", "50 ft Conventional 3-Position 3x20 (NRA A-17)", "nra-a17", ("prone", "kneeling", "standing"), 20, "a", "7.3"),
+    lambda: _sb_prone("nra-sb-a23-p20", "50 yd Conventional Prone 20 (NRA A-23)", "nra-a23", 20, "7.2.1"),
+    lambda: _sb_prone("nra-sb-a23-p40", "50 yd Conventional Prone 40 (NRA A-23)", "nra-a23", 40, "7.2"),
+    lambda: _sb_positions("nra-sb-a23-4x10", "50 yd Conventional 4-Position 4x10 (NRA A-23)", "nra-a23", ("prone", "sitting", "kneeling", "standing"), 10, "b", "7.3"),
+    lambda: _sb_positions("nra-sb-a23-4x20", "50 yd Conventional 4-Position 4x20 (NRA A-23)", "nra-a23", ("prone", "sitting", "kneeling", "standing"), 20, "b", "7.3"),
+    lambda: _sb_prone("nra-sb-a27-p40", "50 yd Conventional Prone 40, metric target (NRA A-27)", "nra-a27", 40, "7.2"),
+    lambda: _sb_prone("nra-sb-a26-p40", "50 m Conventional Prone 40 (NRA A-26)", "nra-a26", 40, "7.2"),
+    lambda: _sb_prone("nra-sb-a50-p40", "50 m Metric Prone 40 (NRA A-50)", "issf-r50", 40, "7.4"),
+    lambda: _sb_prone("nra-sb-a50-p60", "50 m Metric Prone 60 (NRA A-50)", "issf-r50", 60, "7.4"),
+    lambda: _sb_prone("nra-sb-a51-p40", "50 yd Metric Prone 40 (NRA A-51)", "nra-a51", 40, "7.4"),
+    lambda: _sb_prone("nra-sb-a51-p60", "50 yd Metric Prone 60 (NRA A-51)", "nra-a51", 60, "7.4"),
+    lambda: _sb_positions("nra-sb-usas50-3x20", "50 ft NRA Metric Position 3x20 (NRA/USAS-50)", "nra-usas50", ("prone", "standing", "kneeling"), 20, "c", "7.5"),
+    lambda: _sb_positions("nra-sb-usas50-3x40", "50 ft NRA Metric Position 3x40 (NRA/USAS-50)", "nra-usas50", ("prone", "standing", "kneeling"), 40, "c", "7.5"),
+    lambda: _sb_positions("nra-sb-a50-3x20", "50 m NRA Metric Position 3x20 (NRA A-50)", "issf-r50", ("prone", "standing", "kneeling"), 20, "c", "7.5"),
+    lambda: _sb_positions("nra-sb-a50-3x40", "50 m NRA Metric Position 3x40 (NRA A-50)", "issf-r50", ("prone", "standing", "kneeling"), 40, "c", "7.5"),
+    lambda: _sb_positions("nra-sb-a51-3x20", "50 yd NRA Metric Position 3x20 (NRA A-51)", "nra-a51", ("prone", "standing", "kneeling"), 20, "c", "7.5"),
+    lambda: _sb_positions("nra-sb-a51-3x40", "50 yd NRA Metric Position 3x40 (NRA A-51)", "nra-a51", ("prone", "standing", "kneeling"), 40, "c", "7.5"),
+)
+
+
 AG_EDITION = rb.AG_EDITION
 
 
@@ -186,7 +261,14 @@ def _ag_ar60():
 
 BUILTIN: Dict[str, dict] = {f["id"]: f for f in (
     _issf_qual(), _ag_ar60(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
-    _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60))}
+    _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60)) + tuple(f() for f in SB_FORMATS)}
+
+
+def layout(fmt: dict) -> dict:
+    """What the NRA smallbore tie-breaks need (ranking.summary): the record stages in order with their positions, and
+    the shots per bull of the format's face."""
+    return {"stages": [(p["shots"], p.get("position") or "") for p in fmt["phases"] if p["kind"] in ("record", "stage")],
+            "bull": faces.face(fmt.get("face")).bull}
 
 
 def record_shots(fmt: dict) -> int:
@@ -224,8 +306,8 @@ def validate(fmt) -> dict:
         raise ValueError("scoring must be decimal or integer")
     if out["scoring"] == "decimal" and not faces.FACES[out["face"]].decimal:
         raise ValueError(f"{faces.FACES[out['face']].name} is scored in whole rings: choose integer scoring")
-    if out["tie_rules"] not in ("ISSF", "CMP", "NRA"):
-        raise ValueError("tie-break rules must be ISSF, CMP or NRA")
+    if out["tie_rules"] not in rb.TIE_RULES:
+        raise ValueError("tie-break rules must be one of " + ", ".join(rb.TIE_RULES))
     if not isinstance(out["team_size"], int) or not 1 <= out["team_size"] <= 10:
         raise ValueError("team size must be 1 to 10")
     phases = fmt.get("phases")

@@ -187,7 +187,8 @@ function reviewShot(k, ps, full, move) {
 const reviewPage = v => (v.kind === 'ammo' ? 10 : v.bull_size);   // shots per review jump: a target picture, or ten shots in an ammo test
 // Ammo tests carry two names: the shooter (fixed once the test starts) and a label (ammo, lot) that can change.
 const whoText = (shooter, label) => esc(shooter || '–') + (label ? ' · <span class="lbl">' + esc(label) + '</span>' : '');
-const scoreText = s => s.miss ? 'M' : dec(s.decimal);
+const wholeRings = v => !!(v && v.face && v.face.decimal === false);   // NRA conventional faces: whole rings and X's, no decimals
+const scoreText = (s, W) => s.miss ? 'M' : W ? String(s.ring) : dec(s.decimal);
 const mm2 = v => (v == null ? '–' : v.toFixed(2));
 // Ammo test overlays for the face: the oval around the group and the group centre (both in mm relative to the first shot)
 function ammoMarks(v) {
@@ -268,14 +269,15 @@ function strip(v) {
   let c = '';
   for (let i = 0; i < n; i++) {
     const s = v.bull_shots[i];
-    c += s ? '<span class="cell' + (s.inner ? ' x' : '') + (s.miss ? ' m' : '') + '">' + esc(scoreText(s)) + '</span>' : '<span class="cell e"></span>';
+    c += s ? '<span class="cell' + (s.inner ? ' x' : '') + (s.miss ? ' m' : '') + '">' + esc(scoreText(s, wholeRings(v))) + '</span>' : '<span class="cell e"></span>';
   }
   return '<div class="shotrow" style="grid-template-columns:repeat(' + Math.max(1, Math.min(5, n)) + ',minmax(0,1fr))">' + c + '</div>';   // stacked 5 over 5
 }
 function groupsRow(v) {
   if (!v.groups.length) return '<div class="grprow"><span class="mut">no shots yet</span></div>';
+  const W = wholeRings(v);
   return '<div class="grprow">' + v.groups.slice(-6).map(g => '<span class="grp' + (g.complete ? '' : ' part') + '" title="shots ' + g.first + '–' + g.last + '"><b>' +
-    dec(g.decimal) + '</b><small>' + g.integer + '</small>' + (g.x ? '<small>X' + g.x + '</small>' : '') + '</span>').join('') + '</div>';
+    (W ? g.integer : dec(g.decimal)) + '</b>' + (W ? '' : '<small>' + g.integer + '</small>') + (g.x ? '<small>X' + g.x + '</small>' : '') + '</span>').join('') + '</div>';
 }
 function ammoCard(t) {
   const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9, v.face), e = a.ellipse;
@@ -297,7 +299,8 @@ function coachCard(t) {
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
     faceSvg(v.bull_shots, {mini: true, half: half, face: F, color: modeColor(t.mode), corner: t.mode !== 'record'}) +
     '<div class="who">' + esc(t.shooter || '–') + '</div>' +
-    '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
+    '<div class="scorebox"><div class="tot"><div class="big num">' + (wholeRings(v) ? v.agg.integer : dec(v.agg.decimal)) + '</div>' +
+    (wholeRings(v) ? '' : '<div class="sub num">' + v.agg.integer + '</div>') + '<div class="sub num">X ' + v.agg.x + '</div></div>' +
     '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div></a>';
 }
 function coachView(targets, S) {
@@ -517,33 +520,33 @@ function reviewPager(v, ammo) {
     b('step+', '&gt;', 'Forward one shot', k >= full) + b('page+', '&gt;&gt;', ammo ? 'Forward ten shots' : 'Forward one target', reviewShot(k, ps, full, 'page+') === k) + '</div>';
 }
 function shotsTable(v, grow) {
-  const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length;
+  const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length, W = wholeRings(v);
   let rows = '';
   for (let i = 0; i < n; i++) {                                      // filled from the top; empty rows keep the layout still
     const s = v.bull_shots[i], last = s && i === v.bull_shots.length - 1;
-    rows += s ? '<tr class="' + (last ? 'last' : '') + '"><td>' + esc(s.n) + '</td><td>' + (s.miss ? '<span class="miss">M</span>' : dec(s.decimal) + (s.inner ? '<span class="xm">X</span>' : '')) +
-                checkMark(s) + '</td><td>' + (s.miss ? '0' : s.ring) + '</td></tr>' : '<tr><td>&nbsp;</td><td></td><td></td></tr>';
+    rows += s ? '<tr class="' + (last ? 'last' : '') + '"><td>' + esc(s.n) + '</td><td>' + (s.miss ? '<span class="miss">M</span>' : (W ? s.ring : dec(s.decimal)) + (s.inner ? '<span class="xm">X</span>' : '')) +
+                checkMark(s) + '</td>' + (W ? '' : '<td>' + (s.miss ? '0' : s.ring) + '</td>') + '</tr>' : '<tr><td>&nbsp;</td><td></td>' + (W ? '' : '<td></td>') + '</tr>';
   }
   const un = (v.unplaced || []).length;
-  if (un) rows += '<tr><td colspan="3" class="chkline">' + un + ' heard, not placed</td></tr>';
+  if (un) rows += '<tr><td colspan="' + (W ? 2 : 3) + '" class="chkline">' + un + ' heard, not placed</td></tr>';
   const first = v.bull_shots.length ? v.bull_shots[0].n : null, last = v.bull_shots.length ? v.bull_shots[v.bull_shots.length - 1].n : null;
-  return '<div class="panel' + (grow ? ' grow' : '') + '"><h3>' + (first ? 'Shots ' + first + (last > first ? '–' + last : '') : 'Shots') + '</h3><table class="t"><tr><th>#</th><th>Score</th><th>Int</th></tr>' + rows + '</table></div>';
+  return '<div class="panel' + (grow ? ' grow' : '') + '"><h3>' + (first ? 'Shots ' + first + (last > first ? '–' + last : '') : 'Shots') + '</h3><table class="t"><tr><th>#</th><th>Score</th>' + (W ? '' : '<th>Int</th>') + '</tr>' + rows + '</table></div>';
 }
 function checkMark(s) {                          // a shot that may not be one clean shot: look at the target
   return s && s.check ? ' <span class="chk" title="' + esc(s.check) + '">?</span>' : '';
 }
-function aggRow(label, a) {
-  return '<tr><td>' + label + '</td><td><b>' + dec(a.decimal) + '</b></td><td>' + a.integer + '</td><td>' + a.x + '</td></tr>';
+function aggRow(label, a, W) {                 // W: whole rings only (no decimal column)
+  return '<tr><td>' + label + '</td>' + (W ? '' : '<td><b>' + dec(a.decimal) + '</b></td>') + '<td>' + (W ? '<b>' + a.integer + '</b>' : a.integer) + '</td><td>' + a.x + '</td></tr>';
 }
 function lastPanel(v) {
-  const L = v.last_shot;
-  const big = L ? (L.miss ? '<span class="v miss">M</span>' : '<span class="v">' + dec(L.decimal) + '</span>' + (L.inner ? '<span class="xbig">X</span>' : '')) : '<span class="v">–</span>';
+  const L = v.last_shot, W = wholeRings(v);
+  const big = L ? (L.miss ? '<span class="v miss">M</span>' : '<span class="v">' + (W ? L.ring : dec(L.decimal)) + '</span>' + (L.inner ? '<span class="xbig">X</span>' : '')) : '<span class="v">–</span>';
   const sub = (L ? 'Shot ' + esc(L.n) + (L.miss ? ' · miss' : ' · ring ' + L.ring) : 'No shots yet') +
     (L && L.check ? '<div class="chkline">Check the target: ' + esc(L.check) + '</div>' : '');
-  const groups = v.groups.map(g => aggRow('<span title="shots ' + g.first + '–' + g.last + '">Group ' + (g.index + 1) + '</span>', g)).join('');
+  const groups = v.groups.map(g => aggRow('<span title="shots ' + g.first + '–' + g.last + '">Group ' + (g.index + 1) + '</span>', g, W)).join('');
   return '<div class="panel"><div class="lastwrap"><div class="lastleft"><h3>Last shot</h3><div class="lastbig">' + big + '</div><div class="mut">' + sub + '</div></div>' +
-    '<div class="lastright"><table class="t"><tr><th></th><th>Decimal</th><th>Integer</th><th>X</th></tr>' + groups +
-    aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg).replace('<tr>', '<tr class="tot-row">') + '</table></div></div></div>';
+    '<div class="lastright"><table class="t"><tr><th></th>' + (W ? '' : '<th>Decimal</th>') + '<th>' + (W ? 'Score' : 'Integer') + '</th><th>X</th></tr>' + groups +
+    aggRow('Total <span class="mut">(' + v.count + (v.total ? ' of ' + v.total : '') + ')</span>', v.agg, W).replace('<tr>', '<tr class="tot-row">') + '</table></div></div></div>';
 }
 function ammoPanel(t, v) {
   const a = v.ammo, e = a.ellipse, none = !a.shots;
@@ -626,7 +629,8 @@ function phoneView(t, S) {
     (ammo ? '<div class="pscore"><span class="v">' + (v.ammo.shots ? v.ammo.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm group</span><span class="mut">' + v.count + ' shots</span></div>'
       : '<div class="pscore"><span class="v">' + (last ? (last.miss ? 'M' : dec(last.decimal)) : '–') + '</span>' + (last && last.inner ? '<span class="xbig">X</span>' : '') +
         '<span class="mut">' + (last ? 'shot ' + esc(last.n) : 'no shots yet') + '</span></div>' +
-        '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
+        '<div class="scorebox"><div class="tot"><div class="big num">' + (wholeRings(v) ? v.agg.integer : dec(v.agg.decimal)) + '</div>' +
+    (wholeRings(v) ? '' : '<div class="sub num">' + v.agg.integer + '</div>') + '<div class="sub num">X ' + v.agg.x + '</div></div>' +
         '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div>') + '</div>';
 }
 

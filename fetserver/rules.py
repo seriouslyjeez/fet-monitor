@@ -69,8 +69,27 @@ SUMMARIES = {
         "10.10.4 f": "A disclaimed shot the Range Officer confirms was not fired by the competitor is annulled.",
         "16.1": "Challenges of a score: within the challenge time set by the match.",
     },
+    rb.SB: {                                         # NRA Smallbore Rifle Rules 2026
+        "9.2": "Fouling and sighting shots are permitted at any time unless the program prohibits them.",
+        "9.5 a": "A disabled rifle: additional time equal to the time that remained in the stage when it was declared disabled.",
+        "9.30": "Penalties for rule violations: a warning, a deduction of points, or disqualification.",
+        "10.3.1": "A preparation period of at least 3 minutes before each match, 1 minute before the second stage.",
+        "10.3.2": "Firing halted for 2 minutes or more: at least 1 minute preparation and 1 minute added for sighters.",
+        "10.10.4 a": "A crossfired competition shot is a miss; a sighter on another competitor's record target: 1 point off the firer's first series.",
+        "10.10.4 c": "A confirmed crossfire that cannot be told apart: credited with the highest undetermined shot.",
+        "10.10.4 d": "More hits than the program allows, when nobody else can be shown to have fired them: the highest-value hits are nullified.",
+        "10.10.4 f": "A disclaimed shot the Range Officer confirms was not fired by the competitor is annulled.",
+        "10.10.5 b": "All targets failed: when firing resumes, 5 minutes are added and unlimited sighters are allowed.",
+        "10.10.5 c": "A single target that cannot be repaired within 5 minutes: move to a reserve position, 5 minutes extra, unlimited sighters.",
+        "10.10.5 d": "A shot that does not register: one more aimed shot is fired and the target's record is examined after the relay.",
+        "14.5": "Early or late shots: the highest-value shots, one for each shot fired in error, are scored as misses.",
+        "14.7 a": "Too many shots on one's own target: only the required number of lowest-value hits, 1 point off for each extra hit.",
+        "15.7.1": "Prone ties: X's (or center shots), then the stages from the last, then each bull from the last, then X's of higher value.",
+        "15.7.2": "Position ties: X's (or center shots), then standing, kneeling and prone, then the stages and bulls from the last.",
+        "16.1": "Challenges of a score: within the challenge time set by the match.",
+    },
 }
-PREFIX = re.compile(r"^\s*(ISSF|USAS|USA|CMP\s*AG|CMP\s*Air\s*Gun|CMP\s*3PAR|3PAR|NFHS|CMP|NRA)\b\s*", re.I)
+PREFIX = re.compile(r"^\s*(ISSF|USAS|USA|CMP\s*AG|CMP\s*Air\s*Gun|CMP\s*3PAR|3PAR|NFHS|CMP|NRA\s*SB|NRA)\b\s*", re.I)
 REF_RE = re.compile(r"^\s*(?:rule\s*)?(\d+(?:\.\d+)*)\s*\(?\s*([a-z])?\s*\)?\s*$", re.I)
 
 
@@ -84,7 +103,9 @@ def _book_named(prefix: str, default_book: str) -> str:
         return rb.PAR
     if p == "CMP":                                     # the match's CMP book; else the 3PAR rules
         return default_book if default_book in (rb.AG, rb.PAR) else rb.PAR
-    return rb.NRA
+    if p == "NRA SB":
+        return rb.SB
+    return default_book if default_book in (rb.NRA, rb.SB) else rb.NRA     # "NRA": the match's NRA book
 
 
 def explain(ref: str, default_book: str = rb.ISSF) -> dict:
@@ -112,6 +133,8 @@ def lookup_text(ref: Optional[str], default_book: str = rb.ISSF) -> Optional[str
 
 # ------------------------------------------------------------------------------------------- decision guidance
 RULEBOOK_URL = {b: v["url"] for b, v in rb.BOOKS.items()}
+SB_EARLY_LATE = ("NRA SB 14.5", "Early or late shots: the highest-value shots, one for each shot fired in error, are scored as misses.",
+                 None, "Ignore this shot, then on Shots… override the competitor's highest-value record shot to a miss.")
 NRA_EARLY_LATE = ("NRA 14.5", "Early or late shots: the highest-value shots, one for each shot fired in error, are scored as misses.",
                   None, "Ignore this shot, then on Shots… override the competitor's highest-value record shot to a miss.")
 AG_LATE = ("CMP AG 7.11.3", "A shot after STOP at the end of record fire is a miss: with electronic targets the last record shot is deleted. "
@@ -122,29 +145,31 @@ _BEFORE = {rb.ISSF: ("ISSF 6.11.1.1 h", "A shot before START of the preparation 
            rb.AG: ("CMP AG 7.11.1", "A shot before START of the preparation and sighting stage: the competitor is disqualified from the event.", None,
                    "Ignore this shot, then on Shots… disqualify the competitor (rule CMP AG 7.11.1, a second official)."),
            rb.PAR: ("CMP 3PAR 7.17.1", "A shot before START of a sighting stage: a miss on the first competition shot.", "miss_first", None),
-           rb.NRA: NRA_EARLY_LATE}
+           rb.NRA: NRA_EARLY_LATE, rb.SB: SB_EARLY_LATE}
 _BETWEEN = {rb.ISSF: ("ISSF 6.11.1.1 k", "After the sighting STOP and before MATCH FIRING START: not a match shot, and 2 points off the first competition shot.", "penalty2_first", None),
             rb.AG: ("CMP AG 7.11.2", "After the sighting STOP and before the match START: scored as a miss on the first match shot.", "miss_first", None),
             rb.PAR: ("CMP 3PAR 7.17.2", "After the sighting STOP and before the match START: 2 points off the first competition shot.", "penalty2_first", None),
-            rb.NRA: NRA_EARLY_LATE}
+            rb.NRA: NRA_EARLY_LATE, rb.SB: SB_EARLY_LATE}
 _AFTER_SIGHTER = {rb.ISSF: ("ISSF 6.11.1.3 a", "A shot after STOP is scored as a miss. Shots not fired in time already count as misses, so ignoring it gives that result.", "ignore", None),
                   rb.AG: AG_LATE + ("ignore", None),
                   rb.PAR: ("CMP 3PAR 7.17.2", "A shot after the match STOP is scored as a miss. Shots not fired in time already count as misses, so ignoring it gives that result.", "ignore", None),
-                  rb.NRA: NRA_EARLY_LATE}
+                  rb.NRA: NRA_EARLY_LATE, rb.SB: SB_EARLY_LATE}
 _AFTER_RECORD = {rb.ISSF: ("ISSF 6.11.1.3 a", "A shot after STOP is scored as a miss.", "miss", None),
                  rb.AG: AG_LATE + ("annul", None),
                  rb.PAR: ("CMP 3PAR 7.17.2", "A shot after the match STOP is scored as a miss.", "miss", None),
-                 rb.NRA: ("NRA 14.5", NRA_EARLY_LATE[1], "count", "Count this shot, then on Shots… override the competitor's highest-value record shot to a miss.")}
+                 rb.NRA: ("NRA 14.5", NRA_EARLY_LATE[1], "count", "Count this shot, then on Shots… override the competitor's highest-value record shot to a miss."),
+                 rb.SB: ("NRA SB 14.5", SB_EARLY_LATE[1], "count", "Count this shot, then on Shots… override the competitor's highest-value record shot to a miss.")}
 _CHANGEOVER = {rb.ISSF: _AFTER_SIGHTER[rb.ISSF],
                rb.AG: AG_LATE + ("ignore", None),
                rb.PAR: ("CMP 3PAR 7.17.2", "A shot after the STOP of a match fire stage is scored as a miss on the last competition shot of that stage.", None,
                         "Ignore this shot, then on Shots… override the last record shot of the stage just fired to a miss."),
-               rb.NRA: NRA_EARLY_LATE}
+               rb.NRA: NRA_EARLY_LATE, rb.SB: SB_EARLY_LATE}
 _EXTRA_SIGHTER = {rb.ISSF: ("ISSF 6.11.1.2 d", "Sighting shots after match firing started are scored as misses in the competition.", None,
                             "Ignore this shot, then on Shots… add a shot (a miss) after the record shot fired just before it."),
                   rb.PAR: ("CMP 3PAR 7.15.1", "Unauthorized sighting shots during a match fire stage are scored as misses.", None,
                            "Ignore this shot, then on Shots… add a shot (a miss) after the record shot fired just before it."),
-                  rb.NRA: ("NRA 9.2 d", "A sighting shot after the first record shot (unless the Jury allows it): 2 points off.", "penalty2_first", None)}
+                  rb.NRA: ("NRA 9.2 d", "A sighting shot after the first record shot (unless the Jury allows it): 2 points off.", "penalty2_first", None),
+                  rb.SB: ("NRA SB 9.2", "Sighting shots are permitted at any time unless the match program prohibits them: no penalty.", "ignore", None)}
 _TOO_MANY = {rb.ISSF: ("ISSF 6.11.5", "Too many shots: the extra shots are annulled and 2 points are taken off the lowest shot of the first series for each one.",
                        "annul_penalty2", None),
              rb.AG: ("CMP AG 7.11.8", "Too many shots (electronic targets): the last shots fired are annulled and 2 points are taken off the lowest shot "
@@ -152,7 +177,9 @@ _TOO_MANY = {rb.ISSF: ("ISSF 6.11.5", "Too many shots: the extra shots are annul
              rb.PAR: ("CMP 3PAR 7.17.8", "Too many shots in a position: the extra shots are annulled and 2 points are taken off the lowest shot for each one.",
                       "annul_penalty2", None),
              rb.NRA: ("NRA 10.10.4 d", "More hits than the program allows, when nobody else can be shown to have fired them: the highest-value hits are nullified.", "annul",
-                      "Annul the highest-value record shot instead if that is not this one.")}
+                      "Annul the highest-value record shot instead if that is not this one."),
+             rb.SB: ("NRA SB 10.10.4 d", "More hits than the program allows, when nobody else can be shown to have fired them: the highest-value hits are nullified.", "annul",
+                     "Annul the highest-value record shot instead if that is not this one.")}
 _PAUSED = {rb.ISSF: ("ISSF 6.11.1.3 a", "A shot after a STOP is scored as a miss.", "miss", None),
            rb.PAR: ("CMP 3PAR 7.17.3", "A shot fired by mistake after an emergency STOP: a warning; a match shot counts (more shots after that: misses).", "count", None)}
 SHOOT_OFF_RULE = {rb.AG: "CMP AG 10.3.5", rb.PAR: "CMP 3PAR 10.2.9 n", rb.ISSF: "ISSF 6.17.2 h", rb.NRA: "NRA 7.1.2 q"}

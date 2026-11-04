@@ -68,6 +68,8 @@ class Face:
     decimal: bool = True                        # the rulebook scores this face in tenths on electronic targets
     unit: str = "mm"                            # the unit the rulebook gives it in (for showing its dimensions)
     note: str = ""
+    bull: int = 10                              # record shots per bull on the paper target (NRA tie-breaks by bull, 15.7)
+    higher: Optional[str] = None                # X's of higher value (NRA 14.3 e, g): "inside" the X ring, or the hole "covers" the ten
     by_value: Dict[int, int] = field(default_factory=dict, compare=False, repr=False)
 
     def __post_init__(self):
@@ -148,6 +150,21 @@ def _inner(face: Face, r2: int, p: int) -> bool:
     return lim > 0 and r2 < lim * lim
 
 
+def higher(face: Face, x_h: int, y_h: int, projectile: Optional[int] = None) -> bool:
+    """An X of higher value (NRA Smallbore 14.3 e: an X whose hole does not touch the outside edge of the X ring) or a
+    center shot of higher value (14.3 g, A-17: the hole obliterates the ten ring). Only for ties; never a score."""
+    if face.higher is None or face.inner is None:
+        return False
+    p = face.projectile if projectile is None else projectile
+    x, y = x_h * TU_PER_H, y_h * TU_PER_H
+    r2 = x * x + y * y
+    if face.higher == "inside":                                   # r + p/2 < X radius
+        lim = face.inner[1] // 2 - p // 2
+        return lim > 0 and r2 < lim * lim
+    lim = p // 2 - face.by_value[10] // 2                         # covers: the ten ring inside the hole
+    return lim >= 0 and r2 <= lim * lim
+
+
 def _rings(unit, *dias):
     conv = mm if unit == "mm" else inch
     return tuple((10 - i, conv(d)) for i, d in enumerate(dias))
@@ -169,25 +186,25 @@ FACES: Dict[str, Face] = {f.id: f for f in (
          RIMFIRE_ISSF, mm("200"), ("touch", mm("25")), note="500 mm across: larger than any FeT target box"),
     Face("issf-r50", "50 m Rifle (ISSF, NRA A-50)", "ISSF 6.3.4.2; NRA Smallbore 4.10 (A-50)",
          _rings("mm", "10.4", "26.4", "42.4", "58.4", "74.4", "90.4", "106.4", "122.4", "138.4", "154.4"),
-         RIMFIRE_ISSF, mm("112.4"), ("touch", mm("5.0"))),
+         RIMFIRE_ISSF, mm("112.4"), ("touch", mm("5.0")), bull=5),
     Face("nra-a51", "50 yd: 50 m target reduced (NRA A-51)", "NRA Smallbore 4.8 (A-51)",
          _rings("mm", "9.034", "23.664", "38.295", "52.925", "67.556", "82.186", "96.816", "111.447", "126.077", "140.708"),
-         RIMFIRE_NRA, mm("102.78"), ("touch", mm("4.096"))),
+         RIMFIRE_NRA, mm("102.78"), ("touch", mm("4.096")), bull=5),
     Face("nra-usas50", "50 ft: 50 m target reduced (NRA/USAS-50)", "NRA Smallbore 4.3 (NRA/USAS-50)",
          _rings("mm", "0.76", "4.12", "9.00", "13.87", "18.75", "23.63", "28.50", "33.38"),
-         RIMFIRE_NRA, mm("33.38"), None, note="no center shots on this target (14.3 f)"),
+         RIMFIRE_NRA, mm("33.38"), None, note="no center shots on this target (14.3 f)", bull=1),
     Face("nra-a17", "50 ft conventional (NRA A-17)", "NRA Smallbore 4.2 (A-17); center shots 14.3 f 1",
          _rings("in", "0.150", "0.483", "0.817", "1.150", "1.483", "1.817"),
-         RIMFIRE_NRA, inch("1.483"), ("a17", inch("0.150")), decimal=False, unit="in"),
+         RIMFIRE_NRA, inch("1.483"), ("a17", inch("0.150")), decimal=False, unit="in", bull=1, higher="covers"),
     Face("nra-a23", "50 yd conventional (NRA A-23)", "NRA Smallbore 4.6 (A-23/3, A-23/5, A-23/6); X-ring 14.3 c",
          _rings("in", "0.89", "1.89", "2.89", "3.89", "4.89", "5.89"),
-         RIMFIRE_NRA, inch("3.89"), ("touch", inch("0.39")), decimal=False, unit="in"),
+         RIMFIRE_NRA, inch("3.89"), ("touch", inch("0.39")), decimal=False, unit="in", bull=5, higher="inside"),
     Face("nra-a27", "50 yd: 50 m target reduced, conventional prone (NRA A-27)", "NRA Smallbore 4.7 (A-27/5, A-27/6); X-ring 14.3 c",
          _rings("in", "0.719", "1.439", "2.159", "2.879", "3.599", "4.319", "5.038"),
-         RIMFIRE_NRA, inch("3.89"), ("touch", inch("0.359")), decimal=False, unit="in"),
+         RIMFIRE_NRA, inch("3.89"), ("touch", inch("0.359")), decimal=False, unit="in", bull=5, higher="inside"),
     Face("nra-a26", "50 m conventional prone (NRA A-26)", "NRA Smallbore 4.9 (A-26/5, A-26/6); X-ring 14.3 c",
          _rings("in", "0.787", "1.574", "2.361", "3.148", "3.936", "4.723", "5.510"),
-         RIMFIRE_NRA, inch("4.27"), ("touch", inch("0.393")), decimal=False, unit="in"),
+         RIMFIRE_NRA, inch("4.27"), ("touch", inch("0.393")), decimal=False, unit="in", bull=5, higher="inside"),
 )}
 DEFAULT_FACE = "issf-ar10"
 
