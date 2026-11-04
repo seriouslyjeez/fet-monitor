@@ -838,6 +838,21 @@ class Core:
         self.matches.command(info["match_id"], "start_record", lease["holder_name"], device_id=device_id)
         return self.matches.target_info(self.db.conn(), device_id, self.now_ms())
 
+    def shooter_back_to_sighters(self, device_id: str, client_id) -> dict:
+        """The shooter holding a lane's control claim goes back to sighters in a stage (only where the book allows it:
+        NRA Smallbore 9.2); record shots carry on where they were when they start record again."""
+        self._check_client(client_id)
+        now = self.now_ms()
+        c = self.db.conn()
+        lease = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
+        if lease is None or lease["expires_ms"] <= now or lease["client_id"] != client_id:
+            raise Forbidden("take control of this target first")
+        info = self.matches.target_info(c, device_id, now)
+        if info is None:
+            raise NotFound(f"{device_id} is not in a match")
+        self.matches.command(info["match_id"], "back_to_sighters", lease["holder_name"], device_id=device_id)
+        return self.matches.target_info(self.db.conn(), device_id, self.now_ms())
+
     def release_control(self, device_id: str, client_id: str) -> bool:
         self._check_client(client_id)
         with self.db.write() as c:

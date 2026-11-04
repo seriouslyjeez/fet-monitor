@@ -31,7 +31,7 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters)$")
 MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
@@ -886,14 +886,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
-        if m and m.group(2) in ("control", "control/release", "mode", "settings", "start-record"):
+        if m and m.group(2) in ("control", "control/release", "mode", "settings", "start-record", "back-to-sighters"):
             payload = self._read_json()
             if not isinstance(payload, dict):
                 raise BadRequest("body must be an object")
             did, what = m.group(1), m.group(2)
-            if what == "start-record":                 # NRA-style stage: the shooter (holding the lane) starts record
+            if what in ("start-record", "back-to-sighters"):   # NRA-style stage: the shooter (holding the lane) switches
                 try:
-                    return self._send(200, {"match": core.shooter_start_record(did, payload.get("client_id"))})
+                    act = core.shooter_start_record if what == "start-record" else core.shooter_back_to_sighters
+                    return self._send(200, {"match": act(did, payload.get("client_id"))})
                 except MatchError as exc:
                     return self._send(400, {"error": str(exc)})
             if what == "control":

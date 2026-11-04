@@ -457,6 +457,17 @@ assert(matchBanner(info, mine, state()).includes('data-act="mcmyrecord"') && mat
 assert(!matchBanner(info, notMine, state()).includes('mcmyrecord'), 'only whoever holds the lane');
 assert(!matchBanner(Object.assign({}, info, {in_record: true}), mine, state()).includes('mcmyrecord'));
 assert(!matchBanner(Object.assign({}, info, {kind: 'record'}), mine, state()).includes('mcmyrecord'));
+{                                                                 // back to sighters: only where the book allows it (NRA SB 9.2)
+  const rec = Object.assign({}, info, {in_record: true});
+  assert(!matchBanner(rec, mine, state()).includes('mcmysighters') && matchBanner(rec, mine, state()).includes('Record shots: 20'), 'other books: no way back');
+  const sb = Object.assign({}, rec, {sighters_any_time: true});
+  assert(matchBanner(sb, mine, state()).includes('data-act="mcmysighters"') && matchBanner(sb, mine, state()).includes('NRA SB 9.2'), 'smallbore: back to sighters');
+  assert(!matchBanner(sb, notMine, state()).includes('mcmysighters') && !matchBanner(Object.assign({}, sb, {state: 'paused'}), mine, state()).includes('mcmysighters'));
+  const inRec = DET({lanes: [Object.assign({}, DET().lanes[0], {in_record: true})]});
+  assert(!mcConsole({status: {role: 'officer'}, detail: inRec, speak: false}).includes('mcsighters'));
+  assert(mcConsole({status: {role: 'officer'}, detail: Object.assign({}, inRec, {rb: {sighters_any_time: true}}), speak: false}).includes('data-act="mcsighters" data-id="lane-1"'),
+    'the console: back to sighters for a lane in record');
+}
 assert(matchBanner(Object.assign({}, info, {state: 'ready'}), mine, state()).includes('Waiting for the start'));
 assert.strictEqual(matchBanner(null, mine, state()), '');
 assert(matchUsersPanel([{username: '<x>', role: 'director'}], '').includes('&lt;x&gt;') && matchUsersPanel([], '').includes('data-act="rcmuadd"'));

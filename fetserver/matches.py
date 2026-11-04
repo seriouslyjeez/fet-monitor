@@ -482,8 +482,8 @@ class Matches:
         """Range officer actions: go (START a held phase), pause, resume, next (end the phase now), extra (add seconds
         to this phase), abort, start_record (one lane, in an NRA-style stage). restart (to phase `seconds`... see
         restart()) is separate because only a director may do it."""
-        if action == "start_record":
-            return self.lane_command(mid, device_id, "start_record", by)
+        if action in ("start_record", "back_to_sighters"):
+            return self.lane_command(mid, device_id, action, by)
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
@@ -618,14 +618,17 @@ class Matches:
         self._pub(mid)
 
     def _switched(self, c, mid, phase, device_id) -> bool:
-        """Has this lane started record in this phase (since its last start, and since it was last moved)?"""
+        """Has this lane started record in this phase (since its last start, since it was last moved, and since it last
+        went back to sighters)?"""
         devs = self._lane_devs(c, mid, device_id)
         q = ",".join("?" * len(devs))
         start = c.execute("SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='phase_start' AND phase=?", (mid, phase)).fetchone()[0]
         ready = c.execute(f"SELECT MAX(id) FROM match_log WHERE match_id=? AND kind IN ('lane_ready','sighters') AND (device_id IN ({q}) OR device_id IS NULL)",
                           (mid, *devs)).fetchone()[0]
+        back = c.execute(f"SELECT MAX(id) FROM match_log WHERE match_id=? AND kind='to_sighters' AND phase=? AND device_id IN ({q})",
+                         (mid, phase, *devs)).fetchone()[0]
         return c.execute(f"SELECT 1 FROM match_log WHERE match_id=? AND kind='start_record' AND phase=? AND device_id IN ({q}) AND id>?",
-                         (mid, phase, *devs, max(start or 0, ready or 0))).fetchone() is not None
+                         (mid, phase, *devs, max(start or 0, ready or 0, back or 0))).fetchone() is not None
 
     @staticmethod
     def _lane_devs(c, mid, device_id) -> List[str]:
@@ -811,6 +814,19 @@ class Matches:
                 c.execute("UPDATE match_lanes SET sighting=0 WHERE match_id=? AND device_id=?", (mid, device_id))
                 self._log(c, mid, now, "start_record", phase, device_id, {"by": by})
                 self._set_modes(c, m, "record", now, only=device_id)
+            elif action == "back_to_sighters":                 # NRA SB 9.2: sighting shots at any time; record goes on later
+                book = rb.book_of(fmt)
+                if not rb.sighters_any_time(book):
+                    raise MatchError(f"the {rb.BOOKS[book]['name']} rules allow no sighters once record has started")
+                if ln["moving_since_ms"] is not None:
+                    raise MatchError("the shooter is moving to another target: press Ready first")
+                counting = ln["own_phase"] is not None or m["state"] == "running"
+                if p["kind"] != "stage" or not counting:
+                    raise MatchError("back to sighters only during a running sighting-and-record stage")
+                if not self._switched(c, mid, phase, device_id):
+                    raise MatchError("not in record: already sighting")
+                self._log(c, mid, now, "to_sighters", phase, device_id, {"by": by, "rule": rb.cite(book, "9.2")})
+                self._set_modes(c, m, "sighter", now, only=device_id)
             else:
                 raise MatchError("unknown action")
         self._pub(mid)
@@ -955,6 +971,7 @@ class Matches:
             devs = set(self._lane_devs(c, m["id"], ln["device_id"]))
             mine = [r for r in log if r["device_id"] in devs]
             switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
+            backs = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "to_sighters"]       # NRA SB 9.2
             readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] in ("lane_ready", "sighters")] + \
                 [(r["phase"], r["at_ms"]) for r in log if r["kind"] == "sighters" and r["device_id"] is None]
             stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
@@ -965,9 +982,9 @@ class Matches:
                 ready = max([at for q, at in readies if q == ph and a_start <= at <= t] + rejoin, default=None)   # until record starts
                 return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
 
-            def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move since)
+            def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move, nor back to sighters, since)
                 sw = max((at for q, at in switches if q == ph and at >= a_start and t > at), default=None)
-                return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies)
+                return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies + backs)
             counted: Dict[tuple, int] = {}
             eff = self.core.corrections.effects(c, m, ln["lane"])
             items = [dict(r) for r in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring, misfit_um FROM shots WHERE series_id=? ORDER BY event_ms, id",
@@ -1244,7 +1261,8 @@ class Matches:
             return None
         clock = self._clock(r, now)
         clock.update({"match_id": r["id"], "name": r["name"], "lane": r["lane"], "competitor": r["competitor"],
-                      "in_record": self._switched(c, r["id"], r["phase"], device_id) if r["phase"] >= 0 else False})
+                      "in_record": self._switched(c, r["id"], r["phase"], device_id) if r["phase"] >= 0 else False,
+                      "sighters_any_time": rb.sighters_any_time(rb.book_of(json.loads(r["format_json"])))})
         ln = self._lane(c, r["id"], device_id)
         lc = self.lane_clock(c, r, ln, now)
         if lc["own"] == "waiting":                      # a later relay: rejoining at a later phase

@@ -170,6 +170,12 @@ def rule(book: str, key: str) -> Optional[str]:
     return cite(book, v if isinstance(v, str) else None)
 
 
+def sighters_any_time(book: str) -> bool:
+    """The shooter may go back to sighters after starting record in a stage: NRA Smallbore 9.2 permits sighting shots
+    at any time (unless the program prohibits them). The other books do not (NRA Precision Air Rifle 9.2 d: 2 points)."""
+    return book == SB
+
+
 def sighter_crossfire_points(book: str) -> int:
     """Points off the firer's first series for a sighter on another competitor's record target: 1 in NRA Smallbore
     (10.10.4 a), 2 in the other books that cover it (ISSF 6.11.6.3, NRA Precision Air Rifle 10.10.4 a)."""
@@ -311,4 +317,5 @@ def texts(book: str) -> dict:
                                                                              PAR: "2 minutes and sighters (7.18.4).", NRA: "sighters (10.3.2)."}[book]
                             if book != NONE else ". " + d),
         "finals": list(finals(book)),
+        "sighters_any_time": sighters_any_time(book),
     }

@@ -351,7 +351,7 @@ Position change: 5 minutes (8.2: at least 5 more minutes for each). Team size: 4
 | Situation | NRA SB rule | What FeT Monitor does |
 |---|---|---|
 | Early or late shots | 14.5 | the highest-value shots become misses (by hand) |
-| Sighter during record | 9.2 | allowed: no penalty (unless the program prohibits sighters) |
+| Sighter during record | 9.2 | allowed: *Back to sighters* (the shooter on their screen, or the console) switches the lane to sighters; *Start record* goes on with record where it was. No penalty, no flag |
 | Too many hits | 10.10.4 d | annul the highest-value hit |
 | Target fails: move | 10.10.5 c | time stops while moving; 5 min extra and unlimited sighters |
 | One shooter or the range interrupted | 10.3.2 | the clock stops; 2 minutes or more: 1 minute more and sighters. All targets failed (10.10.5 b): + 5 min, use *Extra time* |
@@ -475,3 +475,5 @@ eliminated finalists greyed with their place, and the medals as they are decided
 
 ## Still to build
 Nothing from the rulebook finals list. NRA Sporter Air Rifle (separate book) when needed.
+NRA Smallbore: the Dewar course (20 shots at 50 yd, then 20 at 100 yd; ties 15.7.1 a 2) and the 100 yd faces
+(A-25, A-33): very low priority (the user, 2026-11-04: hard to run properly in the real world with one target per lane).

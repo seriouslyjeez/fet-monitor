@@ -6,6 +6,8 @@ import unittest
 from fetserver import faces as F
 from fetserver import rulebooks as rb
 from fetserver.matchformats import BUILTIN, SB_POS_S, record_shots, validate
+from fetserver.core import Forbidden
+from fetserver.matches import MatchError
 from tests.test_matches import MatchCase
 
 SB = {k: validate(f) for k, f in BUILTIN.items() if k.startswith("nra-sb-")}
@@ -67,6 +69,52 @@ class Fired(MatchCase):
         self.assertEqual(rows[1][:2], ("Bo Bell", 2), "same 200, fewer X's (15.7.1 a 1)")
         self.assertEqual([(r[2], r[3]) for r in rows], [(200, 20), (200, 19)], "whole rings on the A-23; X's from the X ring")
         self.assertEqual(res["tie_rules"], "NRA-SB")
+
+    def streams(self):
+        return [r[0] for r in self.core.db.conn().execute("SELECT stream FROM shots ORDER BY id")]
+
+    def test_back_to_sighters_and_on_with_record(self):
+        mid = self.m.create("Club", "nra-sb-a23-p20", [{"device_id": "lane-1"}], "md")
+        self.m.start(mid, "md")
+        self.at(181)
+        with self.assertRaisesRegex(MatchError, "already sighting"):
+            self.m.command(mid, "back_to_sighters", "ro", device_id="lane-1")
+        self.shoot("lane-1")                                   # a sighter
+        self.m.command(mid, "start_record", "ro", device_id="lane-1")
+        self.at(190); self.shoot("lane-1"); self.shoot("lane-1")   # two record shots
+        self.m.command(mid, "back_to_sighters", "ro", device_id="lane-1")
+        seg = self.core.db.conn().execute("SELECT mode FROM segments WHERE device_id='lane-1' AND ended_ms IS NULL").fetchone()[0]
+        self.assertEqual(seg, "sighter", "the target is switched at once (not at the next tick): the next shot is a sighter")
+        self.assertFalse(self.m.detail(mid)["lanes"][0]["in_record"])
+        self.at(200); self.shoot("lane-1"); self.shoot("lane-1")   # sighters again (9.2: at any time)
+        self.m.command(mid, "start_record", "ro", device_id="lane-1")
+        self.at(210); self.shoot("lane-1")
+        self.assertEqual(self.streams(), ["sighter", "scored", "scored", "sighter", "sighter", "scored"])
+        self.assertEqual(self.flags(mid), [], "no flags: sighters are allowed at any time")
+        d = self.m.detail(mid)["lanes"][0]
+        self.assertEqual((d["in_record"], d["record"], d["sighters"]), (True, 3, 3), "record goes on where it was")
+        log = [r[0] for r in self.core.db.conn().execute("SELECT data FROM match_log WHERE kind='to_sighters'")]
+        self.assertIn("NRA SB 9.2", log[0])
+
+    def test_not_in_other_books(self):
+        mid = self.m.create("PAR", "nra-s40", [{"device_id": "lane-1"}], "md")
+        self.m.start(mid, "md")
+        self.at(1)
+        self.m.command(mid, "start_record", "ro", device_id="lane-1")
+        with self.assertRaisesRegex(MatchError, "no sighters once record has started"):
+            self.m.command(mid, "back_to_sighters", "ro", device_id="lane-1")
+        self.assertFalse(self.core.list_targets()[0]["match"]["sighters_any_time"])
+
+    def test_the_shooter_goes_back_themselves(self):
+        mid = self.m.create("Club", "nra-sb-a23-p20", [{"device_id": "lane-1"}], "md")
+        self.m.start(mid, "md")
+        self.at(181)
+        with self.assertRaises(Forbidden):
+            self.core.shooter_back_to_sighters("lane-1", "client-000001")
+        self.core.acquire_control("lane-1", "client-000001", "Al")
+        self.core.shooter_start_record("lane-1", "client-000001")
+        info = self.core.shooter_back_to_sighters("lane-1", "client-000001")
+        self.assertEqual((info["in_record"], info["sighters_any_time"]), (False, True))
 
     def test_procedures_cite_the_smallbore_book(self):
         t = rb.texts(rb.SB)
