@@ -233,8 +233,11 @@ class Matches:
             return {}
         n, pos, between = self._position_state(c, m["id"], ln, phase)
         pos = min(pos, len(blk) - 1)
-        return {"position": p["positions"][pos + 1 if between and pos + 1 < len(blk) else pos]["position"], "between": between,
-                "can_back": not between and pos < len(blk) - 1 and n >= blk[pos] and m["state"] == "running",
+        last = pos == len(blk) - 1
+        nxt = p["positions"][pos + 1]["position"] if not last else p.get("sight_after") or p["positions"][pos]["position"]
+        return {"position": nxt if between else p["positions"][pos]["position"], "between": between,
+                "can_back": not between and (not last or bool(p.get("sight_after"))) and n >= blk[pos] and m["state"] == "running",
+                "can_record": between and not last,      # sighting for what comes after the phase (6.17.3 e): no Start record
                 "pos_shots": max(0, min(n, blk[pos]) - (blk[pos - 1] if pos else 0)), "pos_of": p["positions"][pos]["shots"]}
 
     def _position_state(self, c, mid, ln, phase) -> tuple:
@@ -401,6 +404,17 @@ class Matches:
                 continue
             low = min(key(ln) for ln in active)
             bottom = [ln for ln in active if key(ln) == low]
+            if len(bottom) == 2 and fmt["phases"][rnd].get("countback") and isinstance(outs, list) and place - 1 in outs:
+                # ISSF 6.17.3 i: two tied when two go out are both eliminated, ordered by countback (no shoot-off)
+                flags = {f["shot_id"]: f for f in self.flags(c, m)}
+                cb = {ln["lane"]: self._countback_3p([s["tenths"] for s in self.counted(c, m, ln, flags)]) for ln in bottom}
+                if cb[bottom[0]["lane"]] != cb[bottom[1]["lane"]]:
+                    lo, hi = sorted(bottom, key=lambda ln: cb[ln["lane"]])
+                    for ln, pl in ((lo, place), (hi, place - 1)):
+                        c.execute("UPDATE match_lanes SET out_place=?, out_ms=? WHERE match_id=? AND device_id=?", (pl, now, m["id"], ln["device_id"]))
+                        self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl, "countback": "ISSF 6.17.3 i"})
+                        self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
+                    return
             if len(bottom) > 1:                          # tied: a shoot-off for them, now
                 lanes = sorted(ln["lane"] for ln in bottom)
                 n = 1 + sum(1 for x in fmt["phases"] if x.get("lanes") is not None and x["kind"] == "record")
@@ -418,6 +432,12 @@ class Matches:
                 c.execute("UPDATE match_lanes SET out_place=?, out_ms=? WHERE match_id=? AND device_id=?", (pl, now, m["id"], ln["device_id"]))
                 self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl})
                 self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
+
+    @staticmethod
+    def _countback_3p(tenths: List[int]) -> tuple:
+        """ISSF 6.17.3 i, for two finalists tied after the second standing series (shots 1-10 kneeling, 11-20 prone,
+        21-25 and 26-30 standing): the second standing series, the first, then the last prone shot and on backwards."""
+        return (sum(tenths[25:30]), sum(tenths[20:25])) + tuple(reversed(tenths[:20]))
 
     def _all_fired(self, c, m) -> bool:
         """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 3PAR 10.4.6 c)."""
@@ -842,6 +862,8 @@ class Matches:
                 if p["kind"] == "record" and mf.blocks(p) and self._position_state(c, mid, ln, phase)[2]:
                     if not counting:
                         raise MatchError("record can start only while this shooter's time is running")
+                    if self._position_state(c, mid, ln, phase)[1] + 1 >= len(mf.blocks(p)):   # sighting for what comes after (6.17.3 e)
+                        raise MatchError(f"no more MATCH shots in {p['label'].lower()}: the {p.get('sight_after') or 'next'} shots start on command")
                 elif ln["sighting"]:
                     if p["kind"] not in ("record", "stage") or not counting:
                         raise MatchError("record can start only while this shooter's time is running")
@@ -861,9 +883,9 @@ class Matches:
                     raise MatchError("only while this shooter's time is running")
                 if between:
                     raise MatchError("already sighting for the next position")
-                if pos >= len(blk) - 1:
+                if pos >= len(blk) - 1 and not p.get("sight_after"):
                     raise MatchError(f"{p['positions'][-1]['position']} is the last position: no sighters after its MATCH shots started")
-                if n < blk[pos]:
+                if n < blk[min(pos, len(blk) - 1)]:
                     done = n - (blk[pos - 1] if pos else 0)
                     raise MatchError(f"finish the {p['positions'][pos]['position']} shots first ({done} of {p['positions'][pos]['shots']}): "
                                      "sighters only between positions")
@@ -1041,7 +1063,10 @@ class Matches:
             def pos_events(ph, a_start, t, sighter):  # ISSF 7.7.3: to sighting (1) and back to MATCH (0), in log order. A
                 # command in the same millisecond as the shot came before it when it explains the shot's stream: a
                 # sighter after "to sighting", a record shot after "back to MATCH"
-                return [k for q, at, k in pos_log if q == ph and a_start <= at and (at < t or (at == t and k == (1 if sighter else 0)))]
+                before = [k for q, at, k in pos_log if q == ph and a_start <= at < t]
+                same = [k for q, at, k in pos_log if q == ph and a_start <= at == t]
+                want = 1 if sighter else 0
+                return before + (same[:len(same) - same[::-1].index(want)] if want in same else [])
 
             def between_at(ph, a_start, t):           # sighting between positions when the shot was fired
                 ev = pos_events(ph, a_start, t, True)

@@ -222,7 +222,7 @@ class FinalsByBook(MatchCase):
                 cc.create_final(self.comp(book), kind, ["lane-1"], "md")
             self.assertIn("rules have no", str(cm.exception))
         self.assertEqual(rb.finals(rb.PAR), ("standard", "sfz_standing", "sfz_3p"))
-        self.assertEqual([rb.finals(b) for b in (rb.AG, rb.ISSF, rb.NRA)], [("airgun",), ("issf",), ("nra",)])
+        self.assertEqual([rb.finals(b) for b in (rb.AG, rb.ISSF, rb.NRA)], [("airgun",), ("issf", "issf3p"), ("nra",)])
         for book, kind in ((rb.AG, "airgun"), (rb.PAR, "standard"), (rb.PAR, "sfz_standing"), (rb.ISSF, "issf"), (rb.NRA, "nra"),
                            (rb.NONE, "airgun"), (rb.NONE, "standard"), (rb.NONE, "issf")):   # allowed: on to the next check
             with self.assertRaises(MatchError, msg=(book, kind)) as cm:

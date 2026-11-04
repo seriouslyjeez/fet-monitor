@@ -26,7 +26,7 @@ FIRE_KINDS = {"sight", "record", "stage"}
 SCORING = {"decimal", "integer"}
 POSITIONS = {"", "standing", "prone", "kneeling", "sitting"}
 MAX_PHASES = 80                  # a final with its single shots and shoot-offs needs more than a qualification
-FINALS = ("standard", "airgun", "sfz_standing", "sfz_3p", "issf", "nra")
+FINALS = ("standard", "airgun", "sfz_standing", "sfz_3p", "issf", "issf3p", "nra")
 MAX_SECONDS = 4 * 3600
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")
 
@@ -403,7 +403,7 @@ def validate(fmt) -> dict:
                               "position": pos, "warnings": sorted(warns, key=lambda w: -w["at"]),
                               "start": str(p.get("start") or "")[:200], "end": str(p.get("end") or "")[:200],
                               "rule": str(p.get("rule") or "")[:60]})
-        for flag in ("nohold", "early"):           # finals: no hold for START after LOAD; the shot ends when all have fired
+        for flag in ("nohold", "early", "countback"):  # finals: no hold after LOAD; ends when all have fired; ties by countback
             if p.get(flag) is True:
                 out["phases"][-1][flag] = True
         for key in ("out", "round"):              # finals: the place(s) decided after this phase; a shoot-off's decision
@@ -420,6 +420,10 @@ def validate(fmt) -> dict:
             if sum(q["shots"] for q in ps) != shots:
                 raise ValueError(f"phase {i}: the positions' shots must add up to the phase's {shots}")
             out["phases"][-1]["positions"] = [{"position": q["position"], "shots": q["shots"]} for q in ps]
+        if p.get("sight_after") is not None:      # sighters after the last position, for the next one (ISSF 6.17.3 e)
+            if not out["phases"][-1].get("positions") or p["sight_after"] not in POSITIONS - {""}:
+                raise ValueError(f"phase {i}: sighters after the last position need positions and the next position")
+            out["phases"][-1]["sight_after"] = p["sight_after"]
         if isinstance(p.get("lanes"), list) and all(isinstance(x, int) and not isinstance(x, bool) for x in p["lanes"]):
             out["phases"][-1]["lanes"] = sorted(set(p["lanes"]))   # a shoot-off: only these firing points fire
     if not any(p["kind"] in ("record", "stage") for p in out["phases"]):
@@ -623,6 +627,39 @@ def nra_final(spoken: bool = False) -> dict:
                      "notes": "Added to the qualification score (7.1.2 o); ties shot off, shot for shot (7.1.2 q).", "phases": f.phases})
 
 
+def issf_3p_final(spoken: bool = False) -> dict:
+    """ISSF 50 m Rifle 3 Positions Final (Rule Book 2026, 6.17.3): TAKE YOUR POSITIONS (kneeling), 30 s; 5 minutes
+    preparation and sighting kneeling (30 s warning, d); 30 s while the targets are reset to MATCH (d); "Finalists have
+    twenty-two minutes to fire ten shots in each of the kneeling and prone positions and prepare for the standing
+    position", 5 s, MATCH FIRING START (e): 10 kneeling, switch to sighters, prone sighters, 10 prone, switch to
+    sighters, standing sighters in the time left; 5 minutes and 30 s announced (f); STOP at 22 minutes. After 30 s,
+    two 5-shot series standing in 250 s (g); after the second, 8th and 7th are eliminated (h); single shots 31-35 in
+    50 s eliminate 6th to 3rd and decide 1st and 2nd (h). Ties: shot off, except two tied after the second series,
+    who are both out and ordered by countback (i)."""
+    f = _Final(spoken, "6.17.3 g")
+    f.add(P("setup", "Take your positions", 0, 30, rule="6.17.3 d", start="Take your positions."),
+          P("sight", "Preparation and sighting, kneeling", 5, position="kneeling", warnings=[(30, "Thirty seconds")], rule="6.17.3 d",
+            start="Five minutes preparation and sighting time. Start.", end="Stop."),
+          P("pause", "Targets reset to match", 0, 30, rule="6.17.3 d",
+            start="Finalists have twenty-two minutes to fire ten shots in each of the kneeling and prone positions and prepare for the standing position."),
+          P("pause", "Match firing: load", 0, 5, rule="6.17.3 e"),
+          dict(P("record", "Kneeling and prone", 22, shots=20, rule="6.17.3 e, f", warnings=[(300, "Five minutes"), (30, "Thirty seconds")],
+                 start="Match firing. Start.", end="Stop.", positions=(("kneeling", 10), ("prone", 10))), sight_after="standing"),
+          P("pause", "Prepare for standing", 0, 30, rule="6.17.3 g"))
+    for k in (1, 2):
+        f.shot("Standing series %d" % k, "For the next competition series. Load.", 250, 5, "standing", "6.17.3 g", out=[8, 7] if k == 2 else None)
+    f.phases[-1]["countback"] = True                     # 6.17.3 i: two tied here are both out, ordered by countback
+    for n, place in zip(range(31, 36), (6, 5, 4, 3, 2)):
+        f.shot("Shot %d" % n, "For the next competition shot. Load.", 50, 1, "standing", "6.17.3 h", out=place)
+    return validate({"id": "issf-final-3p", "name": "ISSF 50m Rifle 3 Positions Final", "book": "ISSF", "rulebook": "ISSF", "tie_rules": "ISSF",
+                     "edition": "ISSF Rule Book 2026 (Edition 2025, third print)", "scoring": "decimal", "final": "issf3p", "face": "issf-r50",
+                     "notes": "Starts from zero (6.17.1.5); start positions by draw (6.17.1.2). Kneeling and prone on one 22-minute clock: "
+                              "the athlete switches to sighters after each position (Back to sighters, Start record) and fires standing "
+                              "sighters in the time left (6.17.3 e). Ties at an elimination are shot off; two tied after the second "
+                              "standing series are both out, ordered by countback (6.17.3 i).",
+                     "phases": f.phases})
+
+
 # Every final: its book, how finalists are placed (a random draw, or the best qualifier first), whether eliminations
 # decide the places (the final alone) or the final is added to the qualification, which ties are shot off, and the
 # shoot-off procedure.
@@ -635,8 +672,10 @@ FINAL_KINDS = {
                "elim": True, "relay": False, "so_rule": "10.2.9 n", "so_s": 50, "events": "3p"},
     "airgun": {"book": "CMP-AG", "name": "CMP Air Gun Final (CMP AG 10.2)", "build": cmp_airgun_final, "draw": True, "elim": True,
                "relay": False, "so_rule": "10.3.5", "so_s": 50, "events": "any"},
-    "issf": {"book": "ISSF", "name": "ISSF 10m Air Rifle Final (ISSF 6.17.2)", "build": issf_final, "draw": True, "elim": True,
-             "relay": False, "so_rule": "6.17.2 h", "so_s": 50, "events": "any"},
+    "issf": {"book": "ISSF", "name": "ISSF 10m Final, air rifle or air pistol (ISSF 6.17.2)", "build": issf_final, "draw": True, "elim": True,
+             "relay": False, "so_rule": "6.17.2 h", "so_s": 50, "events": "standing"},
+    "issf3p": {"book": "ISSF", "name": "ISSF 50m Rifle 3 Positions Final (ISSF 6.17.3)", "build": issf_3p_final, "draw": True, "elim": True,
+               "relay": False, "so_rule": "6.17.3 i", "so_s": 50, "events": "3p"},
     "nra": {"book": "NRA", "name": "NRA Final (NRA 7.1.2)", "build": nra_final, "draw": False, "elim": False, "relay": False,
             "tie_places": 8, "so_rule": "7.1.2 q", "so_s": 75, "attention": True, "events": "any"},
 }
@@ -645,7 +684,8 @@ FINAL_KINDS = {
 def final_fits(kind: str, fmt: dict) -> bool:
     """Whether a final goes with a qualification format: the three-position Start-from-Zero final follows a 3x10 or
     3x20 (3PAR 10.3), the standing one a standing event (10.5)."""
-    pos = {p["position"] for p in fmt["phases"] if p["kind"] in ("record", "stage") and p.get("position")}
+    pos = {p["position"] for p in fmt["phases"] if p["kind"] in ("record", "stage") and p.get("position")} | \
+        {q["position"] for p in fmt["phases"] if p["kind"] in ("record", "stage") for q in p.get("positions") or ()}
     ev = FINAL_KINDS[kind]["events"]
     return ev == "any" or (ev == "3p" and {"kneeling", "prone"} <= pos) or (ev == "standing" and not pos & {"kneeling", "prone", "sitting"})
 

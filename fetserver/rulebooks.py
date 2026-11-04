@@ -103,7 +103,7 @@ PROC = {
         "double_load": "6.11.2.4 b", "not_upheld": "6.16.5.2 c", "shot_protest": "6.16.5.2", "disturbance": "6.11.7",
         "crossfire": "6.11.6", "sighter_crossfire": "6.11.6.3",
         "penalty_example": "6.12.6.1 a", "dq": "6.12.6", "late": "6.11.4", "protest_min": (10, "6.16.5.1"),
-        "incident": "6.10.4 h", "best_count": None, "finals": ("issf",),
+        "incident": "6.10.4 h", "best_count": None, "finals": ("issf", "issf3p"),
         "malfunction": "6.13.4", "malfunction_allowable": "6.13.2.1", "range": "6.10.9.1, 6.11.3.2",
     },
     AG: {
@@ -158,7 +158,7 @@ PROC = {
         "double_load": None, "not_upheld": None, "shot_protest": None, "disturbance": None,
         "crossfire": None, "sighter_crossfire": None,
         "penalty_example": None, "dq": None, "late": None, "protest_min": (None, None),
-        "incident": None, "best_count": None, "finals": ("standard", "sfz_standing", "sfz_3p", "airgun", "issf", "nra"),   # each by its own book
+        "incident": None, "best_count": None, "finals": ("standard", "sfz_standing", "sfz_3p", "airgun", "issf", "issf3p", "nra"),   # each by its own book
         "malfunction": None, "malfunction_allowable": None, "range": None,
     },
 }

@@ -45,7 +45,7 @@ class IssfFinal(Drive, FinalCase):
         self.assertEqual(self.places(mid), dict(zip(devs, (1, 2, 3, 4))))
         self.assertEqual(self.phase_lengths(mid, "Series 1"), 0.001, "everyone fired at once: STOP right away (6.17.2 e)")
         f = next(x for x in self.cc.results(self.cid)["finals"] if x["match_id"] == mid)
-        self.assertEqual((f["elim"], f["draw"], f["title"], f["so_rule"]), (True, True, "ISSF 10m Air Rifle Final (ISSF 6.17.2)", "ISSF 6.17.2 h"))
+        self.assertEqual((f["elim"], f["draw"], f["title"], f["so_rule"]), (True, True, "ISSF 10m Final, air rifle or air pistol (ISSF 6.17.2)", "ISSF 6.17.2 h"))
         self.assertEqual(f["rows"][0]["total"], f["rows"][0]["final"], "starts from zero (6.17.1.5)")
         with self.assertRaises(MatchError):
             self.m.shoot_off(mid, [1, 2], "md")                           # ties are shot off at once, by the final itself

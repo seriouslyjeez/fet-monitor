@@ -99,6 +99,7 @@ class ThreePositions(MatchCase):
         self.assertEqual([(f["n"], f["code"]) for f in flags], [(21, "extra_in_position")])
         g = flags[0]["guide"]
         self.assertEqual((g["rule"], g["suggest"]), ("ISSF 7.7.3", "annul"), "nullified, target reset to sighting")
+        self.at(1650)                                         # a moment later, the range officer resets it
         self.m.command(mid, "back_to_sighters", "ro", device_id="lane-2")      # the reset
         self.m.command(mid, "start_record", "ro", device_id="lane-2")
         self.at(1700)

@@ -90,7 +90,19 @@ after standing has started. A MATCH shot after a position's 20 without that swit
 that position: ISSF 7.7.3 nullifies it and resets the target to sighting (suggested: annul; then *Back to
 sighters*). A pause and resume keeps a lane that is sighting between positions in sighting.
 
-Finals for 50 m 3 Positions (6.17.3) and 10 m Air Pistol are not built yet.
+### ISSF finals for these events (built in)
+
+- **10 m Air Pistol Final (6.17.2)**: the same final as 10 m Air Rifle (6.17.2 covers both): 2 x 5 shots in 250 s,
+  14 single shots in 50 s, eliminations from shot 12, ties shot off. A final is shot on its qualification's face, so
+  after an air pistol event it is the air pistol face, and named so. It follows a standing event only.
+- **50 m Rifle 3 Positions Final (6.17.3)**, after a 3-position event: take your positions 30 s; 5 minutes preparation
+  and sighting kneeling (30 s); 30 s while the targets are reset to MATCH; 22 minutes for 10 kneeling and 10 prone on
+  one clock, with the switch between positions as in the qualification, then sighters for standing in the time left
+  (5 minutes and 30 s announced; the 22 minutes run out, no early STOP); 30 s; two 5-shot standing series in 250 s,
+  then 8th and 7th are eliminated; single shots 31-35 in 50 s eliminate 6th to 3rd and decide gold and silver. 35
+  shots, decimal, starting from zero. Ties at an elimination are shot off, except two finalists tied after the second
+  standing series: both are out, ordered by countback (the second standing series, the first, then the last prone
+  shot and on backwards, 6.17.3 i).
 
 ### ISSF procedures
 

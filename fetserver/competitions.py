@@ -367,6 +367,9 @@ class Competitions:
         if not mf.final_fits(kind, qfmt):
             raise MatchError(f"the {fk['name']} follows " + ("a 3x10 or 3x20 event" if fk["events"] == "3p" else "a standing event"))
         fmt = fk["build"](spoken=paced == "spoken")
+        fmt["face"] = qfmt.get("face") or fmt.get("face") or faces.DEFAULT_FACE      # shot on the qualification's face
+        if kind == "issf" and fmt["face"] == "issf-ap10":                            # 6.17.2 is the air rifle and air pistol final
+            fmt.update(id="issf-final-ap", name="ISSF 10m Air Pistol Final")
         if for_relay is not None:
             r = c.execute("SELECT * FROM matches WHERE id=? AND competition_id=? AND final_kind IS NULL", (for_relay, cid)).fetchone() if isinstance(for_relay, int) else None
             if r is None or r["state"] != "done":
