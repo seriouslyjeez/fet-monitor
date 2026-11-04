@@ -1090,8 +1090,21 @@ class Core:
                 "settings": self._settings_view(r),
                 "lease": self._lease_view(lease, now, client_id), "view": view,
                 "match": self._match_info(c, did, now),
+                "v_ref": self._v_ref(c, r),
             })
         return out
+
+    @staticmethod
+    def _v_ref(c, r) -> Optional[dict]:
+        """The trip point (V_REF) for the target's page: FeT target firmware measures it when asked (status), the
+        original freETarget firmware sends it with every shot (the latest shot's, one row by the index)."""
+        st = json.loads(r["target_status_json"]) if r["target_status_json"] else {}
+        if isinstance(st.get("vr"), int):
+            return {"volts": round(st["vr"] / 1000, 2), "at": iso(st["at"]) if st.get("at") else None, "from": "target"}
+        last = c.execute("SELECT v_ref, event_ms FROM shots WHERE device_id=? ORDER BY id DESC LIMIT 1", (r["device_id"],)).fetchone()
+        if last is None or last["v_ref"] is None:
+            return None
+        return {"volts": last["v_ref"], "at": iso(last["event_ms"]), "from": "shot"}
 
     # ---- Range Control (the HTTP layer checks the admin session) ------------
     def admin_view(self) -> dict:
@@ -1108,9 +1121,6 @@ class Core:
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
                                                   hello_key_fp, target_seen_ms, target_status_json FROM targets WHERE device_id=?""",
                                         (t["device_id"],)).fetchone()
-            last = self.db.conn().execute("SELECT v_ref FROM shots WHERE device_id=? ORDER BY id DESC LIMIT 1",   # one row by the index
-                                          (t["device_id"],)).fetchone()
-            t["v_ref"] = last["v_ref"] if last else None                      # freETarget sends it with every shot; ours do not
             if ft["key_fp"] or ft["target_settings_json"] or ft["target_seen_ms"] or (ft["arduino_version"] or "").startswith("FeT target "):
                 cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
                                                  WHERE device_id=? AND type='target' ORDER BY id DESC LIMIT 5""", (t["device_id"],))

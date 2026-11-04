@@ -18,6 +18,7 @@ REBOOT_REQUIRED = Path("/run/reboot-required")
 STALE_MS = 5 * 60 * 1000
 STALE_UPDATE_MS = 65 * 60 * 1000              # an OS update may take long on a Pi 3
 OLD_DAYS = 30                                 # no successful OS update for this long: the page warns
+FACTS_TTL_S = 15                              # the Pi's facts are asked again after this long (each asks nmcli etc.)
 
 
 class ApplianceError(ValueError):
@@ -35,6 +36,8 @@ class Appliance:
             except ImportError:
                 system = None
         self.sys = system
+        self._facts = None                        # (when, status time, facts, networks): Range Control refreshes often
+        self._lists = None                        # time zones and countries: they do not change while the server runs
 
     def status(self) -> Optional[dict]:
         if self.dir is None:
@@ -70,9 +73,16 @@ class Appliance:
         if s is None:
             return {"helper_installed": False, "status": None, "busy": False, "facts": {}, "zones": [], "countries": [], "networks": [],
                     "clock_ms": int(self.now() * 1000), "os": self.os_state()}
-        return {"helper_installed": self.unit.is_file(), "status": self.status(), "busy": self.busy(), "facts": s.facts(),
-                "zones": s.zones(), "countries": [{"code": c, "name": n} for c, n in s.countries()],
-                "networks": s.scan_cached(), "clock_ms": int(self.now() * 1000), "os": self.os_state()}
+        st, now = self.status(), self.now()
+        done = (st or {}).get("time")                                       # the helper finished something: ask again
+        f = self._facts
+        if f is None or now - f[0] >= FACTS_TTL_S or now < f[0] or f[1] != done:
+            f = self._facts = (now, done, s.facts(), s.scan_cached())
+        if self._lists is None:
+            self._lists = (s.zones(), [{"code": c, "name": n} for c, n in s.countries()])
+        return {"helper_installed": self.unit.is_file(), "status": st, "busy": self.busy(), "facts": f[2],
+                "zones": self._lists[0], "countries": self._lists[1],
+                "networks": f[3], "clock_ms": int(now * 1000), "os": self.os_state()}
 
     def request(self, req: dict) -> None:
         """A first check (the helper checks everything again), then the request file that wakes the helper."""
@@ -88,4 +98,5 @@ class Appliance:
         tmp = self.dir / "request.json.tmp"
         with open(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:   # it may hold a password
             json.dump(req, f)
+        self._facts = None
         os.replace(tmp, self.dir / "request.json")

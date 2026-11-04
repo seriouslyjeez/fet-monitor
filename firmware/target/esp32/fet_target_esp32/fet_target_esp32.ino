@@ -265,7 +265,7 @@ static void lights() { ledcWrite(PIN_LED_PWM, lightsOff ? 0 : (uint32_t)(setting
 
 void Esp32Actions::settingsChanged(const tgt::Settings& s) {
   lights();
-  paper.configure((uint16_t)s.get(tgt::S_PAPER_MS), (uint16_t)s.get(tgt::S_STEP_COUNT), (uint16_t)s.get(tgt::S_STEP_MS));
+  paper.configure((uint16_t)s.get(tgt::S_PAPER_MS));
   xSemaphoreTake(capLock, portMAX_DELAY);
   capture.waitMs = (uint16_t)s.get(tgt::S_WAIT_MS);
   capture.ringMs = (uint16_t)s.get(tgt::S_RING_MS);

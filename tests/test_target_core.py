@@ -392,16 +392,18 @@ class Mega(unittest.TestCase):
         self.assertLess(ram, 2048, "the core leaves the Mega most of its 8 KB")
 
 
-DEFAULTS = [125, 0, 0, 0, 50, 2, 50, 0, 5, 0]
-KEYS = ["paper_ms", "step_count", "step_ms", "paper_eco_mm", "led_pct", "wait_ms", "ring_ms", "face", "face_alone_ms", "vref_mv"]
-BASE, SLOT = 64, 8 + 4 * 10 + 4
+DEFAULTS = [125, 0, 50, 2, 50, 0, 5, 0]
+KEYS = ["paper_ms", "paper_eco_mm", "led_pct", "wait_ms", "ring_ms", "face", "face_alone_ms", "vref_mv"]
+LED = KEYS.index("led_pct")
+BASE, SLOT = 64, 8 + 4 * 10 + 4                # room for the 10 values of layout 1 (two stepper values as well)
 
 
-def slot_bytes(values, gen, version=1, count=10):
-    """A settings slot as firmware/target/core/src/settings.cpp writes it."""
+def slot_bytes(values, gen, version=2, count=8):
+    """A settings slot as firmware/target/core/src/settings.cpp writes it (padded with zeros to the slot size)."""
     import struct
     import zlib
     b = struct.pack("<HBBHxx", 0x4654, version, count, gen) + struct.pack("<%di" % len(values), *values)
+    b = b.ljust(SLOT - 4, b"\0")
     return b + struct.pack("<I", zlib.crc32(b))
 
 
@@ -425,7 +427,7 @@ class SettingsStore(Case):
         self.assertEqual(self.h.run("sset led_pct 101"), "out of range")
         self.assertEqual(self.h.run("sset wait_ms 0"), "out of range")
         self.assertEqual(self.h.run("sset nonsense 1"), "unknown setting")
-        self.assertEqual(self.h.run("sseti 10 1"), "unknown setting", "index past the end")
+        self.assertEqual(self.h.run("sseti 8 1"), "unknown setting", "index past the end")
         self.assertEqual(self.h.run("sseti -1 1"), "unknown setting")
         self.assertEqual(self.h.run("sget led_pct"), "50", "nothing changed")
         self.assertEqual(self.h.run("sset led_pct 100"), "ok")
@@ -442,7 +444,7 @@ class SettingsStore(Case):
         self.assertEqual(self.h.run("ssave"), "saved 2 2")
         self.h.run("reboot")
         state, gen, vals = self.load()
-        self.assertEqual((state, gen, vals[4]), ("loaded", 2, 80))
+        self.assertEqual((state, gen, vals[LED]), ("loaded", 2, 80))
         self.assertEqual(self.h.run("ssave"), "saved 2 2", "loaded and unchanged: no write")
         self.assertEqual(self.h.run("sid"), settings_id(vals))
 
@@ -462,7 +464,7 @@ class SettingsStore(Case):
         self.load()
         self.h.run("ssave")
         self.h.run("sset led_pct 90")
-        self.assertEqual(self.load()[2][4], 50)
+        self.assertEqual(self.load()[2][LED], 50)
         self.assertEqual(self.h.run("ssave"), "saved 1 1", "nothing to write after reloading")
 
     def test_alternate_slots(self):
@@ -471,12 +473,12 @@ class SettingsStore(Case):
             self.h.run("sset led_pct %d" % led)
             self.h.run("ssave")
         self.h.run("reboot")
-        self.assertEqual(self.load()[2][4], 30)
+        self.assertEqual(self.load()[2][LED], 30)
         self.h.run("nvmset %d %s" % (BASE, "00" * SLOT))           # wipe slot 0: slot 1 still has a good copy
         self.h.run("reboot")
         state, gen, vals = self.load()
         self.assertEqual(state, "loaded")
-        self.assertIn(vals[4], (20, 30))
+        self.assertIn(vals[LED], (20, 30))
 
     def test_a_save_torn_by_a_power_cut_keeps_the_previous_settings(self):
         self.load()
@@ -487,7 +489,7 @@ class SettingsStore(Case):
             self.h.run("nvmtear %d" % cut)
             self.assertTrue(self.h.run("ssave").startswith("failed"))
             self.h.run("reboot")
-            self.assertEqual(self.load()[2][4], 70, cut)
+            self.assertEqual(self.load()[2][LED], 70, cut)
 
     def test_a_failed_write_is_reported_and_retried(self):
         self.load()
@@ -497,31 +499,46 @@ class SettingsStore(Case):
         self.assertEqual(self.h.run("sdirty"), "1", "still to be saved")
         self.assertTrue(self.h.run("ssave").startswith("saved"))
         self.h.run("reboot")
-        self.assertEqual(self.load()[2][4], 60)
+        self.assertEqual(self.load()[2][LED], 60)
 
     def test_damaged_or_foreign_slots_are_not_used(self):
         good = list(DEFAULTS)
-        good[4] = 33
+        good[LED] = 33
         self.h.run("nvmset %d %s" % (BASE, slot_bytes(good, 5).hex()))
         newer = list(DEFAULTS)
-        newer[4] = 44
+        newer[LED] = 44
         for bad in (slot_bytes(newer, 6)[:-1] + b"\x00",               # CRC wrong
-                    slot_bytes(newer, 6, version=2),                    # another layout
-                    slot_bytes(newer[:-1], 6, count=9),                 # fewer settings
-                    slot_bytes(newer, 6, count=9),                      # says 9, has 10: not this layout
-                    slot_bytes(newer[:4] + [101] + newer[5:], 6)):      # a value this firmware does not accept
+                    slot_bytes(newer, 6, version=3),                    # another layout
+                    slot_bytes(newer[:-1], 6, count=7),                 # fewer settings
+                    slot_bytes(newer, 6, count=9),                      # says 9, has 8: not this layout
+                    slot_bytes(newer, 6, version=1, count=8),           # layout 1 always had 10
+                    slot_bytes(newer[:LED] + [101] + newer[LED + 1:], 6)):   # a value this firmware does not accept
             self.h.run("nvmset %d %s" % (BASE + SLOT, bad.hex().ljust(2 * SLOT, "f")))
             self.h.run("reboot")
             self.assertEqual(self.load(), ("loaded", 5, good), bad.hex()[:20])
         self.h.run("nvmset %d %s" % (BASE + SLOT, slot_bytes(newer, 6).hex()))
         self.h.run("reboot")
-        self.assertEqual(self.load()[2][4], 44, "a good newer slot wins")
+        self.assertEqual(self.load()[2][LED], 44, "a good newer slot wins")
+
+    def test_settings_of_older_firmware_are_kept(self):
+        old = [300, 7, 9, 40, 80, 3, 60, 1, 6, 900]                    # layout 1: paper, stepper steps + pulse, the rest
+        self.h.run("nvmset %d %s" % (BASE + SLOT, slot_bytes(old, 9, version=1, count=10).hex()))
+        self.h.run("reboot")
+        self.assertEqual(self.load(), ("loaded", 9, [300, 40, 80, 3, 60, 1, 6, 900]), "the stepper values dropped, the rest kept")
+        self.h.run("sset led_pct 81")
+        self.h.run("ssave")
+        self.h.run("reboot")
+        self.assertEqual(self.load(), ("loaded", 10, [300, 40, 81, 3, 60, 1, 6, 900]), "saved in the new layout, slot 0")
+        bad = slot_bytes(old[:4] + [101] + old[5:], 11, version=1, count=10)  # its led_pct out of range
+        self.h.run("nvmset %d %s" % (BASE + SLOT, bad.hex()))
+        self.h.run("reboot")
+        self.assertEqual(self.load()[1], 10, "an old record is checked like a new one")
 
     def test_generation_wraps(self):
         a = list(DEFAULTS)
-        a[4] = 1
+        a[LED] = 1
         b = list(DEFAULTS)
-        b[4] = 2
+        b[LED] = 2
         self.h.run("nvmset %d %s" % (BASE, slot_bytes(a, 0xFFFF).hex()))
         self.h.run("nvmset %d %s" % (BASE + SLOT, slot_bytes(b, 0x0001).hex()))
         self.h.run("reboot")
@@ -529,7 +546,7 @@ class SettingsStore(Case):
         self.h.run("sset led_pct 3")
         self.h.run("ssave")
         self.h.run("reboot")
-        self.assertEqual(self.load()[2][4], 3, "and the next save goes to the older slot")
+        self.assertEqual(self.load()[2][LED], 3, "and the next save goes to the older slot")
 
     def test_names_match_the_list(self):
         for k, d in zip(KEYS, DEFAULTS):
@@ -596,7 +613,7 @@ class CommandChannel(Case):
         r = self.cmd(1, "set", {"led_pct": 80, "paper_ms": 400})
         self.assertTrue(r["ok"])
         vals = list(DEFAULTS)
-        vals[4], vals[0] = 80, 400
+        vals[LED], vals[0] = 80, 400
         self.assertEqual(r["values"]["k"], settings_id(vals), "the reply names the new settings id")
         self.assertEqual(self.h.run("acts"), "0 1")
         self.h.run("reboot")
@@ -716,24 +733,16 @@ class CommandChannel(Case):
 class Paper(Case):
     def test_nothing_configured(self):
         self.assertEqual(self.h.run("preq"), "0")
-        self.h.run("pconf 0 3 0")                                  # steps without a pulse length: not a stepper
-        self.assertEqual(self.h.run("preq"), "0")
 
     def test_dc_motor(self):
-        self.h.run("pconf 300 0 0")
+        self.h.run("pconf 300")
         self.assertEqual(self.h.run("preq"), "1")
         self.h.run("ptick 0 400")
         self.assertEqual(self.h.run("plog"), "+0 -300")
         self.assertEqual(self.h.run("pbusy"), "0")
 
-    def test_stepper(self):
-        self.h.run("pconf 0 3 10")
-        self.h.run("preq")
-        self.h.run("ptick 0 100")
-        self.assertEqual(self.h.run("plog"), "+0 -10 +15 -25 +30 -40")
-
     def test_requests_wait_their_turn(self):
-        self.h.run("pconf 100 0 0")
+        self.h.run("pconf 100")
         self.h.run("preq")
         self.h.run("ptick 0 50")
         self.h.run("preq")                                         # while running
@@ -742,15 +751,15 @@ class Paper(Case):
         self.assertEqual(self.h.run("plog"), "+0 -100 +106 -206", "the second after the first (and its 5 ms gap)")
 
     def test_too_many_requests(self):
-        self.h.run("pconf 100 0 0")
+        self.h.run("pconf 100")
         self.assertEqual([self.h.run("preq") for _ in range(6)], ["1"] * 5 + ["0"])
 
     def test_switched_off_meanwhile(self):
-        self.h.run("pconf 100 0 0")
+        self.h.run("pconf 100")
         self.h.run("preq")
         self.h.run("preq")
         self.h.run("ptick 0 50")
-        self.h.run("pconf 0 0 0")
+        self.h.run("pconf 0")
         self.h.run("ptick 51 400")
         self.assertEqual(self.h.run("plog"), "+0 -100", "the one running finishes, the waiting one is dropped")
         self.assertEqual(self.h.run("pbusy"), "0")

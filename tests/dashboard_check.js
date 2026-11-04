@@ -333,9 +333,15 @@ assert.strictEqual(count(none, /data-act="rcsel"/g), D.targets.length, 'one chec
 assert.strictEqual(count(none, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g), 6, 'bulk buttons disabled with nothing selected');
 assert(none.includes('data-act="rcunban" data-id="bad-1"') && none.includes('&lt;i&gt;Rogue') && !none.includes('<i>Rogue'));
 assert(!none.includes(D.targets.find(t => t.device_id === 'lane-2').name), 'hostile target names are escaped');
-assert(D.targets.every(t => t.v_ref === undefined) && !none.includes('V_REF'), 'the public target list has no V_REF');
-assert(rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {v_ref: 0.48})], banned: []}}}))
-  .includes(' · V_REF 0.48 V'), 'Range Control: the last shot\'s V_REF (freETarget targets)');
+assert(!rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {v_ref: {volts: 0.48, from: 'shot'}})], banned: []}}}))
+  .includes('V_REF'), 'Range Control does not list V_REF (it is on the target\'s page)');
+{
+  const tg = Object.assign({}, D.targets[0], {v_ref: {volts: 0.65, from: 'target', at: '2026-11-03T20:00:00Z'}});
+  const sheet = overlayView(tg, state({gear: true}), 'Jo');
+  assert(sheet.includes('Trip point (V_REF) <b>0.65 V</b>') && sheet.includes('measured by the target'), 'the target\'s page shows its trip point');
+  assert(overlayView(Object.assign({}, tg, {v_ref: {volts: 4.93, from: 'shot'}}), state({gear: true}), '').includes('4.93 V</b> <span class="mut">with its last shot'));
+  assert(!overlayView(Object.assign({}, tg, {v_ref: null}), state({gear: true}), '').includes('Trip point'));
+}
 {
   const hdr = html.match(/<header>[\s\S]*?<\/header>/)[0];             // the Pi's power, quick to find, hidden until logged in
   assert(/<span id="power" hidden><button data-act="rcsys" data-a="restart"[^>]*>Restart<\/button><button class="danger" data-act="rcsys" data-a="shutdown"[^>]*>Shut down<\/button><\/span>/.test(hdr));
@@ -977,18 +983,22 @@ console.log('OK');
   assert(p.includes('Lane &lt;1&gt;') && p.includes('key ab12cd34') && p.includes('start 4'), 'which target, its key and start');
   assert(p.includes('data-ts="fet-1:led_pct"') && p.includes('value="50"') && p.includes('value="300"'), 'reported values, typed values kept');
   assert(p.includes('class="bad">out_of_range:led_pct') && count(p, /data-act="rct(get|set|paper)"/g) === 3, 'the target\'s own answers; three actions');
-  assert.strictEqual(TARGET_SETTINGS.length, 10);
-  assert(TARGET_SETTINGS.every(r => r[5] && p.includes('title="' + esc(r[5]) + '"')), 'every setting explains itself');
+  assert.strictEqual(TARGET_SETTINGS.length, 8);
+  assert(!TARGET_SETTINGS.some(r => /^step/.test(r[0])), 'no stepper settings: no board we support has one');
+  assert(TARGET_SETTINGS.every(r => r[5] && (r[6] || p.includes('title="' + esc(r[5]) + '"'))), 'every setting explains itself');
+  assert(!p.includes('face_alone_ms'), 'no face sensor: its own option hidden');
+  const withFace = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:face': '1'}});
+  assert(withFace.includes('data-ts="fet-1:face_alone_ms"'), 'face sensor Yes (being chosen): its option shown');
+  assert(targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {settings: {face: 1}})})]}, {}).includes('face_alone_ms'),
+    'or as the target reports it');
   assert(/<select id="ts_fet-1_face" data-ts="fet-1:face"><option value="0" selected>No<\/option><option value="1">Yes<\/option><\/select>/.test(p), 'face sensor: No/Yes, No by default');
   assert(targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:face': '1'}}).includes('<option value="1" selected>Yes'), 'a chosen Yes stays chosen');
-  assert(!p.includes('Trip point'), 'no status yet: no trip point');
   const none = targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]}, {});
   assert(none.includes('its hello has not') && none.includes('New key'), 'no key, no hello yet: said so, and what to do');
   const fk = ft => targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, ft)})]}, {});
   assert(fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('signs with key 1a2b3c4d, which this Pi does not know') &&
          fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('its Arduino Mega'), 'a key from another Pi: named, with the fix');
-  const vr = fk({status: {vr: 652, at: Date.now() - 5000}});
-  assert(vr.includes('Trip point (V_REF) <b>0.65 V</b>') && vr.includes('RV1'), 'the trip point the target measured, in volts');
+  assert(!p.includes('Trip point') && !fk({status: {vr: 652}}).includes('Trip point'), 'V_REF is on the target\'s page, not here');
   assert(fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('no key yet') && fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('ESP32 board'),
          'no key at all (an ESP32 board)');
   assert.deepStrictEqual(targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '50', 'fet-1:paper_ms': '300', 'fet-1:wait_ms': ''}}),

@@ -3,10 +3,10 @@
 
 namespace tgt {
 
+static_assert(S_COUNT <= Settings::V1_COUNT, "the slot holds at most V1_COUNT values");
+
 static const SettingDef DEFS[S_COUNT] = {
     {"paper_ms", 0, 5000, 125},                   // a DC motor, 125 ms: a short advance that suits most shooters
-    {"step_count", 0, 2000, 0},
-    {"step_ms", 0, 100, 0},
     {"paper_eco_mm", 0, 100, 0},
     {"led_pct", 0, 100, 50},
     {"wait_ms", 1, 20, 2},
@@ -63,11 +63,14 @@ uint32_t Settings::id() const {
 bool Settings::readSlot(int slot, int32_t* vals, uint16_t& gen) {
   uint8_t b[SLOT_SIZE];
   if (!nvm_.read(base_ + slot * SLOT_SIZE, b, SLOT_SIZE)) return false;
-  if ((uint16_t)(b[0] | b[1] << 8) != MAGIC || b[2] != VERSION || b[3] != S_COUNT) return false;
+  if ((uint16_t)(b[0] | b[1] << 8) != MAGIC) return false;
+  bool v1 = b[2] == 1 && b[3] == V1_COUNT;                     // stepper steps and pulse after paper_ms: dropped
+  if (!v1 && (b[2] != VERSION || b[3] != S_COUNT)) return false;
   if (crc32(b, SLOT_SIZE - 4) != get32(b + SLOT_SIZE - 4)) return false;
   gen = (uint16_t)(b[4] | b[5] << 8);
   for (int i = 0; i < S_COUNT; i++) {
-    int32_t v = (int32_t)get32(b + 8 + 4 * i);
+    int at = v1 && i > S_PAPER_MS ? i + 2 : i;
+    int32_t v = (int32_t)get32(b + 8 + 4 * at);
     if (v < DEFS[i].min || v > DEFS[i].max) return false;    // a value this firmware cannot accept: not usable
     vals[i] = v;
   }
@@ -90,6 +93,7 @@ bool Settings::load() {
 bool Settings::save() {
   if (!dirty_ && newest_ >= 0) return true;
   uint8_t b[SLOT_SIZE];
+  memset(b, 0, sizeof b);
   uint16_t gen = (uint16_t)(gen_ + 1);
   b[0] = (uint8_t)MAGIC; b[1] = (uint8_t)(MAGIC >> 8); b[2] = VERSION; b[3] = S_COUNT;
   b[4] = (uint8_t)gen; b[5] = (uint8_t)(gen >> 8); b[6] = 0; b[7] = 0;

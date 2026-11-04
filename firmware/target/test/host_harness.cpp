@@ -186,7 +186,7 @@ int main() {
       char out[200]; size_t n = ident.setupLine(rest.c_str(), "0.1.0", 310, st->id(), out, sizeof out);
       std::cout << (n ? std::string(out, n - 1) : std::string("none")) << "\n"; }
     else if (cmd == "ikeyhex") { char b[3]; std::string h; for (size_t k = 0; k < Identity::KEY_LEN; k++) { snprintf(b, 3, "%02x", ident.key()[k]); h += b; } std::cout << h << "\n"; }
-    else if (cmd == "pconf") { int a, b, c; is >> a >> b >> c; paper.configure((uint16_t)a, (uint16_t)b, (uint16_t)c); }
+    else if (cmd == "pconf") { int a; is >> a; paper.configure((uint16_t)a); }
     else if (cmd == "preq") std::cout << (paper.request() ? 1 : 0) << "\n";
     else if (cmd == "ptick") { uint32_t from, to; is >> from >> to; for (uint32_t t = from; t <= to; t++) { motor.now = t; paper.tick(t); } }
     else if (cmd == "plog") { std::string l = motor.log; if (!l.empty()) l.pop_back(); std::cout << l << "\n"; motor.log.clear(); }

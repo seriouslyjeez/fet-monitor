@@ -25,9 +25,7 @@ struct SettingDef {
 };
 
 enum SettingIndex {
-  S_PAPER_MS,        // DC motor: on-time per advance, ms (0 = no paper drive, or a stepper); default 125
-  S_STEP_COUNT,      // stepper: steps per advance (0 = DC motor)
-  S_STEP_MS,         // stepper: pulse length, ms
+  S_PAPER_MS,        // DC motor: on-time per advance, ms (0 = no paper drive); default 125
   S_PAPER_ECO_MM,    // advance only when the shot is within this radius, mm (0 = always); needs the server's verdict
   S_LED_PCT,         // face lighting, %
   S_WAIT_MS,         // longest spread between first and last microphone (+1 tick)
@@ -41,14 +39,17 @@ enum SettingIndex {
 class Settings {
  public:
   static const uint16_t MAGIC = 0x4654;           // "FT"
-  static const uint8_t VERSION = 1;
-  static const size_t SLOT_SIZE = 8 + 4 * S_COUNT + 4;   // magic, version, count, generation, values, CRC
+  static const uint8_t VERSION = 2;              // 1 (target firmware <= 0.1.3 / 0.2.0): two stepper values as well
+  static const int V1_COUNT = 10;
+  // magic, version, count, generation, values, CRC. Fixed at the size of version 1 (10 values; fewer are padded with
+  // zeros) so that the second slot stays where older firmware wrote it and their settings are read once more.
+  static const size_t SLOT_SIZE = 8 + 4 * V1_COUNT + 4;
 
   Settings(Nvm& nvm, size_t base) : nvm_(nvm), base_(base) {
     for (int i = 0; i < S_COUNT; i++) dflt_[i] = def(i).def;
     defaults();
   }
-  // This board's own default for one setting (e.g. the ESP32 board's paper motor wants 500 ms): call before load().
+  // This board's own default for one setting: call before load().
   // False (nothing changed) if it is outside the setting's range.
   bool setDefault(int i, int32_t value);
   static const SettingDef& def(int i);

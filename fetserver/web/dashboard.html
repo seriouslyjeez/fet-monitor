@@ -631,7 +631,9 @@ function overlayView(t, S, name) {
   h += '</section>';
   const su = statusUrl(t.ip);
   h += '<section><h4>Target</h4>' + (su ? '<p><a href="' + su + '" target="_blank" rel="noopener">Status page (' + esc(t.ip) + ')</a></p><p class="mut">The target\'s own page: WiFi, signal, server, shots waiting. Works from the same network.</p>'
-                                       : '<p class="mut">No address yet: the target has not reported.</p>') + '</section>';
+                                       : '<p class="mut">No address yet: the target has not reported.</p>') +
+    (t.v_ref ? '<p>Trip point (V_REF) <b>' + esc(Number(t.v_ref.volts).toFixed(2)) + ' V</b> <span class="mut">' +
+      (t.v_ref.from === 'target' ? 'measured by the target' : 'with its last shot') + (t.v_ref.at ? ', ' + esc(when(t.v_ref.at)) : '') + '</span></p>' : '') + '</section>';
   if (L.mine) {
     h += '<section><h4>Mode</h4><div class="seg"><button data-act="kind" data-kind="practice" class="' + (t.kind === 'practice' ? 'sel' : '') + '">Practice</button>' +
          '<button data-act="kind" data-kind="match" class="' + (t.kind === 'match' ? 'sel' : '') + '">Match</button>' +
@@ -845,16 +847,14 @@ function targetImages(rc) {
     '<p class="mut">The .hex from the Arduino build of firmware/target/mega (not the one "with_bootloader"). It is checked: an intact Intel HEX ' +
     'for the Mega that carries FeT target firmware\'s name and version.</p>';
 }
-const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No choice), min, max, what it does]
+const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No choice), min, max, what it does, shown only if this one is Yes]
   ['led_pct', 'Lights', '%', 0, 100, 'Brightness of the face lights.'],
   ['paper_ms', 'Paper motor (DC)', 'ms', 0, 5000, 'How long the paper motor runs for one advance (DC motor). 125 ms is a short advance; 0 = no paper drive.'],
-  ['step_count', 'Stepper steps', '', 0, 2000, 'Only for a stepper motor paper drive: pulses per advance (0 = a DC motor, the usual).'],
-  ['step_ms', 'Stepper pulse', 'ms', 0, 100, 'Only for a stepper motor: how long each pulse is.'],
   ['paper_eco_mm', 'Paper only for shots inside', 'mm (0 = every shot)', 0, 100, 'Saves paper: the paper advances only for a shot this close to the centre (FeT Monitor decides, from where the shot hit). 0 = after every shot.'],
   ['wait_ms', 'Wait for all microphones', 'ms', 1, 20, 'After the first microphone hears a shot, how long the target waits for the other three before it reads the times. Sound crosses the target in under 1 ms.'],
   ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000, 'After a shot, how long the target must be quiet (no echo ringing in the box) before it listens for the next one.'],
   ['face', 'Face sensor fitted', 'yesno', 0, 1, 'Only if a face-plate sensor is wired to the board: it tells a hit on the faceplate (a miss) from a shot.'],
-  ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'With a face sensor: a faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).'],
+  ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'A faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).', 'face'],
   ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone (ESP32 boards; on the Mega it is the trimmer RV1). Lower is more sensitive.']];
 function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
   const ts = (d.targets || []).filter(t => t.fet_target);
@@ -876,9 +876,7 @@ function targetSettingsPanel(d, rc) {          // Range Control: targets running
       return '<h4>' + esc(t.name) + ' <span class="mut">' + esc(id) + ' · key ' + esc(ft.key_fp || 'none') + ' · start ' + esc(ft.boot == null ? '?' : ft.boot) +
         (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span></h4>' +
         (ft.key_fp ? '' : '<p class="bad">' + noKeyReason(ft) + '</p>') +
-        (ft.status && ft.status.vr != null ? '<p>Trip point (V_REF) <b>' + (ft.status.vr / 1000).toFixed(2) + ' V</b> <span class="mut">measured by the target' +
-          (ft.status.at ? ', ' + esc(ago(new Date(ft.status.at).toISOString())) + ' ago' : '') + (ft.esp32 ? '' : '; set with the trimmer RV1') + '</span></p>' : '') +
-        '<div class="tsgrid">' + TARGET_SETTINGS.map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
+        '<div class="tsgrid">' + TARGET_SETTINGS.filter(r => !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
           ? '<select id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
               '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
           : '<input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
@@ -1034,8 +1032,7 @@ function rangeView(S) {
     (d.targets.length ? d.targets.map(t => {
       const su = statusUrl(t.ip);
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
-        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) +
-          (t.v_ref != null ? ' · V_REF ' + esc(Number(t.v_ref).toFixed(2)) + ' V' : '') + '</div></td>' +
+        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
         '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
         '<td>' + esc(t.bridge_fw || '–') + fwJobText(t, rc.images) + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
@@ -1691,22 +1688,16 @@ async function refresh() {
     if (route().range) {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
-      if (S.rc.status.logged_in) {
-        const res = await adminCall('/targets');
+      if (S.rc.status.logged_in) {                      // all at once, not one after another
+        const [res, fw, mu, fl, tf, e32, sy, up] = await Promise.all(['/targets', '/firmware', '/match-users', '/flash', '/target-firmware',
+          '/esp32-firmware', '/system', '/updates'].map(p => adminCall(p)));
         if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
-        const fw = await adminCall('/firmware');
         if (fw.status === 200) S.rc.images = fw.data.images;
-        const mu = await adminCall('/match-users');
         if (mu.status === 200) S.rc.musers = mu.data.users;
-        const fl = await adminCall('/flash');
         if (fl.status === 200) S.rc.flash = fl.data;
-        const tf = await adminCall('/target-firmware');
         if (tf.status === 200) S.rc.timages = tf.data.images;
-        const e32 = await adminCall('/esp32-firmware');
         if (e32.status === 200) S.rc.e32images = e32.data.images;
-        const sy = await adminCall('/system');
         if (sy.status === 200) S.rc.system = sy.data;
-        const up = await adminCall('/updates');
         if (up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
           S.rc.updates = Object.assign(up.data, {msg: msg, last_check: up.data.last_check || check});
@@ -1766,11 +1757,57 @@ async function refresh() {
 }
 
 let drawn = null;                          // the page as last drawn (only render() writes #app)
-function setApp(app, html) {               // only when something changed: a redraw between press and release loses a click
+function setApp(app, html) {               // only when something changed
   if (html === drawn) return;
-  app.innerHTML = html;
+  patchHtml(app, html);
   drawn = html;
 }
+// A redraw changes the page in place instead of replacing it: what is still there keeps its element, so a click under
+// way, a tooltip, an opened section (details), scrolling inside a box and the field being typed in all survive, and
+// only what differs is written. Form fields show what the page says, except the one that has the focus.
+function patchHtml(el, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  morphChildren(el, tpl.content);
+}
+function sameNode(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  if (a.nodeType !== 1) return true;
+  return (a.id || '') === (b.id || '') && (a.nodeName !== 'INPUT' || a.type === b.type);
+}
+function morphChildren(from, to) {
+  const want = Array.from(to.childNodes);
+  want.forEach((n, i) => {
+    const o = from.childNodes[i];
+    if (!o) from.appendChild(n);
+    else if (sameNode(o, n)) morphNode(o, n);
+    else from.replaceChild(n, o);
+  });
+  while (from.childNodes.length > want.length) from.removeChild(from.lastChild);
+}
+function morphNode(o, n) {
+  if (o.nodeType !== 1) { if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue; return; }
+  const tag = o.nodeName, focused = o === document.activeElement;
+  const keep = a => tag === 'DETAILS' && a === 'open';                   // opened or closed by the user
+  for (const a of Array.from(o.attributes)) if (!n.hasAttribute(a.name) && !keep(a.name)) o.removeAttribute(a.name);
+  for (const a of Array.from(n.attributes))
+    if (!keep(a.name) && o.getAttribute(a.name) !== a.value) o.setAttribute(a.name, a.value);
+  if (tag === 'SELECT') {
+    const pick = Array.from(n.querySelectorAll('option')).findIndex(x => x.hasAttribute('selected'));
+    morphChildren(o, n);
+    if (!focused && o.selectedIndex !== Math.max(pick, 0)) o.selectedIndex = Math.max(pick, 0);
+    return;
+  }
+  if (tag === 'TEXTAREA') { const v = n.textContent; morphChildren(o, n); if (!focused && o.value !== v) o.value = v; return; }
+  if (tag === 'INPUT') {
+    if (focused || o.type === 'file') return;
+    if (o.type === 'checkbox' || o.type === 'radio') o.checked = n.hasAttribute('checked');
+    else if (o.value !== (n.getAttribute('value') || '')) o.value = n.getAttribute('value') || '';
+    return;
+  }
+  morphChildren(o, n);
+}
+let pressing = false, held = false;        // no redraw between press and release (it would lose the click, or a text selection)
 function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
   document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print ? '' : 'on';
@@ -1779,7 +1816,8 @@ function render(force) {                  // force: a structural change (e.g. an
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
   document.getElementById('power').hidden = !(S.rc && S.rc.status && S.rc.status.logged_in);   // the Pi's power, for Range Control only
   const ae = document.activeElement;
-  if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') return;   // never redraw under typing
+  if (!force && pressing) { held = true; return; }
+  if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') { held = true; return; }   // never redraw under typing: after it
   document.body.classList.toggle('tv', !!r.tv);
   S.phone = !!(window.matchMedia && window.matchMedia('(max-width: 600px)').matches);
   document.body.classList.toggle('rangemode', !!(r.id && t && t.lease && t.lease.mine));   // holding a target: only its screen
@@ -1804,16 +1842,17 @@ function renderOverlay(t) {
   if (route().match && S.mc && (S.mc.editp || S.mc.movep || S.mc.shotp || S.mc.latep)) {   // Match Control: a competitor, a move, a shot list, a late arrival
     o.className = 'open';
     const ae = document.activeElement;
-    if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) return;
-    o.innerHTML = S.mc.latep ? lateSheet(S.mc) : S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc);
+    if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) { held = true; return; }
+    patchOverlay(o, S.mc.latep ? lateSheet(S.mc) : S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc));
     return;
   }
   o.className = (S.gear || S.sight) && t ? 'open' : '';
-  if (!(S.gear || S.sight) || !t) { o.innerHTML = ''; return; }
+  if (!(S.gear || S.sight) || !t) { patchOverlay(o, ''); return; }
   const ae = document.activeElement;
-  if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)) { sightRedraw(t); return; }   // never redraw under someone's typing
-  o.innerHTML = S.sight ? sightView(t, S) : overlayView(t, S, store('fet_name') || '');
+  if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)) { sightRedraw(t); held = true; return; }   // never redraw under someone's typing
+  patchOverlay(o, S.sight ? sightView(t, S) : overlayView(t, S, store('fet_name') || ''));
 }
+function patchOverlay(o, html) { if (o._drawn !== html) { patchHtml(o, html); o._drawn = html; } }
 function sightRedraw(t) {
   const r = document.getElementById('sightres');
   if (S.sight && r && t) r.innerHTML = sightResult(S.sight.data, S.cpr, t.calibre_x10 / 10);
@@ -2550,12 +2589,21 @@ function boot() {
     else mc.msg = 'Not stored: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
     render(true);
   });
-  setInterval(() => { if (route().range && S.rc && ((S.rc.system && S.rc.system.busy) || (S.rc.flash && S.rc.flash.job && S.rc.flash.job.state === 'running'))) refresh(); }, 2000);   // a change or a flash in progress
-  setInterval(() => { if (route().range && S.rc && S.rc.flash && !S.rc.flashBusy) refresh(); }, 5000);   // a device plugged in or out
+  setInterval(async () => {                // a change of the Pi or a flash in progress: only that part, more often (a device plugged
+    const rc = S.rc;                        // in or out shows with the 5 s refresh below)
+    if (!route().range || !rc || S.busy) return;
+    const sys = rc.system && rc.system.busy, fl = rc.flash && rc.flash.job && rc.flash.job.state === 'running';
+    if (!sys && !fl) return;
+    const res = await adminCall(sys ? '/system' : '/flash');
+    if (res.status === 200) { if (sys) rc.system = res.data; else rc.flash = res.data; render(); }
+  }, 2000);
   const keepSys = e => {
     if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; }
     if (e.target.id && FLASH_FIELDS.includes(e.target.id) && S.rc) (S.rc.flashf = S.rc.flashf || {})[e.target.id] = e.target.value;   // kept for the next target
-    if (e.target.dataset && e.target.dataset.ts && S.rc) (S.rc.tsf = S.rc.tsf || {})[e.target.dataset.ts] = e.target.value;      // target settings being typed
+    if (e.target.dataset && e.target.dataset.ts && S.rc) {
+      (S.rc.tsf = S.rc.tsf || {})[e.target.dataset.ts] = e.target.value;                         // target settings being typed
+      if (e.type === 'change' && e.target.tagName === 'SELECT') render(true);                     // Face sensor: its own options appear
+    }
   };
   document.addEventListener('input', keepSys); document.addEventListener('change', keepSys);
   const megaPicker = document.getElementById('rcmegafile');
@@ -2646,8 +2694,13 @@ function boot() {
     if (parseCpr(S.cpr) != null) store('fet_cpr', S.cpr);
     sightRedraw(current());
   });
-  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) { drawn = null; act(el); } });   // after an action: redraw all
-  document.addEventListener('change', () => { drawn = null; }, true);     // a choice the server refuses is put back by the next redraw
+  document.addEventListener('pointerdown', e => { if (e.button === 0) pressing = true; }, true);
+  const released = () => { pressing = false; if (held) setTimeout(() => { if (held && !pressing) { held = false; render(); } }, 0); };   // after the click
+  document.addEventListener('pointerup', released, true); document.addEventListener('pointercancel', released, true);
+  document.addEventListener('focusout', released, true);                  // done typing: catch up
+  const redrawAll = () => { drawn = null; const o = document.getElementById('overlay'); if (o) o._drawn = null; };
+  document.addEventListener('click', e => { const el = e.target.closest('[data-act]'); if (el) { redrawAll(); act(el); } });   // after an action: redraw all
+  document.addEventListener('change', redrawAll, true);                    // a choice the server refuses is put back by the next redraw
   document.addEventListener('keydown', e => {                    // review with the arrow keys: left/right = one shot, up/down or PageUp/PageDown = one target
     if (!S.review || S.gear || S.sight || e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|SELECT|TEXTAREA)$/.test((e.target || {}).tagName || '')) return;
     const m = {ArrowLeft: 'step-', ArrowRight: 'step+', ArrowUp: 'page-', PageUp: 'page-', ArrowDown: 'page+', PageDown: 'page+'}[e.key];

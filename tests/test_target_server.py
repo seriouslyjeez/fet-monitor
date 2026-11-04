@@ -284,6 +284,8 @@ class Commands(Base):
         st = json.loads(self.target()["target_status_json"])
         self.assertEqual((st["up"], st["d"], st["q"], st["vr"]), (5000, 1, 4, 650), "the status is kept on its own")
         self.assertNotIn("k", st)
+        v = self.core.list_targets()[0]["v_ref"]
+        self.assertEqual((v["volts"], v["from"]), (0.65, "target"), "the trip point on the target's page, in volts")
 
     def test_a_refusal_is_recorded_and_changes_nothing(self):
         self.bound()

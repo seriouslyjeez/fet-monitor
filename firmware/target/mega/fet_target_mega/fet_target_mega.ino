@@ -134,7 +134,7 @@ static void faceEdge() { capture.face(micros()); }
 
 void MegaActions::settingsChanged(const tgt::Settings& s) {
   analogWrite(PIN_LED_PWM, (int)(s.get(tgt::S_LED_PCT) * 255L / 100));
-  paper.configure((uint16_t)s.get(tgt::S_PAPER_MS), (uint16_t)s.get(tgt::S_STEP_COUNT), (uint16_t)s.get(tgt::S_STEP_MS));
+  paper.configure((uint16_t)s.get(tgt::S_PAPER_MS));
   noInterrupts();                                                          // the interrupt reads these
   capture.waitMs = (uint16_t)s.get(tgt::S_WAIT_MS);
   capture.ringMs = (uint16_t)s.get(tgt::S_RING_MS);

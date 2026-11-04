@@ -63,6 +63,36 @@ class Requests(unittest.TestCase):
         self.a.request({"action": "restart"})
 
 
+class FactsAreCached(unittest.TestCase):
+    def test_asked_again_after_a_while_or_a_change(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        d, t, calls = Path(tmp.name), [1000.0], []
+
+        class Counting(FakeFacts):
+            def facts(self):
+                calls.append("facts")
+                return dict(FakeFacts.facts(self), hostname="h%d" % len(calls))
+
+            def zones(self):
+                calls.append("zones")
+                return ["UTC"]
+        unit = d / "u"
+        unit.write_text("")
+        a = Appliance(d, Counting(), unit, now=lambda: t[0])
+        self.assertEqual(a.view()["facts"]["hostname"], "h1")             # then the zones, once
+        t[0] += 10
+        self.assertEqual(a.view()["facts"]["hostname"], "h1", "Range Control refreshing: no new nmcli")
+        t[0] += 6
+        self.assertEqual(a.view()["facts"]["hostname"], "h3", "after 15 s: asked again")
+        (d / "system").mkdir()
+        (d / "system/status.json").write_text(json.dumps({"state": "done", "action": "hostname", "time": 1}))
+        self.assertEqual(a.view()["facts"]["hostname"], "h4", "the helper finished a change: asked again at once")
+        a.request({"action": "restart"})
+        self.assertEqual(a.view()["facts"]["hostname"], "h5", "a request made: asked again")
+        self.assertEqual(calls.count("zones"), 1, "the time zones once")
+
+
 class WithoutTheSetupCode(unittest.TestCase):
     def test_the_server_still_starts(self):
         import builtins

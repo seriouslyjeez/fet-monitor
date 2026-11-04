@@ -356,10 +356,12 @@ class SessionNames(CtlCase):
 
 class RangeControlCore(CtlCase):
     def test_the_last_shots_v_ref(self):
-        self.assertIsNone(self.core.admin_view()["targets"][0]["v_ref"], "no shot yet")
+        self.assertIsNone(self.target()["v_ref"], "no shot yet")
         self.shoot(1_000)
         self.shoot(2_000, raw=SHOT.replace("4.9", "0.65") % (self.seq + 1, "1.00", "1.00"))
-        self.assertEqual(self.core.admin_view()["targets"][0]["v_ref"], 0.65, "the latest shot's, as the target sent it")
+        v = self.target()["v_ref"]
+        self.assertEqual((v["volts"], v["from"]), (0.65, "shot"), "the latest shot's, as the target sent it (on the target's page)")
+
 
     def test_remove_hides_until_the_target_reports_again(self):
         self.core.acquire_control("a1", ALICE, "Alice")
