@@ -106,8 +106,12 @@ def _issf_50m():
                      "60 shots prone in 50 minutes on electronic targets, decimal scoring (6.11.9.3, 7.7.4). No final: the ranking after "
                      "the qualification decides the medals.", position="prone", rule="6.11.9.3, 7.7.4"),
         _issf_qual60("issf-ap60", "10m Air Pistol 60 shots (ISSF)", "issf-ap10", "integer", 75,
-                     "60 shots in 1 hour 15 minutes, full ring (integer) scoring (6.11.9.1). The final is not built yet.",
+                     "60 shots in 1 hour 15 minutes, full ring (integer) scoring (6.11.9.1). Final: the ISSF 10m Final (6.17.2).",
                      rule="6.11.9.1"),
+        _issf_qual60("issf-fp60", "50m Pistol 60 shots (ISSF)", "issf-p25", "integer", 90,
+                     "60 shots in 1 hour 30 minutes on the 25 m precision and 50 m pistol target, full ring scoring with inner tens "
+                     "(6.11.9.8). No final: the qualification decides the medals. The target is 500 mm across.",
+                     rule="6.11.9.8"),
     )
 
 
@@ -318,8 +322,23 @@ def _ag_ar60():
         ]}
 
 
+def _ag_ap60():
+    """CMP Air Gun rules 6.4.3 (AP60) on electronic targets (b): as AR60, the 15 minutes preparation and sighting, then
+    60 shots in 75 minutes; on the ISSF 10 m air pistol target in whole rings (a)."""
+    f = _ag_ar60()
+    f.update(id="cmp-ag-ap60", name="10m Air Pistol 60 (AP60, CMP Air Gun Rules)", scoring="integer", face="issf-ap10",
+             notes="Electronic targets (6.4.3 b). Target carriers: 90 minutes record fire (6.4.3 d), set the time when creating the match. "
+                   "Whole rings (6.4.3 a). Ties: inner tens, then the 10-shot series from the last (score, then their inner tens), "
+                   "then shot by shot (8.5.1 c). Teams of 2, 3 or 4 as the program says (6.4.6). Final: the CMP Air Gun Final (6.4.4, 10).")
+    f["phases"] = [dict(p) for p in f["phases"]]
+    f["phases"][0]["start"] = "You may move your pistols and equipment to the firing line. Your preparation and sighting time will begin in fifteen minutes."
+    f["phases"][1]["rule"] = "6.4.3 b, 7.9.1"
+    f["phases"][2]["rule"] = "6.4.3 b, 7.9.2"
+    return f
+
+
 BUILTIN: Dict[str, dict] = {f["id"]: f for f in (
-    _issf_qual(), _ag_ar60(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
+    _issf_qual(), _ag_ar60(), _ag_ap60(), _cmp_3p(10), _cmp_3p(20), _cmp_standing60(), _cmp_standing3x20(),
     _nra_3p(10), _nra_3p(20), _nra_3p(40), _nra_standing(40), _nra_standing(60)) + _issf_50m() + tuple(f() for f in SB_FORMATS)}
 
 

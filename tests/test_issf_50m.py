@@ -2,11 +2,11 @@
 3-position switch between positions on one clock (7.7.3)."""
 import unittest
 
-from fetserver.matchformats import BUILTIN, blocks, validate
+from fetserver.matchformats import BUILTIN, blocks, final_fits, validate
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase
 
-F = {k: validate(BUILTIN[k]) for k in ("issf-r3p-in", "issf-r3p-out", "issf-r50p", "issf-ap60")}
+F = {k: validate(BUILTIN[k]) for k in ("issf-r3p-in", "issf-r3p-out", "issf-r50p", "issf-ap60", "issf-fp60", "cmp-ag-ap60")}
 
 
 class Courses(unittest.TestCase):
@@ -18,7 +18,12 @@ class Courses(unittest.TestCase):
         self.assertEqual(ph("issf-ap60")[-1], ("record", 4500), "air pistol: 1 hour 15 (6.11.9.1)")
         self.assertEqual({k: (f["face"], f["scoring"]) for k, f in F.items()},
                          {"issf-r3p-in": ("issf-r50", "integer"), "issf-r3p-out": ("issf-r50", "integer"),
-                          "issf-r50p": ("issf-r50", "decimal"), "issf-ap60": ("issf-ap10", "integer")})
+                          "issf-r50p": ("issf-r50", "decimal"), "issf-ap60": ("issf-ap10", "integer"),
+                          "issf-fp60": ("issf-p25", "integer"), "cmp-ag-ap60": ("issf-ap10", "integer")})
+        self.assertEqual(ph("issf-fp60")[-1], ("record", 5400), "50 m pistol: 1 hour 30 (6.11.9.8)")
+        self.assertEqual(ph("cmp-ag-ap60"), [("setup", 900), ("sight", 900), ("record", 4500)], "CMP AG 6.4.3 b, as AR60")
+        self.assertEqual((F["cmp-ag-ap60"]["book"], F["cmp-ag-ap60"]["tie_rules"]), ("CMP-AG", "CMP"), "ties: CMP AG 8.5.1 c")
+        self.assertTrue(final_fits("airgun", F["cmp-ag-ap60"]) and final_fits("issf", F["issf-ap60"]), "each has its 10 m final")
         rec = F["issf-r3p-in"]["phases"][3]
         self.assertEqual([q["position"] for q in rec["positions"]], ["kneeling", "prone", "standing"], "7.7.1")
         self.assertEqual(blocks(rec), [20, 40, 60])

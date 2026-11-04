@@ -79,6 +79,14 @@ one-shot shoot-off (LOAD, 5 s, START, 50 s) for the tied right away, repeated un
 | 50 m Rifle 3 Positions | 50 m Rifle | whole rings (6.11.9.2) | set-up 10, preparation and sighting 15 (kneeling), pause 30 s, MATCH 60 shots: 20 kneeling, 20 prone, 20 standing (7.7.1) in 1:30 indoor / 1:45 outdoor (7.7.4) |
 | 50 m Rifle Prone | 50 m Rifle | decimal (6.11.9.3) | set-up 10, preparation and sighting 15, pause 30 s, MATCH 60 shots in 50 (7.7.4); no final |
 | 10 m Air Pistol | 10 m Air Pistol | whole rings (6.11.9.1) | set-up 10, preparation and sighting 15, pause 30 s, MATCH 60 shots in 75 |
+| 50 m Pistol | 25 m precision / 50 m pistol (500 mm) | whole rings with inner tens (6.11.9.8) | set-up 10, preparation and sighting 15, pause 30 s, MATCH 60 shots in 1:30; no final |
+
+CMP Air Gun **AP60** (6.4.3 b): as AR60 (call to the line 15, preparation and sighting 15, 60 shots in 75) on the air
+pistol face in whole rings; ties 8.5.1 c (inner tens, 10-shot series from the last with their inner tens, shot by
+shot), the same countback FeT Monitor uses for CMP whole-ring scoring. Final: the CMP Air Gun Final (6.4.4).
+
+The 25 m pistol events (rapid fire, 25 m pistol, centre fire, standard) are not built: their series are timed by
+green and red lights the athlete sees (8.7.6.2 a), and rapid fire needs five targets per athlete (8.7.6.3 a).
 
 Time announced at 10 and 5 minutes (6.11.1.2 e), 30 seconds before the end of sighting (6.11.1.1 i).
 
