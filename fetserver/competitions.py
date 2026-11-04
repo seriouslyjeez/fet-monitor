@@ -14,6 +14,7 @@ import random
 from functools import cmp_to_key
 from typing import Dict, List, Optional
 
+from . import faces
 from . import matchformats as mf
 from . import ranking
 from .matches import ACTIVE, PACING, MatchError, own_clock, rules_of
@@ -622,7 +623,7 @@ class Competitions:
                 e.pop("summary", None)
             out_classes.append({"name": cls, "individuals": ranked, "teams": teams})
         return {"id": cid, "name": comp["name"], "format_name": fmt["name"], "scoring": fmt.get("scoring"), "tie_rules": rules, "book_name": rb.BOOKS[rb.book_of(fmt)]["name"],
-                "record_shots": mf.record_shots(fmt), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
+                "record_shots": mf.record_shots(fmt), "face": faces.view(faces.face(fmt.get("face"))), "team_size": comp["team_size"], "best_count": bool(comp["best_count"]),
                 "relays": relays, "classes": out_classes, "finals": self._finals(c, comp, finals, out_classes, decimal, with_shots),
                 "official_ms": self._official(c, cid), **self._posted(c, cid)}
 

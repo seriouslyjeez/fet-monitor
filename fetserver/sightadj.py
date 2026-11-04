@@ -81,11 +81,12 @@ def find_flyers(points: Sequence[Pt]) -> List[int]:
     return far[:len(points) - MIN_KEPT]
 
 
-def suggest(shots: Sequence[dict]) -> dict:
-    """shots: [{"n": shot number, "x_h": int|None, "y_h": int|None, "miss": bool}] in firing order."""
+def suggest(shots: Sequence[dict], ring_mm: float = RING_MM) -> dict:
+    """shots: [{"n": shot number, "x_h": int|None, "y_h": int|None, "miss": bool}] in firing order. ring_mm: the width
+    of one ring on the series' face (what "clicks per ring" counts)."""
     on_paper = [s for s in shots if not s.get("miss") and s.get("x_h") is not None and s.get("y_h") is not None]
     out = {"shots": len(shots), "on_paper": len(on_paper), "misses": len(shots) - len(on_paper),
-           "min_shots": MIN_SHOTS, "ring_mm": RING_MM, "ready": len(on_paper) >= MIN_SHOTS,
+           "min_shots": MIN_SHOTS, "ring_mm": ring_mm, "ready": len(on_paper) >= MIN_SHOTS,
            "kept": [s["n"] for s in on_paper], "flyers": [], "points": []}
     if not out["ready"]:
         return out

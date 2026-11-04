@@ -18,6 +18,7 @@ from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
+from . import faces as F
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
@@ -42,7 +43,7 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|remove|ban|unban|firmware|command|target-command|target-update)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update)$")
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
@@ -196,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"ok": True})
             if path == "/api/v1/match/targets" and method == "GET":
                 return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "online": t["online"],
-                                                     "in_match": bool(t["match"]), "lease": t["lease"]}
+                                                     "in_match": bool(t["match"]), "lease": t["lease"], "installed_face": t["installed_face"]}
                                                     for t in core.list_targets(None)]})
             if path == "/api/v1/match/competitions" and method == "GET":
                 return self._send(200, {"competitions": core.competitions.list()})
@@ -668,10 +669,12 @@ class Handler(BaseHTTPRequestHandler):
         m = ADMIN_TARGET_RE.match(path)
         if m and method == "POST":
             did, what = m.groups()
-            log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what == "mode" else "")
+            log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what in ("mode", "face") else "")
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
+            if what == "face":                        # the mask and faceplate on the target were swapped
+                return self._send(200, core.set_face(did, payload.get("face")))
             if what == "command":                     # restart, setup portal, allowlisted serial lines: Range Control only
                 if payload.get("type") == "factory_reset":
                     fw = core.firmware_info(did)["bridge_fw"]
@@ -789,6 +792,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._device_firmware(dm.group(1))
         if url.path == "/api/v1/stream":
             return self._stream()
+        if url.path == "/api/v1/faces":                # public: the target faces (fetserver/faces.py)
+            return self._send(200, {"faces": [F.view(f) for f in F.FACES.values()], "default": F.DEFAULT_FACE})
         if url.path == "/api/v1/rulebooks":            # public: the rulebooks, their local copies and the publishers' pages
             return self._send(200, {"docs": self.server.rulebooks.status(), "repositories": [{"name": n, "url": u} for n, u in REPOSITORIES]})
         rf = RULEBOOK_FILE_RE.match(url.path)

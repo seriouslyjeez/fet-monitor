@@ -422,6 +422,18 @@ MIGRATIONS = [
     -- status reply. A new start wakes it (sleep is not saved on the target).
     ALTER TABLE targets ADD COLUMN target_asleep INTEGER NOT NULL DEFAULT 0;
     """,
+    """
+    -- Target faces (fetserver/faces.py). targets.face_id: the face installed on the target (its mask and faceplate,
+    -- set in Range Control); series.face_id: the face its shots are scored on (a match's, else the target's);
+    -- shots.face_id and shots.inner: the face a shot was scored on and whether it is an inner ten / X (decided from its
+    -- position). (shots.face is the face-plate sensor.) NULL = the 10 m air rifle face, as every shot before faces
+    -- existed; their inner tens are 10.2 and up.
+    ALTER TABLE targets ADD COLUMN face_id TEXT;
+    ALTER TABLE series ADD COLUMN face_id TEXT;
+    ALTER TABLE shots ADD COLUMN face_id TEXT;
+    ALTER TABLE shots ADD COLUMN inner INTEGER NOT NULL DEFAULT 0;
+    UPDATE shots SET inner = CASE WHEN is_miss = 0 AND tenths >= 102 THEN 1 ELSE 0 END;
+    """,
 ]
 
 

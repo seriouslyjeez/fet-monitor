@@ -18,6 +18,7 @@ import copy
 import re
 from typing import Optional, Dict, List
 
+from . import faces
 from . import rulebooks as rb
 
 KINDS = {"setup", "sight", "pause", "record", "stage", "changeover"}
@@ -210,6 +211,9 @@ def validate(fmt) -> dict:
         raise ValueError("rulebook: one of " + ", ".join(rb.BOOKS))
     out["book"] = book
     out["tie_rules"] = rb.BOOKS[book]["tie"] or out["tie_rules"]          # a book's formats break ties by that book
+    out["face"] = fmt.get("face") or faces.DEFAULT_FACE                     # every lane is scored on it
+    if out["face"] not in faces.FACES:
+        raise ValueError("face: one of " + ", ".join(faces.FACES))
     if fmt.get("final") in FINALS:
         out["final"] = fmt["final"]
     if out["id"] and not ID_RE.match(out["id"]):
@@ -218,6 +222,8 @@ def validate(fmt) -> dict:
         raise ValueError("a format needs a name")
     if out["scoring"] not in SCORING:
         raise ValueError("scoring must be decimal or integer")
+    if out["scoring"] == "decimal" and not faces.FACES[out["face"]].decimal:
+        raise ValueError(f"{faces.FACES[out['face']].name} is scored in whole rings: choose integer scoring")
     if out["tie_rules"] not in ("ISSF", "CMP", "NRA"):
         raise ValueError("tie-break rules must be ISSF, CMP or NRA")
     if not isinstance(out["team_size"], int) or not 1 <= out["team_size"] <= 10:

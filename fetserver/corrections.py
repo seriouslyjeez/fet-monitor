@@ -25,6 +25,7 @@ from typing import Dict, List, Optional
 from .matches import MatchError, rules_of
 from . import rulebooks as rb
 from .scoring import is_inner_ten
+from . import faces as F
 
 KINDS = ("review", "protest", "override", "annul", "added", "crossfire", "penalty", "dq", "not_registered", "disturbance", "double_load")
 OPEN_KINDS = ("review", "protest", "not_registered", "disturbance")      # open until the match director settles them
@@ -46,8 +47,9 @@ def _text(v, what, need=False, n=MAX_TEXT):
     return v.strip()[:n]
 
 
-def shot_value(d: dict) -> dict:
-    """{value: 10.4} or {miss: true}, optional inner (else from the value) -> tenths, ring, inner, miss."""
+def shot_value(d: dict, face_id: Optional[str] = None) -> dict:
+    """{value: 10.4} or {miss: true}, optional inner -> tenths, ring, inner, miss. Without inner it comes from the
+    value only on the 10 m air rifle face (10.2 and up covers the dot); on any other face it is not an X unless said."""
     if d.get("miss") is True:
         return {"tenths": 0, "ring": 0, "inner": False, "miss": True}
     v = d.get("value")
@@ -57,8 +59,16 @@ def shot_value(d: dict) -> dict:
     inner = d.get("inner")
     if inner is not None and not isinstance(inner, bool):
         raise MatchError("inner must be true or false")
-    return {"tenths": tenths, "ring": min(10, tenths // 10), "inner": is_inner_ten(tenths) if inner is None else (inner and tenths >= 100),
+    by_value = F.face(face_id).inner is not None and F.face(face_id).inner[0] == "cover"
+    return {"tenths": tenths, "ring": min(10, tenths // 10),
+            "inner": (by_value and is_inner_ten(tenths)) if inner is None else (inner and tenths >= 100),
             "miss": False}
+
+
+def face_of(c, mid: int) -> Optional[str]:
+    """The face a match is shot on (its format's)."""
+    r = c.execute("SELECT format_json FROM matches WHERE id=?", (mid,)).fetchone()
+    return json.loads(r["format_json"]).get("face") if r else None
 
 
 class Corrections:
@@ -107,11 +117,11 @@ class Corrections:
                 lower = shot if (shot["tenths"], -shot["event_ms"]) < (o["tenths"], -o["event_ms"]) else o
                 clean.update(other_shot=other, annul_shot=lower["id"])
             elif kind == "override":
-                clean.update(shot_value(data), note=_text(data.get("note"), "a reason", need=True))
+                clean.update(shot_value(data, face_of(c, mid)), note=_text(data.get("note"), "a reason", need=True))
             elif kind == "annul":
                 clean.update(note=_text(data.get("note"), "a reason", need=True), rule=_text(data.get("rule"), "the rule", n=60))
             elif kind == "added":
-                clean.update(shot_value(data), note=_text(data.get("note"), "a reason", need=True))
+                clean.update(shot_value(data, face_of(c, mid)), note=_text(data.get("note"), "a reason", need=True))
                 clean["at_ms"] = self._added_at(c, ln, data.get("after"))
             elif kind == "crossfire":
                 src = data.get("from_lane")
@@ -155,7 +165,7 @@ class Corrections:
                 raise MatchError(f"outcome must be one of {', '.join(OUTCOMES_OF[r['kind']])}")
             data = dict(json.loads(r["data"]), outcome=outcome, settle_note=_text(note, "a note"))
             if r["kind"] == "not_registered" and outcome in ("found", "not_found"):
-                data.update(shot_value(value or {}) if outcome == "found" else {"tenths": 0, "ring": 0, "inner": False, "miss": True})
+                data.update(shot_value(value or {}, face_of(c, mid)) if outcome == "found" else {"tenths": 0, "ring": 0, "inner": False, "miss": True})
                 data["annul_shot"] = self._last_of_stage(c, m, r["lane"], data["at_ms"])
             c.execute("UPDATE shot_corrections SET status='resolved', data=?, resolved_by=?, resolved_ms=? WHERE id=?",
                       (json.dumps(data), by, now, corr_id))
@@ -201,10 +211,10 @@ class Corrections:
                 by_shot.setdefault(x["shot_id"], []).append(x)
         shots = []
         if ln["series_id"] is not None:
-            for r in c.execute("SELECT id, series_no, stream, tenths, ring, is_miss, event_ms FROM shots WHERE series_id=? ORDER BY event_ms, id",
+            for r in c.execute("SELECT id, series_no, stream, tenths, ring, is_miss, inner, event_ms FROM shots WHERE series_id=? ORDER BY event_ms, id",
                                (ln["series_id"],)):
                 shots.append({"id": r["id"], "n": r["series_no"], "stream": r["stream"], "decimal": r["tenths"] / 10.0, "ring": r["ring"],
-                              "miss": bool(r["is_miss"]), "inner": not r["is_miss"] and is_inner_ten(r["tenths"]), "at_ms": r["event_ms"],
+                              "miss": bool(r["is_miss"]), "inner": not r["is_miss"] and bool(r["inner"]), "at_ms": r["event_ms"],
                               "corrections": by_shot.get(r["id"], [])})
         others = [{"lane": l["lane"], "competitor": l["competitor"]} for l in self.matches._lanes(c, mid) if l["lane"] != lane]
         return {"match_id": mid, "lane": lane, "competitor": ln["competitor"], "device_id": ln["device_id"], "shots": shots, "others": others,

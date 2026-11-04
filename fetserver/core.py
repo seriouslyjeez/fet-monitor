@@ -15,9 +15,10 @@ from .hub import Hub
 from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
 from .shotsolve import Geometry, solve, timers_from_reported
 from .targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
-from .scoring import SCORING_VERSION, INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
+from .scoring import SCORING_VERSION
+from . import faces as F
 from .sightadj import suggest
-from .matches import Matches, _check
+from .matches import ACTIVE_SQL, Matches, _check
 from .competitions import Competitions
 from .resultstore import ResultStore
 from .corrections import Corrections
@@ -95,17 +96,24 @@ def _nonneg(v) -> int:
     return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v < 1 << 31 else 0
 
 
+def match_face(c, device_id: str) -> Optional[str]:
+    """The face of the active match this target is in (its format's), if any."""
+    r = c.execute("""SELECT m.format_json FROM matches m JOIN match_lanes l ON l.match_id=m.id
+                     WHERE l.device_id=? AND m.state IN """ + ACTIVE_SQL, (device_id,)).fetchone()
+    return json.loads(r["format_json"]).get("face") if r else None
+
+
 def iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
-def ammo_score(ax, ay, ref, projectile_h: int):
-    """Ammo test scoring: the first shot is the reference and always 10.9; every other shot is
-    scored by its distance from that first shot, on the normal rings with the test's projectile size."""
+def ammo_score(ax, ay, ref, projectile_h: int, face_id: Optional[str] = None):
+    """Ammo test scoring: the first shot is the reference and always 10.9; every other shot is scored by its distance
+    from that first shot, on the rings of the test's face with the test's projectile size. (ring, tenths, inner)"""
     if ref is None:
-        return 10, 109
-    sc = score_xy(ax - ref["ax_h"], ay - ref["ay_h"], projectile_h)
-    return sc.ring, sc.tenths
+        return 10, 109, True
+    sc = F.score(F.face(face_id), ax - ref["ax_h"], ay - ref["ay_h"], projectile_h * F.TU_PER_H)
+    return sc.ring, sc.tenths, sc.inner
 
 
 def even_h(mm) -> int:
@@ -426,37 +434,38 @@ class Core:
         # The mode in force when the shot happened (not when it arrived), so a delayed upload
         # lands in the right segment and series.
         seg_id, series_id, stream, series_no = self._assign_series(c, device_id, event_ms)
-        ser = c.execute("SELECT kind, projectile_h FROM series WHERE id=?", (series_id,)).fetchone() if series_id else None
+        ser = c.execute("SELECT kind, projectile_h, face_id FROM series WHERE id=?", (series_id,)).fetchone() if series_id else None
+        face_id = ser["face_id"] if ser is not None else c.execute("SELECT face_id FROM targets WHERE device_id=?", (device_id,)).fetchone()[0]
         if miss:
-            ring, tenths = 0, 0       # a miss is never a centre hit
+            ring, tenths, inner = 0, 0, False       # a miss is never a centre hit
         elif ser is not None and ser["kind"] == "ammo":
             ref = c.execute("SELECT ax_h, ay_h FROM shots WHERE series_id=? AND is_miss=0 ORDER BY series_no, id LIMIT 1",
                             (series_id,)).fetchone()
-            ring, tenths = ammo_score(ax, ay, ref, ser["projectile_h"])
-        else:
-            sc = score_xy(ax, ay, calibre * 10)
-            ring, tenths = sc.ring, sc.tenths
+            ring, tenths, inner = ammo_score(ax, ay, ref, ser["projectile_h"], face_id)
+        else:                                       # the face's own projectile (a pellet, a .22)
+            sc = F.score(F.face(face_id), ax, ay)
+            ring, tenths, inner = sc.ring, sc.tenths, sc.inner
         c.execute(
             """INSERT INTO shots (event_id, device_id, event_ms, shot_number, is_miss, x_h, y_h, ax_h, ay_h,
                                   n, e, s, w, arduino_time_s, v_ref, temp_c, face, calibre_x10,
                                   scoring_version, ring, tenths, segment_id, series_id, series_no, stream,
-                                  auth, misfit_um, mic_mask, face_us)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                  auth, misfit_um, mic_mask, face_us, inner, face_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (event_id, device_id, event_ms, shot_number, int(miss), x_h, y_h, ax, ay,
              n, e, s, w, time_s, v_ref, temp_c, face, calibre,
              SCORING_VERSION, ring, tenths, seg_id, series_id, series_no, stream,
-             auth, misfit_um, mic_mask, face_us))
+             auth, misfit_um, mic_mask, face_us, int(inner), face_id))
 
     # ---- series -------------------------------------------------------------
     @staticmethod
     def _new_series(c, device_id: str, kind: str, shooter, start_ms: int) -> int:
-        t = c.execute("SELECT bull_size, group_size, total_practice, total_match, projectile_h FROM targets WHERE device_id=?",
+        t = c.execute("SELECT bull_size, group_size, total_practice, total_match, projectile_h, face_id FROM targets WHERE device_id=?",
                       (device_id,)).fetchone()
         total = 0 if kind == "ammo" else (t["total_match"] if kind == "match" else t["total_practice"])   # ammo: no limit
-        return c.execute("""INSERT INTO series (device_id, kind, shooter, started_ms, bull_size, group_size, total, projectile_h)
-                            VALUES (?,?,?,?,?,?,?,?)""",
+        return c.execute("""INSERT INTO series (device_id, kind, shooter, started_ms, bull_size, group_size, total, projectile_h, face_id)
+                            VALUES (?,?,?,?,?,?,?,?,?)""",
                          (device_id, kind, shooter, start_ms, t["bull_size"], t["group_size"], total,
-                          t["projectile_h"])).lastrowid
+                          t["projectile_h"], match_face(c, device_id) or t["face_id"])).lastrowid
 
     @staticmethod
     def _new_segment(c, device_id: str, mode: str, shooter, series_id: int, start_ms: int) -> int:
@@ -952,6 +961,31 @@ class Core:
             changed = True
         return series_id, seg_id, shooter, changed
 
+    def set_face(self, device_id: str, face_id) -> dict:
+        """Range Control: the face now installed on a target (its mask and faceplate were swapped). Not while it is in a
+        match. The live series, if it already has shots on another face, ends and a new one starts on this face (a
+        series is scored on one face); an empty one just takes it."""
+        if face_id not in F.FACES:
+            raise BadRequest("face: one of " + ", ".join(F.FACES))
+        now = self.now_ms()
+        with self.db.write() as c:
+            self._require_target(c, device_id)
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise Forbidden(f"{device_id} is in the match '{locked}': change its face after the match")
+            c.execute("UPDATE targets SET face_id=? WHERE device_id=?", (face_id, device_id))
+            seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
+                            (device_id,)).fetchone()
+            ser = self._series_of(c, seg) if seg else None
+            if ser is not None and ser["ended_ms"] is None and F.face(ser["face_id"]).id != face_id:
+                if c.execute("SELECT 1 FROM shots WHERE series_id=? LIMIT 1", (ser["id"],)).fetchone() is None:
+                    c.execute("UPDATE series SET face_id=? WHERE id=?", (face_id, ser["id"]))
+                else:
+                    lease = c.execute("SELECT * FROM leases WHERE device_id=? AND expires_ms>?", (device_id, now)).fetchone()
+                    self._mode_change(c, device_id, seg["mode"], None, True, None, lease["holder_name"] if lease else RANGE_NAME, now)
+        self.hub.publish({"type": "mode", "device_id": device_id})
+        return {"device_id": device_id, "face": F.view(F.FACES[face_id])}
+
     SETTING_LIMITS = {"bull_size": (1, 100), "group_size": (1, 100), "total_practice": (1, 1000), "total_match": (1, 1000)}
     SETTING_KEYS = tuple(SETTING_LIMITS) + ("projectile_mm",)
 
@@ -1009,7 +1043,7 @@ class Core:
         miss = bool(r["is_miss"])
         return {"id": r["id"], "n": r["series_no"] if r["series_no"] is not None else r["shot_number"],
                 "shot_number": r["shot_number"], "miss": miss, "ring": r["ring"], "decimal": r["tenths"] / 10.0,
-                "inner": (not miss) and is_inner_ten(r["tenths"]),
+                "inner": (not miss) and bool(r["inner"]),
                 "x_mm": None if miss else (r["ax_h"] - off[0]) / 100.0,
                 "y_mm": None if miss else (r["ay_h"] - off[1]) / 100.0,
                 "check": (checks or {}).get(r["id"])}      # may not be one clean shot (matches._check): look at the target
@@ -1030,7 +1064,7 @@ class Core:
     @staticmethod
     def _aggregate(rows) -> dict:
         return {"decimal": sum(r["tenths"] for r in rows) / 10.0, "integer": sum(r["ring"] for r in rows),
-                "x": sum(1 for r in rows if not r["is_miss"] and is_inner_ten(r["tenths"])),
+                "x": sum(1 for r in rows if not r["is_miss"] and r["inner"]),
                 "misses": sum(1 for r in rows if r["is_miss"]), "shots": len(rows)}
 
     def _stream_view(self, c, ser, stream: str, bull=None, upto=None) -> dict:
@@ -1068,7 +1102,7 @@ class Core:
                 "bull_size": bs, "group_size": gs, "agg": self._aggregate(rows), "groups": groups,
                 "bull_index": idx, "bull_count": bull_count,
                 "bull_shots": [self._brief(r, checks=checks) for r in rows[idx * bs:(idx + 1) * bs]],
-                "last_shot": self._brief(rows[-1], checks=checks) if rows else None}
+                "last_shot": self._brief(rows[-1], checks=checks) if rows else None, "face": F.view(F.face(ser["face_id"]))}
 
     def _ammo_view(self, ser, rows, checks=None) -> dict:
         """An ammo test: every shot is drawn relative to the first one, with the live group statistics."""
@@ -1080,7 +1114,7 @@ class Core:
                 "open": ser["ended_ms"] is None, "count": n, "total": None,
                 "bull_size": max(1, n), "group_size": max(1, n), "agg": self._aggregate(rows), "groups": [],
                 "bull_index": 0, "bull_count": 1, "bull_shots": [self._brief(r, off, checks) for r in rows],
-                "last_shot": self._brief(rows[-1], off, checks) if rows else None,
+                "last_shot": self._brief(rows[-1], off, checks) if rows else None, "face": F.view(F.face(ser["face_id"])),
                 "ammo": group_stats(pts, ser["projectile_h"]) | {"misses": sum(1 for r in rows if r["is_miss"])}}
 
     @staticmethod
@@ -1090,11 +1124,12 @@ class Core:
             return {"series_id": None, "kind": "ammo", "stream": "scored", "shooter": None, "label": None, "open": True, "count": 0,
                     "total": None, "bull_size": 1, "group_size": 1, "agg": zero, "groups": [], "bull_index": 0,
                     "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
-                    "ammo": group_stats([], t["projectile_h"]) | {"misses": 0}}
+                    "ammo": group_stats([], t["projectile_h"]) | {"misses": 0}, "face": F.view(F.face(t["face_id"]))}
         return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "label": None, "open": True, "count": 0,
                 "total": t["total_match"] if kind == "match" else t["total_practice"],
                 "bull_size": t["bull_size"], "group_size": t["group_size"], "agg": zero, "groups": [],
-                "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0}
+                "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
+                "face": F.view(F.face(t["face_id"]))}
 
     def list_targets(self, client_id: Optional[str] = None) -> list:
         now = self.now_ms()
@@ -1127,6 +1162,7 @@ class Core:
                 "lease": self._lease_view(lease, now, client_id), "view": view,
                 "match": self._match_info(c, did, now),
                 "v_ref": self._v_ref(c, r),
+                "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
             })
         return out
 
@@ -1213,7 +1249,7 @@ class Core:
                     "ended": iso(g["ended_ms"]) if g["ended_ms"] is not None else None, "open": g["ended_ms"] is None,
                     "bull_size": g["bull_size"], "group_size": g["group_size"], "total": g["total"]}
             for stream in ("scored", "sighter"):
-                rows = c.execute("SELECT tenths, ring, is_miss FROM shots WHERE series_id=? AND stream=?",
+                rows = c.execute("SELECT tenths, ring, is_miss, inner FROM shots WHERE series_id=? AND stream=?",
                                  (g["id"], stream)).fetchall()
                 item[stream] = self._aggregate(rows)
             if g["kind"] == "ammo":
@@ -1244,7 +1280,8 @@ class Core:
             raise BadRequest("sight adjustment is only for practice series")
         rows = c.execute("SELECT series_no, is_miss, ax_h, ay_h FROM shots WHERE series_id=? AND stream='scored' AND series_no>? "
                          "ORDER BY series_no, id", (series_id, int(after))).fetchall()
-        out = suggest([{"n": r["series_no"], "miss": bool(r["is_miss"]), "x_h": r["ax_h"], "y_h": r["ay_h"]} for r in rows])
+        out = suggest([{"n": r["series_no"], "miss": bool(r["is_miss"]), "x_h": r["ax_h"], "y_h": r["ay_h"]} for r in rows],
+                      F.face(ser["face_id"]).ring_step / F.TU_PER_MM)
         out.update({"series_id": series_id, "after": int(after)})
         return out
 
@@ -1285,7 +1322,7 @@ class Core:
                 "counts": {"N": r["n"], "E": r["e"], "S": r["s"], "W": r["w"]},
                 "scoring_version": r["scoring_version"],
                 "segment_id": r["segment_id"], "series_id": r["series_id"], "series_no": r["series_no"],
-                "stream": r["stream"], "inner": (not miss) and is_inner_ten(r["tenths"]),
+                "stream": r["stream"], "inner": (not miss) and bool(r["inner"]),
                 "mode": r["seg_mode"] or "practice", "shooter": r["seg_shooter"],
             })
         return out
@@ -1306,11 +1343,11 @@ class Core:
         """Recompute scores from stored (aligned) coordinates. Raw events are never touched."""
         n = 0
         with self.db.write() as c:
-            for r in c.execute("""SELECT s.id, s.ax_h, s.ay_h, s.calibre_x10 FROM shots s LEFT JOIN series g ON g.id=s.series_id
+            for r in c.execute("""SELECT s.id, s.ax_h, s.ay_h, s.face_id FROM shots s LEFT JOIN series g ON g.id=s.series_id
                                   WHERE s.is_miss=0 AND COALESCE(g.kind,'') != 'ammo'""").fetchall():
-                sc = score_xy(r["ax_h"], r["ay_h"], r["calibre_x10"] * 10)
-                c.execute("UPDATE shots SET ring=?, tenths=?, scoring_version=? WHERE id=?",
-                          (sc.ring, sc.tenths, SCORING_VERSION, r["id"]))
+                sc = F.score(F.face(r["face_id"]), r["ax_h"], r["ay_h"])          # on the face it was shot on
+                c.execute("UPDATE shots SET ring=?, tenths=?, inner=?, scoring_version=? WHERE id=?",
+                          (sc.ring, sc.tenths, int(sc.inner), SCORING_VERSION, r["id"]))
                 n += 1
             for g in c.execute("SELECT id FROM series WHERE kind='ammo'").fetchall():
                 n += self._rescore_series(c, g["id"])
@@ -1342,15 +1379,16 @@ class Core:
     @staticmethod
     def _rescore_series(c, series_id: int) -> int:
         """Ammo test scores depend on the first shot and the projectile size, so they are recomputed together."""
-        ser = c.execute("SELECT projectile_h FROM series WHERE id=?", (series_id,)).fetchone()
+        ser = c.execute("SELECT projectile_h, face_id FROM series WHERE id=?", (series_id,)).fetchone()
         ref = None
         n = 0
         for r in c.execute("SELECT id, ax_h, ay_h FROM shots WHERE series_id=? AND is_miss=0 ORDER BY series_no, id",
                            (series_id,)).fetchall():
             if ref is None:
                 ref = r
-            ring, tenths = ammo_score(r["ax_h"], r["ay_h"], None if r is ref else ref, ser["projectile_h"])
-            c.execute("UPDATE shots SET ring=?, tenths=?, scoring_version=? WHERE id=?", (ring, tenths, SCORING_VERSION, r["id"]))
+            ring, tenths, inner = ammo_score(r["ax_h"], r["ay_h"], None if r is ref else ref, ser["projectile_h"], ser["face_id"])
+            c.execute("UPDATE shots SET ring=?, tenths=?, inner=?, scoring_version=? WHERE id=?",
+                      (ring, tenths, int(inner), SCORING_VERSION, r["id"]))
             n += 1
         return n
 

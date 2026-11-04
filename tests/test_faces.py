@@ -59,6 +59,15 @@ class IssfFaces(unittest.TestCase):
         self.assertEqual((at("issf-r50", 530).inner, at("issf-r50", 531).inner), (True, False), "inner ten: touches the 5 mm ring")
         self.assertEqual((at("issf-r50", 8000).ring, at("issf-r50", 8001).ring), (1, 0), "the 1 ring: 77.2 + 2.8 mm")
 
+    def test_precision_pistol(self):
+        self.assertEqual((at("issf-p25", 2780).tenths, at("issf-p25", 2781).tenths), (100, 99), "25 + 2.8 mm")
+        self.assertEqual((at("issf-p25", 1530).inner, at("issf-p25", 1531).inner), (True, False), "inner ten 25 mm: 12.5 + 2.8")
+        self.assertEqual(F.FACES["issf-p25"].ring_step, F.mm("25"))
+
+    def test_ring_widths(self):
+        self.assertEqual([F.FACES[f].ring_step for f in ("issf-ar10", "issf-ap10", "issf-r50")], [F.mm("2.5"), F.mm("8"), F.mm("8")])
+        self.assertEqual(F.FACES["nra-a23"].ring_step, F.inch("0.5"))
+
     def test_air_pistol_inner_ten(self):
         self.assertEqual((at("issf-ap10", 475).inner, at("issf-ap10", 476).inner), (True, False), "2.5 + 2.25 mm")
         self.assertTrue(at("issf-ap10", 476).ring == 10)
@@ -97,6 +106,9 @@ RULEBOOK = {
     "issf-ar10": """10 Ring 0.5mm (±0.1mm) 5 Ring 25.5mm (±0.1mm) 9 Ring 5.5mm (±0.1mm) 4 Ring 30.5mm (±0.1mm)
                     8 Ring 10.5mm (±0.1mm) 3 Ring 35.5mm (±0.1mm) 7 Ring 15.5mm (±0.1mm) 2 Ring 40.5mm (±0.1mm)
                     6 Ring 20.5mm (±0.1mm) 1 Ring 45.5mm (±0.1mm)""",
+    "issf-p25": """10 Ring 50mm (±0.2mm) 5 Ring 300mm (±1.0mm) 9 Ring 100mm (±0.4mm) 4 Ring 350mm (±1.0mm)
+                   8 Ring 150mm (±0.5mm) 3 Ring 400mm (±2.0mm) 7 Ring 200mm (±1.0mm) 2 Ring 450mm (±2.0mm)
+                   6 Ring 250mm (±1.0mm) 1 Ring 500mm (±2.0mm)""",
     "issf-ap10": """10 Ring 11.5mm (±0.1mm) 5 Ring 91.5mm (±0.5mm) 9 Ring 27.5mm (±0.1mm) 4 Ring 107.5mm (±0.5mm)
                     8 Ring 43.5mm (±0.2mm) 3 Ring 123.5mm (±0.5mm) 7 Ring 59.5mm (±0.5mm) 2 Ring 139.5mm (±0.5mm)
                     6 Ring 75.5mm (±0.5mm) 1 Ring 155.5mm (±0.5mm)""",

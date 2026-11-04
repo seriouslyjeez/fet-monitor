@@ -14,7 +14,8 @@ Scoring, for every face (ISSF 6.3.3, CMP AG 8.1.3 and its maximum-radii chart, N
   10 m air rifle face), see INNER kinds below.
 
 Sources (the publishers' documents, see rulebooks.py DOCS; the NRA smallbore rulebook 2026, sha256 f48a116c...):
-ISSF Rule Book 2026 6.3.4.2 (50 m rifle), 6.3.4.3 (10 m air rifle), 6.3.4.6 (10 m air pistol); CMP Air Gun Rules
+ISSF Rule Book 2026 6.3.4.2 (50 m rifle), 6.3.4.3 (10 m air rifle), 6.3.4.5 (25/50 m precision pistol), 6.3.4.6
+(10 m air pistol); CMP Air Gun Rules
 2026 6.2.1 and the Decimal Scoring Ring Maximum Radii chart; NRA Smallbore Rifle Rules 2026 4.2-4.10 and 14.3; NRA
 International Pistol Rules 2025 (B-40 = the ISSF air pistol target).
 """
@@ -85,6 +86,11 @@ class Face:
     @property
     def lowest(self) -> int:
         return self.rings[-1][0]
+
+    @property
+    def ring_step(self) -> int:
+        """The width of one ring (radius step from the 9 to the 8 ring), tu: what "clicks per ring" means here."""
+        return (self.by_value[8] - self.by_value[9]) // 2 if 8 in self.by_value else self.by_value[9] // 2
 
 
 @dataclass(frozen=True)
@@ -158,6 +164,9 @@ FACES: Dict[str, Face] = {f.id: f for f in (
     Face("issf-ap10", "10 m Air Pistol (ISSF, NRA B-40)", "ISSF 6.3.4.6; CMP AG 6.2.1 b; NRA International Pistol B-40",
          _rings("mm", "11.5", "27.5", "43.5", "59.5", "75.5", "91.5", "107.5", "123.5", "139.5", "155.5"),
          PELLET, mm("59.5"), ("touch", mm("5.0"))),
+    Face("issf-p25", "25 m Precision / 50 m Pistol (ISSF)", "ISSF 6.3.4.5",
+         _rings("mm", "50", "100", "150", "200", "250", "300", "350", "400", "450", "500"),
+         RIMFIRE_ISSF, mm("200"), ("touch", mm("25")), note="500 mm across: larger than any FeT target box"),
     Face("issf-r50", "50 m Rifle (ISSF, NRA A-50)", "ISSF 6.3.4.2; NRA Smallbore 4.10 (A-50)",
          _rings("mm", "10.4", "26.4", "42.4", "58.4", "74.4", "90.4", "106.4", "122.4", "138.4", "154.4"),
          RIMFIRE_ISSF, mm("112.4"), ("touch", mm("5.0"))),
@@ -194,4 +203,4 @@ def view(f: Face) -> dict:
             "rings": [{"value": v, "dia_mm": d / TU_PER_MM} for v, d in f.rings],
             "black_mm": f.black / TU_PER_MM, "white_ten": f.white_ten,
             "inner_mm": f.inner[1] / TU_PER_MM if f.inner and f.inner[0] != "cover" else None,
-            "projectile_mm": f.projectile / TU_PER_MM}
+            "projectile_mm": f.projectile / TU_PER_MM, "ring_mm": f.ring_step / TU_PER_MM, "note": f.note}

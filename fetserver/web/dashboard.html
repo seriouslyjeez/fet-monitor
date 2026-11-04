@@ -82,7 +82,7 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .cprrow{display:flex;gap:8px;align-items:center}.cprrow input{width:80px}.bad{color:var(--bad)}
 /* range control */
 .rc table.t td,.rc table.t th{text-align:left;vertical-align:middle}.rc .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
-.rc .scroll{max-height:none;overflow-x:auto}.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:8px 0}.facts dt{color:var(--mut)}.facts dd{margin:0}
+.rc .scroll{max-height:none;overflow-x:auto}#rcfacepick{max-width:16em}.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:8px 0}.facts dt{color:var(--mut)}.facts dd{margin:0}
 .dev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}.dev .bulk{margin:6px 0}.dev p{margin:6px 0}
 .tabs{display:flex;flex-wrap:wrap;gap:2px 4px;border-bottom:1px solid var(--line);margin:8px -12px -10px;padding:0 8px}
 .tabs a{padding:7px 12px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;text-decoration:none;color:var(--mut);margin-bottom:-1px}
@@ -144,21 +144,29 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record', ammo: 'Ammo test'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const dec = v => (v == null ? '–' : v.toFixed(1));
-const ringR = k => 0.25 + 2.5 * (10 - k);        // outer radius of ring k in mm (ISSF 10 m air rifle)
-const FULL = 26, AUTO_START = 8;                 // full view half-width in mm; Auto never zooms in past the 8 ring
-const zoomHalf = k => ringR(k) + 1.5;            // view half-width when zoomed to ring k
+// Target faces come from the server (fetserver/faces.py, faces.view): ring diameters, the black, the projectile.
+// Without one (shots from before faces, a page without data) it is the ISSF 10 m air rifle face.
+const AR10 = {id: 'issf-ar10', name: '10 m Air Rifle (ISSF)', decimal: true, black_mm: 30.5, white_ten: true, inner_mm: null, projectile_mm: 4.5, ring_mm: 2.5,
+  rings: [0.5, 5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5, 40.5, 45.5].map((d, i) => ({value: 10 - i, dia_mm: d}))};
+const faceOf = F => (F && F.rings && F.rings.length ? F : AR10);
+const lowestRing = F => faceOf(F).rings[faceOf(F).rings.length - 1].value;
+const ringRf = (F, k) => { const r = faceOf(F).rings.find(x => x.value === k); return r ? r.dia_mm / 2 : null; };   // outer radius, mm
+const ringR = k => ringRf(AR10, k);                // the 10 m air rifle face (0.25 + 2.5 mm a ring)
+const fullHalf = F => +(ringRf(F, lowestRing(F)) + 1.3 * faceOf(F).ring_mm).toFixed(3);   // the whole face, with a margin
+const FULL = 26, AUTO_START = 8;                 // full view half-width in mm (air rifle); Auto never zooms in past the 8 ring
+const zoomHalf = (k, F) => +(ringRf(F, k) + 0.6 * faceOf(F).ring_mm).toFixed(3);   // view half-width when zoomed to ring k
 
-// Auto zoom: the smallest ring (8, 7 ... 1) that holds every pellet completely, else the full target.
-function autoRing(shots, pr, start) {
+// Auto zoom: the smallest ring (8, 7 ... the lowest) that holds every pellet completely, else the whole face.
+function autoRing(shots, pr, start, F) {
   let ext = 0;
   shots.forEach(s => { if (!s.miss && s.x_mm != null) ext = Math.max(ext, Math.hypot(s.x_mm, s.y_mm) + pr); });
-  for (let k = start || AUTO_START; k >= 1; k--) if (ringR(k) >= ext) return k;
+  for (let k = Math.min(start || AUTO_START, 9); k >= lowestRing(F); k--) if (ringRf(F, k) != null && ringRf(F, k) >= ext) return k;
   return 0;
 }
-function halfFor(zoom, shots, pr, start) {
-  if (zoom === 'auto') { const k = autoRing(shots, pr, start); return k ? zoomHalf(k) : FULL; }
+function halfFor(zoom, shots, pr, start, F) {
+  if (zoom === 'auto') { const k = autoRing(shots, pr, start, F); return k ? zoomHalf(k, F) : fullHalf(F); }
   const k = parseInt(zoom, 10);
-  return k >= 1 && k <= 9 ? zoomHalf(k) : FULL;
+  return k >= 1 && k <= 9 && ringRf(F, k) != null ? zoomHalf(k, F) : fullHalf(F);
 }
 const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
 const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
@@ -194,21 +202,25 @@ function ammoMarks(v) {
 // noLast (a printed score card: no colour for the latest shot)
 function faceSvg(shots, o) {
   o = o || {};
-  const mini = !!o.mini, pr = (o.pellet || 4.5) / 2, H = o.half || FULL, col = o.color || 'var(--accent)', black = ringR(4);
-  const sw = Math.max(0.06, 0.18 * H / FULL) * (mini ? 1.6 : 1), f = Math.max(0.35, Math.min(1, H / 14));   // outlines thin out as we zoom in
-  let s = '<svg class="face" viewBox="' + (-H) + ' ' + (-H) + ' ' + (2 * H) + ' ' + (2 * H) + '" role="img" aria-label="Target face">' +
+  const F = faceOf(o.face), u = F.ring_mm / 2.5;                   // u: this face's scale against the air rifle face
+  const mini = !!o.mini, pr = (o.pellet || F.projectile_mm) / 2, H = o.half || fullHalf(F), col = o.color || 'var(--accent)', black = F.black_mm / 2;
+  const z = Math.max(0.35, Math.min(1, H / (14 * u)));            // outlines thin out as we zoom in
+  const sw = Math.max(0.06, 0.18 * H / fullHalf(F)) * (mini ? 1.6 : 1) * u, f = z * u, fp = z * pr / 2.25;   // f: face marks; fp: a pellet's outline
+  let s = '<svg class="face" viewBox="' + (-H) + ' ' + (-H) + ' ' + (2 * H) + ' ' + (2 * H) + '" role="img" aria-label="Target face: ' + esc(F.name) + '">' +
           '<rect x="' + (-H) + '" y="' + (-H) + '" width="' + (2 * H) + '" height="' + (2 * H) + '" fill="#fff"/><circle r="' + black + '" fill="#111"/>';
-  for (let k = 1; k <= 10; k++) {
-    s += '<circle r="' + ringR(k) + '" fill="' + (k === 10 ? '#fff' : 'none') + '" stroke="' + (ringR(k) <= black ? '#fff' : '#111') + '" stroke-width="' + sw + '"/>';
-  }
+  F.rings.slice().reverse().forEach(r => {
+    const rr = r.dia_mm / 2;
+    s += '<circle r="' + rr + '" fill="' + (r.value === 10 && F.white_ten ? '#fff' : 'none') + '" stroke="' + (rr <= black ? '#fff' : '#111') + '" stroke-width="' + sw + '"/>';
+  });
+  if (F.inner_mm) s += '<circle r="' + F.inner_mm / 2 + '" fill="none" stroke="' + (F.inner_mm / 2 <= black ? '#fff' : '#111') + '" stroke-width="' + sw + '"/>';
   if (!mini) {
-    for (let k = 1; k <= 8; k++) {
-      const m = ringR(k) - 1.25, fill = m < black ? '#fff' : '#111';
-      if (m > H - 0.9) continue;
+    F.rings.filter(r => r.value <= 8).forEach(r => {                // the ring values, in each ring's band
+      const m = r.dia_mm / 2 - (r.dia_mm / 2 - ringRf(F, r.value + 1)) / 2, fill = m < black ? '#fff' : '#111';
+      if (m > H - 0.9 * u) return;
       [[0, -m], [0, m], [-m, 0], [m, 0]].forEach(p => {
-        s += '<text x="' + p[0] + '" y="' + p[1] + '" font-size="1.7" text-anchor="middle" dominant-baseline="central" fill="' + fill + '">' + k + '</text>';
+        s += '<text x="' + p[0] + '" y="' + p[1] + '" font-size="' + 1.7 * u + '" text-anchor="middle" dominant-baseline="central" fill="' + fill + '">' + r.value + '</text>';
       });
-    }
+    });
   }
   const pts = shots.filter(x => !x.miss && x.x_mm != null);
   pts.forEach((x, i) => {
@@ -216,13 +228,13 @@ function faceSvg(shots, o) {
     if (Math.abs(sx) <= H && Math.abs(sy) <= H) {                   // pellet centre is in view
       // A stroke is centred on the circle's edge, so the circle is drawn half a stroke smaller: the outer edge of the
       // outline is then exactly the pellet's edge, whatever the outline width.
-      const w = (isLast && !mini && !x.flyer ? 0.6 : 0.35) * f, r = +(pr - w / 2).toFixed(4);
-      if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="none" stroke="#e11d48" stroke-width="' + w + '" stroke-dasharray="' + 0.7 * f + '"/>';   // sight adjustment: ignored shot
+      const w = (isLast && !mini && !x.flyer ? 0.6 : 0.35) * fp, r = +(pr - w / 2).toFixed(4);
+      if (x.flyer) s += '<circle class="flyer" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="none" stroke="#e11d48" stroke-width="' + w + '" stroke-dasharray="' + 0.7 * fp + '"/>';   // sight adjustment: ignored shot
       else if (isLast) s += '<circle class="pellet latest" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="var(--last)" fill-opacity=".85" stroke="' +
            (mini ? 'var(--last)' : '#fff') + '" stroke-width="' + w + '"/>';     // the latest shot: its own colour, also on the small cards
       else s += '<circle class="pellet" cx="' + sx + '" cy="' + sy + '" r="' + r + '" fill="' + col + '" fill-opacity=".55" stroke="' + col + '" stroke-width="' + w + '"/>';
       if (!mini && (!o.labelLast || isLast)) {                       // an ammo test can have hundreds of shots: label only the latest
-        s += '<text x="' + sx + '" y="' + sy + '" font-size="2" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width=".12" paint-order="stroke">' + esc(x.n) + '</text>';
+        s += '<text x="' + sx + '" y="' + sy + '" font-size="' + 0.89 * pr + '" text-anchor="middle" dominant-baseline="central" fill="#fff" stroke="#000" stroke-width="' + 0.053 * pr + '" paint-order="stroke">' + esc(x.n) + '</text>';
       }
     } else {                                                         // outside a fixed zoom: mark where it went off
       const k = (H * 0.9) / Math.max(Math.abs(sx), Math.abs(sy)), r = Math.max(0.5, H * 0.07);
@@ -266,11 +278,11 @@ function groupsRow(v) {
     dec(g.decimal) + '</b><small>' + g.integer + '</small>' + (g.x ? '<small>X' + g.x + '</small>' : '') + '</span>').join('') + '</div>';
 }
 function ammoCard(t) {
-  const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9), e = a.ellipse;
+  const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9, v.face), e = a.ellipse;
   return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
     '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
-    faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, color: modeColor('ammo')}, ammoMarks(v))) +
+    faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, face: v.face, color: modeColor('ammo')}, ammoMarks(v))) +
     '<div class="who">' + whoText(t.shooter || 'Ammo test', t.label) + '</div>' +
     '<div class="scorebox"><div class="tot"><div class="big num">' + (a.shots ? a.size_mm.toFixed(1) : '–') + '</div><div class="sub">mm group</div><div class="sub num">' + v.count + ' shots</div></div>' +
     '<div class="rows">' + (a.shots ? '<div class="kv"><span>Spread c-c</span><b>' + mm2(a.spread_cc_mm) + ' mm</b></div>' +
@@ -279,11 +291,11 @@ function ammoCard(t) {
 }
 function coachCard(t) {
   if (t.kind === 'ammo' && t.view.ammo) return ammoCard(t);
-  const v = t.view, pr = t.calibre_x10 / 20, half = halfFor('auto', v.bull_shots, pr);
+  const v = t.view, F = faceOf(v.face), pr = F.projectile_mm / 2, half = halfFor('auto', v.bull_shots, pr, undefined, F);
   return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
     '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b>' + badge(t.mode) + '</div>' +
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
-    faceSvg(v.bull_shots, {mini: true, half: half, pellet: t.calibre_x10 / 10, color: modeColor(t.mode), corner: t.mode !== 'record'}) +
+    faceSvg(v.bull_shots, {mini: true, half: half, face: F, color: modeColor(t.mode), corner: t.mode !== 'record'}) +
     '<div class="who">' + esc(t.shooter || '–') + '</div>' +
     '<div class="scorebox"><div class="tot"><div class="big num">' + dec(v.agg.decimal) + '</div><div class="sub num">' + v.agg.integer + '</div><div class="sub num">X ' + v.agg.x + '</div></div>' +
     '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div></a>';
@@ -386,7 +398,7 @@ function scoreCards(res, only) {
       '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
       groups.map((g, gi) => '<tr><td>' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</td>' + Array.from({length: 10}, (_, i) => '<td>' + (g[i] ? val(g[i]) : '') + '</td>').join('') + '<td><b>' + fmtScore(res, e.series[gi]) + '</b></td></tr>').join('') + '</table>' +
       '<div class="faces">' + groups.map((g, gi) => '<div><div class="mut">Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</div>' +
-        faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), {half: halfFor('auto', g.filter(s => s.x_mm != null), 2.25), pellet: 4.5, color: '#2563eb', noLast: true}) + '</div>').join('') + '</div>' +
+        faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), {half: halfFor('auto', g.filter(s => s.x_mm != null), faceOf(res.face).projectile_mm / 2, undefined, res.face), face: res.face, color: '#2563eb', noLast: true}) + '</div>').join('') + '</div>' +
       (notes.length ? '<div class="mut">' + notes.join(' · ') + '</div>' : '') + '<div class="sign"><div>Competitor</div><div>Scorer / match director</div></div></div>';
   }).join('') + '</div>';
 }
@@ -556,8 +568,8 @@ function ammoTable(v, grow) {
   }
   return '<div class="panel' + (grow ? ' grow' : '') + '"><h3>Shots (mm from the first shot)</h3><div class="scroll"><table class="t"><tr><th>#</th><th>Position</th><th>Score</th></tr>' + rows + '</table></div></div>';
 }
-function zoomBar(zoom) {
-  const opts = ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto'];
+function zoomBar(zoom, F) {                      // the rings this face has (an NRA conventional face stops at 5 or 4)
+  const lo = lowestRing(F), opts = ['off'].concat(['1', '2', '3', '4', '5', '6', '7', '8', '9'].filter(k => +k >= lo), ['auto']);
   return '<div class="zoombar"><span>Zoom</span>' + opts.map(z => '<button data-act="zoom" data-z="' + z + '" class="' + (zoom === z ? 'sel' : '') + '">' +
     (z === 'off' ? 'Off' : z === 'auto' ? 'Auto' : z) + '</button>').join('') + '</div>';
 }
@@ -581,7 +593,7 @@ function shooterView(t, S) {
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
   const ammo = v.kind === 'ammo' && !!v.ammo;
   const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
-  const dia = ammo ? v.ammo.diameter_mm : t.calibre_x10 / 10, pr = dia / 2, half = halfFor(S.zoom, v.bull_shots, pr, ammo ? 9 : undefined);
+  const dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm, pr = dia / 2, half = halfFor(S.zoom, v.bull_shots, pr, ammo ? 9 : undefined, v.face);
   const banner = reviewing ? '<div class="banner">Reviewing ' + (ammo ? 'an ammo test' : 'a ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
     (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
     ' <button data-act="rback">Back to live</button></div>' : '';
@@ -589,8 +601,8 @@ function shooterView(t, S) {
   const mb = reviewing ? '' : matchBanner(t.match, t, S);
   const mine = t.lease && t.lease.mine;
   return '<div class="shoot"><div class="left">' +
-    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + '</div>' +
-    '<div class="right"><div class="topbar">' + zoomBar(S.zoom) + (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '</div>' +
+    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + '</div>' +
+    '<div class="right"><div class="topbar">' + zoomBar(S.zoom, v.face) + (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '</div>' +
     mb + banner + pager + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v, true) : shotsTable(v, true) + lastPanel(v)) +
     (mine ? '<div class="exitbar">' + exitButton + '</div>' : '') + '</div></div>';
 }
@@ -599,17 +611,17 @@ function phoneView(t, S) {
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view, L = t.lease || {};
   const ammo = v.kind === 'ammo' && !!v.ammo;
   const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
-  const dia = ammo ? v.ammo.diameter_mm : t.calibre_x10 / 10, half = halfFor(S.zoom, v.bull_shots, dia / 2, ammo ? 9 : undefined);
+  const dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm, half = halfFor(S.zoom, v.bull_shots, dia / 2, ammo ? 9 : undefined, v.face);
   const last = v.last_shot;
   const menu = S.menu ? '<div class="pmenu">' +
     (L.mine ? '<button data-act="exitrange">Exit (release control)</button>' : '<button class="pri" data-act="menugear">Take control</button>') +
     (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN ? '<button data-act="sight">Adjust sights</button>' : '') +
-    '<button data-act="menureview">Review</button><button data-act="menugear">Settings</button>' + zoomBar(S.zoom) +
+    '<button data-act="menureview">Review</button><button data-act="menugear">Settings</button>' + zoomBar(S.zoom, v.face) +
     '<button data-act="theme">' + themeLabel() + ' mode</button>' + (L.mine ? '' : '<a href="#/">All targets</a>') + '</div>' : '';
   return '<div class="phone"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b><span>' + badge(mode) +
     ' <button class="menubtn" data-act="menu" aria-label="Menu" aria-expanded="' + !!S.menu + '">☰</button></span></div>' + menu +
     (reviewing ? '<div class="banner">Reviewing from ' + esc(when(v.started)) + ' <button data-act="rback">Back to live</button></div>' + reviewPager(v, ammo) : matchBanner(t.match, t, S)) +
-    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) +
+    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) +
     '<div class="who">' + esc(v.shooter || t.shooter || '–') + (L.held_by && !L.mine ? ' <span class="mut">· controlled by ' + esc(L.held_by) + '</span>' : '') + '</div>' +
     (ammo ? '<div class="pscore"><span class="v">' + (v.ammo.shots ? v.ammo.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm group</span><span class="mut">' + v.count + ' shots</span></div>'
       : '<div class="pscore"><span class="v">' + (last ? (last.miss ? 'M' : dec(last.decimal)) : '–') + '</span>' + (last && last.inner ? '<span class="xbig">X</span>' : '') +
@@ -681,22 +693,23 @@ function parseCpr(v) {                                             // "4", "4.0"
   const n = parseFloat(s);
   return n > 0 && n <= 100 ? n : null;
 }
-function clicksFor(moveMm, cpr) {                                  // whole clicks, nearest; a half click rounds away from zero
-  const c = Math.round(Math.abs(moveMm * cpr / RING_MM));
+function clicksFor(moveMm, cpr, ringMm) {                          // whole clicks, nearest; a half click rounds away from zero
+  const c = Math.round(Math.abs(moveMm * cpr / (ringMm || RING_MM)));   // one ring on the series' face (the server says)
   return c && moveMm < 0 ? -c : c;
 }
 const sightAllowed = (t, S) => !!(t && !S.review && t.kind === 'practice' && t.mode === 'practice' && t.lease && t.lease.mine && t.view && t.view.series_id != null);
 const sightMark = (S, sid) => (S.marks && S.marks[sid]) || 0;      // last shot number before the last adjustment (this browser)
 const sightSince = (v, S) => Math.max(0, (v.last_shot ? v.last_shot.n : 0) - sightMark(S, v.series_id));
-function sightResult(d, cprText, pellet) {
+function sightResult(d, cprText, F) {             // F: the series' face
+  const pellet = faceOf(F).projectile_mm;
   if (!d) return '<p class="mut">Loading…</p>';
   const range = d.after ? ' since the last adjustment' : '';
   if (!d.ready) return '<p>Fire at least ' + d.min_shots + ' shots on paper' + range + ' for a suggestion (' + d.on_paper + ' so far' + (d.misses ? ', ' + d.misses + ' missed' : '') + ').</p>';
-  const cpr = parseCpr(cprText), pts = d.points, half = halfFor('auto', pts.filter(p => !p.flyer), pellet / 2);   // zoom on the group; a flyer out of view is marked at the edge
-  let h = '<div class="sightface">' + faceSvg(pts, {half: half, pellet: pellet, color: modeColor('practice'), center: {x: d.center_x_mm, y: d.center_y_mm}}) + '</div>';
+  const cpr = parseCpr(cprText), pts = d.points, half = halfFor('auto', pts.filter(p => !p.flyer), pellet / 2, undefined, F);   // zoom on the group; a flyer out of view is marked at the edge
+  let h = '<div class="sightface">' + faceSvg(pts, {half: half, pellet: pellet, face: F, color: modeColor('practice'), center: {x: d.center_x_mm, y: d.center_y_mm}}) + '</div>';
   if (cpr == null) h += '<p class="bad">Enter clicks per ring as a number, e.g. 4.0</p>';
   else {
-    const x = clicksFor(d.move_x_mm, cpr), y = clicksFor(d.move_y_mm, cpr), word = n => Math.abs(n) + (Math.abs(n) === 1 ? ' click' : ' clicks');
+    const x = clicksFor(d.move_x_mm, cpr, d.ring_mm), y = clicksFor(d.move_y_mm, cpr, d.ring_mm), word = n => Math.abs(n) + (Math.abs(n) === 1 ? ' click' : ' clicks');
     h += '<div class="advice">' + (x || y ? (y ? '<div>' + (y > 0 ? 'Up ' : 'Down ') + word(y) + '</div>' : '') + (x ? '<div>' + (x > 0 ? 'Right ' : 'Left ') + word(x) + '</div>' : '')
                                   : '<div>No adjustment</div>') + '</div>' +
          (x || y ? '' : '<p class="mut">The group centre is within half a click of the middle.</p>');
@@ -713,7 +726,7 @@ function sightView(t, S) {
     '<div class="seg"><button class="pri" data-act="sightclear">Clear target</button><button data-act="sightkeep">Keep shots</button></div>' +
     '<p class="mut">Clear target starts a new practice series. Keep shots leaves them on the face; the next suggestion uses only shots fired from now on.</p>' +
     '<div class="seg"><button data-act="sightnoadj">I did not adjust</button><button data-act="sightback">Back</button></div></section></div>';
-  return h + '<section><div id="sightres">' + sightResult(g.data, S.cpr, t.calibre_x10 / 10) + '</div></section>' +
+  return h + '<section><div id="sightres">' + sightResult(g.data, S.cpr, t.view.face) + '</div></section>' +
     '<section><div class="cprrow"><label for="cpr">Clicks per ring</label><input id="cpr" type="text" inputmode="decimal" maxlength="6" value="' + esc(S.cpr) + '"></div>' +
     '<p class="mut">Directions move the shots: Up raises the group. One ring is 2.5 mm. Remembered on this device.</p></section></div>';
 }
@@ -1136,6 +1149,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
+const faceName = id => ((S.faces || [AR10]).find(f => f.id === (id || AR10.id)) || {name: id}).name;
 const sleepers = d => (d.targets || []).filter(t => t.fet_target && t.fet_target.key_fp);   // targets that can be put to sleep
 function targetsTab(d, rc) {                     // the targets: mode, session, sleep, restart, remove, ban
   const sel = rc.sel || {}, ids = d.targets.map(t => t.device_id);
@@ -1151,20 +1165,23 @@ function targetsTab(d, rc) {                     // the targets: mode, session, 
     RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + dis + '>' + m[1] + '</button>').join('') +
     '<button data-act="rcnew"' + dis + '>New series</button>' +
     '<button data-act="rcsleepsel" data-v="sleep"' + dis + '>Sleep</button><button data-act="rcsleepsel" data-v="wake"' + dis + '>Wake</button>' +
+    '<select id="rcfacepick" aria-label="Target face">' + (S.faces || [AR10]).map(f => '<option value="' + esc(f.id) + '"' + (f.id === rc.facePick ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select>' +
+    '<button data-act="rcface"' + dis + '>Set face</button>' +
     '<button data-act="rccmd" data-type="reboot"' + dis + '>Restart</button>' +
     '<button class="danger" data-act="rcremove"' + dis + '>Remove</button>' +
     '<button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
-    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
+    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
       const su = statusUrl(t.ip), ft = t.fet_target;
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
         '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
         '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
+        '<td>' + esc(faceName(t.installed_face)) + '</td>' +
         '<td>' + (ft && ft.key_fp ? (ft.asleep ? '<b>asleep</b>' : 'on') : '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
         '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
-    }).join('') : '<tr><td colspan="9" class="mut">No targets.</td></tr>') + '</table></div>' +
+    }).join('') : '<tr><td colspan="10" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
   return h + '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
@@ -1233,10 +1250,13 @@ function mcNew(mc) {
     '</select></div>';
   if (f) h += '<p class="mut">' + esc(f.edition || '') + (f.notes ? ' · ' + esc(f.notes) : '') + ' · ' + esc(f.scoring) + ' scoring</p>' + phaseTable(f, -1, true, d.times) +
     '<p class="mut">Times come from the rulebook; change one only where the rules allow it (it is marked as modified).</p>';
+  const fid = f ? (f.face || AR10.id) : null;            // the format's face: each chosen target needs that mask and faceplate
+  if (f) h += '<p class="mut">Target face: <b>' + esc(faceName(fid)) + '</b>. Every lane is scored on it.</p>';
   h += '<h3 style="margin-top:12px">Targets and competitors</h3>' + (lanes.length ? '<table class="t"><tr><th></th><th>Target</th><th>Competitor</th></tr>' + lanes.map(t => {
-    const ln = (d.lanes || {})[t.device_id] || {};
+    const ln = (d.lanes || {})[t.device_id] || {}, swap = fid && ln.on && t.installed_face && t.installed_face !== fid;
     return '<tr><td><input type="checkbox" data-mcl="' + esc(t.device_id) + '"' + (ln.on ? ' checked' : '') + (t.in_match ? ' disabled' : '') + ' aria-label="Use ' + esc(t.name) + '"></td>' +
-      '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.in_match ? ' <span class="mut">(in a match)</span>' : '') + '</td>' +
+      '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.in_match ? ' <span class="mut">(in a match)</span>' : '') +
+        (swap ? '<div class="bad">has the ' + esc(faceName(t.installed_face)) + ': swap its mask and faceplate</div>' : '') + '</td>' +
       '<td><input type="text" maxlength="60" data-mcc="' + esc(t.device_id) + '" value="' + esc(ln.competitor || '') + '" placeholder="optional"></td></tr>';
   }).join('') + '</table>' : '<p class="mut">No targets.</p>');
   const pc = d.paced || 'spoken';
@@ -1286,6 +1306,7 @@ function mcFormatEditor(mc) {
   const kinds = ['setup', 'sight', 'pause', 'record', 'stage', 'changeover'], positions = ['', 'standing', 'prone', 'kneeling', 'sitting'];
   return '<div class="panel mcform"><div class="row"><span class="title">Design your own match</span><button data-act="mcback">Back</button></div><div class="grid">' +
     '<label>Name</label><input type="text" data-mcf="name" maxlength="80" value="' + esc(f.name) + '">' +
+    '<label>Target face</label><select data-mcf="face">' + (S.faces || [AR10]).map(x => '<option value="' + esc(x.id) + '"' + ((f.face || AR10.id) === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' +
     '<label>Scoring</label><select data-mcf="scoring">' + ['decimal', 'integer'].map(x => '<option' + (f.scoring === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' +
     '<label>Team size</label><input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '">' +
     '<label>Rulebook</label><select data-mcf="book"><option value="">Choose…</option>' + bookChoices(mc).map(([k, n]) => '<option value="' + esc(k) + '"' + (f.book === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>' +
@@ -1359,6 +1380,13 @@ function mcList(mc, tab) {                       // one Match Control tab (the l
       '<td><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' + (c.results_hidden ? '' : ' <a href="#/results/c' + c.id + '">Results</a>') + '</td></tr>').join('') + '</table>' : '<p class="mut">No competitions yet.</p>') +
     delBar('c', (mc.comps || []).length, 'Competitions go with their relays and competitor lists.') + msg + '</div>';
 }
+function faceWarning(d) {                        // lanes whose target has another face installed (Range Control sets it)
+  if (!d.face || d.state === 'done' || d.state === 'aborted') return '';
+  const wrong = (d.lanes || []).filter(l => l.installed_face && l.installed_face !== d.face.id);
+  return wrong.length ? '<p class="bad">Swap the target mask and faceplate to the <b>' + esc(d.face.name) + '</b> on: ' +
+    wrong.map(l => esc(l.target) + ' (has ' + esc(faceName(l.installed_face)) + ')').join(', ') + '. Then set it in Range Control → Targets → Set face. ' +
+    'Shots are scored on the ' + esc(d.face.name) + ' either way.</p>' : '';
+}
 function mcConsole(mc) {
   const d = mc.detail;
   if (!d) return '<div class="panel"><p class="mut">Loading…</p></div>';
@@ -1367,6 +1395,7 @@ function mcConsole(mc) {
   let h = '<div class="panel"><div class="row"><span class="title">' + esc(d.name) + '</span><span>' +
     (d.competition_id != null ? '<button data-act="mccopen" data-id="' + d.competition_id + '">Competitors &amp; relays</button> ' : '') + '<button data-act="mcback">All matches</button></span></div>' +
     '<div class="mut">' + [esc(d.format.name) + (d.format.modified ? ' <b>(times modified)</b>' : ''), esc(d.format.edition || ''), d.record_shots + ' record shots', bookLink(mc, d.rb)].filter(Boolean).join(' · ') + '</div>' +
+    '<div class="mut">Target face: <b>' + esc(faceOf(d.face).name) + '</b></div>' + faceWarning(d) +
     '<div class="row" style="align-items:flex-end;margin-top:8px"><div><div class="mcphase">' + esc(st === 'ready' ? 'Ready to start' : st === 'done' ? 'Match finished' : st === 'aborted' ? 'Match stopped' : (st === 'paused' || (ot && c.paused) ? 'PAUSED · ' : st === 'holding' ? 'Waiting for START · ' : '') + c.label) + '</div>' +
     (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (live ? '<div class="mut">' + esc(PHASE_KIND[c.kind] || '') + (c.extra_ms ? ' · +' + Math.round(c.extra_ms / 1000) + ' s extra' : '') + '</div>' : '') +
     (st !== 'done' && st !== 'aborted' && !ot ? '<div class="mut" style="margin-top:4px"><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b> · ' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') +
@@ -1814,6 +1843,7 @@ async function refresh() {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
     }
+    if (!S.faces && (route().range || route().match)) S.faces = (await get('/faces')).faces;   // the face names, once
     if (route().range) {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
@@ -1996,7 +2026,7 @@ function renderOverlay(t) {
 function patchOverlay(o, html) { if (o._drawn !== html) { patchHtml(o, html); o._drawn = html; } }
 function sightRedraw(t) {
   const r = document.getElementById('sightres');
-  if (S.sight && r && t) r.innerHTML = sightResult(S.sight.data, S.cpr, t.calibre_x10 / 10);
+  if (S.sight && r && t) r.innerHTML = sightResult(S.sight.data, S.cpr, t.view.face);
 }
 
 async function act(el) {
@@ -2320,6 +2350,21 @@ async function rangeAct(el, a) {
     if (res.status === 202 && rc.sysf && rc.sysf.vals) (SYS_FIELDS[body.action] || []).forEach(id => { delete rc.sysf.vals[id]; });  // sent: forgotten
     return refresh();
   }
+  if (a === 'rcface') {                         // the mask and faceplate were swapped: score on that face from now on
+    const ids = chosen(), fid = (document.getElementById('rcfacepick') || {}).value, name = faceName(fid);
+    rc.facePick = fid;
+    if (!ids.length || !fid) return;
+    if (!confirm('Set the face of ' + ids.length + ' target(s) to ' + name + '?\n\nSwap the target mask and faceplate on each of them to the ' + name +
+                 ' before anyone shoots: FeT Monitor cannot see them. A series with shots ends, and a new one starts on this face.')) return;
+    const errs = [];
+    for (const id of ids) {
+      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/face', {face: fid});
+      if (res.status === 401) { toast('Logged out: log in again'); break; }
+      if (res.status !== 200) errs.push(res.data.error || 'error ' + res.status);
+    }
+    toast(errs.length ? 'Not set on ' + errs.length + ': ' + errs.join(' · ') : 'Face set: swap the masks and faceplates now');
+    return refresh();
+  }
   if (a === 'rcsleep' || a === 'rcsleepsel') {  // lights out (shots ignored) or on: FeT targets with a key; each signed for itself
     const all = sleepers(rc.data || {targets: []}), v = el.dataset.v;
     const ts = a === 'rcsleep' ? all : all.filter(t => sel[t.device_id]);
@@ -2409,7 +2454,7 @@ async function matchAct(el, a) {
   if (a === 'mcfedit') {
     const f = (mc.formats || []).find(x => x.id === el.dataset.id);
     if (!f) return;
-    mc.fdraft = {id: f.id, name: f.name, scoring: f.scoring, team_size: f.team_size, book: f.book_named ? f.book : '', tie_rules: f.tie_rules, phases: f.phases.map(p => ({kind: p.kind, label: p.label, minutes: p.seconds / 60,
+    mc.fdraft = {id: f.id, name: f.name, face: f.face, scoring: f.scoring, team_size: f.team_size, book: f.book_named ? f.book : '', tie_rules: f.tie_rules, phases: f.phases.map(p => ({kind: p.kind, label: p.label, minutes: p.seconds / 60,
       shots: p.shots, position: p.position, warn: p.warnings.map(w => w.at / 60).join(', ')}))};
     mc.view = 'format'; mc.msg = ''; return render();
   }
@@ -2421,7 +2466,7 @@ async function matchAct(el, a) {
       shots: p.kind === 'record' || p.kind === 'stage' ? (+p.shots || 0) : 0, position: p.position || '',
       warnings: String(p.warn || '').split(/[ ,;]+/).filter(Boolean).map(x => ({at: Math.round(parseFloat(x) * 60), say: (+x === 1 ? 'One minute' : x + ' minutes') + ' remaining'})),
       start: (p.label || PHASE_KIND[p.kind]) + '. Start.', end: 'Stop.'}));
-    const res = await matchCall('/formats', {format: {id: f.id, name: f.name, scoring: f.scoring, team_size: +f.team_size, book: f.book || null, tie_rules: f.tie_rules, phases: phases}});
+    const res = await matchCall('/formats', {format: {id: f.id, name: f.name, face: f.face || AR10.id, scoring: f.scoring, team_size: +f.team_size, book: f.book || null, tie_rules: f.tie_rules, phases: phases}});
     if (show(res)) { mc.view = 'list'; toast('Format saved'); }
     return refresh();
   }
@@ -2776,6 +2821,7 @@ function boot() {
   }, 2000);
   const keepSys = e => {
     if (e.target.id && e.target.id.startsWith('sy_') && S.rc) { const sf = S.rc.sysf = S.rc.sysf || {}; (sf.vals = sf.vals || {})[e.target.id] = e.target.value; }
+    if (e.target.id === 'rcfacepick' && S.rc) S.rc.facePick = e.target.value;                  // kept across redraws
     if (e.target.id && FLASH_FIELDS.includes(e.target.id) && S.rc) (S.rc.flashf = S.rc.flashf || {})[e.target.id] = e.target.value;   // kept for the next target
     if (e.target.dataset && e.target.dataset.ts && S.rc) {
       (S.rc.tsf = S.rc.tsf || {})[e.target.dataset.ts] = e.target.value;                         // target settings being typed
@@ -2922,7 +2968,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {sleepers, targetSettingsSheet, targetSettingsAll, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional
 
+from . import faces
 from . import matchformats as mf
 from . import ranking
 from .rules import guidance, lookup_text
@@ -1093,7 +1094,7 @@ class Matches:
         fmt = json.loads(m["format_json"])
         lanes = []
         for ln in self._lanes(c, mid):
-            t = c.execute("SELECT name, last_seen_ms FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
+            t = c.execute("SELECT name, last_seen_ms, face_id FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             counts = {"sighter": 0, "scored": 0}
             if ln["series_id"] is not None:
                 for r in c.execute("SELECT stream, COUNT(*) AS n FROM shots WHERE series_id=? GROUP BY stream", (ln["series_id"],)):
@@ -1102,8 +1103,9 @@ class Matches:
                           "target": (t["name"] if t and t["name"] else ln["device_id"]), "series_id": ln["series_id"],
                           "online": bool(t) and now - t["last_seen_ms"] <= self.core.offline_after_ms,
                           "sighters": counts["sighter"], "record": counts["scored"],
-                          "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False})
-        return {"id": m["id"], "name": m["name"], "format": fmt, "state": m["state"], "created_by": m["created_by"],
+                          "in_record": self._switched(c, mid, m["phase"], ln["device_id"]) if m["phase"] >= 0 else False,
+                          "installed_face": faces.face(t["face_id"] if t else None).id})   # the mask on it (Range Control)
+        return {"id": m["id"], "name": m["name"], "format": fmt, "face": faces.view(faces.face(fmt.get("face"))), "state": m["state"], "created_by": m["created_by"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
@@ -1273,7 +1275,7 @@ class Matches:
         if ln["series_id"] is None:
             return out
         eff = self.core.corrections.effects(c, m, ln["lane"])
-        for s in c.execute("""SELECT id, is_miss, tenths, ring, ax_h, ay_h, series_no, event_ms FROM shots
+        for s in c.execute("""SELECT id, is_miss, tenths, ring, inner, ax_h, ay_h, series_no, event_ms FROM shots
                               WHERE series_id=? AND stream='scored' ORDER BY event_ms, id""", (ln["series_id"],)):
             if s["id"] in eff["annulled"]:
                 continue
@@ -1281,7 +1283,7 @@ class Matches:
             decision = f["decision"] if f else "count"
             if decision not in ("count", "miss", "penalty2"):
                 continue
-            fired = {"tenths": s["tenths"], "ring": s["ring"], "miss": bool(s["is_miss"]), "inner": not s["is_miss"] and is_inner(s["tenths"])}
+            fired = {"tenths": s["tenths"], "ring": s["ring"], "miss": bool(s["is_miss"]), "inner": not s["is_miss"] and bool(s["inner"])}
             o = eff["overrides"].get(s["id"])
             v = {k: o[k] for k in ("tenths", "ring", "miss", "inner")} if o else fired
             miss = v["miss"] or decision == "miss"
@@ -1425,11 +1427,6 @@ class Matches:
 def rules_of(fmt: dict) -> str:
     """A format's tie-break rules: its rulebook's (rulebooks.tie_of)."""
     return rb.tie_of(fmt)
-
-
-def is_inner(tenths: int) -> bool:
-    from .scoring import is_inner_ten
-    return is_inner_ten(tenths)
 
 
 def own_clock(ln) -> bool:

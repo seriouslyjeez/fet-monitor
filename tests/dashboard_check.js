@@ -1008,6 +1008,45 @@ console.log('OK');
   console.log('flash OK');
 }
 
+// target faces (fetserver/faces.py views, as the server sends them)
+{
+  const {faceOf, AR10, zoomBar, fullHalf, lowestRing, faceWarning} = X;
+  const FC = id => D.faces.find(f => f.id === id);
+  const ar = FC('issf-ar10');
+  assert.deepStrictEqual(ar.rings.map(r => r.dia_mm), AR10.rings.map(r => r.dia_mm), 'the built-in air rifle face is the server\'s');
+  assert.strictEqual(faceOf(null), AR10, 'no face (shots from before faces): air rifle');
+  assert.strictEqual(fullHalf(AR10), 26, 'the air rifle view is as before');
+  const r50 = FC('issf-r50'), svg = faceSvg([sh(5.3, 0, 99)], {face: r50});
+  assert(svg.includes('viewBox="-87.6 -87.6 175.2 175.2"') && svg.includes('Target face: 50 m Rifle'), 'the whole 50 m face: 77.2 + 1.3 rings of 8 mm');
+  assert(svg.includes('<circle r="56.2" fill="#111"/>') && svg.includes('<circle r="2.5" fill="none"'), 'its black (112.4 mm) and the 5 mm inner ten');
+  const pm = svg.match(/class="pellet latest"[^>]* r="([\d.]+)"[^>]*stroke-width="([\d.]+)"/);
+  assert(pm && Math.abs(+pm[1] + pm[2] / 2 - 2.8) < 1e-3, 'the pellet\'s outer edge: a .22 (5.6 mm), not 4.5');
+  const am = faceSvg([sh(1, 0, 1)], {}).match(/class="pellet latest"[^>]* r="([\d.]+)"[^>]*stroke-width="([\d.]+)"/);
+  assert(am && Math.abs(+am[1] + am[2] / 2 - 2.25) < 1e-3, 'air rifle: a 4.5 mm pellet, as before');
+  assert.strictEqual(count(svg, /<text[^>]*>[1-8]<\/text>/g), 32, 'ring values 1 to 8, four times each');
+  const a17 = FC('nra-a17');
+  assert.strictEqual(lowestRing(a17), 5);
+  assert(!zoomBar('auto', a17).includes('data-z="4"') && zoomBar('auto', a17).includes('data-z="5"') && zoomBar('auto', ar).includes('data-z="1"'), 'zoom: the rings the face has');
+  assert.strictEqual(halfFor('3', [], 2.8, undefined, a17), fullHalf(a17), 'no 3 ring on the A-17: the whole face');
+  assert.strictEqual(autoRing([sh(30, 0)], 2.8, undefined, a17), 0, 'outside the A-17\'s 5 ring: the whole face');
+  const wd = {state: 'running', face: r50, lanes: [{target: 'Lane <1>', installed_face: 'issf-ar10'}, {target: 'Lane 2', installed_face: 'issf-r50'}]};
+  S.faces = D.faces;
+  const w = faceWarning(wd);
+  assert(w.includes('Lane &lt;1&gt; (has 10 m Air Rifle (ISSF))') && !w.includes('Lane 2') && w.includes('Set face'), 'the lanes whose mask must be swapped');
+  assert.strictEqual(faceWarning(Object.assign({}, wd, {lanes: [wd.lanes[1]]})), '');
+  assert.strictEqual(faceWarning(Object.assign({}, wd, {state: 'done'})), '');
+  const rcT = rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {installed_face: 'nra-a23'})], banned: []}}}));
+  assert(rcT.includes('<td>50 yd conventional (NRA A-23)</td>') && rcT.includes('id="rcfacepick"') && rcT.includes('data-act="rcface"'), 'Range Control: each target\'s face, Set face');
+  const ed = matchView(Object.assign(MCS({view: 'format', fdraft: {name: 'S', scoring: 'integer', face: 'nra-a17', phases: []}}), {mcTab: 'formats'}));
+  assert(ed.includes('<option value="nra-a17" selected>'), 'the format editor: its face');
+  const nm = matchView(Object.assign(MCS({view: 'new', formats: [{id: 'f1', name: 'Smallbore', face: 'issf-r50', phases: [], book_name: 'X'}],
+    targets: [{device_id: 'a', name: 'A', online: true, installed_face: 'issf-ar10'}, {device_id: 'b', name: 'B', online: true, installed_face: 'issf-r50'}],
+    draft: {format_id: 'f1', lanes: {a: {on: true}, b: {on: true}}}}), {mcTab: 'singles'}));
+  assert(nm.includes('Target face: <b>50 m Rifle') && count(nm, /swap its mask and faceplate/g) === 1, 'new match: the face, and which chosen target needs a swap');
+  delete S.faces;
+  console.log('faces OK');
+}
+
 // Range Control: settings of targets that run FeT target firmware
 {
   const {targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS} = X;
