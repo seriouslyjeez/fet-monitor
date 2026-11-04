@@ -57,6 +57,73 @@ class Base(unittest.TestCase):
         self.send("target_hello", hello(boot))
 
 
+class Sleep(Base):
+    """Lights out, shots ignored: on a FeT target's own word (its replies), woken by Range Control, its lights button
+    (it says hello: the server asks), a new start, a shooter taking it, or a match."""
+    def lines(self):
+        return [r[0].rsplit(" h=", 1)[0] for r in self.core.db.conn().execute("SELECT line FROM commands ORDER BY id")]
+
+    def asleep(self):
+        return self.target()["target_asleep"]
+
+    def test_slept_and_woken_by_the_target_s_word(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")
+        self.assertEqual(self.lines()[-1], "FT1 C b=3 i=3 sleep")
+        self.assertEqual(self.asleep(), 0, "not until the target says so")
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok"))
+        self.assertEqual(self.asleep(), 1)
+        self.assertTrue(self.core.admin_view()["targets"][0]["fet_target"]["asleep"])
+        self.core.target_command("t1", "status")
+        self.send("target_reply", signed("FT1 R b=3 i=4 r=ok k=0a0b0c0d up=5 d=0 q=0 sl=0"))
+        self.assertEqual(self.asleep(), 0, "its status says awake")
+        self.assertNotIn("sl", json.loads(self.target()["target_settings_json"] or "{}"), "not a setting")
+
+    def test_a_refusal_changes_nothing(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=not_supported"))
+        self.assertEqual(self.asleep(), 0)
+
+    def test_its_lights_button_and_a_new_start_wake_it(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok"))
+        self.send("target_hello", hello(3))                     # the same start: woken by its button?
+        self.assertEqual(self.lines()[-1], "FT1 C b=3 i=4 status", "asked")
+        self.send("target_reply", signed("FT1 R b=3 i=4 r=ok k=0a0b0c0d up=5 d=0 q=0 sl=0"))
+        self.assertEqual(self.asleep(), 0)
+        n = len(self.lines())
+        self.send("target_hello", hello(3))
+        self.assertEqual(len(self.lines()), n, "awake: a repeated hello asks nothing")
+        self.core.target_command("t1", "sleep")
+        self.send("target_reply", signed("FT1 R b=3 i=5 r=ok"))
+        self.send("target_hello", hello(4))
+        self.assertEqual(self.asleep(), 0, "a new start: awake (sleep is not saved)")
+
+    def test_taking_control_wakes_it_once(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")                 # not answered yet: still meant to sleep
+        self.core.acquire_control("t1", "client-0000001", "Jo")
+        self.assertEqual(self.lines()[-1], "FT1 C b=3 i=4 wake")
+        self.core.acquire_control("t1", "client-0000001", "Jo")   # renewing
+        self.assertEqual(self.lines()[-1], "FT1 C b=3 i=4 wake", "only when taken")
+        self.core.release_control("t1", "client-0000001")
+        self.core.acquire_control("t1", "client-0000002", "Al")
+        self.assertEqual(len([l for l in self.lines() if l.endswith("wake")]), 1, "awake already: nothing more")
+
+    def test_never_asleep_in_a_match(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")
+        fid = self.core.matches.save_format({"name": "M", "book": "ISSF", "scoring": "decimal",
+                                             "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 10}]}, "md")["id"]
+        self.core.matches.create("Night", fid, [{"device_id": "t1"}], "md")
+        self.assertEqual(self.lines()[-1], "FT1 C b=3 i=4 wake", "put into a match: woken")
+        with self.assertRaisesRegex(BadRequest, "cannot sleep"):
+            self.core.target_command("t1", "sleep")
+        self.core.target_command("t1", "wake")                  # always allowed
+
+
 class Keys(Base):
     def test_a_signed_hello_binds_the_key(self):
         self.bound()

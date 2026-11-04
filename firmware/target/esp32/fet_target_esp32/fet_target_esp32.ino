@@ -215,6 +215,7 @@ static SemaphoreHandle_t capLock;                                         // Cap
 static volatile uint32_t msTick = 0;
 static int16_t tempDeci = tgt::NO_TEMP;
 static bool lightsOff = false;
+static bool sleeping = false;                                              // lights and status LEDs out, shots ignored (not saved)
 static uint32_t shotFlashUntil = 0;
 
 struct Esp32Actions : tgt::Actions {
@@ -225,6 +226,8 @@ struct Esp32Actions : tgt::Actions {
   uint16_t muted() override { return capture.muted(); }
   const char* firmwareUpdate(const uint8_t sha[32], uint32_t size) override;
   int32_t vrefMv() override { return vrefMeas; }                           // as read back (-1: ADC2 busy with WiFi)
+  const char* sleep(bool on) override;
+  int asleep() override { return sleeping ? 1 : 0; }
 };
 static Esp32Actions actions;
 static struct { volatile bool pending = false; uint8_t sha[32]; uint32_t size = 0; } upd;   // main loop -> network task
@@ -261,7 +264,15 @@ static fet::QuickBoot* quick = 0;
 static fet::Provision* prov = 0;
 static volatile uint8_t comState = 0;                                     // 0 no WiFi settings, 1 joining, 2 WiFi up, 3 server OK, 4 portal
 
-static void lights() { ledcWrite(PIN_LED_PWM, lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 4095L / 100)); }
+static void lights() { ledcWrite(PIN_LED_PWM, sleeping || lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 4095L / 100)); }
+
+const char* Esp32Actions::sleep(bool on) {                                 // from the main loop (commands, the lights button)
+  sleeping = on;
+  if (!on) lightsOff = false;
+  lights();
+  if (on) statusLeds(OFF, OFF, OFF);                                       // awake: the loop lights them again within a second
+  return 0;
+}
 
 void Esp32Actions::settingsChanged(const tgt::Settings& s) {
   lights();
@@ -399,7 +410,10 @@ static void pollSwitches(uint32_t now) {                                   // A 
   uint8_t pressed = (uint8_t)(sw & ~last);
   last = sw;
   if (pressed & 1) paper.request();
-  if (pressed & 2) { lightsOff = !lightsOff; lights(); }
+  if (pressed & 2) {
+    if (sleeping) { actions.sleep(false); sendHello(); }                   // woken here: the hello makes the server ask
+    else { lightsOff = !lightsOff; lights(); }
+  }
 }
 
 void setup() {
@@ -454,6 +468,7 @@ void loop() {
     bool got = capture.pop(s);
     xSemaphoreGive(capLock);
     if (!got) break;
+    if (sleeping) continue;                                                // asleep: shots are ignored
     char out[tgt::SHOT_LINE_MAX];
     size_t n = tgt::formatShot(s, identity.boot(), tempDeci, settings.id(), capture.dropped(),
                                identity.hasKey() ? identity.key() : 0, tgt::Identity::KEY_LEN, out, sizeof out);
@@ -488,7 +503,8 @@ void loop() {
   if (flash != flashing || now - lastLeds >= 1000) {                      // and once a second: the 12 V may come later
     flashing = flash;
     lastLeds = now;
-    statusLeds(v12Volts() >= 10.0f ? GREEN : RED, comColor(), flash ? WHITE : GREEN);
+    if (sleeping) statusLeds(OFF, OFF, OFF);
+    else statusLeds(v12Volts() >= 10.0f ? GREEN : RED, comColor(), flash ? WHITE : GREEN);
   }
   static uint32_t lastTemp = 0;
   if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); }

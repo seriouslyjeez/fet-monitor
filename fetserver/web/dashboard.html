@@ -74,14 +74,20 @@ table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{back
 table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 /* overlay */
 #overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
-#overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}
+#overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}.sheet.wide{max-width:760px}
+.sheet .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}.sheet table.t td,.sheet table.t th{text-align:left}.sheet h4{margin:14px 0 4px}
 .sheet h2{margin:0 0 4px;font-size:18px}.sheet section{border-top:1px solid var(--line);padding:10px 0}.sheet section:first-of-type{border-top:0}
 /* sight adjustment */
 .sightface{max-width:300px;margin:0 auto}.advice{font-size:24px;font-weight:800;margin:4px 0}.advice div{margin:2px 0}
 .cprrow{display:flex;gap:8px;align-items:center}.cprrow input{width:80px}.bad{color:var(--bad)}
 /* range control */
 .rc table.t td,.rc table.t th{text-align:left;vertical-align:middle}.rc .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
-.rc .scroll{max-height:none;overflow-x:auto}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
+.rc .scroll{max-height:none;overflow-x:auto}.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:8px 0}.facts dt{color:var(--mut)}.facts dd{margin:0}
+.dev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}.dev .bulk{margin:6px 0}.dev p{margin:6px 0}
+.tabs{display:flex;flex-wrap:wrap;gap:2px 4px;border-bottom:1px solid var(--line);margin:8px -12px -10px;padding:0 8px}
+.tabs a{padding:7px 12px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;text-decoration:none;color:var(--mut);margin-bottom:-1px}
+.tabs a:visited{color:var(--mut)}.tabs a.on{border-color:var(--line);background:var(--bg);color:var(--fg);font-weight:600}
+@media (max-width:600px){.tabs a{padding:6px 8px;font-size:14px}}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
 .rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
 .notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
@@ -751,55 +757,67 @@ function verAtLeast(v, want) {
   for (let i = 0; i < 3; i++) { if ((a[i] || 0) !== b[i]) return (a[i] || 0) > b[i]; }
   return true;
 }
-function flashPanel(f, rc) {                    // Range Control: flash a device plugged into the Pi (fetserver/flashstation.py)
+const portName = p => '<code>' + esc(p.port) + '</code> <span class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</span>';
+function devCard(p, title, body, buttons) {      // one device plugged into the Pi
+  return '<div class="dev"><div class="row"><b>' + title + '</b>' + (buttons ? '<span class="bulk">' + buttons + '</span>' : '') + '</div>' +
+    '<div class="mut">' + portName(p) + '</div>' + body + '</div>';
+}
+const ownBackups = (f, p, pr) => (f.backups || []).filter(b => pr && pr.mac && pr.device !== 'mega' ? b.name.startsWith(pr.mac.replace(/:/g, ''))
+  : pr && pr.device === 'mega' ? b.name.startsWith('mega-' + String(p.serial || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 20) + '-') : false);
+const backupLinks = bs => bs.map(b => '<a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' + Math.round(b.size / 1024) + ' KB</span>').join('<br>');
+function flashPanel(f, rc) {                    // Range Control → Flash a device: what is plugged into the Pi, and what it can get
   if (!f) return '';
   const job = f.job, running = job && job.state === 'running', kept = rc.flashf || {};
   const val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));
-  const port = p => {
-    const pr = f.probes[p.port], busy = rc.flashBusy === p.port;
-    const withCfg = pr && pr.offer && verAtLeast(pr.offer.version, '0.3.0');   // labels stay put while someone types (no redraw then)
+  const dis = running || rc.flashBusy ? ' disabled' : '';
+  const idBtn = p => '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (rc.flashBusy === p.port ? 'Identifying…' : 'Identify') + '</button>';
+  let wantsForm = false;
+  const card = p => {
+    const pr = f.probes[p.port];
+    if (pr && pr.device === 'mega') return megaRow(p, pr, running, rc.flashBusy === p.port, rc, f);
+    if (pr && pr.device === 'esp32') { wantsForm = true; return esp32Row(p, pr, running, rc.flashBusy === p.port, rc, f); }
     const canCfg = p.hint !== 'arduino' && (!pr || pr.device === 'esp8266');
-    if (pr && pr.device === 'mega') return megaRow(p, pr, running, busy, rc);
-    if (pr && pr.device === 'esp32') return esp32Row(p, pr, running, busy, rc, f);
-    return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td>' +
-      (pr ? '<b>' + esc(pr.label) + '</b>' + (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcflashgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' +
-          (running ? ' disabled' : '') + '>' + (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button>' +
-          (withCfg ? ' <span class="mut">and configure it, if the settings below have a WiFi name</span>' : '') + '</div>' +
-          (pr.first_install ? '<div class="mut">First install: the original firmware is saved first (download below), then the whole chip is erased.</div>' : '')
-        : '<div class="mut">' + esc(pr.why_not || '') + '</div>') + (pr.advice ? '<div class="mut">' + esc(pr.advice) + '</div>' : '') : '') +
-      '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + (running || rc.flashBusy ? ' disabled' : '') + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
-      (canCfg ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + (running || rc.flashBusy ? ' disabled' : '') + '>Configure</button>' : '') +
-      '</td></tr>';
+    if (canCfg) wantsForm = true;
+    const mine = ownBackups(f, p, pr);
+    if (!pr) return devCard(p, p.hint === 'arduino' ? 'An Arduino' : p.hint === 'esp32' ? 'An ESP32 board' : 'A USB serial device',
+      '<p class="mut">Press Identify to see what it is and what it can get.</p>', idBtn(p));
+    const withCfg = pr.offer && verAtLeast(pr.offer.version, '0.3.0');
+    return devCard(p, esc(pr.label),
+      (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcflashgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + (running ? ' disabled' : '') + '>' +
+          (pr.same ? 'Reinstall' : 'Install') + ' FeT Bridge ' + esc(pr.offer.version) + '</button>' +
+          (withCfg ? ' <span class="mut">and configure it, if the WiFi settings below have a WiFi name</span>' : '') + '</div>' +
+          (pr.first_install ? '<p class="mut">First install: the original firmware is saved first, then the whole chip is erased.</p>' : '')
+        : '<p class="mut">' + esc(pr.why_not || '') + '</p>') + (pr.advice ? '<p class="mut">' + esc(pr.advice) + '</p>' : '') +
+      (mine.length ? '<p class="mut">Its original firmware, saved here (esptool write_flash 0x0 puts it back):<br>' + backupLinks(mine) + '</p>' : ''),
+      idBtn(p) + (canCfg ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
   };
-  return '<div class="panel"><h3>Flash a device (USB)</h3>' +
-    '<p class="mut">Plug a FeT Bridge (an ESP-01 or ESP-01S on a USB programmer) into a USB port of this Pi and press Identify: it gets the newest FeT Bridge ' +
-    'for its flash size. A target\'s <b>Arduino Mega</b> (by its USB port) gets FeT target firmware; its original program and settings are saved ' +
-    'first and can be put back. A target\'s <b>ESP32 board</b> (6.2, by its USB-C port) gets FeT target firmware the same way; after that it updates over WiFi.</p>' +
-    '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
-    'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
-    '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
-    'set the switch to UART and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p></details>' +
-    (f.ports.length ? '<table class="t"><tr><th>Port</th><th>Device</th><th></th></tr>' + f.ports.map(port).join('') + '</table>' : '<p class="mut">No USB serial device plugged in.</p>') +
-    '<h4>Settings for the target (FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware)</h4>' +
+  const cards = f.ports.map(card).join('');
+  let h = '<div class="panel"><h3>Flash a device (USB)</h3>' +
+    (job ? '<div class="' + (job.state === 'failed' ? 'warnbox' : 'box') + '"><b>' + esc(job.port) + ' · ' + esc(job.what || ('FeT Bridge ' + job.version)) + ':</b> ' +
+      (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' ' + esc(job.percent) + ' %') : esc(job.message || job.state)) +
+      (running && job.kind !== 'configure' ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--accent);border-radius:3px"></div></div>' : '') + '</div>' : '') +
+    (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
+    (f.ports.length ? cards : '<p><b>Nothing is plugged in.</b></p><ul class="mut">' +
+      '<li><b>FeT Bridge</b> (the target\'s WiFi module, an ESP-01 or ESP-01S): on a USB programmer, into a USB port of this Pi.</li>' +
+      '<li><b>Arduino Mega</b> of a target: by its own USB port. Its original program and settings are saved first and can be put back.</li>' +
+      '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li></ul>' +
+      '<p class="mut">Then press Identify. The firmware it gets comes from the Firmware tab.</p>') + '</div>';
+  if (wantsForm) h += '<div class="panel"><h3>WiFi settings for the device</h3>' +
     '<div class="bulk"><label>WiFi <input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label> <label>Password <input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
     ' <label>Target name <input id="fs_name" maxlength="32" size="10" placeholder="Lane-1" value="' + val('fs_name') + '"></label></div>' +
     '<div class="bulk"><label>This Pi\'s address <input id="fs_host" size="14" value="' + val('fs_host', f.server_host) + '"></label>' +
     ' <label>Fixed IP <input id="fs_ip" size="13" placeholder="optional" value="' + val('fs_ip') + '"></label> <label>router <input id="fs_gw" size="13" value="' + val('fs_gw') + '"></label></div>' +
-    '<p class="mut">With a WiFi name filled in, Install also configures the target, and Configure sends these settings to one that already runs FeT Bridge. ' +
-    'It reports to this Pi (its port and token are added). Use the Pi\'s IP address: names ending in .local do not work for targets. The target checks the ' +
-    'settings like its own setup page, keeps them, and restarts.</p>' +
-    (job ? '<div class="' + (job.state === 'failed' ? 'warnbox' : 'box') + '"><b>' + esc(job.port) + ' · ' + esc(job.what || ('FeT Bridge ' + job.version)) + ':</b> ' +
-      (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' ' + esc(job.percent) + ' %') : esc(job.message || job.state)) +
-      (running && job.kind !== 'configure' ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--pri);border-radius:3px"></div></div>' : '') + '</div>' : '') +
-    (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
-    (f.backups.length ? '<h4>Saved original firmware</h4><ul>' + f.backups.map(b => '<li><a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' +
-      Math.round(b.size / 1024) + ' KB</span>' + (megaPort(f) && /^mega-.*\.hex$/.test(b.name) && f.backups.some(o => o.name === b.name.replace(/\.hex$/, '.eep'))
-        ? ' <button data-act="rcmegarestore" data-port="' + esc(megaPort(f)) + '" data-name="' + esc(b.name.replace(/\.hex$/, '')) + '"' + (running ? ' disabled' : '') + '>Put back on ' + esc(megaPort(f)) + '</button>' : '') +
-      '</li>').join('') + '</ul><p class="mut">What a device had before its first install. ESP: esptool write_flash 0x0 puts it back. Arduino Mega: ' +
-      'the program (.hex) and its settings (.eep, where freETarget keeps the calibration): <b>Put back</b> writes both.</p>' : '') +
-    '<h4>FeT target firmware for the Arduino Mega</h4>' + targetImages(rc) +
-    '<h4>FeT target firmware for the ESP32 board</h4>' + esp32Images(rc) +
-    '</div>';
+    '<p class="mut">With a WiFi name filled in, Install also configures the device, and Configure sends these settings to one that is already installed ' +
+    '(FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware). It reports to this Pi (its port and token are added). Use the Pi\'s IP address: ' +
+    'names ending in .local do not work for targets. The device checks the settings like its own setup page, keeps them, and restarts.</p>' +
+    '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
+    'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
+    '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
+    'set the switch to UART and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p></details></div>';
+  if ((f.backups || []).length) h += '<div class="panel"><details><summary>All saved original firmware (' + f.backups.length + ')</summary>' +
+    '<p class="mut">What each device had before its first install. ESP: esptool write_flash 0x0 puts it back. Arduino Mega: the program (.hex) and its ' +
+    'settings (.eep, where freETarget keeps the calibration); plug the Mega in to put them back.</p><p>' + backupLinks(f.backups) + '</p></details></div>';
+  return h;
 }
 function esp32Images(rc) {                       // the ESP32 board's firmware: over the air from here (signed), or by USB
   const ims = rc.e32images || [];
@@ -808,35 +826,37 @@ function esp32Images(rc) {                       // the ESP32 board's firmware: 
     '<div class="bulk"><button data-act="rce32gh">Check GitHub for ESP32 firmware</button><button data-act="rce32pick"' + (rc.uploading ? ' disabled' : '') + '>Upload image…</button>' +
     (rc.e32Msg ? '<span class="' + (rc.e32Ok ? 'ok' : 'bad') + '">' + esc(rc.e32Msg) + '</span>' : '') + '</div>' +
     '<p class="mut">The full 8 MB image from the Arduino build of firmware/target/esp32 (fet_target_esp32.ino.merged.bin). It is checked: ' +
-    'an intact ESP32-S3 image that carries FeT target firmware\'s name and version. Targets with an ESP32 board update from here over WiFi: ' +
-    'Target settings → Update.</p>';
+    'an intact ESP32-S3 image that carries FeT target firmware\'s name and version.</p>';
 }
-const megaPort = f => Object.keys(f.probes || {}).find(k => f.probes[k].device === 'mega');
 function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a USB port
-  const dis = running || rc.flashBusy ? ' disabled' : '', mine = (f.backups || []).filter(b => b.name.startsWith((pr.mac || '').replace(/:/g, '')) && /\.bin$/.test(b.name));
-  return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td><b>' + esc(pr.label) + '</b>' +
+  const dis = running || rc.flashBusy ? ' disabled' : '', mine = ownBackups(f, p, pr).filter(b => /\.bin$/.test(b.name));
+  return devCard(p, esc(pr.label),
     (pr.offer ? '<div class="bulk"><button class="pri" data-act="rce32go" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + dis + '>' +
       (pr.same ? 'Reinstall' : pr.first_install ? 'Install' : 'Update to') + ' FeT target ' + esc(pr.offer.version) + '</button>' +
-      ' <span class="mut">and send it the settings below, if they have a WiFi name</span></div>' +
-      (pr.first_install ? '<div class="mut">First install: the board\'s whole flash (8 MB) is saved first, about 7 minutes (listed below, and it can be put back), ' +
-        'then FeT target firmware is written and checked, then the board gets its own key.</div>'
-        : '<div class="mut">Only the program is written: the board keeps its key, WiFi settings and stored shots.</div>')
-      : '<div class="mut">' + esc(pr.why_not || '') + '</div>') +
-    mine.map(b => '<div class="bulk"><button data-act="rce32restore" data-port="' + esc(p.port) + '" data-name="' + esc(b.name) + '"' + dis + '>Put back ' + esc(b.name) + '</button></div>').join('') +
-    '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+      ' <span class="mut">and send it the WiFi settings below, if they have a WiFi name</span></div>' +
+      (pr.first_install ? '<p class="mut">First install: the board\'s whole flash (8 MB) is saved first, about 7 minutes (it can be put back), ' +
+        'then FeT target firmware is written and checked, then the board gets its own key.</p>'
+        : '<p class="mut">Only the program is written: the board keeps its key, WiFi settings and stored shots.</p>')
+      : '<p class="mut">' + esc(pr.why_not || '') + '</p>') +
+    (mine.length ? '<p class="mut">Its original firmware, saved here:</p>' + mine.map(b => '<div class="bulk"><button data-act="rce32restore" data-port="' + esc(p.port) + '" data-name="' + esc(b.name) + '"' + dis + '>Put back ' + esc(b.name) + '</button>' +
+      ' <a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">download</a></div>').join('') : ''),
+    '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
     (pr.can_key ? ' <button data-act="rce32key" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : '') +
-    (pr.configurable ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : '') + '</td></tr>';
+    (pr.configurable ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
 }
-function megaRow(p, pr, running, busy, rc) {   // an Arduino Mega on a USB port
+function megaRow(p, pr, running, busy, rc, f) {   // an Arduino Mega on a USB port
   const dis = running || rc.flashBusy ? ' disabled' : '';
-  return '<tr><td><code>' + esc(p.port) + '</code><div class="mut">' + esc([p.adapter, p.product].filter(Boolean).join(' · ')) + '</div></td><td><b>' + esc(pr.label) + '</b>' +
+  const mine = ownBackups(f || {}, p, pr).filter(b => /\.hex$/.test(b.name) && (f.backups || []).some(o => o.name === b.name.replace(/\.hex$/, '.eep')));
+  return devCard(p, esc(pr.label),
     (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcmegago" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + dis + '>' +
       (pr.same ? 'Reinstall' : 'Install') + ' FeT target ' + esc(pr.offer.version) + '</button></div>' +
-      (pr.first_install ? '<div class="mut">First install: the original program and its settings (EEPROM: the calibration) are saved first ' +
-        '(listed below, and they can be put back), then FeT target firmware is written and checked, then the target gets its own key.</div>' : '')
-      : '<div class="mut">' + esc(pr.why_not || '') + '</div>') +
-    '</td><td><button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
-    (pr.can_key ? ' <button data-act="rcmegakey" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : '') + '</td></tr>';
+      (pr.first_install ? '<p class="mut">First install: the original program and its settings (EEPROM: the calibration) are saved first ' +
+        '(they can be put back), then FeT target firmware is written and checked, then the target gets its own key.</p>' : '')
+      : '<p class="mut">' + esc(pr.why_not || '') + '</p>') +
+    (mine.length ? '<p class="mut">Its original program and settings, saved here:</p>' + mine.map(b => '<div class="bulk"><button data-act="rcmegarestore" data-port="' + esc(p.port) + '" data-name="' +
+      esc(b.name.replace(/\.hex$/, '')) + '"' + dis + '>Put back ' + esc(b.name.replace(/\.hex$/, '')) + '</button></div>').join('') : ''),
+    '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+    (pr.can_key ? ' <button data-act="rcmegakey" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : ''));
 }
 function targetImages(rc) {
   const ims = rc.timages || [];
@@ -855,38 +875,54 @@ const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No 
   ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000, 'After a shot, how long the target must be quiet (no echo ringing in the box) before it listens for the next one.'],
   ['face', 'Face sensor fitted', 'yesno', 0, 1, 'Only if a face-plate sensor is wired to the board: it tells a hit on the faceplate (a miss) from a shot.'],
   ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'A faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).', 'face'],
-  ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone (ESP32 boards; on the Mega it is the trimmer RV1). Lower is more sensitive.']];
-function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
+  ['vref_mv', 'Microphone threshold', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone. Lower is more sensitive. (ESP32 boards; on the Mega the trimmer RV1 sets it.)', 'esp32']];
+function targetSettingsPanel(d, rc) {          // Range Control → Target settings: the FeT targets; one opens in a sheet
   const ts = (d.targets || []).filter(t => t.fet_target);
-  if (!ts.length && !(rc.timages || []).length && !(rc.e32images || []).length) return '';   // no FeT target firmware here: nothing to say
-  if (!ts.length) {                              // firmware on this Pi, no target heard yet: say why (user testing, 2026-11-02)
+  if (!ts.length) {                              // no target heard yet: say why (user testing, 2026-11-02)
     const old = (d.targets || []).filter(t => /^\d+\.\d+\.\d+$/.test(t.bridge_fw || '') && !verAtLeast(t.bridge_fw, '0.4.0'));   // not esp32/...
-    return '<div class="panel"><h3>Target settings (FeT target firmware)</h3><p class="mut">No target with FeT target firmware has reported yet. ' +
+    return '<div class="panel"><h3>Target settings</h3><p class="mut">No target with FeT target firmware has reported yet. ' +
       'Paper, lights and the other target settings appear here once one does. After installing it on a target\'s Arduino Mega (Flash a device): ' +
       'the target\'s WiFi module needs <b>FeT Bridge 0.4.0</b> or newer to carry its messages; then switch the target off and on.</p>' +
-      (old.length ? '<p class="bad">Older FeT Bridge on: ' + old.map(t => esc(t.name) + ' (' + esc(t.bridge_fw) + ')').join(', ') + '. Update them under FeT Bridge firmware.</p>' : '') + '</div>';
+      (old.length ? '<p class="bad">Older FeT Bridge on: ' + old.map(t => esc(t.name) + ' (' + esc(t.bridge_fw) + ')').join(', ') + '. Update them under Firmware.</p>' : '') + '</div>';
   }
-  const kept = rc.tsf || {};
-  return '<div class="panel"><h3>Target settings (FeT target firmware)</h3>' +
-    '<p class="mut">What the target itself does. Where the microphones are (calibration) is kept on this Pi, not in the target. ' +
-    'Every change is signed for that target and refused while it is in a match; the target answers each command itself.</p>' +
-    ts.map(t => {
-      const ft = t.fet_target, cur = ft.settings || {}, id = t.device_id;
-      const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
-      return '<h4>' + esc(t.name) + ' <span class="mut">' + esc(id) + ' · key ' + esc(ft.key_fp || 'none') + ' · start ' + esc(ft.boot == null ? '?' : ft.boot) +
-        (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span></h4>' +
-        (ft.key_fp ? '' : '<p class="bad">' + noKeyReason(ft) + '</p>') +
-        '<div class="tsgrid">' + TARGET_SETTINGS.filter(r => !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
-          ? '<select id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
-              '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
-          : '<input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
-            '"> <span class="mut">' + esc(unit) + '</span>') + '</label>').join('') + '</div>' +
-        '<div class="bulk"><button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
-        '<button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
-        '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' + esp32Update(t, rc) +
-        (ft.commands.length ? '<table class="t"><tr><th>Command</th><th>Sent</th><th>Target says</th></tr>' + ft.commands.map(c =>
-          '<tr><td>' + esc(c.verb) + '</td><td>' + esc(c.status) + '</td><td class="' + (c.reply && c.reply !== 'ok' ? 'bad' : '') + '">' + esc(c.reply || '–') + '</td></tr>').join('') + '</table>' : '');
-    }).join('') + (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') + '</div>';
+  const last = ft => ft.commands.length ? ft.commands[0] : null;
+  return '<div class="panel"><h3>Target settings</h3>' +
+    '<p class="mut">What each target itself does: paper, lights, timing. Press a target to see and change its settings. Where the microphones are ' +
+    '(calibration) is kept on this Pi, not in the target. Every change is signed for that target and refused while it is in a match.</p>' +
+    '<div class="scroll"><table class="t"><tr><th>Target</th><th>Board</th><th>Lights</th><th>Paper</th><th>Last command</th><th></th></tr>' + ts.map(t => {
+      const ft = t.fet_target, cur = ft.settings || {}, c = last(ft);
+      return '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span><b>' + esc(t.name) + '</b><div class="mut">' + esc(t.device_id) + '</div></td>' +
+        '<td>' + (ft.esp32 ? 'ESP32' : 'Arduino Mega') + ' · ' + esc(ft.version || '?') + (ft.key_fp ? '' : '<div class="bad">no key on this Pi</div>') + '</td>' +
+        '<td>' + (ft.asleep ? 'asleep' : cur.led_pct != null ? esc(cur.led_pct) + ' %' : '–') + '</td>' +
+        '<td>' + (cur.paper_ms != null ? esc(cur.paper_ms) + ' ms' + (cur.paper_eco_mm ? ', inside ' + esc(cur.paper_eco_mm) + ' mm' : '') : '–') + '</td>' +
+        '<td>' + (c ? esc(c.verb) + ': <span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(c.reply || c.status) + '</span>' : '–') + '</td>' +
+        '<td><button class="pri" data-act="rctopen" data-id="' + esc(t.device_id) + '">Settings…</button></td></tr>';
+    }).join('') + '</table></div></div>';
+}
+function targetSettingsSheet(t, d, rc) {       // one target's settings (the overlay sheet over Target settings)
+  const kept = rc.tsf || {}, ft = t.fet_target, cur = ft.settings || {}, id = t.device_id;
+  const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
+  const others = sleepers(d).filter(o => o.device_id !== id), apply = rc.tsApply || {}, napply = others.filter(o => apply[o.device_id]).length;
+  return '<div class="sheet wide"><div class="row"><h2>' + esc(t.name) + '</h2><button data-act="rctclose">Close</button></div>' +
+    '<p class="mut">' + esc(id) + ' · ' + (ft.esp32 ? 'ESP32 board' : 'Arduino Mega') + ' · FeT target ' + esc(ft.version || '?') + ' · key ' + esc(ft.key_fp || 'none') +
+    ' · start ' + esc(ft.boot == null ? '?' : ft.boot) + (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + (ft.asleep ? ' · <b>asleep</b>' : '') + '</p>' +
+    (ft.key_fp ? '' : '<p class="bad">' + noKeyReason(ft) + '</p>') +
+    '<div class="tsgrid">' + TARGET_SETTINGS.filter(r => r[6] === 'esp32' ? !!ft.esp32 : !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
+      ? '<select id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
+          '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
+      : '<input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
+        '"> <span class="mut">' + esc(unit) + '</span>') + '</label>').join('') + '</div>' +
+    '<div class="bulk"><button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
+    '<button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
+    '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' +
+    (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') +
+    (others.length ? '<h4>Copy to other targets</h4><div class="bulk">' + others.map(o => '<label><input type="checkbox" data-act="rctapply" data-id="' + esc(o.device_id) + '"' +
+        (apply[o.device_id] ? ' checked' : '') + '> ' + esc(o.name) + '</label>').join('') + '</div>' +
+      '<div class="bulk"><button data-act="rctcopy" data-id="' + esc(id) + '"' + (napply ? '' : ' disabled') + '>Copy these settings to ' + napply + ' target' + (napply === 1 ? '' : 's') + '</button></div>' +
+      '<p class="mut">All the settings above as shown, except the microphone threshold (it belongs to each board). Each target gets them signed for itself.</p>' : '') +
+    (ft.commands.length ? '<h4>Commands</h4><table class="t"><tr><th>Command</th><th>Sent</th><th>Target says</th></tr>' + ft.commands.map(c =>
+      '<tr><td>' + esc(c.verb) + '</td><td>' + esc(c.status) + '</td><td class="' + (c.reply && c.reply !== 'ok' ? 'bad' : '') + '">' + esc(c.reply || '–') + '</td></tr>').join('') + '</table>' : '') +
+    '</div>';
 }
 function noKeyReason(ft) {                       // why this Pi cannot sign for the target yet, and what to do
   const where = ft.esp32 ? 'its ESP32 board' : 'its Arduino Mega';
@@ -898,18 +934,69 @@ function noKeyReason(ft) {                       // why this Pi cannot sign for 
   return 'Its shots arrive, but its hello has not: switch the target off and on (FeT target 0.1.3 and newer repeat it), or give it a key ' +
     'with the flash station (New key).';
 }
+const isBridge = t => /^\d+\.\d+\.\d+$/.test(t.bridge_fw || '');   // an ESP-01 with FeT Bridge (an ESP32 board says esp32/...)
+function firmwareTab(d, rc) {                    // Range Control → Firmware: the images on this Pi and who runs what (its own lists)
+  const ts = d.targets || [], fsel = rc.fwSel || {};
+  const bridges = ts.filter(isBridge), megas = ts.filter(t => t.fet_target && !t.fet_target.esp32), e32 = ts.filter(t => t.fet_target && t.fet_target.esp32);
+  const nsel = bridges.filter(t => fsel[t.device_id]).length, all = bridges.length > 0 && nsel === bridges.length;
+  const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
+  const newest = list => (list || []).reduce((b, m) => !b || (verAtLeast(m.version, b.version) && m.version !== b.version) ? m : b, null);
+  const nm = newest(rc.timages);
+  let h = '<div class="panel"><h3>FeT Bridge (the targets\' WiFi modules)</h3>' +
+    (bridges.length ? '<div class="bulk"><span>' + nsel + ' selected</span><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' to the best image</button>' +
+      '<button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' + esc((imgs.find(m => m.sha256 === pick) || {}).version || '–') + ')</button></div>' +
+      '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcfwall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th><th>Target</th><th>FeT Bridge</th><th>Flash</th><th>Update</th></tr>' +
+      bridges.map(t => '<tr><td><input type="checkbox" data-act="rcfwsel" data-id="' + esc(t.device_id) + '"' + (fsel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
+        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td><td>' + esc(t.bridge_fw) + '</td>' +
+        '<td>' + (t.flash_size ? esc(Math.round(t.flash_size / 1048576) + ' MB') : '–') + '</td><td>' + (fwJobText(t, imgs) || '<span class="mut">–</span>') + '</td></tr>').join('') + '</table></div>' +
+      '<p class="mut"><b>Best</b> gives each selected target the newest image built for its flash size that fits it; targets that are up to date or have no ' +
+      'suitable image are skipped with the reason. <b>Install the chosen image</b> (below) is for going back to an older version. Targets on firmware ' +
+      'older than 0.2.0 need one update by USB first (Flash a device).</p>' : '<p class="mut">No target with FeT Bridge has reported.</p>') +
+    (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
+    '<h4>Images on this Pi</h4>' +
+    (imgs.length ? '<table class="t"><tr><th></th><th>Version</th><th>Flash</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr>' + imgs.map(m =>
+      '<tr><td><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Choose ' + esc(m.version) + '"></td>' +
+      '<td><b>' + esc(m.version) + '</b></td><td>' + esc(Math.round(m.flash_size / 1048576) + ' MB') + '</td><td>' + esc(Math.round(m.size / 1024) + ' KB') + '</td>' +
+      '<td><code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code></td><td>' + esc(when(new Date(m.uploaded).toISOString())) + '</td>' +
+      '<td><button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></td></tr>').join('') + '</table>' : '<p class="mut">None yet.</p>') +
+    '<div class="bulk"><button data-act="rcfwgh">Check GitHub for FeT Bridge firmware</button><button data-act="rcpickfiles"' + (rc.uploading ? ' disabled' : '') + '>' +
+    (rc.uploading ? 'Uploading…' : 'Upload .bin files…') + '</button></div>' +
+    (rc.fwResults && rc.fwResults.length ? '<ul class="fwres">' + rc.fwResults.map(r => '<li class="' + (r.ok ? 'mut' : 'bad') + '"><b>' + esc(r.name) + '</b>: ' + esc(r.text) + '</li>').join('') + '</ul>' : '') +
+    '<p class="mut">From Arduino: Sketch &gt; Export Compiled Binary (Flash Mode DOUT), one file per flash size. Only FeT Bridge 0.2.0 or newer is accepted.</p></div>';
+  h += '<div class="panel"><h3>FeT target firmware: ESP32 boards</h3>' +
+    (e32.length ? '<table class="t"><tr><th>Target</th><th>Firmware</th><th></th></tr>' + e32.map(t => '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td>' +
+      '<td>' + esc(t.fet_target.version || '?') + '</td><td>' + esp32Update(t, rc) + '</td></tr>').join('') + '</table>' +
+      '<p class="mut">Over WiFi: the target fetches the image from this Pi and installs it only if it is the one this Pi signed for it; if the new firmware ' +
+      'does not reach FeT Monitor, its next start goes back to the old one. Not during a match.</p>' : '<p class="mut">No ESP32 target has reported.</p>') +
+    '<h4>Images on this Pi</h4>' + esp32Images(rc) + '</div>';
+  h += '<div class="panel"><h3>FeT target firmware: Arduino Mega</h3>' +
+    (megas.length ? '<table class="t"><tr><th>Target</th><th>Firmware</th><th></th></tr>' + megas.map(t => '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td>' +
+      '<td>' + esc(t.fet_target.version || '?') + '</td><td class="mut">' + (nm ? (t.fet_target.version === nm.version ? 'the newest on this Pi' : nm.version + ' on this Pi') : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No Mega target has reported.</p>') +
+    '<p class="mut">A Mega is installed by USB: plug it into this Pi and use Flash a device.</p>' +
+    '<h4>Images on this Pi</h4>' + targetImages(rc) + '</div>';
+  return h;
+}
 function esp32Update(t, rc) {                     // an ESP32 target: signed update over WiFi to the newest image here
   const ft = t.fet_target;
   if (!ft.esp32) return '';
   const best = (rc.e32images || []).reduce((b, m) => !b || verAtLeast(m.version, b.version) && m.version !== b.version ? m : b, null);
   const same = best && ft.version === best.version, newer = best && ft.version && !verAtLeast(best.version, ft.version);
-  return '<p>Firmware <b>' + esc(ft.version || '?') + '</b> on the ESP32 board' +
-    (best ? (same ? ' <span class="mut">(the newest on this Pi)</span>'
-      : ' <button data-act="rctupd" data-id="' + esc(t.device_id) + '"' + (ft.key_fp ? '' : ' disabled') + '>' + (newer ? 'Go back to ' : 'Update to ') + esc(best.version) + '</button>')
-      : ' <span class="mut">(no ESP32 firmware on this Pi to update to)</span>') +
-    (rc.updMsg && rc.updMsg.id === t.device_id ? ' <span class="' + (rc.updMsg.ok ? 'ok' : 'bad') + '">' + esc(rc.updMsg.text) + '</span>' : '') + '</p>' +
-    '<p class="mut">The target fetches the image from this Pi and installs it only if it is the one this Pi signed for it; if the new firmware does not ' +
-    'reach FeT Monitor, its next start goes back to the old one. Not during a match.</p>';
+  return (best ? (same ? '<span class="mut">the newest on this Pi</span>'
+      : '<button data-act="rctupd" data-id="' + esc(t.device_id) + '"' + (ft.key_fp ? '' : ' disabled') + '>' + (newer ? 'Go back to ' : 'Update to ') + esc(best.version) + '</button>')
+      : '<span class="mut">no ESP32 firmware on this Pi to update to</span>') +
+    (rc.updMsg && rc.updMsg.id === t.device_id ? ' <span class="' + (rc.updMsg.ok ? 'ok' : 'bad') + '">' + esc(rc.updMsg.text) + '</span>' : '');
+}
+function targetSettingsAll(t, rc) {           // every setting as shown (typed or reported), for copying to other targets
+  const cur = (t.fet_target && t.fet_target.settings) || {}, kept = rc.tsf || {}, out = {}, bad = [];
+  for (const [k, label, , lo, hi] of TARGET_SETTINGS) {
+    if (k === 'vref_mv') continue;                // each board's own
+    const typed = kept[t.device_id + ':' + k], v = typed != null && typed !== '' ? typed : cur[k];
+    if (v == null || v === '') continue;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < lo || n > hi) bad.push(label + ' must be a whole number from ' + lo + ' to ' + hi);
+    else out[k] = n;
+  }
+  return {settings: out, errors: bad};
 }
 function targetSettingsChanges(t, rc) {        // only what was typed and differs from what the target reported
   const cur = (t.fet_target && t.fet_target.settings) || {}, kept = rc.tsf || {}, out = {}, bad = [];
@@ -925,43 +1012,51 @@ function targetSettingsChanges(t, rc) {        // only what was typed and differ
 const SYS_STATE = {running: 'Working', done: 'Done', failed: 'Not done'};
 const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user', 'sy_upw'],      // what each request used
   network: ['sy_ssid', 'sy_psk', 'sy_ossid', 'sy_opsk', 'sy_ochan', 'sy_ip', 'sy_prefix', 'sy_gw']};
-function systemPanel(v, rc) {                   // Range Control: the Pi itself (fetserver/appliance.py, root helper fetsetup/sysreq.py)
+function systemPanel(v, rc) {                   // Range Control → This Pi (fetserver/appliance.py, root helper fetsetup/sysreq.py)
   if (!v) return '';
   const f = v.facts || {}, st = v.status, sf = rc.sysf || {}, n = sf.network || {mode: 'wifi', address: 'dhcp', channel: 6}, off = !v.helper_installed;
-  const dis = off ? ' disabled' : '', skew = Math.abs((v.clock_ms || 0) - Date.now()) > 60000;
+  const dis = off ? ' disabled' : '', skew = Math.abs((v.clock_ms || 0) - Date.now()) > 60000, os = v.os || {};
   const kept = sf.vals || {}, val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));   // typed values survive redraws
-  const conn = (f.connections || []).map(c => '<li>' + (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') +
+  const conn = (f.connections || []).map(c => (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') +
     (c.type === 'cable' ? '' : ' <b>' + esc(c.ssid || c.name) + '</b>') +                 // the network's name, not NetworkManager's
-    (c.lease ? ': ' + esc(c.lease.ip) + (c.lease.gateway ? ', router ' + esc(c.lease.gateway) : '') : c.own ? ': 10.42.0.1' : '') + '</li>').join('');
-  const mdns = f.hostname ? '<p class="mut">Phones and laptops can usually also reach FeT Monitor as <b>http://' + esc(f.hostname) + '.local:8080/</b> (targets need the IP address).</p>' : '';
-  const netForm = '<div class="seg">' + [['cable', 'Cable'], ['wifi', 'Club WiFi'], ['own', 'Own range network']].map(([k, l]) =>
-      '<button data-act="rcsysmode" data-v="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div>' +
+    (c.lease ? ': <b>' + esc(c.lease.ip) + '</b>' + (c.lease.gateway ? ', router ' + esc(c.lease.gateway) : '') : c.own ? ': <b>10.42.0.1</b>' : '')).join('<br>');
+  const row = (k, v2) => '<dt>' + k + '</dt><dd>' + v2 + '</dd>';
+  let h = '<div class="panel"><h3>This Pi</h3>' +
+    (!v.helper_installed ? '<p class="bad">The System service is not installed on this Pi: run <code>sudo ./install.sh</code> from release 0.6.30 or newer once (updates from this page replace the program only).</p>' : '') +
+    (v.busy ? '<p class="mut"><b>Working on the last change…</b></p>' : '') +
+    (st ? '<p class="' + (st.state === 'failed' ? 'bad' : 'mut') + '">' + esc(SYS_STATE[st.state] || st.state) + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>' : '') +
+    (rc.sysMsg ? '<p class="bad">' + esc(rc.sysMsg) + '</p>' : '') +
+    '<dl class="facts">' +
+    row('Name', '<b>' + esc(f.hostname || '?') + '</b>' + (f.hostname ? ' <span class="mut">phones and laptops: http://' + esc(f.hostname) + '.local:8080/ (targets need the IP address)</span>' : '')) +
+    row('Network', conn || '<span class="mut">none</span>') +
+    row('Clock', esc(new Date(v.clock_ms).toLocaleString()) + ' ' + (f.ntp ? '<span class="mut">from the internet</span>' : skew ? '<span class="bad">differs from this device</span>' : '<span class="mut">no internet time</span>')) +
+    row('Time zone', esc(f.timezone || '?')) +
+    row('SSH', f.ssh ? 'on' : 'off') +
+    row('Software', os.last_ok_ms ? 'updated ' + esc(os.age_days === 0 ? 'today' : os.age_days + ' day' + (os.age_days === 1 ? '' : 's') + ' ago') + (os.reboot_required ? ' · <span class="bad">restart needed</span>' : '') : '<span class="mut">not updated on this Pi yet</span>') +
+    '</dl></div>';
+  h += '<div class="panel"><h3>Network</h3><div class="seg">' + [['cable', 'Cable'], ['wifi', 'Club WiFi'], ['own', 'Own range network']].map(([k, l]) =>
+      '<button data-act="rcsysmode" data-v="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div><div class="bulk">' +
     (n.mode === 'wifi' ? '<label>WiFi <select id="sy_ssid"><option value="">choose…</option>' + (v.networks || []).map(w => '<option' + (w.ssid === kept.sy_ssid ? ' selected' : '') + '>' + esc(w.ssid) + '</option>').join('') +
       '</select></label> <label>Password <input id="sy_psk" type="password" autocomplete="off" value="' + val('sy_psk') + '"></label>' : '') +
     (n.mode === 'own' ? '<label>Network name <input id="sy_ossid" maxlength="32" value="' + val('sy_ossid', 'FeTMonitor-Range') + '"></label> <label>Password <input id="sy_opsk" autocomplete="off" value="' + val('sy_opsk') + '"></label>' +
       ' <label>Channel <select id="sy_ochan">' + [1, 6, 11].map(c => '<option' + (+(kept.sy_ochan || 6) === c ? ' selected' : '') + '>' + c + '</option>').join('') + '</select></label>'
-      : '<div><label><input type="checkbox" id="sy_fixed"' + (n.fixed ? ' checked' : '') + ' data-act="rcsysfixed"> Fixed address</label>' +
+      : '<label><input type="checkbox" id="sy_fixed"' + (n.fixed ? ' checked' : '') + ' data-act="rcsysfixed"> Fixed address</label>' +
         (n.fixed ? ' <input id="sy_ip" placeholder="192.168.1.20" size="14" value="' + val('sy_ip') + '"> / <input id="sy_prefix" size="3" value="' + val('sy_prefix', 24) + '">' +
-          ' router <input id="sy_gw" placeholder="192.168.1.1" size="14" value="' + val('sy_gw') + '">' : '') + '</div>') +
+          ' router <input id="sy_gw" placeholder="192.168.1.1" size="14" value="' + val('sy_gw') + '">' : '')) + '</div>' +
     '<div class="bulk"><button class="pri" data-act="rcsys" data-a="network"' + dis + '>Change network</button></div>' +
     '<p class="mut">This page may lose its connection while the Pi changes network. A new club WiFi is tried first (a wrong password changes nothing); ' +
-    'if the new network does not come up within a minute, the Pi goes back to the previous one, or opens the setup network.</p>';
-  return '<div class="panel"><h3>This Pi</h3>' +
-    (!v.helper_installed ? '<p class="bad">The System service is not installed on this Pi: run <code>sudo ./install.sh</code> from release 0.6.30 or newer once (updates from this page replace the program only).</p>' : '') +
-    (v.busy ? '<p class="mut"><b>Working on the last change…</b></p>' : '') +
-    (st ? '<p class="' + (st.state === 'failed' ? 'bad' : 'mut') + '">' + esc(SYS_STATE[st.state] || st.state) + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>' : '') +
-    '<div class="bulk"><label>Name <input id="sy_host" value="' + val('sy_host', f.hostname) + '" size="16"></label><button data-act="rcsys" data-a="hostname"' + dis + '>Save</button>' +
-    '<label>Time zone <select id="sy_tz">' + (v.zones || []).map(z => '<option' + (z === (kept.sy_tz || f.timezone) ? ' selected' : '') + '>' + esc(z) + '</option>').join('') + '</select></label>' +
-    '<button data-act="rcsys" data-a="timezone"' + dis + '>Save</button></div>' +
-    '<p>Clock: <b>' + esc(new Date(v.clock_ms).toLocaleString()) + '</b> ' + (f.ntp ? '<span class="mut">(from the internet)</span>'
-      : (skew ? '<span class="bad">differs from this device</span> ' : '') + '<button data-act="rcsys" data-a="clock"' + dis + '>Set from this device</button>') + '</p>' +
-    '<h4>Network</h4><ul>' + (conn || '<li class="mut">none</li>') + '</ul>' + mdns + netForm +
-    '<h4>Access</h4><div class="bulk"><span>SSH is <b>' + (f.ssh ? 'on' : 'off') + '</b></span><button data-act="rcsys" data-a="ssh" data-on="' + (f.ssh ? '0' : '1') + '"' + dis + '>Turn SSH ' + (f.ssh ? 'off' : 'on') + '</button></div>' +
+    'if the new network does not come up within a minute, the Pi goes back to the previous one, or opens the setup network.</p></div>';
+  h += '<div class="panel"><h3>Name and time</h3>' +
+    '<div class="bulk"><label>Name <input id="sy_host" value="' + val('sy_host', f.hostname) + '" size="16"></label><button data-act="rcsys" data-a="hostname"' + dis + '>Save name</button></div>' +
+    '<div class="bulk"><label>Time zone <select id="sy_tz">' + (v.zones || []).map(z => '<option' + (z === (kept.sy_tz || f.timezone) ? ' selected' : '') + '>' + esc(z) + '</option>').join('') + '</select></label>' +
+    '<button data-act="rcsys" data-a="timezone"' + dis + '>Save time zone</button></div>' +
+    (f.ntp ? '' : '<div class="bulk"><button data-act="rcsys" data-a="clock"' + dis + '>Set the clock from this device</button><span class="mut">the Pi has no internet time</span></div>') + '</div>';
+  h += '<div class="panel"><h3>Access</h3><div class="bulk"><span>SSH is <b>' + (f.ssh ? 'on' : 'off') + '</b></span><button data-act="rcsys" data-a="ssh" data-on="' + (f.ssh ? '0' : '1') + '"' + dis + '>Turn SSH ' + (f.ssh ? 'off' : 'on') + '</button></div>' +
     '<div class="bulk"><label>Admin login <input id="sy_user" size="12" autocapitalize="none" value="' + val('sy_user') + '"></label> <label>New password <input id="sy_upw" type="password" autocomplete="new-password" value="' + val('sy_upw') + '"></label>' +
-    '<button data-act="rcsys" data-a="admin"' + dis + '>Set</button></div>' +
-    osPart(v.os || {}, dis) +
-    '<h4>Power</h4><div class="bulk"><button data-act="rcsys" data-a="restart"' + dis + '>Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown"' + dis + '>Shut down</button></div>' +
-    '<p class="mut">Shut down before unplugging the Pi: pulling the power can damage the SD card.</p>' + (rc.sysMsg ? '<p class="bad">' + esc(rc.sysMsg) + '</p>' : '') + '</div>';
+    '<button data-act="rcsys" data-a="admin"' + dis + '>Set</button></div><p class="mut">The Pi\'s own login (SSH, the console), not Range Control\'s password.</p></div>';
+  h += '<div class="panel">' + osPart(os, dis).replace('<h4>Software</h4>', '<h3>Software</h3>') + '</div>';
+  return h + '<div class="panel"><h3>Power</h3><div class="bulk"><button data-act="rcsys" data-a="restart"' + dis + '>Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown"' + dis + '>Shut down</button></div>' +
+    '<p class="mut">Shut down before unplugging the Pi: pulling the power can damage the SD card. Both are also at the top of every page while Range Control is logged in.</p></div>';
 }
 function osPart(os, dis) {                       // the Pi's own software (fetsetup/osupdate.py)
   const last = os.last_ok_ms ? 'Last updated <b>' + esc(when(new Date(os.last_ok_ms).toISOString())) + '</b>' +
@@ -970,7 +1065,7 @@ function osPart(os, dis) {                       // the Pi's own software (fetse
   return '<h4>Software</h4><p>' + last + '</p>' +
     (os.result && os.result !== 'ok' ? '<p class="' + (os.result === 'failed' ? 'bad' : 'mut') + '">Last attempt: ' + esc(os.message || os.result) + '</p>' : '') +
     (os.old ? '<p class="bad"><b>Not updated for ' + esc(os.age_days) + ' days.</b> Connect the Pi to a network with internet (cable or club WiFi) and press Update the Pi now.</p>' : '') +
-    (os.reboot_required ? '<p class="bad"><b>Restart needed</b> to finish an update (Restart the Pi, below).</p>' : '') +
+    (os.reboot_required ? '<p class="bad"><b>Restart needed</b> to finish an update (Power, below).</p>' : '') +
     '<div class="bulk"><button data-act="rcsys" data-a="os_update"' + dis + '>Update the Pi now</button></div>' +
     '<p class="mut">Every night at about 04:00 the Pi updates itself when no match is running and no shot arrived for 30 minutes, and restarts if an update needs it. ' +
     'Update now never restarts by itself and is refused during a match. It needs internet and can take several minutes.</p>';
@@ -1004,8 +1099,18 @@ function fwJobText(t, images) {      // the latest firmware update of a target, 
 }
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
-function rangeView(S) {
-  const rc = S.rc || {}, st = rc.status;
+const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
+  targets: ['/targets', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
+  firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/updates'],
+  users: ['/match-users', '/updates']};
+const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
+  ['updates', 'Updates'], ['pi', 'This Pi'], ['users', 'Users']];
+const rcTab = () => {                           // #/range/<tab>; Targets when none (or an unknown one) is named
+  const m = typeof location !== 'undefined' && location.hash.match(/^#\/range\/(\w+)/);
+  return m && RC_TABS.some(t => t[0] === m[1]) ? m[1] : 'targets';
+};
+function rangeView(S) {                          // Range Control: one tab at a time; each tab keeps its own choices
+  const rc = S.rc || {}, st = rc.status, tab = S.rcTab || rcTab();
   let h = '<div class="rc"><div class="panel"><div class="row"><span class="title">Range Control</span>' +
           (st && st.logged_in ? '<button data-act="rclogout">Log out</button>' : '') + '</div>';
   if (!st) return h + '<p class="mut">Loading…</p></div></div>';
@@ -1016,53 +1121,49 @@ function rangeView(S) {
     '<div class="row" style="justify-content:flex-start;gap:8px"><input id="rcpw" type="password" autocomplete="current-password" placeholder="Range Control password">' +
     '<button class="pri" data-act="rclogin">Log in</button></div>' + (rc.msg ? '<p class="bad">' + esc(rc.msg) + '</p>' : '') +
     '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div></div>';
-  const d = rc.data || {targets: [], banned: []}, sel = rc.sel || {}, ids = d.targets.map(t => t.device_id);
-  const nsel = ids.filter(i => sel[i]).length, all = ids.length > 0 && nsel === ids.length;
-  h += '<p class="mut">Changes here apply to the selected targets at once and do not need control of them; whoever is in control keeps it.</p>' +
+  h += '<nav class="tabs">' + RC_TABS.map(([k, l]) => '<a href="#/range' + (k === 'targets' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
+  const d = rc.data || {targets: [], banned: []};
+  const body = tab === 'settings' ? targetSettingsPanel(d, rc) : tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
+    : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+    : targetsTab(d, rc);
+  return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
+}
+const sleepers = d => (d.targets || []).filter(t => t.fet_target && t.fet_target.key_fp);   // targets that can be put to sleep
+function targetsTab(d, rc) {                     // the targets: mode, session, sleep, restart, remove, ban
+  const sel = rc.sel || {}, ids = d.targets.map(t => t.device_id);
+  const nsel = ids.filter(i => sel[i]).length, all = ids.length > 0 && nsel === ids.length, dis = nsel ? '' : ' disabled';
+  const sl = sleepers(d), asleep = sl.filter(t => t.fet_target.asleep).length;
+  let h = '<div class="panel"><div class="row"><h3>Sleep</h3><span class="mut">' + (sl.length ? asleep + ' of ' + sl.length + ' asleep' : 'no target can sleep yet') + '</span></div>' +
+    '<div class="bulk"><button class="pri" data-act="rcsleep" data-v="sleep"' + (sl.length ? '' : ' disabled') + '>Sleep all</button>' +
+    '<button data-act="rcsleep" data-v="wake"' + (sl.length ? '' : ' disabled') + '>Wake all</button>' + (rc.sleepMsg ? '<span class="bad">' + esc(rc.sleepMsg) + '</span>' : '') + '</div>' +
+    '<p class="mut">A sleeping target has its lights out and ignores shots (no record, no paper). It wakes with Wake, its lights button, ' +
+    'when a shooter takes control of it, when it is put into a match, or when it restarts. A target in a match cannot be put to sleep.</p></div>';
+  h += '<div class="panel"><h3>Targets</h3><p class="mut">These apply to the selected targets at once and do not need control of them; whoever is in control keeps it.</p>' +
     '<div class="bulk"><span>' + nsel + ' selected</span>' +
-    RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + (nsel ? '' : ' disabled') + '>' + m[1] + '</button>').join('') +
-    '<button data-act="rcnew"' + (nsel ? '' : ' disabled') + '>New series</button>' +
-    '<button data-act="rccmd" data-type="reboot"' + (nsel ? '' : ' disabled') + '>Restart</button>' +
-    '<button data-act="rccmd" data-type="wifi_portal"' + (nsel ? '' : ' disabled') + '>Setup portal</button>' +
-    '<button class="danger" data-act="rcremove"' + (nsel ? '' : ' disabled') + '>Remove</button>' +
-    '<button class="danger" data-act="rcban"' + (nsel ? '' : ' disabled') + '>Ban</button>' +
+    RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + dis + '>' + m[1] + '</button>').join('') +
+    '<button data-act="rcnew"' + dis + '>New series</button>' +
+    '<button data-act="rcsleepsel" data-v="sleep"' + dis + '>Sleep</button><button data-act="rcsleepsel" data-v="wake"' + dis + '>Wake</button>' +
+    '<button data-act="rccmd" data-type="reboot"' + dis + '>Restart</button>' +
+    '<button data-act="rccmd" data-type="wifi_portal"' + dis + '>Setup portal</button>' +
+    '<button class="danger" data-act="rcremove"' + dis + '>Remove</button>' +
+    '<button class="danger" data-act="rcban"' + dis + '>Ban</button>' +
     '<button class="danger" data-act="rcreset"' + (nsel === 1 ? '' : ' disabled') + ' title="One target at a time">Factory reset</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
-    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
+    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
-      const su = statusUrl(t.ip);
+      const su = statusUrl(t.ip), ft = t.fet_target;
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
         '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
         '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
+        '<td>' + (ft && ft.key_fp ? (ft.asleep ? '<b>asleep</b>' : 'on') : '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
-        '<td>' + esc(t.bridge_fw || '–') + fwJobText(t, rc.images) + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
-    }).join('') : '<tr><td colspan="8" class="mut">No targets.</td></tr>') + '</table></div>' +
+        '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
+    }).join('') : '<tr><td colspan="9" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
-  h += targetSettingsPanel(d, rc);
-  h += '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
+  return h + '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
     '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
     '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
-  const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
-  h += '<div class="panel"><h3>FeT Bridge firmware</h3>' +
-    '<p class="mut">Upload the .bin files from Arduino (Sketch &gt; Export Compiled Binary, Flash Mode DOUT), one per flash size. Only FeT Bridge ' +
-    'firmware 0.2.0 or newer is accepted. <b>Update to best</b> gives each selected target the newest image built for its flash size that fits it; ' +
-    'targets that are up to date or have no suitable image are skipped with the reason. Targets on older firmware need one update by USB first.</p>' +
-    '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' selected to best</button>' +
-    '<button data-act="rcfwgh">Check GitHub for FeT Bridge firmware</button></div>' +
-    '<div class="bulk"><button data-act="rcpickfiles"' + (rc.uploading ? ' disabled' : '') + '>' + (rc.uploading ? 'Uploading…' : 'Upload firmware files…') + '</button>' +
-    '<span class="mut">pick one or more .bin files; they upload straight away</span></div>' +
-    (rc.fwResults && rc.fwResults.length ? '<ul class="fwres">' + rc.fwResults.map(r => '<li class="' + (r.ok ? 'mut' : 'bad') + '"><b>' + esc(r.name) + '</b>: ' + esc(r.text) + '</li>').join('') + '</ul>' : '') +
-    (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
-    (imgs.length ? '<table class="t"><tr><th></th><th>Version</th><th>Flash</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr>' + imgs.map(m =>
-      '<tr><td><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Use ' + esc(m.version) + '"></td>' +
-      '<td><b>' + esc(m.version) + '</b></td><td>' + esc(Math.round(m.flash_size / 1048576) + ' MB') + '</td><td>' + esc(Math.round(m.size / 1024) + ' KB') + '</td>' +
-      '<td><code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code></td><td>' + esc(when(new Date(m.uploaded).toISOString())) + '</td>' +
-      '<td><button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></td></tr>').join('') + '</table>' +
-      '<div class="bulk"><button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' +
-      esc((imgs.find(m => m.sha256 === pick) || {}).version || '') + ') on ' + nsel + ' selected</button><span class="mut">e.g. to go back to an older version</span></div>' :
-      '<p class="mut">No images uploaded.</p>') + '</div>';
-  return h + matchUsersPanel(rc.musers || [], rc.muMsg) + flashPanel(rc.flash, rc) + systemPanel(rc.system, rc) + updatesPanel(rc.updates) + '</div>';
 }
 
 // ---- Match Control ----
@@ -1660,7 +1761,7 @@ const route = () => {
   if (pr) return {print: pr[1], cid: pr[2], p: pr[3] || null};
   const rs = location.hash.match(/^#\/results(?:\/([cma]?\d+))?$/);
   if (rs) return {results: true, cid: rs[1] || null};
-  if (/^#\/range\b/.test(location.hash)) return {range: true}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+  if (/^#\/range\b/.test(location.hash)) return {range: true, tab: rcTab()}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
@@ -1688,17 +1789,21 @@ async function refresh() {
     if (route().range) {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
-      if (S.rc.status.logged_in) {                      // all at once, not one after another
-        const [res, fw, mu, fl, tf, e32, sy, up] = await Promise.all(['/targets', '/firmware', '/match-users', '/flash', '/target-firmware',
-          '/esp32-firmware', '/system', '/updates'].map(p => adminCall(p)));
-        if (res.status === 200) S.rc.data = res.data; else S.rc.status.logged_in = false;
-        if (fw.status === 200) S.rc.images = fw.data.images;
-        if (mu.status === 200) S.rc.musers = mu.data.users;
-        if (fl.status === 200) S.rc.flash = fl.data;
-        if (tf.status === 200) S.rc.timages = tf.data.images;
-        if (e32.status === 200) S.rc.e32images = e32.data.images;
-        if (sy.status === 200) S.rc.system = sy.data;
-        if (up.status === 200) {
+      if (S.rc.status.logged_in) {                      // only what this tab shows, all at once
+        const need = RC_NEEDS[rcTab()], got = await Promise.all(need.map(p => adminCall(p)));
+        const r = {};
+        need.forEach((p, i) => { r[p] = got[i]; });
+        const ok = p => r[p] && r[p].status === 200;
+        if (got.some(x => x.status === 401)) S.rc.status.logged_in = false;      // logged out meanwhile
+        if (ok('/targets')) S.rc.data = r['/targets'].data;
+        if (ok('/firmware')) S.rc.images = r['/firmware'].data.images;
+        if (ok('/match-users')) S.rc.musers = r['/match-users'].data.users;
+        if (ok('/flash')) S.rc.flash = r['/flash'].data;
+        if (ok('/target-firmware')) S.rc.timages = r['/target-firmware'].data.images;
+        if (ok('/esp32-firmware')) S.rc.e32images = r['/esp32-firmware'].data.images;
+        if (ok('/system')) S.rc.system = r['/system'].data;
+        const up = r['/updates'];
+        if (up && up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
           S.rc.updates = Object.assign(up.data, {msg: msg, last_check: up.data.last_check || check});
           if (S.version && up.data.current !== S.version) location.reload();    // the server was updated: load the new page
@@ -1844,6 +1949,14 @@ function renderOverlay(t) {
     const ae = document.activeElement;
     if (o.contains(ae) && (ae.tagName === 'INPUT' && ae.type !== 'radio' || ae.tagName === 'SELECT')) { held = true; return; }
     patchOverlay(o, S.mc.latep ? lateSheet(S.mc) : S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : competitorSheet(S.mc));
+    return;
+  }
+  const rct = route().range && S.rc && S.rc.tsOpen && ((S.rc.data || {}).targets || []).find(x => x.device_id === S.rc.tsOpen && x.fet_target);
+  if (rct) {                                      // Range Control → Target settings: one target's sheet
+    o.className = 'open';
+    const ae = document.activeElement;
+    if (o.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName) && ae.type !== 'checkbox') { held = true; return; }
+    patchOverlay(o, targetSettingsSheet(rct, S.rc.data, S.rc));
     return;
   }
   o.className = (S.gear || S.sight) && t ? 'open' : '';
@@ -2007,8 +2120,10 @@ async function rangeAct(el, a) {
     await adminCall('/firmware/' + el.dataset.sha + '/delete', {});
     return refresh();
   }
+  if (a === 'rcfwsel') { (rc.fwSel = rc.fwSel || {})[el.dataset.id] = el.checked; return render(); }
+  if (a === 'rcfwall') { rc.fwSel = {}; ((rc.data || {}).targets || []).filter(isBridge).forEach(t => { rc.fwSel[t.device_id] = el.checked; }); return render(); }
   if (a === 'rcflash' || a === 'rcbest') {
-    const ids = chosen(), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
+    const ids = ((rc.data || {}).targets || []).filter(isBridge).map(t => t.device_id).filter(i => (rc.fwSel || {})[i]), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
     if (!ids.length || (a === 'rcflash' && !img)) return;
     if (!confirm(a === 'rcbest' ? 'Update ' + ids.length + ' target(s) to the best FeT Bridge firmware for each?\nEach one downloads it, checks it and restarts (about a minute).'
                                 : 'Install FeT Bridge firmware ' + img.version + ' on ' + ids.length + ' target(s)?\nEach one downloads it, checks it and restarts (about a minute).')) return;
@@ -2095,6 +2210,26 @@ async function rangeAct(el, a) {
     rc.updMsg = {id: el.dataset.id, ok: res.status === 200, text: res.status === 200 ? 'sent: the target is updating to ' + res.data.version : (res.data.error || 'not sent')};
     return refresh();
   }
+  if (a === 'rctopen') { rc.tsOpen = el.dataset.id; rc.tsMsg = ''; rc.tsApply = {}; return render(true); }
+  if (a === 'rctclose') { rc.tsOpen = null; rc.tsMsg = ''; return render(true); }
+  if (a === 'rctapply') { (rc.tsApply = rc.tsApply || {})[el.dataset.id] = el.checked; return render(true); }
+  if (a === 'rctcopy') {
+    const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
+    const to = sleepers(rc.data || {targets: []}).filter(o => (rc.tsApply || {})[o.device_id] && o.device_id !== el.dataset.id);
+    if (!t || !to.length) return;
+    const all = targetSettingsAll(t, rc);
+    if (all.errors.length) { rc.tsMsg = all.errors.join('; '); return render(true); }
+    if (!Object.keys(all.settings).length) { rc.tsMsg = 'No settings to copy yet: Read from target first'; return render(true); }
+    if (!confirm('Copy ' + t.name + '\'s settings to ' + to.map(o => o.name).join(', ') + '?')) return;
+    const errs = [];
+    for (const o of to) {
+      const res = await adminCall('/targets/' + encodeURIComponent(o.device_id) + '/target-command', {verb: 'set', settings: all.settings});
+      if (res.status !== 200) errs.push(o.name + ': ' + (res.data.error || 'error ' + res.status));
+    }
+    rc.tsMsg = errs.join(' · ');
+    if (!errs.length) { rc.tsApply = {}; toast('Sent to ' + to.length + ' target' + (to.length === 1 ? '' : 's')); }
+    return refresh();
+  }
   if (a === 'rctget' || a === 'rctpaper' || a === 'rctset') {
     const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
     if (!t) return;
@@ -2155,6 +2290,20 @@ async function rangeAct(el, a) {
     rc.sysMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
     if (el.closest('header')) toast(res.status === 202 ? (body.action === 'shutdown' ? 'Shutting down…' : 'Restarting…') : rc.sysMsg);   // no System panel here
     if (res.status === 202 && rc.sysf && rc.sysf.vals) (SYS_FIELDS[body.action] || []).forEach(id => { delete rc.sysf.vals[id]; });  // sent: forgotten
+    return refresh();
+  }
+  if (a === 'rcsleep' || a === 'rcsleepsel') {  // lights out (shots ignored) or on: FeT targets with a key; each signed for itself
+    const all = sleepers(rc.data || {targets: []}), v = el.dataset.v;
+    const ts = a === 'rcsleep' ? all : all.filter(t => sel[t.device_id]);
+    if (!ts.length) { rc.sleepMsg = a === 'rcsleep' ? '' : 'None of the selected targets can sleep (FeT target firmware with a key only).'; return render(true); }
+    if (v === 'sleep' && !confirm('Put ' + ts.length + ' target(s) to sleep?\nLights out; shots fired at them are ignored until they wake.')) return;
+    const errs = [];
+    for (const t of ts) {
+      const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/target-command', {verb: v});
+      if (res.status === 401) { toast('Logged out: log in again'); break; }
+      if (res.status !== 200) errs.push(t.name + ': ' + (res.data.error || 'error ' + res.status));
+    }
+    rc.sleepMsg = errs.join(' · ');
     return refresh();
   }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
@@ -2707,7 +2856,7 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; } S.printAt = null; S.menu = false; if (S.printing) endPrint(); else refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; } S.printAt = null; S.menu = false; if (S.rc) S.rc.tsOpen = null; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   openStream();
   window.addEventListener('afterprint', endPrint);
@@ -2745,7 +2894,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {sleepers, targetSettingsSheet, targetSettingsAll, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, tvConfig, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

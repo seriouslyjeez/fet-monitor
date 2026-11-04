@@ -6,6 +6,7 @@ const mod = {};
 new Function('module', code)(mod);                       // no `document`, so the page does not boot
 const D = JSON.parse(fs.readFileSync(0, 'utf8'));
 const X = mod.exports;
+const {sleepers, targetSettingsSheet, firmwareTab} = mod.exports;
 const {faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, coachView, shooterView, overlayView, shotsTable, lastPanel, ammoPanel, ammoTable, ammoMarks, KIND_MODE, reviewShot, reviewPager, reviewPage, S, infoPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, statusUrl, rangeView, fwJobText, updatesPanel, matchView, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, commandsPanel, correctionsPanel, tvBoard, tvTargets, tvUrl, resultsPage, scoreCards, printResults, tvCompBoard, mcCompPage} = X;
 const count = (s, re) => (s.match(re) || []).length;
 const T = id => D.targets.find(t => t.device_id === id);
@@ -362,21 +363,44 @@ assert(fwJobText(fwT({status: 'failed', sha256: IMG.sha256, result: '<b>checksum
 assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}), [IMG]).includes('installed, restarting'), 'done but still the old version');
 assert(fwJobText(fwT({status: 'done', sha256: IMG.sha256}, '0.2.1'), [IMG]).includes('updated to 0.2.1'));
 assert(fwJobText(fwT({status: 'sent', sha256: IMG.sha256}), []).includes('abababab'), 'image deleted meanwhile: short SHA');
-const fwPanel = s => rcIn(Object.assign({sel: {'lane-1': true}, images: [IMG]}, s || {}));
-assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1) on 1 selected'));
-assert(/data-act="rcflash"[^>]*disabled/.test(rcIn({sel: {}, images: [IMG]})), 'nothing selected: disabled');
-assert(rcIn({sel: {}, images: []}).includes('No images uploaded.'));
-assert(fwPanel().includes('data-act="rcpickfiles">Upload firmware files') && !fwPanel().includes('type="file"'), 'the file input is not part of the redrawn screen');
+// the Firmware tab: its own lists and selection (never the Targets tab's)
+const fwData = {targets: rcData.targets.map(t => Object.assign({}, t, {bridge_fw: '0.2.0', flash_size: 1048576})), banned: []};
+const fwPanel = s => rangeView(state({rcTab: 'firmware', rc: Object.assign({status: {password_set: true, logged_in: true}, data: fwData, fwSel: {'lane-1': true}, images: [IMG]}, s || {})}));
+assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1)') && fwPanel().includes('1 selected'));
+assert(count(fwPanel(), /data-act="rcfwsel"/g) === fwData.targets.length && !fwPanel().includes('data-act="rcsel"'), 'its own checkboxes');
+assert(/data-act="rcflash"[^>]*disabled/.test(fwPanel({fwSel: {}, sel: {'lane-1': true}})), 'the Targets tab\'s selection does not count here');
+assert(fwPanel({images: []}).includes('None yet.'));
+assert(fwPanel().includes('data-act="rcpickfiles">Upload .bin files') && !fwPanel().includes('type="file"'), 'the file input is not part of the redrawn screen');
 assert(/data-act="rcpickfiles" disabled>Uploading/.test(fwPanel({uploading: true})));
 const res2 = fwPanel({fwResults: [{name: '<a>.bin', ok: true, text: 'stored 0.2.1'}, {name: 'b.bin', ok: false, text: 'not accepted: <x>'}]});
 assert(res2.includes('<li class="mut"><b>&lt;a&gt;.bin</b>: stored 0.2.1') && res2.includes('<li class="bad"><b>b.bin</b>: not accepted: &lt;x&gt;'));
 assert(fwPanel({fwMsg: '<i>no</i>', fwMsgBad: true}).includes('class="bad">&lt;i&gt;no'));
+assert(fwPanel().includes('FeT target firmware: ESP32 boards') && fwPanel().includes('FeT target firmware: Arduino Mega'));
 // best image hint, restart / setup portal
 assert(fwJobText(Object.assign(fwT(null), {fw_best: {version: '0.2.4'}}), [IMG]).includes('0.2.4 available'));
 assert(!fwJobText(Object.assign(fwT({status: 'sent', sha256: IMG.sha256}), {fw_best: {version: '0.2.4'}}), [IMG]).includes('available'), 'not while updating');
-assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 selected to best') && fwPanel().includes('FeT Bridge firmware'));
-assert(/data-act="rcbest"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}, images: []})), 'no images: disabled');
-assert(fwPanel().includes('data-act="rccmd" data-type="reboot"') && fwPanel().includes('data-type="wifi_portal"'));
+assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 to the best image'));
+assert(/data-act="rcbest"[^>]*disabled/.test(fwPanel({images: []})), 'no images: disabled');
+assert(one.includes('data-act="rccmd" data-type="reboot"') && one.includes('data-type="wifi_portal"'));
+assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)'), 'the Targets tab shows only targets');
+// tabs
+{
+  const tabs = rcIn({sel: {}});
+  assert(/<nav class="tabs"><a href="#\/range" class="on" aria-current="page">Targets<\/a>/.test(tabs), 'Targets is the default tab');
+  assert(['#/range/settings', '#/range/flash', '#/range/firmware', '#/range/updates', '#/range/pi', '#/range/users'].every(u => tabs.includes('href="' + u + '"')));
+  assert(rangeView(state({rcTab: 'pi', rc: {status: {password_set: true, logged_in: true}}})).includes('Loading'), 'a tab whose data has not come yet');
+}
+// sleep: FeT targets with a key
+{
+  const ft = (o) => Object.assign({key_fp: 'ab12cd34', commands: [], asleep: false}, o);
+  const sd = {targets: [Object.assign({}, rcData.targets[0], {fet_target: ft({asleep: true})}), Object.assign({}, rcData.targets[1], {fet_target: ft({})}),
+    Object.assign({}, rcData.targets[2] || rcData.targets[0], {device_id: 'nokey', fet_target: ft({key_fp: null})})], banned: []};
+  const v = rcIn({sel: {}, data: sd});
+  assert(v.includes('1 of 2 asleep') && v.includes('data-act="rcsleep" data-v="sleep"') && v.includes('data-act="rcsleep" data-v="wake"'), 'Sleep all / Wake all');
+  assert(v.includes('<td><b>asleep</b></td>') && v.includes('<td>on</td>'), 'each target\'s lights');
+  assert(/data-act="rcsleep" data-v="sleep" disabled/.test(rcIn({sel: {}})), 'no target can sleep: disabled');
+  assert.strictEqual(sleepers(sd).length, 2, 'only targets with a key');
+}
 // factory reset: exactly one target
 assert(/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {}})) && /data-act="rcreset"[^>]*disabled/.test(rcIn({sel: every})));
 assert(!/data-act="rcreset"[^>]*disabled/.test(rcIn({sel: {'lane-1': true}})));
@@ -875,8 +899,10 @@ console.log('OK');
   assert(h.includes('Not done: could not join &lt;i&gt;Club') && h.includes('<option selected>Europe/Berlin</option>'), 'status escaped; current time zone chosen');
   assert(h.includes('differs from this device') && h.includes('data-a="clock"'), 'clock an hour off and no internet time: offer this device');
   assert(h.includes('192.168.1.20') && h.includes('Own range network') && h.includes('&lt;b&gt;Club'), 'connections listed; WiFi names escaped');
-  assert(h.includes('WiFi <b>Club &lt;5&gt;</b>: 192.168.1.20') && !h.includes('<b>fet-wifi</b>'), 'the WiFi network\'s own name, not NetworkManager\'s');
-  assert(h.includes('Own range network <b>FeTMonitor-Range</b>') && h.includes('<li>Cable</li>'), 'the range network by its name; a cable by itself');
+  assert(h.includes('WiFi <b>Club &lt;5&gt;</b>: <b>192.168.1.20</b>') && !h.includes('<b>fet-wifi</b>'), 'the WiFi network\'s own name, not NetworkManager\'s');
+  assert(h.includes('Own range network <b>FeTMonitor-Range</b>') && h.includes('<br>Cable</dd>'), 'the range network by its name; a cable by itself');
+  assert(['This Pi', 'Network', 'Name and time', 'Access', 'Software', 'Power'].every(x => h.includes('<h3>' + x + '</h3>')), 'one section per job');
+  assert(h.indexOf('<dl class="facts">') < h.indexOf('<h3>Network</h3>'), 'the facts first, at a glance');
   assert(h.includes('http://range.local:8080/'), 'the .local name for phones and laptops');
   assert(h.includes('SSH is <b>off</b>') && h.includes('data-on="1"'), 'SSH: the switch turns it on');
   assert(!/data-act="rcsys"[^>]*disabled/.test(h) && h.includes('id="sy_psk"'), 'ready: buttons enabled; WiFi password field');
@@ -916,14 +942,15 @@ console.log('OK');
   assert(run.includes('writing 60 %') && run.includes('width:60%') && /rcflashgo[^>]*disabled/.test(run) && /rcflashid[^>]*disabled/.test(run), 'while flashing: progress; nothing else starts');
   const fail = flashPanel(Object.assign({}, f, {job: {state: 'failed', port: '/dev/ttyUSB0', version: '0.2.2', message: 'a different device is plugged in now'}}), {flashMsg: 'x'});
   assert(fail.includes('warnbox') && fail.includes('a different device'), 'a failure shows');
-  assert(flashPanel({ports: [], probes: {}, job: null, backups: []}, {}).includes('No USB serial device'), 'nothing plugged in');
+  const nothing = flashPanel({ports: [], probes: {}, job: null, backups: []}, {});
+  assert(nothing.includes('Nothing is plugged in') && !nothing.includes('id="fs_ssid"') && !nothing.includes('All saved'), 'nothing plugged in: what to plug in, no form, no list');
   assert.strictEqual(flashPanel(null, {}), '');
   // settings: Configure needs a WiFi name; Install also configures when the image is 0.3.0 or newer
   const {flashSettings, verAtLeast} = X;
   assert(verAtLeast('0.3.0', '0.3.0') && verAtLeast('0.10.0', '0.3.0') && !verAtLeast('0.2.9', '0.3.0') && !verAtLeast('', '0.3.0'), 'versions compare as numbers');
   const f3 = Object.assign({}, f, {server_host: '192.168.1.20', probes: Object.assign({}, f.probes, {'/dev/ttyUSB0': Object.assign({}, f.probes['/dev/ttyUSB0'], {device: 'esp8266', offer: {sha256: 'cd', version: '0.3.0'}, advice: '1 MB module: <x>'})})});
   const empty = flashPanel(f3, {});
-  assert(!/rcflashcfg[^>]*disabled/.test(empty) && empty.includes('and configure it, if the settings') && empty.includes('value="192.168.1.20"'),
+  assert(!/rcflashcfg[^>]*disabled/.test(empty) && empty.includes('and configure it, if the WiFi settings') && empty.includes('value="192.168.1.20"'),
     'buttons do not depend on typed values (no redraw while typing); the Pi address filled in');
   assert(empty.includes('1 MB module: &lt;x&gt;'), 'the 4 MB advice shows');
   assert(count(empty, /rcflashcfg/g) === 1, 'no Configure for the Arduino');
@@ -939,7 +966,7 @@ console.log('OK');
   const cfg = flashPanel(Object.assign({}, f3, {job: {state: 'running', kind: 'configure', what: 'Settings', port: '/dev/ttyUSB0', step: 'waiting for FeT Bridge to start', percent: 0}}), rcf);
   assert(cfg.includes('Settings:</b> waiting for FeT Bridge to start<') && !cfg.includes('width:0%'), 'configuring: a step, no progress bar');
   // the Arduino Mega: install, new key, put back; FeT target firmware images
-  const megaPortRow = {port: '/dev/ttyACM0', adapter: '', product: 'Arduino Mega 2560', hint: 'arduino'};
+  const megaPortRow = {port: '/dev/ttyACM0', adapter: '', product: 'Arduino Mega 2560', hint: 'arduino', serial: 'ABC'};
   const fm = {ports: [megaPortRow], job: null, server_host: '1.2.3.4',
     probes: {'/dev/ttyACM0': {device: 'mega', label: 'Arduino Mega 2560, freETarget 4.3.1', first_install: true, same: false, can_key: false,
                               offer: {sha256: 'ee', version: '0.1.0'}}},
@@ -948,12 +975,17 @@ console.log('OK');
   const mh = flashPanel(fm, {timages: [{version: '0.1.0', size: 24748, sha256: 'ee'.repeat(32)}]});
   assert(mh.includes('data-act="rcmegago" data-port="/dev/ttyACM0" data-sha="ee"') && mh.includes('Install FeT target 0.1.0'), 'Mega: install offered');
   assert(mh.includes('EEPROM: the calibration') && !mh.includes('rcmegakey'), 'first install explained; no key button for upstream firmware');
-  assert(count(mh, /data-act="rcmegarestore"/g) === 1 && mh.includes('data-name="mega-ABC-20261031-120000"'), 'put back only where program AND settings were saved');
+  assert(count(mh, /data-act="rcmegarestore"/g) === 1 && mh.includes('data-name="mega-ABC-20261031-120000"'), 'put back: its own (by USB serial), and only where program AND settings were saved');
+  assert(!mh.includes('id="fs_ssid"'), 'a Mega alone: no WiFi form');
+  assert(mh.includes('All saved original firmware (3)') && mh.includes('mega-XYZ-20261030-110000.hex'), 'every saved original, folded away');
   assert(!mh.includes('rcflashgo') && !mh.includes('rcflashcfg'), 'no ESP buttons on a Mega');
-  assert(mh.includes('24 KB') && mh.includes('data-act="rcmegapick"'), 'Mega images listed, upload offered');
+  assert(!mh.includes('data-act="rcmegapick"'), 'images are on the Firmware tab');
+  const {targetImages} = X;
+  assert(targetImages({timages: [{version: '0.1.0', size: 24748, sha256: 'ee'.repeat(32)}]}).includes('24 KB') && targetImages({}).includes('None on this Pi yet') &&
+    targetImages({}).includes('data-act="rcmegapick"'), 'Mega images listed, upload offered');
   fm.probes['/dev/ttyACM0'] = Object.assign({}, fm.probes['/dev/ttyACM0'], {first_install: false, same: true, can_key: true, label: 'Arduino Mega 2560, FeT target 0.1.0 (key ab12cd34)'});
   const mk = flashPanel(fm, {});
-  assert(mk.includes('Reinstall FeT target') && mk.includes('data-act="rcmegakey"') && mk.includes('None on this Pi yet'), 'ours: reinstall and a new key');
+  assert(mk.includes('Reinstall FeT target') && mk.includes('data-act="rcmegakey"'), 'ours: reinstall and a new key');
   assert(/rcmegago[^>]*disabled/.test(flashPanel(Object.assign({}, fm, {job: {state: 'running', port: 'x', what: 'y', step: 'z', percent: 1}}), {})), 'one job at a time');
   console.log('flash OK');
 }
@@ -961,7 +993,7 @@ console.log('OK');
 // Range Control: settings of targets that run FeT target firmware
 {
   const {targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS} = X;
-  assert.strictEqual(targetSettingsPanel({targets: [{device_id: 'a', name: 'A'}]}, {}), '', 'no FeT targets: no panel');
+  assert(targetSettingsPanel({targets: [{device_id: 'a', name: 'A'}]}, {}).includes('No target with FeT target firmware has reported yet'), 'no FeT targets: says so');
   const why = targetSettingsPanel({targets: [{device_id: 'a', name: 'Lane <1>', bridge_fw: '0.2.0'}, {device_id: 'b', name: 'B', bridge_fw: '0.4.0'}]}, {timages: [{version: '0.1.1'}]});
   assert(why.includes('No target with FeT target firmware has reported yet') && why.includes('FeT Bridge 0.4.0'), 'firmware here, nothing heard: says why');
   assert(why.includes('Lane &lt;1&gt; (0.2.0)') && !why.includes('B (0.4.0)'), 'names the targets whose bridge is too old');
@@ -979,7 +1011,11 @@ console.log('OK');
   assert(esp32Images(imgs).includes('0.2.0') && esp32Images({}).includes('None on this Pi yet'));
   const t = {device_id: 'fet-1', name: 'Lane <1>', fet_target: {key_fp: 'ab12cd34', boot: 4, settings_id: '1234abcd',
     settings: {led_pct: 50, wait_ms: 2}, commands: [{verb: 'set', status: 'done', reply: 'out_of_range:led_pct'}, {verb: 'get', status: 'done', reply: 'ok'}]}};
-  const p = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});
+  const TSS = (d, rc) => targetSettingsSheet(d.targets[0], d, rc);   // the sheet a target opens in
+  const list = targetSettingsPanel({targets: [t, Object.assign({}, t, {device_id: 'fet-2', name: 'Two'})]}, {});
+  assert(count(list, /data-act="rctopen"/g) === 2 && list.includes('data-id="fet-2"') && !list.includes('data-ts='), 'a list; the settings open in a sheet');
+  assert(list.includes('set: <span class="bad">out_of_range:led_pct'), 'each target\'s last answer in the list');
+  const p = TSS({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});
   assert(p.includes('Lane &lt;1&gt;') && p.includes('key ab12cd34') && p.includes('start 4'), 'which target, its key and start');
   assert(p.includes('data-ts="fet-1:led_pct"') && p.includes('value="50"') && p.includes('value="300"'), 'reported values, typed values kept');
   assert(p.includes('class="bad">out_of_range:led_pct') && count(p, /data-act="rct(get|set|paper)"/g) === 3, 'the target\'s own answers; three actions');
@@ -987,15 +1023,17 @@ console.log('OK');
   assert(!TARGET_SETTINGS.some(r => /^step/.test(r[0])), 'no stepper settings: no board we support has one');
   assert(TARGET_SETTINGS.every(r => r[5] && (r[6] || p.includes('title="' + esc(r[5]) + '"'))), 'every setting explains itself');
   assert(!p.includes('face_alone_ms'), 'no face sensor: its own option hidden');
-  const withFace = targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:face': '1'}});
+  assert(!p.includes('vref_mv') && TSS({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {esp32: true})})]}, {}).includes('data-ts="fet-1:vref_mv"'),
+    'the microphone threshold: ESP32 boards only (the Mega has a trimmer)');
+  const withFace = TSS({targets: [t]}, {tsf: {'fet-1:face': '1'}});
   assert(withFace.includes('data-ts="fet-1:face_alone_ms"'), 'face sensor Yes (being chosen): its option shown');
-  assert(targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {settings: {face: 1}})})]}, {}).includes('face_alone_ms'),
+  assert(TSS({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {settings: {face: 1}})})]}, {}).includes('face_alone_ms'),
     'or as the target reports it');
   assert(/<select id="ts_fet-1_face" data-ts="fet-1:face"><option value="0" selected>No<\/option><option value="1">Yes<\/option><\/select>/.test(p), 'face sensor: No/Yes, No by default');
-  assert(targetSettingsPanel({targets: [t]}, {tsf: {'fet-1:face': '1'}}).includes('<option value="1" selected>Yes'), 'a chosen Yes stays chosen');
-  const none = targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]}, {});
+  assert(TSS({targets: [t]}, {tsf: {'fet-1:face': '1'}}).includes('<option value="1" selected>Yes'), 'a chosen Yes stays chosen');
+  const none = TSS({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]}, {});
   assert(none.includes('its hello has not') && none.includes('New key'), 'no key, no hello yet: said so, and what to do');
-  const fk = ft => targetSettingsPanel({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, ft)})]}, {});
+  const fk = ft => TSS({targets: [Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, ft)})]}, {});
   assert(fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('signs with key 1a2b3c4d, which this Pi does not know') &&
          fk({key_fp: null, hello_key_fp: '1a2b3c4d'}).includes('its Arduino Mega'), 'a key from another Pi: named, with the fix');
   assert(!p.includes('Trip point') && !fk({status: {vr: 652}}).includes('Trip point'), 'V_REF is on the target\'s page, not here');
@@ -1005,5 +1043,16 @@ console.log('OK');
     {settings: {paper_ms: 300}, errors: []}, 'only what changed');
   const bad = targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '101', 'fet-1:face': '1.5', 'fet-1:ring_ms': 'x'}});
   assert.strictEqual(bad.errors.length, 3, 'out of range, not whole, not a number');
+  // copying to other targets: every setting as shown, not the board's own threshold
+  const two = {targets: [t, Object.assign({}, t, {device_id: 'fet-2', name: 'Two'}), Object.assign({}, t, {device_id: 'fet-3', name: 'Nokey', fet_target: Object.assign({}, t.fet_target, {key_fp: null})})]};
+  const sh = targetSettingsSheet(t, two, {tsApply: {'fet-2': true}});
+  assert(sh.includes('data-act="rctapply" data-id="fet-2" checked') && !sh.includes('data-id="fet-3"') && !sh.includes('data-act="rctapply" data-id="fet-1"'),
+    'the other targets with a key; not itself');
+  assert(sh.includes('Copy these settings to 1 target<') && /data-act="rctcopy"[^>]*disabled/.test(targetSettingsSheet(t, two, {})), 'a count; nothing chosen: disabled');
+  const {targetSettingsAll} = X;
+  const tv = Object.assign({}, t, {fet_target: Object.assign({}, t.fet_target, {settings: {led_pct: 50, wait_ms: 2, vref_mv: 900}})});
+  assert.deepStrictEqual(targetSettingsAll(tv, {tsf: {'fet-1:paper_ms': '300', 'fet-1:led_pct': ''}}), {settings: {led_pct: 50, paper_ms: 300, wait_ms: 2}, errors: []},
+    'as shown (typed over reported); the threshold stays with its board');
+  assert.strictEqual(targetSettingsAll(tv, {tsf: {'fet-1:led_pct': '101'}}).errors.length, 1);
   console.log('target settings OK');
 }

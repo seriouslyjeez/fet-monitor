@@ -588,6 +588,19 @@ class CommandChannel(Case):
         self.assertEqual(r["reason"], "bad_signature", "the image is part of what is signed")
         self.assertEqual(self.h.run("lastupdate"), sha + " 123456", "nothing else reached the platform")
 
+    def test_sleep_and_wake(self):
+        self.h.run("ckey " + KEY.hex())
+        self.assertEqual(self.cmd(1, "sleep")["reason"], "not_supported", "a board that cannot sleep says so")
+        self.assertNotIn("sl", self.cmd(2, "status")["values"])
+        self.h.run("cansleep")
+        self.assertEqual(self.cmd(3, "status")["values"]["sl"], 0)
+        self.assertTrue(self.cmd(4, "sleep")["ok"])
+        self.assertEqual(self.cmd(5, "status")["values"]["sl"], 1)
+        self.assertTrue(self.cmd(6, "wake")["ok"])
+        self.assertEqual(self.cmd(7, "status")["values"]["sl"], 0)
+        self.assertEqual(self.cmd(8, "sleep", {"x": 1})["reason"], "unknown_verb", "sleep takes nothing")
+        self.assertEqual(self.cmd(9, "status")["values"]["sl"], 0)
+
     def test_refused_until_a_key_is_set(self):
         from fetserver.targetproto import make_command, parse_reply
         r = parse_reply(self.send(make_command(7, 1, "paper", key=KEY)), KEY)

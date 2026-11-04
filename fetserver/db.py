@@ -417,6 +417,11 @@ MIGRATIONS = [
     -- vr in mV as the board measures it) and when it came: shown in Range Control, never mistaken for settings.
     ALTER TABLE targets ADD COLUMN target_status_json TEXT;
     """,
+    """
+    -- A FeT target put to sleep (lights out, shots ignored) as it last confirmed: a reply to sleep or wake, or sl= in a
+    -- status reply. A new start wakes it (sleep is not saved on the target).
+    ALTER TABLE targets ADD COLUMN target_asleep INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 

@@ -10,7 +10,9 @@
 //   - i is higher than the last command carried out in this boot (nor within it).
 // Verbs: get (all settings), set key=value ... (all checked first, then applied together and saved once), paper
 // (advance the witness paper now), status (k, up = uptime ms, d = shots dropped, q = triggers ignored while the paper
-// moved, vr = the microphones' trip point as measured, mV, if the board can measure it), update sha=<64 hex> size=<bytes> (a board that can update itself fetches that image from FeT Monitor and
+// moved, vr = the microphones' trip point as measured, mV, if the board can measure it; sl = 1 asleep, 0 awake, on
+// boards that can sleep), sleep (lights out, shots ignored, until wake, its lights button or a restart: not saved),
+// wake, update sha=<64 hex> size=<bytes> (a board that can update itself fetches that image from FeT Monitor and
 // installs it only if its SHA-256 is this one: the command's signature, made with the target's own key, is what
 // makes the image trusted; r=ok means "started", the new version shows in the next hello; boards that cannot:
 // r=not_supported). Replies are signed with the same key and repeat b and i, so the server
@@ -31,6 +33,9 @@ struct Actions {                                    // what the platform does fo
   virtual uint16_t dropped() = 0;
   virtual uint16_t muted() = 0;                       // triggers ignored while the paper moved (Capture::muted)
   virtual int32_t vrefMv() { return -1; }             // the trip point (V_REF) as measured, mV; -1 = cannot measure
+  // Sleep (true) or wake: 0 = done, else a reason without spaces. asleep(): 1, 0, or -1 = this board cannot sleep.
+  virtual const char* sleep(bool on) { (void)on; return "not_supported"; }
+  virtual int asleep() { return -1; }
   // Start fetching and installing this image (in the background); 0 = started, else a reason without spaces.
   virtual const char* firmwareUpdate(const uint8_t sha256[32], uint32_t size) { (void)sha256; (void)size; return "not_supported"; }
 };

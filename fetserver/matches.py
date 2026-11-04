@@ -178,6 +178,7 @@ class Matches:
                 comp = comp.strip()[:60] if isinstance(comp, str) and comp.strip() else None
                 c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
                           (mid, ln["device_id"], i, comp, ln.get("competitor_id")))
+                self.core.wake_in(c, ln["device_id"])     # a sleeping target ignores shots: never in a match
             self._log(c, mid, now, "created", None, None, {"by": by})
         self._pub(mid)
         return mid
@@ -678,6 +679,7 @@ class Matches:
                               "WHERE match_id=? AND device_id=?", (now, self.lane_left_ms(m, ln, now), mid, from_dev))
                 self.core._move_series(c, from_dev, to_dev, ln["series_id"], now)
             c.execute("UPDATE match_lanes SET device_id=? WHERE match_id=? AND device_id=?", (to_dev, mid, from_dev))
+            self.core.wake_in(c, to_dev)
             self._log(c, mid, now, "move", phase, to_dev, {"from": from_dev, "by": by})
         self._pub(mid)
 
@@ -701,6 +703,7 @@ class Matches:
             name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
             c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
                       (mid, device_id, lane, name, competitor_id))
+            self.core.wake_in(c, device_id)
             ln = self._lane(c, mid, device_id)
             sighting = p["kind"] in ("record", "stage")
             sid = self.core._set_mode_in(c, device_id, "sighter", self._session(m, ln), now, new_series=True)

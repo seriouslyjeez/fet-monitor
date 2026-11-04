@@ -23,7 +23,7 @@ from .resultstore import ResultStore
 from .corrections import Corrections
 
 log = logging.getLogger("fetserver.core")
-STATUS_KEYS = ("up", "d", "q", "vr")                  # a FeT target's status reply: counts and the measured trip point
+STATUS_KEYS = ("up", "d", "q", "vr", "sl")            # a FeT target's status reply: counts, the measured trip point, asleep
 
 EVENT_TYPES = {"shot", "config", "arduino_boot", "log",
                "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetserver/targetproto.py)
@@ -373,12 +373,14 @@ class Core:
         if h["authenticated"]:
             if t["key_fp"] != h["key_fp"] or t["target_boot"] is None or h["boot"] > t["target_boot"]:
                 c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=2, target_settings_id=?,
-                             arduino_version=?, board_rev=? WHERE device_id=?""",
+                             arduino_version=?, board_rev=?, target_asleep=0 WHERE device_id=?""",
                           (h["key_fp"], h["boot"], h["settings_id"], version, h["rev"], device_id))
                 # a new start (or a newly bound key): ask for its settings, so Range Control shows them without a click
                 for i, verb in ((1, "get"), (2, "status")):                     # ... and its status (the trip point)
                     c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
                               (device_id, "target", make_command(h["boot"], i, verb, None, key).rstrip("\n"), self.now_ms()))
+            elif h["boot"] == t["target_boot"] and self._sleep_wanted(c, device_id):
+                self._queue_target(c, device_id, "status")        # woken by its lights button? (it says hello then)
         elif t["key_fp"] is None:                       # never from an unsigned hello once a key is bound: the board
             c.execute("UPDATE targets SET arduino_version=?, board_rev=? WHERE device_id=?",   # revision picks the clock
                       (version, h["rev"], device_id))
@@ -398,6 +400,9 @@ class Core:
         if verb == "status":                                                # counts and measurements, not settings
             st = {k: v for k, v in r["values"].items() if k in STATUS_KEYS}
             c.execute("UPDATE targets SET target_status_json=? WHERE device_id=?", (json.dumps(dict(st, at=self.now_ms())), device_id))
+        asleep = {"sleep": 1, "wake": 0}.get(verb, r["values"].get("sl") if verb == "status" else None)
+        if asleep in (0, 1):
+            c.execute("UPDATE targets SET target_asleep=? WHERE device_id=?", (asleep, device_id))
         vals = {k: v for k, v in r["values"].items() if k not in ("k",) + STATUS_KEYS}
         t = c.execute("SELECT target_settings_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
         cur = json.loads(t["target_settings_json"]) if t["target_settings_json"] else {}
@@ -618,8 +623,8 @@ class Core:
         """Queue a signed command for a target running the FeT target firmware. Needs its key and the boot it
         reported (a command names that boot: one recorded earlier is refused after a restart). Changing settings is
         refused while the target is in a match."""
-        if verb not in ("get", "set", "paper", "status"):
-            raise BadRequest("verb must be get, set, paper or status")
+        if verb not in ("get", "set", "paper", "status", "sleep", "wake"):
+            raise BadRequest("verb must be get, set, paper, status, sleep or wake")
         if (verb == "set") != bool(settings):
             raise BadRequest("set needs settings; the other verbs take none")
         with self.db.write() as c:
@@ -631,21 +636,50 @@ class Core:
             if key is None or t["target_boot"] is None:
                 raise BadRequest(f"{device_id} has not reported a key this server knows (FeT target firmware, set up "
                                  "with the flash station)")
-            if verb == "set":
+            if verb in ("set", "sleep"):                                    # a sleeping target ignores shots
                 locked = self.matches.lock_of(c, device_id)
                 if locked:
-                    raise BadRequest(f"{device_id} is in the match '{locked}': its settings cannot change now")
-            cmd_id = t["target_cmd_id"] + 1
-            try:
-                line = make_command(t["target_boot"], cmd_id, verb, settings, key).rstrip("\n")
-            except ValueError as exc:                                       # ProtoError: a bad name or value
-                raise BadRequest(str(exc))
-            if len(line) > 300:
-                raise BadRequest("too many settings in one command")
-            c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
-            cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
-                            (device_id, "target", line, self.now_ms()))
-            return cur.lastrowid
+                    raise BadRequest(f"{device_id} is in the match '{locked}': " +
+                                     ("its settings cannot change now" if verb == "set" else "it cannot sleep now"))
+            cmd_id = self._queue_target(c, device_id, verb, settings)
+        if verb in ("sleep", "wake"):
+            self.hub.publish({"type": "targets", "device_id": device_id})
+        return cmd_id
+
+    def _queue_target(self, c, device_id: str, verb: str, settings: Optional[dict] = None) -> int:
+        """Sign and queue one command for a FeT target whose key and boot are known (checked by the caller)."""
+        t = c.execute("SELECT target_boot, target_cmd_id FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        key = self._target_key(c, device_id)
+        cmd_id = t["target_cmd_id"] + 1
+        try:
+            line = make_command(t["target_boot"], cmd_id, verb, settings, key).rstrip("\n")
+        except ValueError as exc:                                           # ProtoError: a bad name or value
+            raise BadRequest(str(exc))
+        if len(line) > 300:
+            raise BadRequest("too many settings in one command")
+        c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+        cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                        (device_id, "target", line, self.now_ms()))
+        return cur.lastrowid
+
+    def wake_in(self, c, device_id: str) -> None:
+        """Wake a FeT target that is asleep or about to be (in the caller's transaction): taken by a shooter, or put
+        into a match (a sleeping target ignores shots)."""
+        t = c.execute("SELECT target_boot FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if t is not None and t["target_boot"] is not None and self._target_key(c, device_id) is not None \
+                and self._sleep_wanted(c, device_id):
+            self._queue_target(c, device_id, "wake")
+
+    @staticmethod
+    def _sleep_wanted(c, device_id: str) -> bool:
+        """A sleep or wake not answered yet decides; otherwise the target's own last word (a reply or its status)."""
+        t = c.execute("SELECT target_asleep, target_boot FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        last = c.execute("""SELECT line, reply FROM commands WHERE device_id=? AND type='target' AND line LIKE ?
+                            AND (line LIKE '% sleep h=%' OR line LIKE '% wake h=%') ORDER BY id DESC LIMIT 1""",
+                         (device_id, f"FT1 C b={t['target_boot']} %")).fetchone()
+        if last is not None and last["reply"] is None:
+            return " sleep h=" in last["line"]
+        return bool(t["target_asleep"])
 
     def queue_target_line(self, device_id: str, line: str) -> int:
         """One "FT1 C ..." line for a target running the FeT target firmware (built and signed by the server: the
@@ -750,6 +784,8 @@ class Core:
                           "VALUES (?,?,?,?,?)", (device_id, client_id, name, now, now + self.lease_ms))
             row = c.execute("SELECT * FROM leases WHERE device_id=?", (device_id,)).fetchone()
             moved = (free or not mine) and self._practice_to_holder(c, device_id, name, now)
+            if free or not mine:
+                self.wake_in(c, device_id)                                  # a shooter takes it: lights on
         if changed:
             self.hub.publish({"type": "lease", "device_id": device_id})
         if moved:
@@ -1119,7 +1155,7 @@ class Core:
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
             t["fw_job"] = jobs.get(t["device_id"])
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
-                                                  hello_key_fp, target_seen_ms, target_status_json FROM targets WHERE device_id=?""",
+                                                  hello_key_fp, target_seen_ms, target_status_json, target_asleep FROM targets WHERE device_id=?""",
                                         (t["device_id"],)).fetchone()
             if ft["key_fp"] or ft["target_settings_json"] or ft["target_seen_ms"] or (ft["arduino_version"] or "").startswith("FeT target "):
                 cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
@@ -1129,6 +1165,7 @@ class Core:
                                    "board_rev": ft["board_rev"], "esp32": (ft["board_rev"] or 0) >= self.ESP32_REV,
                                    "hello_key_fp": ft["hello_key_fp"], "seen": iso(ft["target_seen_ms"]) if ft["target_seen_ms"] else None,
                                    "status": json.loads(ft["target_status_json"]) if ft["target_status_json"] else None,
+                                   "asleep": bool(ft["target_asleep"]),
                                    "version": v[len("FeT target "):] if v.startswith("FeT target ") else None,
                                    "settings": json.loads(ft["target_settings_json"]) if ft["target_settings_json"] else None,
                                    "commands": [{"id": c["id"], "verb": c["line"].split(" ")[4], "status": c["status"],

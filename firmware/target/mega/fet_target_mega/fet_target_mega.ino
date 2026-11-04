@@ -116,8 +116,21 @@ static tgt::Identity identity(nvm);
 static tgt::Settings settings(nvm, tgt::Identity::SETTINGS_ADDR);
 static tgt::PaperDrive paper(paperFet);
 
+static bool sleeping = false, lightsOff = false;                           // sleeping: lights out, shots ignored (not saved)
+static void applyLights() {
+  analogWrite(PIN_LED_PWM, sleeping || lightsOff ? 0 : (int)(settings.get(tgt::S_LED_PCT) * 255L / 100));
+}
+
 struct MegaActions : tgt::Actions {
   void paperAdvance() override { paper.request(); }
+  const char* sleep(bool on) override {
+    sleeping = on;
+    if (!on) lightsOff = false;
+    applyLights();
+    digitalWrite(PIN_LED_RDY, on ? 1 : 0);                                 // the ready LED (lit when LOW) out too
+    return 0;
+  }
+  int asleep() override { return sleeping ? 1 : 0; }
   void settingsChanged(const tgt::Settings& s) override;
   uint32_t uptimeMs() override { return millis(); }
   uint16_t dropped() override { return capture.dropped(); }
@@ -133,7 +146,7 @@ static int16_t tempDeci = tgt::NO_TEMP;
 static void faceEdge() { capture.face(micros()); }
 
 void MegaActions::settingsChanged(const tgt::Settings& s) {
-  analogWrite(PIN_LED_PWM, (int)(s.get(tgt::S_LED_PCT) * 255L / 100));
+  applyLights();
   paper.configure((uint16_t)s.get(tgt::S_PAPER_MS));
   noInterrupts();                                                          // the interrupt reads these
   capture.waitMs = (uint16_t)s.get(tgt::S_WAIT_MS);
@@ -194,7 +207,6 @@ static void pollPort(Stream& port, tgt::LineReader& reader, bool usb) {
 static void pollSwitches(uint32_t now) {
   static uint8_t last = 0;
   static uint32_t since = 0;
-  static bool lightsOff = false;
   uint8_t sw = (uint8_t)((digitalRead(PIN_SW_A) == 0) | (digitalRead(PIN_SW_B) == 0) << 1);
   if (sw == last) { since = now; return; }
   if (now - since < 50) return;                                            // debounce
@@ -202,8 +214,8 @@ static void pollSwitches(uint32_t now) {
   last = sw;
   if (pressed & 1) paper.request();
   if (pressed & 2) {
-    lightsOff = !lightsOff;
-    analogWrite(PIN_LED_PWM, lightsOff ? 0 : (int)(settings.get(tgt::S_LED_PCT) * 255L / 100));
+    if (sleeping) { actions.sleep(false); sendHello(); }                     // woken here: the hello makes the server ask
+    else { lightsOff = !lightsOff; applyLights(); }
   }
 }
 
@@ -257,6 +269,7 @@ void loop() {
     bool got = capture.pop(s);
     interrupts();
     if (!got) break;
+    if (sleeping) continue;                                                // asleep: shots are ignored
     char out[tgt::SHOT_LINE_MAX];
     size_t n = tgt::formatShot(s, identity.boot(), tempDeci, settings.id(), capture.dropped(),
                                identity.hasKey() ? identity.key() : 0, tgt::Identity::KEY_LEN, out, sizeof out);
