@@ -4,7 +4,7 @@
 namespace tgt {
 
 static const SettingDef DEFS[S_COUNT] = {
-    {"paper_ms", 0, 5000, 50},                    // freETarget's PAPER_TIME default: a DC motor, 50 ms
+    {"paper_ms", 0, 5000, 125},                   // a DC motor, 125 ms: a short advance that suits most shooters
     {"step_count", 0, 2000, 0},
     {"step_ms", 0, 100, 0},
     {"paper_eco_mm", 0, 100, 0},

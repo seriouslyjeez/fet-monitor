@@ -412,6 +412,11 @@ MIGRATIONS = [
     ALTER TABLE targets ADD COLUMN hello_key_fp TEXT;
     ALTER TABLE targets ADD COLUMN target_seen_ms INTEGER;
     """,
+    """
+    -- A FeT target's last status reply (uptime, shots dropped, triggers ignored while the paper moved, the trip point
+    -- vr in mV as the board measures it) and when it came: shown in Range Control, never mistaken for settings.
+    ALTER TABLE targets ADD COLUMN target_status_json TEXT;
+    """,
 ]
 
 

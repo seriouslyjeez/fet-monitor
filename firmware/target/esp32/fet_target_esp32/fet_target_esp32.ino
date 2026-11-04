@@ -14,6 +14,7 @@
 // (unconfigured, or 3 quick power cycles), settings over USB from the Pi's flash station (FETCFG, first minute). The
 // main loop keeps the target running (capture, paper, switches) while the network task waits on the network.
 //
+// Paper: the shared default (125 ms), as on the Mega (upstream used 500 ms on this board).
 // Build: arduino-cli compile -b esp32:esp32:esp32s3:FlashSize=8M,PartitionScheme=default_8MB,FlashMode=dio
 //        --library firmware/target/core --library firmware/fet_bridge/src/core firmware/target/esp32/fet_target_esp32
 // The board's USB link is reliable only up to 230400 baud for flashing (2026-11-02).
@@ -37,7 +38,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.0"
+#define FW_VERSION "0.2.1"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;
@@ -61,7 +62,6 @@ static const int PIN_SW_A = 38, PIN_SW_B = 37;                             // sw
 static const uint8_t DAC_I2C = 0x60, TEMP_I2C = 0x48;                      // MCP4725, TMP1075
 static const float DAC_FULL_MV = 4750.0f;                                  // 5 V less the diode drop (upstream dac.c)
 static const int32_t VREF_DEFAULT_MV = 1250;                               // upstream VREF_LO default
-static const int32_t PAPER_DEFAULT_MS = 500;                               // upstream PAPER_TIME default on this board
 // Sound needs about 676 us across the 232 mm sensor circle at 20 C (700 us at 0 C): 10 MHz ticks, with margin.
 static const uint32_t MAX_SPREAD_TICKS = 7500;                             // 750 us
 
@@ -224,6 +224,7 @@ struct Esp32Actions : tgt::Actions {
   uint16_t dropped() override { return capture.dropped(); }
   uint16_t muted() override { return capture.muted(); }
   const char* firmwareUpdate(const uint8_t sha[32], uint32_t size) override;
+  int32_t vrefMv() override { return vrefMeas; }                           // as read back (-1: ADC2 busy with WiFi)
 };
 static Esp32Actions actions;
 static struct { volatile bool pending = false; uint8_t sha[32]; uint32_t size = 0; } upd;   // main loop -> network task
@@ -421,7 +422,6 @@ void setup() {
   nvm.begin();
   identity.load();
   identity.startBoot();                                                    // 0 if it could not be counted: commands refuse b=0
-  settings.setDefault(tgt::S_PAPER_MS, PAPER_DEFAULT_MS);
   settings.setDefault(tgt::S_VREF_MV, VREF_DEFAULT_MV);
   settings.load();
   static tgt::Commands cmds(settings, actions, identity.boot());

@@ -11,7 +11,7 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}}
 :root[data-theme=dark]{color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}
 a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thickness:2px}
-#theme{margin-left:8px;padding:3px 9px;font-size:13px}
+#theme{margin-left:8px;padding:3px 9px;font-size:13px}#power button{margin-left:6px;padding:3px 9px;font-size:13px}
 *{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:var(--on-accent)}
@@ -122,7 +122,7 @@ body.tv header{display:none}body.tv main{max-width:none;padding:10px 14px}body.t
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button><span id="power" hidden><button data-act="rcsys" data-a="restart" title="Restart the Pi">Restart</button><button class="danger" data-act="rcsys" data-a="shutdown" title="Shut the Pi down">Shut down</button></span></header>
 <div id="printbar" class="noprint mcbar" hidden><button class="pri" data-act="print">Print</button><span id="printinfo" class="mut"></span></div>
 <main id="app"></main>
 <div id="overlay"></div>
@@ -845,10 +845,17 @@ function targetImages(rc) {
     '<p class="mut">The .hex from the Arduino build of firmware/target/mega (not the one "with_bootloader"). It is checked: an intact Intel HEX ' +
     'for the Mega that carries FeT target firmware\'s name and version.</p>';
 }
-const TARGET_SETTINGS = [['led_pct', 'Lights', '%', 0, 100], ['paper_ms', 'Paper motor (DC)', 'ms', 0, 5000], ['step_count', 'Stepper steps', '', 0, 2000],
-  ['step_ms', 'Stepper pulse', 'ms', 0, 100], ['paper_eco_mm', 'Paper only for shots inside', 'mm (0 = every shot)', 0, 100],
-  ['wait_ms', 'Wait for all microphones', 'ms', 1, 20], ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000], ['face', 'Face sensor fitted', '0 / 1', 0, 1],
-  ['face_alone_ms', 'Face-only event after', 'ms', 1, 100], ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300]];
+const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No choice), min, max, what it does]
+  ['led_pct', 'Lights', '%', 0, 100, 'Brightness of the face lights.'],
+  ['paper_ms', 'Paper motor (DC)', 'ms', 0, 5000, 'How long the paper motor runs for one advance (DC motor). 125 ms is a short advance; 0 = no paper drive.'],
+  ['step_count', 'Stepper steps', '', 0, 2000, 'Only for a stepper motor paper drive: pulses per advance (0 = a DC motor, the usual).'],
+  ['step_ms', 'Stepper pulse', 'ms', 0, 100, 'Only for a stepper motor: how long each pulse is.'],
+  ['paper_eco_mm', 'Paper only for shots inside', 'mm (0 = every shot)', 0, 100, 'Saves paper: the paper advances only for a shot this close to the centre (FeT Monitor decides, from where the shot hit). 0 = after every shot.'],
+  ['wait_ms', 'Wait for all microphones', 'ms', 1, 20, 'After the first microphone hears a shot, how long the target waits for the other three before it reads the times. Sound crosses the target in under 1 ms.'],
+  ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000, 'After a shot, how long the target must be quiet (no echo ringing in the box) before it listens for the next one.'],
+  ['face', 'Face sensor fitted', 'yesno', 0, 1, 'Only if a face-plate sensor is wired to the board: it tells a hit on the faceplate (a miss) from a shot.'],
+  ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'With a face sensor: a faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).'],
+  ['vref_mv', 'Microphone threshold (ESP32 boards)', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone (ESP32 boards; on the Mega it is the trimmer RV1). Lower is more sensitive.']];
 function targetSettingsPanel(d, rc) {          // Range Control: targets running FeT target firmware (fetserver/core.py target_command)
   const ts = (d.targets || []).filter(t => t.fet_target);
   if (!ts.length && !(rc.timages || []).length && !(rc.e32images || []).length) return '';   // no FeT target firmware here: nothing to say
@@ -869,8 +876,13 @@ function targetSettingsPanel(d, rc) {          // Range Control: targets running
       return '<h4>' + esc(t.name) + ' <span class="mut">' + esc(id) + ' · key ' + esc(ft.key_fp || 'none') + ' · start ' + esc(ft.boot == null ? '?' : ft.boot) +
         (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span></h4>' +
         (ft.key_fp ? '' : '<p class="bad">' + noKeyReason(ft) + '</p>') +
-        '<div class="tsgrid">' + TARGET_SETTINGS.map(([k, label, unit, lo, hi]) => '<label>' + esc(label) + ' <input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k +
-          '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) + '"> <span class="mut">' + esc(unit) + '</span></label>').join('') + '</div>' +
+        (ft.status && ft.status.vr != null ? '<p>Trip point (V_REF) <b>' + (ft.status.vr / 1000).toFixed(2) + ' V</b> <span class="mut">measured by the target' +
+          (ft.status.at ? ', ' + esc(ago(new Date(ft.status.at).toISOString())) + ' ago' : '') + (ft.esp32 ? '' : '; set with the trimmer RV1') + '</span></p>' : '') +
+        '<div class="tsgrid">' + TARGET_SETTINGS.map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
+          ? '<select id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
+              '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
+          : '<input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
+            '"> <span class="mut">' + esc(unit) + '</span>') + '</label>').join('') + '</div>' +
         '<div class="bulk"><button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
         '<button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
         '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' + esp32Update(t, rc) +
@@ -1022,7 +1034,8 @@ function rangeView(S) {
     (d.targets.length ? d.targets.map(t => {
       const su = statusUrl(t.ip);
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
-        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
+        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) +
+          (t.v_ref != null ? ' · V_REF ' + esc(Number(t.v_ref).toFixed(2)) + ' V' : '') + '</div></td>' +
         '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
         '<td>' + esc(t.bridge_fw || '–') + fwJobText(t, rc.images) + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
@@ -1670,6 +1683,11 @@ async function refresh() {
     }
     if (S.sight && (!sightAllowed(t, S) || t.view.series_id !== S.sight.sid)) S.sight = null;   // never outside live practice in control
     if (S.sight && !S.sight.exit) S.sight.data = await get('/series/' + S.sight.sid + '/sight?after=' + S.sight.after);
+    if (!route().range && Date.now() - (S.rcAt || 0) > 60000) {          // elsewhere: is Range Control still logged in (the header's power buttons)
+      S.rcAt = Date.now();
+      S.rc = S.rc || {sel: {}};
+      S.rc.status = (await adminCall('/status')).data;
+    }
     if (route().range) {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
@@ -1759,6 +1777,7 @@ function render(force) {                  // force: a structural change (e.g. an
   document.getElementById('nav-range').className = r.range ? 'on' : '';
   document.getElementById('nav-match').className = r.match ? 'on' : '';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
+  document.getElementById('power').hidden = !(S.rc && S.rc.status && S.rc.status.logged_in);   // the Pi's power, for Range Control only
   const ae = document.activeElement;
   if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') return;   // never redraw under typing
   document.body.classList.toggle('tv', !!r.tv);
@@ -2048,6 +2067,8 @@ async function rangeAct(el, a) {
       body = {verb: 'set', settings: ch.settings};
     }
     const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/target-command', body);
+    if (res.status === 200 && a === 'rctget')                               // ... and its status (the trip point)
+      await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/target-command', {verb: 'status'});
     rc.tsMsg = res.status === 200 ? '' : (res.data.error || 'error ' + res.status);
     if (res.status === 200 && a === 'rctset' && rc.tsf) for (const k of Object.keys(body.settings)) delete rc.tsf[t.device_id + ':' + k];
     return refresh();
@@ -2093,6 +2114,7 @@ async function rangeAct(el, a) {
     if (!body) return;
     const res = await adminCall('/system', body);
     rc.sysMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
+    if (el.closest('header')) toast(res.status === 202 ? (body.action === 'shutdown' ? 'Shutting down…' : 'Restarting…') : rc.sysMsg);   // no System panel here
     if (res.status === 202 && rc.sysf && rc.sysf.vals) (SYS_FIELDS[body.action] || []).forEach(id => { delete rc.sysf.vals[id]; });  // sent: forgotten
     return refresh();
   }

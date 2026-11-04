@@ -115,6 +115,30 @@ class Shots(Base):
             self.assertEqual(r["temp_c"], 20.0)
         self.assertEqual(rows[0]["ring"], 10)
 
+    def test_paper_only_for_shots_inside(self):
+        """paper_eco_mm: the target leaves the paper to FeT Monitor, which advances it (a signed paper command) only for
+        a shot that close to the centre. Before 0.6.36 nothing asked, so the paper never moved with it set."""
+        self.bound()
+        papers = lambda: [r[0] for r in self.core.db.conn().execute("SELECT line FROM commands WHERE line LIKE '% paper %'")]
+        self.send("target_shot", shot(1, forward(3.0, 4.0, GEOM, 20.0)))
+        self.assertEqual(papers(), [], "not set: the target advances the paper itself")
+        with self.core.db.write() as c:
+            c.execute("UPDATE targets SET target_settings_json=?", (json.dumps({"paper_eco_mm": 10}),))
+        self.send("target_shot", shot(2, forward(3.0, 4.0, GEOM, 20.0)))            # 5 mm from the centre
+        self.assertEqual(len(papers()), 1)
+        line = papers()[0]
+        head, _, tag = line.rpartition(" h=")
+        self.assertTrue(head.startswith("FT1 C b=3 i=") and head.endswith(" paper"))
+        self.assertEqual(tag, mac(KEY, head.encode()), "signed with the target's key")
+        self.send("target_shot", shot(3, forward(20.0, 0.0, GEOM, 20.0)))           # 20 mm out: the paper stays
+        self.send("target_shot", shot(4, forward(3.0, 4.0, GEOM, 20.0), mask=3))   # a miss: nothing to place
+        self.assertEqual(len(papers()), 1)
+        old = self.core.ECO_FRESH_MS
+        self.core.ECO_FRESH_MS = -1                                                   # a shot delivered late
+        self.send("target_shot", shot(5, forward(1.0, 1.0, GEOM, 20.0)))
+        self.core.ECO_FRESH_MS = old
+        self.assertEqual(len(papers()), 1, "a late delivery moves no paper")
+
     def test_a_target_whose_key_this_pi_does_not_know_is_listed(self):
         """The key was set by another Pi (or the hello was lost): the target still shows in Range Control, with what it
         says its key is, so the page can say what to do (2026-11-03)."""
@@ -217,18 +241,20 @@ class Commands(Base):
         ids = [self.core.target_command("t1", v) for v in ("get", "status")]
         lines = [r["line"] for r in self.core.db.conn().execute("SELECT line FROM commands ORDER BY id")]
         self.assertTrue(lines[0].startswith("FT1 C b=3 i=1 get h="), "the server asked for the settings itself")
-        self.assertTrue(lines[1].startswith("FT1 C b=3 i=2 get h="))
-        self.assertTrue(lines[2].startswith("FT1 C b=3 i=3 status h="))
-        head, _, tag = lines[1].rpartition(" h=")
+        self.assertTrue(lines[1].startswith("FT1 C b=3 i=2 status h="), "... and for the status (the trip point)")
+        self.assertTrue(lines[2].startswith("FT1 C b=3 i=3 get h="))
+        self.assertTrue(lines[3].startswith("FT1 C b=3 i=4 status h="))
+        head, _, tag = lines[2].rpartition(" h=")
         self.assertEqual(tag, mac(KEY, head.encode()))
         self.assertEqual(len(ids), 2)
         self.send("target_hello", hello(4))                                        # restarted: ids start over
         self.send("target_hello", hello(4))                                        # a repeated hello: nothing new
         self.core.target_command("t1", "paper")
-        last = [r[0] for r in self.core.db.conn().execute("SELECT line FROM commands ORDER BY id DESC LIMIT 3")]
-        self.assertTrue(last[0].startswith("FT1 C b=4 i=2 paper"), last)
-        self.assertTrue(last[1].startswith("FT1 C b=4 i=1 get "), "one get per new start, not per hello")
-        self.assertTrue(last[2].startswith("FT1 C b=3 i=3 status"))
+        last = [r[0] for r in self.core.db.conn().execute("SELECT line FROM commands ORDER BY id DESC LIMIT 4")]
+        self.assertTrue(last[0].startswith("FT1 C b=4 i=3 paper"), last)
+        self.assertTrue(last[1].startswith("FT1 C b=4 i=2 status "), "one get + status per new start, not per hello")
+        self.assertTrue(last[2].startswith("FT1 C b=4 i=1 get "))
+        self.assertTrue(last[3].startswith("FT1 C b=3 i=4 status"))
 
     def test_checks(self):
         self.bound()
@@ -244,17 +270,20 @@ class Commands(Base):
         self.bound()
         self.core.target_command("t1", "get")
         self.core.target_command("t1", "set", {"led_pct": 80})
-        self.send("target_reply", signed("FT1 R b=3 i=2 r=ok k=0a0b0c0d led_pct=50 wait_ms=2"))
-        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok k=99887766"))
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok k=0a0b0c0d led_pct=50 wait_ms=2"))
+        self.send("target_reply", signed("FT1 R b=3 i=4 r=ok k=99887766"))
         replies = [r[0] for r in self.core.db.conn().execute("SELECT reply FROM commands ORDER BY id")]
-        self.assertEqual(replies, [None, "ok", "ok"], "the automatic get (1) not answered in this test")
+        self.assertEqual(replies, [None, None, "ok", "ok"], "the automatic get and status (1, 2) not answered in this test")
         t = self.target()
         self.assertEqual(t["target_settings_id"], "99887766")
         self.assertEqual(json.loads(t["target_settings_json"]), {"led_pct": 80, "wait_ms": 2})
         self.core.target_command("t1", "status")
-        self.send("target_reply", signed("FT1 R b=3 i=4 r=ok k=99887766 up=5000 d=1 q=4"))
+        self.send("target_reply", signed("FT1 R b=3 i=5 r=ok k=99887766 up=5000 d=1 q=4 vr=650"))
         self.assertEqual(json.loads(self.target()["target_settings_json"]), {"led_pct": 80, "wait_ms": 2},
-                         "uptime, dropped and muted counts are not settings")
+                         "uptime, dropped and muted counts and the trip point are not settings")
+        st = json.loads(self.target()["target_status_json"])
+        self.assertEqual((st["up"], st["d"], st["q"], st["vr"]), (5000, 1, 4, 650), "the status is kept on its own")
+        self.assertNotIn("k", st)
 
     def test_a_refusal_is_recorded_and_changes_nothing(self):
         self.bound()
@@ -341,8 +370,8 @@ class OverHttp(unittest.TestCase):
         st, body, _ = self.sc.req("GET", "/api/v1/admin/targets")
         t = next(t for t in json.loads(body)["targets"] if t["device_id"] == "t1")
         self.assertEqual((t["fet_target"]["key_fp"], t["fet_target"]["boot"]), (FP, 3))
-        self.assertEqual([(c["verb"], c["status"]) for c in t["fet_target"]["commands"]], [("set", "queued"), ("get", "queued")],
-                         "newest first; the get the server sent by itself at the hello")
+        self.assertEqual([(c["verb"], c["status"]) for c in t["fet_target"]["commands"]], [("set", "queued"), ("status", "queued"), ("get", "queued")],
+                         "newest first; the get and status the server sent by itself at the hello")
 
     def test_mega_routes_need_an_identified_board(self):
         for path, body in (("mega-install", {"port": "/dev/ttyACM0", "sha256": "a" * 64}), ("mega-key", {"port": "/dev/ttyACM0"}),

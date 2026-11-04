@@ -141,7 +141,7 @@ class SignedUpdate(unittest.TestCase):
         self.send_hello(620, boot=6)                             # the next start (a hello never moves back)
         line = self.line(self.core.target_update("e1", self.img))
         head, _, tag = line.rpartition(" h=")
-        self.assertEqual(head, f"FT1 C b=6 i=2 update sha={self.img['sha256']} size=1116016")   # 1: the automatic get
+        self.assertEqual(head, f"FT1 C b=6 i=3 update sha={self.img['sha256']} size=1116016")   # 1, 2: the automatic get, status
         self.assertEqual(tag, mac(KEY, head.encode()), "signed with the target's own key")
         self.core.matches.lock_of = lambda c, d: "Final"
         with self.assertRaisesRegex(BadRequest, "match"):

@@ -392,7 +392,7 @@ class Mega(unittest.TestCase):
         self.assertLess(ram, 2048, "the core leaves the Mega most of its 8 KB")
 
 
-DEFAULTS = [50, 0, 0, 0, 50, 2, 50, 0, 5, 0]
+DEFAULTS = [125, 0, 0, 0, 50, 2, 50, 0, 5, 0]
 KEYS = ["paper_ms", "step_count", "step_ms", "paper_eco_mm", "led_pct", "wait_ms", "ring_ms", "face", "face_alone_ms", "vref_mv"]
 BASE, SLOT = 64, 8 + 4 * 10 + 4
 
@@ -585,7 +585,10 @@ class CommandChannel(Case):
         self.assertEqual(r["values"]["k"], settings_id(DEFAULTS))
         s = self.cmd(2, "status")
         self.assertEqual((s["values"]["up"], s["values"]["d"], s["values"]["q"]), (123456, 2, 3))
-        self.assertTrue(self.cmd(3, "paper")["ok"])
+        self.assertNotIn("vr", s["values"], "a board that cannot measure its trip point says nothing")
+        self.h.run("vref 650")
+        self.assertEqual(self.cmd(4, "status")["values"]["vr"], 650, "the trip point as measured, mV")
+        self.assertTrue(self.cmd(5, "paper")["ok"])
         self.assertEqual(self.h.run("acts"), "1 0")
 
     def test_set_is_checked_saved_and_survives_a_restart(self):

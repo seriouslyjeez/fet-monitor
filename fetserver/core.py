@@ -23,6 +23,7 @@ from .resultstore import ResultStore
 from .corrections import Corrections
 
 log = logging.getLogger("fetserver.core")
+STATUS_KEYS = ("up", "d", "q", "vr")                  # a FeT target's status reply: counts and the measured trip point
 
 EVENT_TYPES = {"shot", "config", "arduino_boot", "log",
                "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetserver/targetproto.py)
@@ -334,6 +335,26 @@ class Core:
                          n, e, s, w, p["ms"] / 1000.0, None, p["temp_c"], None,
                          auth=int(p["authenticated"]), mic_mask=p["mask"], face_us=p["face_us"],
                          misfit_um=None if miss or sol.residual_mm is None else int(round(sol.residual_mm * 1000)))
+        if not miss and p["authenticated"]:
+            self._eco_paper(c, device_id, p["boot"], event_ms, (sol.x * sol.x + sol.y * sol.y) ** 0.5)
+
+    ECO_FRESH_MS = 30_000                               # a shot delivered later than this moves no paper (it is long gone)
+
+    def _eco_paper(self, c, device_id: str, boot: int, event_ms: int, r_mm: float) -> None:
+        """Paper only for shots inside paper_eco_mm (the target's setting): the target then leaves the paper to FeT
+        Monitor, which knows where the shot hit. A signed "paper" command, for a shot of this start, just fired."""
+        t = c.execute("SELECT target_settings_json, target_boot, target_cmd_id FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        try:
+            eco = int(json.loads(t["target_settings_json"] or "{}").get("paper_eco_mm", 0))
+        except (ValueError, TypeError):
+            eco = 0
+        key = self._target_key(c, device_id)
+        if eco <= 0 or r_mm > eco or key is None or t["target_boot"] != boot or self.now_ms() - event_ms > self.ECO_FRESH_MS:
+            return
+        cmd_id = t["target_cmd_id"] + 1
+        c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+        c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                  (device_id, "target", make_command(boot, cmd_id, "paper", None, key).rstrip("\n"), self.now_ms()))
 
     def _derive_target_hello(self, c, device_id, raw) -> None:
         """Only a hello signed with a known key binds that key and moves the boot count (never backwards); an
@@ -351,12 +372,13 @@ class Core:
         version = "FeT target " + h["fw"]
         if h["authenticated"]:
             if t["key_fp"] != h["key_fp"] or t["target_boot"] is None or h["boot"] > t["target_boot"]:
-                c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=1, target_settings_id=?,
+                c.execute("""UPDATE targets SET key_fp=?, target_boot=?, target_cmd_id=2, target_settings_id=?,
                              arduino_version=?, board_rev=? WHERE device_id=?""",
                           (h["key_fp"], h["boot"], h["settings_id"], version, h["rev"], device_id))
                 # a new start (or a newly bound key): ask for its settings, so Range Control shows them without a click
-                c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
-                          (device_id, "target", make_command(h["boot"], 1, "get", None, key).rstrip("\n"), self.now_ms()))
+                for i, verb in ((1, "get"), (2, "status")):                     # ... and its status (the trip point)
+                    c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                              (device_id, "target", make_command(h["boot"], i, verb, None, key).rstrip("\n"), self.now_ms()))
         elif t["key_fp"] is None:                       # never from an unsigned hello once a key is bound: the board
             c.execute("UPDATE targets SET arduino_version=?, board_rev=? WHERE device_id=?",   # revision picks the clock
                       (version, h["rev"], device_id))
@@ -372,10 +394,13 @@ class Core:
         c.execute("UPDATE commands SET reply=? WHERE id=?", ("ok" if r["ok"] else r["reason"], cmd["id"]))
         if not r["ok"]:
             return
-        vals = {k: v for k, v in r["values"].items() if k not in ("k", "up", "d", "q")}   # status counts are not settings
+        verb = cmd["line"].split(" ")[4]
+        if verb == "status":                                                # counts and measurements, not settings
+            st = {k: v for k, v in r["values"].items() if k in STATUS_KEYS}
+            c.execute("UPDATE targets SET target_status_json=? WHERE device_id=?", (json.dumps(dict(st, at=self.now_ms())), device_id))
+        vals = {k: v for k, v in r["values"].items() if k not in ("k",) + STATUS_KEYS}
         t = c.execute("SELECT target_settings_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
         cur = json.loads(t["target_settings_json"]) if t["target_settings_json"] else {}
-        verb = cmd["line"].split(" ")[4]
         if verb == "set":                                                   # the values the command set
             for part in cmd["line"].rsplit(" h=", 1)[0].split(" ")[5:]:
                 k, v = part.split("=", 1)
@@ -1081,7 +1106,11 @@ class Core:
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
             t["fw_job"] = jobs.get(t["device_id"])
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
-                                                  hello_key_fp, target_seen_ms FROM targets WHERE device_id=?""", (t["device_id"],)).fetchone()
+                                                  hello_key_fp, target_seen_ms, target_status_json FROM targets WHERE device_id=?""",
+                                        (t["device_id"],)).fetchone()
+            last = self.db.conn().execute("SELECT v_ref FROM shots WHERE device_id=? ORDER BY id DESC LIMIT 1",   # one row by the index
+                                          (t["device_id"],)).fetchone()
+            t["v_ref"] = last["v_ref"] if last else None                      # freETarget sends it with every shot; ours do not
             if ft["key_fp"] or ft["target_settings_json"] or ft["target_seen_ms"] or (ft["arduino_version"] or "").startswith("FeT target "):
                 cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
                                                  WHERE device_id=? AND type='target' ORDER BY id DESC LIMIT 5""", (t["device_id"],))
@@ -1089,6 +1118,7 @@ class Core:
                 t["fet_target"] = {"key_fp": ft["key_fp"], "boot": ft["target_boot"], "settings_id": ft["target_settings_id"],
                                    "board_rev": ft["board_rev"], "esp32": (ft["board_rev"] or 0) >= self.ESP32_REV,
                                    "hello_key_fp": ft["hello_key_fp"], "seen": iso(ft["target_seen_ms"]) if ft["target_seen_ms"] else None,
+                                   "status": json.loads(ft["target_status_json"]) if ft["target_status_json"] else None,
                                    "version": v[len("FeT target "):] if v.startswith("FeT target ") else None,
                                    "settings": json.loads(ft["target_settings_json"]) if ft["target_settings_json"] else None,
                                    "commands": [{"id": c["id"], "verb": c["line"].split(" ")[4], "status": c["status"],

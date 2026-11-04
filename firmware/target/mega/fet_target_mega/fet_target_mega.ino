@@ -20,7 +20,7 @@
 #include <settings.h>
 #include <shotline.h>
 
-#define FW_VERSION "0.1.3"
+#define FW_VERSION "0.1.4"
 // In the flash image, so the Pi's flash station can tell what a .hex file is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-mega/" FW_VERSION;
 #define USE_WATCHDOG 0   // off until the board's bootloader is known to clear the watchdog (old Mega bootloaders
@@ -122,6 +122,7 @@ struct MegaActions : tgt::Actions {
   uint32_t uptimeMs() override { return millis(); }
   uint16_t dropped() override { return capture.dropped(); }
   uint16_t muted() override { return capture.muted(); }
+  int32_t vrefMv() override { return (int32_t)analogRead(PIN_VREF) * 5000L / 1023; }   // V_FB on A0: the trimmer's trip point
 };
 static MegaActions actions;
 static tgt::Commands* commands = 0;                                        // made once the boot count is known

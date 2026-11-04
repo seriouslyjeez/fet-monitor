@@ -58,6 +58,8 @@ struct FakeActions : Actions {
   uint32_t uptimeMs() override { return 123456; }
   uint16_t dropped() override { return 2; }
   uint16_t muted() override { return 3; }
+  int32_t vref = -1;
+  int32_t vrefMv() override { return vref; }
   bool canUpdate = false;
   std::string updSha;
   uint32_t updSize = 0;
@@ -191,6 +193,7 @@ int main() {
     else if (cmd == "pbusy") std::cout << (paper.busy() ? 1 : 0) << "\n";
     else if (cmd == "acts") std::cout << acts.papers << " " << acts.changes << "\n";
     else if (cmd == "canupdate") { int v; is >> v; acts.canUpdate = v != 0; }
+    else if (cmd == "vref") { int v; is >> v; acts.vref = v; }
     else if (cmd == "lastupdate") std::cout << (acts.updSha.empty() ? std::string("none") : acts.updSha) << " " << acts.updSize << "\n";
     else if (cmd == "quit") break;
     else std::cout << "?\n";
