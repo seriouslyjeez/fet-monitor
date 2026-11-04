@@ -261,6 +261,25 @@ class Installer(InstallerBase):
         self.assertFalse((self.root / "var/lib/fet-monitor/device_token").exists(), "no token in the image: every Pi makes its own")
         self.assertIn("fet-system.path", state["enabled"])
 
+    def test_mdns_name_for_shooters(self):
+        """range.local worked on a hand-installed Pi; the image must keep it: avahi-daemon enabled, the web page
+        announced (2026-11-03)."""
+        (self.root / "usr/lib/systemd/system").mkdir(parents=True)
+        (self.root / "usr/lib/systemd/system/avahi-daemon.service").write_text("[Unit]\n")
+        (self.root / "etc/avahi/services").mkdir(parents=True)
+        r = self.run_install("--image")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        state = json.loads((self.root / ".systemd.json").read_text())
+        self.assertIn("avahi-daemon.service", state["enabled"])
+        svc = (self.root / "etc/avahi/services/fet-monitor.service").read_text()
+        self.assertIn("<type>_http._tcp</type>", svc)
+        self.assertNotIn("avahi-daemon is not installed", r.stderr)
+
+    def test_mdns_missing_is_said(self):
+        r = self.run_install("--image")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("avahi-daemon is not installed", r.stderr, "a warning, not a failure")
+
     def test_wifi_defaults_for_the_pi_3(self):
         (self.root / "etc/NetworkManager").mkdir(parents=True)            # Raspberry Pi OS has NetworkManager
         self.os("trixie")

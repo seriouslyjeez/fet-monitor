@@ -863,6 +863,7 @@ console.log('OK');
   assert(h.includes('192.168.1.20') && h.includes('Own range network') && h.includes('&lt;b&gt;Club'), 'connections listed; WiFi names escaped');
   assert(h.includes('WiFi <b>Club &lt;5&gt;</b>: 192.168.1.20') && !h.includes('<b>fet-wifi</b>'), 'the WiFi network\'s own name, not NetworkManager\'s');
   assert(h.includes('Own range network <b>FeTMonitor-Range</b>') && h.includes('<li>Cable</li>'), 'the range network by its name; a cable by itself');
+  assert(h.includes('http://range.local:8080/'), 'the .local name for phones and laptops');
   assert(h.includes('SSH is <b>off</b>') && h.includes('data-on="1"'), 'SSH: the switch turns it on');
   assert(!/data-act="rcsys"[^>]*disabled/.test(h) && h.includes('id="sy_psk"'), 'ready: buttons enabled; WiFi password field');
   const busy = systemPanel(Object.assign({}, v, {busy: true, facts: Object.assign({}, v.facts, {ntp: true})}), {sysf: {network: {mode: 'own'}}});

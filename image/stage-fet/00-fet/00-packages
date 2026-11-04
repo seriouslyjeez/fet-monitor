@@ -6,3 +6,5 @@ rfkill
 iw
 esptool
 avrdude
+avahi-daemon
+libnss-mdns

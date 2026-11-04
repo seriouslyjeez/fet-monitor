@@ -151,6 +151,16 @@ class Commands(unittest.TestCase):
             self.assertEqual(add[add.index("802-11-wireless-security.pmf") + 1], "1")
         self.assertEqual(len([a for a in self.rec.argvs("nmcli", "connection", "add") if "fet-test" in a or "fet-wifi" in a]), 2)
 
+    def test_a_new_name_reaches_mdns(self):
+        s = self.sys()
+        (self.root / "etc").mkdir(exist_ok=True)
+        (self.root / "etc/hosts").write_text("127.0.0.1\tlocalhost\n127.0.1.1\tfetmonitor\n")
+        s.set_hostname("range")
+        calls = [a for a, _ in self.rec.calls]
+        self.assertLess(calls.index(["hostnamectl", "set-hostname", "range"]), calls.index(["systemctl", "try-restart", "avahi-daemon.service"]),
+                        "avahi announces the new name only once restarted (range.local)")
+        self.assertIn("127.0.1.1\trange", (self.root / "etc/hosts").read_text())
+
     def test_facts_name_the_wifi_network(self):
         """This Pi showed "WiFi fet-wifi" (NetworkManager's name for it): it shows the network's own name now."""
         s = self.sys({("nmcli", "-t", "-f", "NAME,TYPE,DEVICE"): (0, "fet-wifi:802-11-wireless:wlan0\nWired connection 1:802-3-ethernet:eth0\n"),
@@ -232,7 +242,7 @@ class Commands(unittest.TestCase):
         s.set_clock(1_800_000_000_500)
         self.assertEqual(self.rec.argvs("date")[0], ["date", "-u", "-s", "@1800000000"])
         s.set_ssh(False)
-        self.assertEqual(self.rec.argvs("systemctl")[0], ["systemctl", "disable", "--now", "ssh"])
+        self.assertIn(["systemctl", "disable", "--now", "ssh"], self.rec.argvs("systemctl"))
         s.set_range_password("range-pass")
         argv, stdin = self.rec.calls[-1]
         self.assertEqual((argv[:4], argv[-4:], stdin), (["runuser", "-u", "fet-monitor", "--"], ["set-password", "--password-stdin", "--data-dir", "/var/lib/fet-monitor"],

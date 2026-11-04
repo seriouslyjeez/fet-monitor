@@ -143,6 +143,7 @@ function summary() {
   return '<h1>Write this down</h1><section><p>FeT Monitor</p><p class="big">' + (s.url ? esc(s.url) : 'address: see the club router') + '</p>' +
     '<p>Each target\'s setup needs:</p><div class="box">Server address: <b>' + esc(s.address || '—') + '</b><br>Device token:<div class="token">' + esc(s.token || '—') + '</div></div>' +
     (own ? '<p>Targets and phones join the WiFi <b>' + esc(s.ssid) + '</b>.</p>' : '') +
+    (s.hostname ? '<p class="mut">Phones and laptops can usually also open <b>http://' + esc(s.hostname) + '.local:8080/</b>. Targets need the address above.</p>' : '') +
     (s.ssh ? '<p class="mut">SSH is on for <b>' + esc(s.admin) + '</b>.</p>' : '') + '</section>' +
     '<section><h2>Switch the Pi to its network</h2><p>This setup network then goes away. ' +
     (own ? 'Join <b>' + esc(s.ssid) + '</b> on this phone and open the address above.'

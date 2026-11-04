@@ -1,8 +1,14 @@
 <?xml version="1.0" standalone='no'?>
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-<!-- Lets targets find the server by name: copy to /etc/avahi/services/fet-monitor.service -->
+<!-- FeT Monitor on this Pi, for mDNS (install.sh copies it to /etc/avahi/services/fet-monitor.service). The Pi itself
+     answers as <hostname>.local; _http lets phones and browsers list it, _fetmonitor is for programs. -->
 <service-group>
   <name replace-wildcards="yes">FeT Monitor on %h</name>
+  <service>
+    <type>_http._tcp</type>
+    <port>8080</port>
+    <txt-record>path=/</txt-record>
+  </service>
   <service>
     <type>_fetmonitor._tcp</type>
     <port>8080</port>

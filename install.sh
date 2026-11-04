@@ -275,6 +275,11 @@ install_units() {
   fi
   [ "$IMAGE" -eq 1 ] || systemctl daemon-reload            # a chroot has no running systemd; enable still works
   systemctl enable fet-monitor.service fet-monitor-backup.timer fet-monitor-update.path fet-setup.service fet-system.path fet-os-update.timer >/dev/null 2>&1
+  if [ -f "$R/lib/systemd/system/avahi-daemon.service" ] || [ -f "$R/usr/lib/systemd/system/avahi-daemon.service" ]; then
+    systemctl enable avahi-daemon.service >/dev/null 2>&1 || true       # <hostname>.local for shooters' phones and laptops
+  else
+    warn "avahi-daemon is not installed: <name>.local will not find this Pi (sudo apt install avahi-daemon libnss-mdns)"
+  fi
   info "installed and enabled: fet-monitor.service, fet-monitor-backup.timer (nightly backup),"
   info "fet-monitor-update.path (installs signed updates requested from Range Control),"
   info "fet-setup.service (setup network on first start, or when the Pi finds no network),"

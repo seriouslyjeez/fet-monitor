@@ -923,6 +923,7 @@ function systemPanel(v, rc) {                   // Range Control: the Pi itself 
   const conn = (f.connections || []).map(c => '<li>' + (c.type === 'cable' ? 'Cable' : c.own ? 'Own range network' : c.setup ? 'Setup network' : 'WiFi') +
     (c.type === 'cable' ? '' : ' <b>' + esc(c.ssid || c.name) + '</b>') +                 // the network's name, not NetworkManager's
     (c.lease ? ': ' + esc(c.lease.ip) + (c.lease.gateway ? ', router ' + esc(c.lease.gateway) : '') : c.own ? ': 10.42.0.1' : '') + '</li>').join('');
+  const mdns = f.hostname ? '<p class="mut">Phones and laptops can usually also reach FeT Monitor as <b>http://' + esc(f.hostname) + '.local:8080/</b> (targets need the IP address).</p>' : '';
   const netForm = '<div class="seg">' + [['cable', 'Cable'], ['wifi', 'Club WiFi'], ['own', 'Own range network']].map(([k, l]) =>
       '<button data-act="rcsysmode" data-v="' + k + '" class="' + (n.mode === k ? 'sel' : '') + '">' + l + '</button>').join('') + '</div>' +
     (n.mode === 'wifi' ? '<label>WiFi <select id="sy_ssid"><option value="">choose…</option>' + (v.networks || []).map(w => '<option' + (w.ssid === kept.sy_ssid ? ' selected' : '') + '>' + esc(w.ssid) + '</option>').join('') +
@@ -944,7 +945,7 @@ function systemPanel(v, rc) {                   // Range Control: the Pi itself 
     '<button data-act="rcsys" data-a="timezone"' + dis + '>Save</button></div>' +
     '<p>Clock: <b>' + esc(new Date(v.clock_ms).toLocaleString()) + '</b> ' + (f.ntp ? '<span class="mut">(from the internet)</span>'
       : (skew ? '<span class="bad">differs from this device</span> ' : '') + '<button data-act="rcsys" data-a="clock"' + dis + '>Set from this device</button>') + '</p>' +
-    '<h4>Network</h4><ul>' + (conn || '<li class="mut">none</li>') + '</ul>' + netForm +
+    '<h4>Network</h4><ul>' + (conn || '<li class="mut">none</li>') + '</ul>' + mdns + netForm +
     '<h4>Access</h4><div class="bulk"><span>SSH is <b>' + (f.ssh ? 'on' : 'off') + '</b></span><button data-act="rcsys" data-a="ssh" data-on="' + (f.ssh ? '0' : '1') + '"' + dis + '>Turn SSH ' + (f.ssh ? 'off' : 'on') + '</button></div>' +
     '<div class="bulk"><label>Admin login <input id="sy_user" size="12" autocapitalize="none" value="' + val('sy_user') + '"></label> <label>New password <input id="sy_upw" type="password" autocomplete="new-password" value="' + val('sy_upw') + '"></label>' +
     '<button data-act="rcsys" data-a="admin"' + dis + '>Set</button></div>' +

@@ -332,6 +332,7 @@ class System:
         tmp = hosts.with_suffix(".fet-tmp")
         tmp.write_text("\n".join(lines) + "\n")
         os.replace(tmp, hosts)
+        self.run(["systemctl", "try-restart", "avahi-daemon.service"], check=False)   # it announces the old name until then
 
     def set_admin(self, user: str, password: str) -> None:
         """The admin login: created if new (sudo rights), its password set."""
