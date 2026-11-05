@@ -111,8 +111,8 @@ A new FeT Bridge (an ESP-01 or ESP-01S) can get its firmware from the Pi itself:
 programmer has a switch, set it to PROG or UART), plug it into a USB port of the Pi, open **Range Control → Flash a
 device**, press **Identify**, then **Install FeT Bridge**. The Pi uses the newest FeT Bridge image it has for that
 module's flash size (*Check GitHub for FeT Bridge firmware* first if it has none). The first time, the module's
-original firmware is saved (you can download it from the same page) and the chip is erased. The target's Arduino
-Mega (with its freETarget version) and the ESP32 (version 5/6) boards are recognised but not flashed here yet.
+original firmware is saved (you can download it from the same page) and the chip is erased. Target boards (the
+Arduino Mega and the ESP32 board) get their firmware here too: see 7b.
 
 **Configure it at the same time** (FeT Bridge 0.3.0 and newer): fill in *Settings for the target* (WiFi name and
 password, the target's name; this Pi's address is filled in) before pressing Install, and the module is set up over
@@ -126,6 +126,19 @@ programmer and plug it in again within a minute and a half (the Pi waits for it)
 
 **1 MB or 4 MB?** The original ESP-01 (1 MB) runs FeT Bridge on your own network. A 4 MB ESP-01S costs a few dollars
 more and leaves room for remote management over HTTPS (planned), so buy 4 MB modules for new targets.
+
+## 7b. FeT target firmware on a target board
+
+**Always connect the target's 12 V supply.** A target board is built to run from its 12 V supply. Its USB port is for
+flashing and setting it up, not for running it. An ESP32 board on USB power alone still starts, lights its LEDs and
+joins the WiFi, so it looks fine, but its WiFi works badly: most of its reports to the Pi fail, it answers pings
+seconds late, and it shows as offline for minutes at a time (seen on board B59, 2026-11). The status LED for 12 V
+(the first of the three) is red when the 12 V is missing. Keep the 12 V connected while the board is on USB, too.
+
+The board's own firmware is installed from **Range Control → Flash a device**: plug the board's USB into the Pi,
+press **Identify**, then install. The first install saves the board's original firmware (it can be put back from the
+same page) and gives the board its key. Fill in *Settings for the target* (WiFi name and password, the target's name)
+to set up its WiFi over USB at the same time. Later updates go over WiFi from **Range Control → Firmware**.
 
 ## 8. Rulebooks on the Pi
 
@@ -342,6 +355,11 @@ backup as above is the fix.
 **Remove FeT Monitor.** `sudo ./install.sh --uninstall` removes the program and service but keeps the database,
 backups, token and password (re-running the installer brings everything back).
 `sudo ./install.sh --uninstall --purge` also deletes all data, after asking you to type `DELETE`.
+
+**An ESP32 target keeps going offline, or its reports fail.** Check that its 12 V supply is connected (the first
+status LED is green). On USB power alone the board's WiFi works badly although everything else seems to run (7b).
+Range Control → Target settings → the target → *Device* shows its WiFi signal, how many of its reports failed, and
+why it last started.
 
 **The setup network `FeTMonitor-Setup-XXXX` does not appear.** Wait 3 minutes after power-on. It appears on the
 first start of a new card, and later only when the Pi finds no network. If the Pi still has its network (for example

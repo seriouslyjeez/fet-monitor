@@ -19,7 +19,7 @@ namespace fete {
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000
 #ifndef FET_WIFI_STA_11B
-#define FET_WIFI_STA_11B 1                  // 1: the station joins in 802.11b only (test build 0.2.4); 0: 802.11b/g
+#define FET_WIFI_STA_11B 0                  // 1: the station joins in 802.11b only (test build 0.2.4); 0: 802.11b/g
 #endif
 #define FET_SILENT_REJOIN_MS 60000UL        // FeT Monitor silent this long: drop the WiFi and join again ...
 #define FET_REJOIN_MAX_MS 600000UL          // ... waiting twice as long each time, up to 10 min
