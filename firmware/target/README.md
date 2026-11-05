@@ -23,11 +23,13 @@ the position (fetserver/shotsolve.py). Plan and review of the upstream code: doc
   then copy `fet_target_esp32.ino.merged.bin` to `dist/target-firmware/fet-target-esp32-<version>.bin`.
 - `test/` the PC harness and a Mega compile check.
 
-**Power: the 12 V supply must always be connected in normal operation.** USB is for flashing and setup. On USB power
-alone the ESP32 board starts and joins the WiFi, but its WiFi works badly: on B59 (2026-11-05), 9 of 10 reports to
-FeT Monitor could not connect, the board answered ARP 2.8 s late and pings in 0.06-5 s with 69 % lost, while power
-save was off and both cores were 95 % idle. With the 12 V connected it worked normally. The first status LED (V12) is
-red without it.
+**Power: the 12 V supply must always be connected in normal operation.** USB is for flashing and setup; on USB alone
+the lights, paper drive and microphone circuits are not powered as designed. The first status LED (V12) is red
+without it.
+
+Open (2026-11-05): B59's WiFi reports to FeT Monitor mostly fail ("could not connect"), the board answers ARP 2.8 s
+late and pings in 0.06-5 s with 69 % lost, with power save off and both cores 95 % idle; an ESP-01 beside it answers in
+7-45 ms. Not fixed by 802.11b (test build 0.2.4) nor by connecting the 12 V (9 of 10 failed on USB, 12 of 21 with 12 V).
 
 On hardware (2026-11): the Mega board 3.1 and the ESP32 board B59 (WiFi, commands, OTA, rollback, a tampered image
 refused). Open: phones (iPhone) get no address from the ESP32's setup network (also with upstream's own); set the

@@ -120,7 +120,7 @@ Keeping the Pi's software up to date:
 - [ ] A programmer WITHOUT PROG mode set: *Identify* explains the switch.
 - [ ] The target's Arduino Mega by USB: identified as a Mega (no flashing); it keeps running afterwards.
 - [ ] The ESP-01 programmer and the Mega both have enough power from the Pi's USB ports (otherwise note the powered hub).
-- [ ] A target board in normal operation has its 12 V supply connected (USB alone: the ESP32 board's WiFi fails).
+- [ ] A target board in normal operation has its 12 V supply connected (the first status LED is green).
 - [ ] FeT Bridge 0.3.0 (export it first): with the settings filled in, *Install* on an **auto-reset** programmer ends
       "installed and verified and configured (fet-xxxxxx)"; the module joins the WiFi and appears under Targets.
       Note whether the reset pulse (RTS) restarted it, or esptool's own hard reset already had.

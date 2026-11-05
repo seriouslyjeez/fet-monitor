@@ -130,10 +130,10 @@ more and leaves room for remote management over HTTPS (planned), so buy 4 MB mod
 ## 7b. FeT target firmware on a target board
 
 **Always connect the target's 12 V supply.** A target board is built to run from its 12 V supply. Its USB port is for
-flashing and setting it up, not for running it. An ESP32 board on USB power alone still starts, lights its LEDs and
-joins the WiFi, so it looks fine, but its WiFi works badly: most of its reports to the Pi fail, it answers pings
-seconds late, and it shows as offline for minutes at a time (seen on board B59, 2026-11). The status LED for 12 V
-(the first of the three) is red when the 12 V is missing. Keep the 12 V connected while the board is on USB, too.
+flashing and setting it up, not for running it: on USB alone a board starts, lights its status LEDs and joins the
+WiFi, so it looks fine, but its lights, paper drive and microphone circuits are not powered as designed. The status
+LED for 12 V (the first of the three) is red when the 12 V is missing. Keep the 12 V connected while the board is on
+USB, too.
 
 The board's own firmware is installed from **Range Control → Flash a device**: plug the board's USB into the Pi,
 press **Identify**, then install. The first install saves the board's original firmware (it can be put back from the
@@ -357,9 +357,8 @@ backups, token and password (re-running the installer brings everything back).
 `sudo ./install.sh --uninstall --purge` also deletes all data, after asking you to type `DELETE`.
 
 **An ESP32 target keeps going offline, or its reports fail.** Check that its 12 V supply is connected (the first
-status LED is green). On USB power alone the board's WiFi works badly although everything else seems to run (7b).
-Range Control → Target settings → the target → *Device* shows its WiFi signal, how many of its reports failed, and
-why it last started.
+status LED is green; 7b). Range Control → Target settings → the target → *Device* shows its WiFi signal, how many of
+its reports failed and how, and why it last started.
 
 **The setup network `FeTMonitor-Setup-XXXX` does not appear.** Wait 3 minutes after power-on. It appears on the
 first start of a new card, and later only when the Pi finds no network. If the Pi still has its network (for example
