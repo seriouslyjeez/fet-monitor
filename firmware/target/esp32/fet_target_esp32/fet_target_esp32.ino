@@ -38,7 +38,10 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.4"
+#define FW_VERSION "0.2.5"
+#ifndef FET_OSC_TEST_OFF
+#define FET_OSC_TEST_OFF 1      // 1: TEST BUILD 0.2.5, the 10 MHz clock is never switched on (shots cannot be timed): does
+#endif                          // the clock alone disturb the WiFi? (asleep the WiFi was clean, awake it was not, 2026-11-05)
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;
@@ -113,7 +116,7 @@ struct Esp32Counters : tgt::CounterHw {
     gpio_set_level((gpio_num_t)PIN_STOP_N, 0);
     gpio_set_level((gpio_num_t)PIN_OSC, 0);
     for (int i = 0; i < 4; i++) pcnt_unit_clear_count(pcnt[i]);
-    gpio_set_level((gpio_num_t)PIN_OSC, 1);
+    gpio_set_level((gpio_num_t)PIN_OSC, FET_OSC_TEST_OFF ? 0 : 1);
     gpio_set_level((gpio_num_t)PIN_STOP_N, 1);
   }
 };
