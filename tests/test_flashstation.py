@@ -945,6 +945,9 @@ class Esp32(Case):
         self.assertIn("230400", self.esptool_args("flash_id")[0], "the board's FTDI link garbles faster transfers")
         r = self.station32(FakeEsp32("fet", fw="0.2.0", key_fp="ab12cd34")).identify("/dev/ttyUSB0")
         self.assertEqual((r["running"], r["key_fp"], r["same"], r["can_key"]), ("0.2.0", "ab12cd34", True, True))
+        self.assertIn("FeT target 0.2.0 (key ab12cd34)", r["label"], "as on a Mega")
+        r = self.station32(FakeEsp32("fet", fw="0.2.0", key_fp=None)).identify("/dev/ttyUSB0")
+        self.assertIn("FeT target 0.2.0 (no key yet)", r["label"])
 
     def test_first_install_saves_writes_keys_and_configures(self):
         board = FakeEsp32("upstream")

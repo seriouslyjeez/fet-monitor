@@ -284,8 +284,8 @@ class FlashStation:
     def _esp32_found(self, port: str, chip: str, mac: str, size: int) -> dict:
         running, key = self._esp32_hello(port)
         res = {"port": port, "device": "esp32", "chip": chip, "mac": mac, "flash_size": size, "running": running, "key_fp": key,
-               "label": f"{chip} board ({flash_label(size)} flash), " + (f"FeT target {running}" if running else
-                                                                          "not FeT target firmware (first install)"),
+               "label": f"{chip} board ({flash_label(size)} flash), " + (f"FeT target {running} (" + (f"key {key}" if key else "no key yet") + ")"
+                                                                          if running else "not FeT target firmware (first install)"),
                "can_key": running is not None, "configurable": running is not None}
         best = self.esp32_images.best() if self.esp32_images is not None else None
         if chip != "ESP32-S3" or size != ESP32_FULL:
