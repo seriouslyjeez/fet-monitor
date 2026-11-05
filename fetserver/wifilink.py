@@ -31,7 +31,10 @@ REASONS = {1: "unspecified", 2: "authentication expired", 3: "the router ended i
            211: "no access point within the authentication threshold", 212: "no access point within the signal threshold"}
 
 INTS = ("reset", "drops", "reason", "last_drop_ms", "down_ms", "longest_ms", "bssid_changes", "ch",
-        "rejoins", "posts", "post_fail_connect", "post_fail_reply", "post_max_ms")
+        "rejoins", "posts", "post_fail_connect", "post_fail_reply", "post_max_ms",
+        "ps", "ap", "loop_max_ms", "idle0", "idle1", "top_pct")     # 0.2.3: power save, setup network, CPU, network task
+PS = {0: "off", 1: "on (minimum)", 2: "on (maximum)"}
+TASK_RE = re.compile(r"^[A-Za-z0-9_ -]{1,16}$")
 RESTARTS = {"net_stuck": "its network task was stuck for 3 minutes", "no_wifi": "it had no WiFi for 20 minutes"}
 BSSID_RE = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
 
@@ -46,6 +49,8 @@ def clean(link) -> Optional[dict]:
         out["bssid"] = b
     if link.get("restart_why") in RESTARTS:                 # the board restarted itself (its WiFi safety net)
         out["restart_why"] = link["restart_why"]
+    if isinstance(link.get("top"), str) and TASK_RE.match(link["top"]):
+        out["top"] = link["top"]
     return out or None
 
 
@@ -59,6 +64,8 @@ def view(link: Optional[dict], uptime_ms: Optional[int] = None) -> Optional[dict
         v["reset_trouble"] = link["reset"] in TROUBLE_RESETS
     if link.get("restart_why") in RESTARTS:
         v["reset_name"], v["reset_trouble"] = "its WiFi safety net: " + RESTARTS[link["restart_why"]], True
+    if "ps" in link:
+        v["ps_name"] = PS.get(link["ps"], f"code {link['ps']}")
     if link.get("posts"):
         v["post_failed"] = link.get("post_fail_connect", 0) + link.get("post_fail_reply", 0)
     if link.get("drops"):

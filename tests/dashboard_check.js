@@ -531,6 +531,10 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
   assert(R.includes('Reports to FeT Monitor: 120, <b class="bad">7 failed</b>') && R.includes('5 could not connect, 2 no complete reply') &&
          R.includes('slowest 9.1 s') && R.includes('joined the WiFi again 1 time after'));
   assert(X.linkLines({rssi: -60, link: {drops: 0, posts: 3, post_failed: 0, post_max_ms: 40}}).includes('none failed'));
+  const B = X.linkLines({rssi: -60, link: {ps: 1, ps_name: 'on (minimum)', ap: 1, idle0: 4, idle1: 96, top: 'esp_timer', top_pct: 71, loop_max_ms: 3900}});
+  assert(B.includes('WiFi power save <b class="bad">on (minimum)</b>') && B.includes('its setup network is open') &&
+         B.includes('core 0 4 %, core 1 96 %') && B.includes('busiest task esp_timer 71 %') && B.includes('longest network turn 3900 ms'));
+  assert(X.linkLines({rssi: -60, link: {ps: 0, ps_name: 'off', ap: 0}}).includes('WiFi power save off'));
   assert(!X.linkLines({rssi: -55, link: null}).includes('drop') && X.linkLines({rssi: null, link: null}) === '', 'an ESP-01: the signal only');
 }
 // TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>

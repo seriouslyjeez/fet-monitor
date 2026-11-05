@@ -5,6 +5,8 @@
 #include <esp_mac.h>
 #include <esp_system.h>
 #include <esp_wifi.h>
+#include <freertos/task.h>
+#include <map>
 #include <Update.h>
 #include <tgt_sha256.h>
 
@@ -138,6 +140,8 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   silence_.start(nowMs());
   WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
     if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) lastReason = info.wifi_sta_disconnected.reason;
+    if (e == ARDUINO_EVENT_WIFI_STA_GOT_IP) esp_wifi_set_ps(WIFI_PS_NONE);   // awake, whatever the core did before (its
+                                                                            // default on the S3 is power save)
   });
   WiFi.persistent(false);                         // our settings live in /config.json, not the SDK's NVS
   WiFi.setHostname(hostname.c_str());
@@ -181,8 +185,46 @@ void WifiNet::watch(uint64_t now, uint64_t lastOkMs, bool portalOpen) {
   lastBegin_ = now;
 }
 
+// Where the CPU time went since the last call (FreeRTOS run-time counters, CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS):
+// each core's idle share and the busiest task other than the idle ones. Called from the network task only.
+static std::string cpuJson() {
+  static std::map<TaskHandle_t, configRUN_TIME_COUNTER_TYPE> last;
+  static configRUN_TIME_COUNTER_TYPE lastTotal = 0;
+  UBaseType_t n = uxTaskGetNumberOfTasks() + 4;
+  TaskStatus_t* t = (TaskStatus_t*)malloc(n * sizeof(TaskStatus_t));
+  if (!t) return std::string();
+  configRUN_TIME_COUNTER_TYPE total = 0;
+  n = uxTaskGetSystemState(t, n, &total);
+  uint64_t span = total - lastTotal;            // microseconds of one core (the counter is esp_timer time)
+  std::map<TaskHandle_t, configRUN_TIME_COUNTER_TYPE> now;
+  uint64_t idle[2] = {0, 0}, topD = 0;
+  std::string top;
+  for (UBaseType_t i = 0; i < n; i++) {
+    configRUN_TIME_COUNTER_TYPE prev = last.count(t[i].xHandle) ? last[t[i].xHandle] : t[i].ulRunTimeCounter;
+    uint64_t d = t[i].ulRunTimeCounter - prev;
+    now[t[i].xHandle] = t[i].ulRunTimeCounter;
+    const char* nm = t[i].pcTaskName;
+    if (strncmp(nm, "IDLE", 4) == 0) { int c = nm[4] == '1' ? 1 : 0; idle[c] += d; continue; }
+    if (d > topD) { topD = d; top = nm; }
+  }
+  free(t);
+  bool first = lastTotal == 0;
+  last.swap(now);
+  lastTotal = total;
+  if (first || span == 0) return std::string();
+  std::string safe;
+  for (char ch : top) if (isalnum((unsigned char)ch) || ch == '_' || ch == '-' || ch == ' ') safe += ch;
+  auto pct = [&](uint64_t d) { return std::to_string((unsigned)(d * 100 / span > 100 ? 100 : d * 100 / span)); };
+  return ",\"idle0\":" + pct(idle[0]) + ",\"idle1\":" + pct(idle[1]) + ",\"top\":\"" + safe.substr(0, 16) + "\",\"top_pct\":" + pct(topD);
+}
+
 std::string WifiNet::linkJson() {
   uint64_t now = nowMs(), down = downMs_ + (droppedAt_ ? now - droppedAt_ : 0);
+  wifi_ps_type_t ps = WIFI_PS_NONE;
+  bool psOk = esp_wifi_get_ps(&ps) == ESP_OK;
+  std::string extra = std::string(psOk ? ",\"ps\":" + std::to_string((int)ps) : "") + ",\"ap\":" + ((WiFi.getMode() & WIFI_AP) ? "1" : "0") +
+                      ",\"loop_max_ms\":" + std::to_string((unsigned long)loopMaxMs_);
+  loopMaxMs_ = 0;                               // the longest turn since this report
   char mac[18] = "";
   if (haveBssid_) snprintf(mac, sizeof mac, "%02x:%02x:%02x:%02x:%02x:%02x", bssid_[0], bssid_[1], bssid_[2], bssid_[3], bssid_[4], bssid_[5]);
   return std::string("{\"reset\":") + std::to_string(reset_) + ",\"drops\":" + std::to_string((unsigned long)drops_) +
@@ -192,7 +234,7 @@ std::string WifiNet::linkJson() {
          ",\"ch\":" + std::to_string((int)(wifiUp() ? WiFi.channel() : 0)) + ",\"rejoins\":" + std::to_string((unsigned long)rejoins_) +
          ",\"posts\":" + std::to_string((unsigned long)posts_) + ",\"post_fail_connect\":" + std::to_string((unsigned long)failConnect_) +
          ",\"post_fail_reply\":" + std::to_string((unsigned long)failReply_) + ",\"post_max_ms\":" + std::to_string((unsigned long)postMaxMs_) +
-         (restartWhy_.empty() ? std::string() : ",\"restart_why\":\"" + restartWhy_ + "\"") + "}";
+         (restartWhy_.empty() ? std::string() : ",\"restart_why\":\"" + restartWhy_ + "\"") + extra + cpuJson() + "}";
 }
 
 bool WifiNet::wifiUp() const { return WiFi.status() == WL_CONNECTED; }

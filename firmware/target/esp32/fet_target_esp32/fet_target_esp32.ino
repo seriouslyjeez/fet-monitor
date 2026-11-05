@@ -38,7 +38,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.2"
+#define FW_VERSION "0.2.3"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;
@@ -304,6 +304,9 @@ static volatile uint32_t netAliveS = 0;                                    // th
 static void netTask(void*) {                                               // the bridge: may wait seconds on the network
   for (;;) {
     uint64_t now = fete::nowMs();
+    static uint64_t prevTurn = 0;
+    if (prevTurn) net->noteLoop((uint32_t)(now - prevTurn));                // the last turn, its 2 ms pause included
+    prevTurn = now;
     netAliveS = (uint32_t)(now / 1000);
     std::string b = toBridge.take();
     for (size_t i = 0; i < b.size(); i++) bridge->onByte((uint8_t)b[i], now);

@@ -25,6 +25,10 @@ class Link(unittest.TestCase):
         self.assertEqual((v["reset_name"], v["reset_trouble"], v["post_failed"]), ("its WiFi safety net: it had no WiFi for 20 minutes", True, 5))
         self.assertNotIn("restart_why", W.clean({"restart_why": "boom", "drops": 1}), "only the two the firmware sends")
         self.assertEqual(W.clean({"rejoins": 2, "restart_why": "net_stuck"}), {"rejoins": 2, "restart_why": "net_stuck"})
+        c = W.clean({"ps": 1, "ap": 0, "idle0": 3, "idle1": 97, "top": "wifi", "top_pct": 80, "loop_max_ms": 4100})
+        self.assertEqual(c, {"ps": 1, "ap": 0, "idle0": 3, "idle1": 97, "top": "wifi", "top_pct": 80, "loop_max_ms": 4100})
+        self.assertEqual(W.view(c)["ps_name"], "on (minimum)")
+        self.assertNotIn("top", W.clean({"top": "<script>", "ps": 0}), "a task name is letters, digits, _ - and space")
 
     def test_the_codes_are_esp_idfs(self):
         """Spot checks against esp_wifi_types_generic.h and esp_system.h (Arduino-ESP32 3.3.12)."""

@@ -76,6 +76,7 @@ class WifiNet : public fet::Net {
   void watch(uint64_t now, uint64_t lastOkMs, bool portalOpen);
   uint32_t noWifiSinceS() const { return noWifiSinceS_; }   // seconds since start when the WiFi went (0 = up); any task
   void setRestartWhy(const std::string& why) { restartWhy_ = why; }
+  void noteLoop(uint32_t ms) { if (ms > loopMaxMs_) loopMaxMs_ = ms; }   // one turn of the network task took this long
  private:
   bool resolveServer(uint64_t now);
   const fet::Config& cfg_;
@@ -96,7 +97,8 @@ class WifiNet : public fet::Net {
   uint32_t posts_ = 0, failConnect_ = 0, failReply_ = 0, postMaxMs_ = 0;   // every request to FeT Monitor since the start
   fet::SilenceWatch silence_{FET_SILENT_REJOIN_MS, FET_REJOIN_MAX_MS};
   volatile uint32_t noWifiSinceS_ = 0;
-  std::string restartWhy_;                        // "net_stuck" / "no_wifi" when the board restarted itself, else ""
+  std::string restartWhy_;
+  uint32_t loopMaxMs_ = 0;                        // the network task's longest turn since the last report                        // "net_stuck" / "no_wifi" when the board restarted itself, else ""
 };
 
 // Commands from the server to the target: queued for the main loop, which answers through toBridge.
