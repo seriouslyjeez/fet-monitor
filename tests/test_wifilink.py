@@ -28,6 +28,8 @@ class Link(unittest.TestCase):
         c = W.clean({"ps": 1, "ap": 0, "idle0": 3, "idle1": 97, "top": "wifi", "top_pct": 80, "loop_max_ms": 4100})
         self.assertEqual(c, {"ps": 1, "ap": 0, "idle0": 3, "idle1": 97, "top": "wifi", "top_pct": 80, "loop_max_ms": 4100})
         self.assertEqual(W.view(c)["ps_name"], "on (minimum)")
+        self.assertEqual((W.view({"phy": 1})["phy_name"], W.view({"phy": 3})["phy_name"], W.view({"phy": 7})["phy_name"]),
+                         ("802.11b", "802.11b/g", "802.11b/g/n"))
         self.assertNotIn("top", W.clean({"top": "<script>", "ps": 0}), "a task name is letters, digits, _ - and space")
 
     def test_the_codes_are_esp_idfs(self):

@@ -974,7 +974,7 @@ function linkLines(t) {                          // the WiFi link: signal; for E
   if (L && L.posts) out.push('Reports to FeT Monitor: ' + esc(L.posts) + ', ' + (L.post_failed ? '<b class="bad">' + esc(L.post_failed) + ' failed</b> <span class="mut">(' +
     esc(L.post_fail_connect || 0) + ' could not connect, ' + esc(L.post_fail_reply || 0) + ' no complete reply)</span>' : 'none failed') +
     ' <span class="mut">· slowest ' + esc(((L.post_max_ms || 0) / 1000).toFixed(1)) + ' s' + (L.rejoins ? ' · joined the WiFi again ' + esc(L.rejoins) + ' time' + (L.rejoins === 1 ? '' : 's') + ' after FeT Monitor went silent' : '') + '</span>');
-  if (L && (L.ps_name || L.idle0 != null)) out.push('Board: WiFi power save ' + (L.ps && L.ps !== 0 ? '<b class="bad">' + esc(L.ps_name) + '</b>' : esc(L.ps_name || '?')) +
+  if (L && (L.ps_name || L.idle0 != null)) out.push('Board: ' + (L.phy_name ? esc(L.phy_name) + ' · ' : '') + (t.fet_target && t.fet_target.asleep ? 'asleep (10 MHz clock off) · ' : '') + 'WiFi power save ' + (L.ps && L.ps !== 0 ? '<b class="bad">' + esc(L.ps_name) + '</b>' : esc(L.ps_name || '?')) +
     (L.ap ? ' · <b>its setup network is open</b>' : '') +
     (L.idle0 != null ? ' <span class="mut">· CPU idle: core 0 ' + esc(L.idle0) + ' %, core 1 ' + esc(L.idle1) + ' %' + (L.top ? ' · busiest task ' + esc(L.top) + ' ' + esc(L.top_pct) + ' %' : '') + '</span>' : '') +
     (L.loop_max_ms != null ? ' <span class="mut">· longest network turn ' + esc(L.loop_max_ms) + ' ms</span>' : ''));

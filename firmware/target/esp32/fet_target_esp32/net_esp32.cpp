@@ -152,8 +152,8 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   // 802.11b/g as the ESP-01 (FET_WIFI_PHY_G): on the author's ASUS ZenWiFi an 802.11n link let the ESP-01 join but not
   // get through (firmware 0.1.14), and this board's heartbeats came minutes apart where the ESP-01's never did (2026-11-05)
   if (cfg_.wifiConfigured()) {                    // (the station side exists only then)
-    esp_err_t pe = esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
-    say("WiFi options: ", std::string("sleep off, 802.11b/g") + (pe == ESP_OK ? "" : " (not set: " + std::string(esp_err_to_name(pe)) + ")"));
+    esp_err_t pe = esp_wifi_set_protocol(WIFI_IF_STA, FET_WIFI_STA_11B ? WIFI_PROTOCOL_11B : WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
+    say("WiFi options: ", std::string(FET_WIFI_STA_11B ? "sleep off, 802.11b only" : "sleep off, 802.11b/g") + (pe == ESP_OK ? "" : " (not set: " + std::string(esp_err_to_name(pe)) + ")"));
   }
   WiFi.setAutoReconnect(true);
   if (!cfg_.wifiConfigured()) return;
@@ -222,7 +222,9 @@ std::string WifiNet::linkJson() {
   uint64_t now = nowMs(), down = downMs_ + (droppedAt_ ? now - droppedAt_ : 0);
   wifi_ps_type_t ps = WIFI_PS_NONE;
   bool psOk = esp_wifi_get_ps(&ps) == ESP_OK;
-  std::string extra = std::string(psOk ? ",\"ps\":" + std::to_string((int)ps) : "") + ",\"ap\":" + ((WiFi.getMode() & WIFI_AP) ? "1" : "0") +
+  uint8_t proto = 0;
+  bool protoOk = esp_wifi_get_protocol(WIFI_IF_STA, &proto) == ESP_OK;
+  std::string extra = std::string(psOk ? ",\"ps\":" + std::to_string((int)ps) : "") + (protoOk ? ",\"phy\":" + std::to_string((int)proto) : "") + ",\"ap\":" + ((WiFi.getMode() & WIFI_AP) ? "1" : "0") +
                       ",\"loop_max_ms\":" + std::to_string((unsigned long)loopMaxMs_);
   loopMaxMs_ = 0;                               // the longest turn since this report
   char mac[18] = "";

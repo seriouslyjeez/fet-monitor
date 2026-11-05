@@ -535,6 +535,7 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
   assert(B.includes('WiFi power save <b class="bad">on (minimum)</b>') && B.includes('its setup network is open') &&
          B.includes('core 0 4 %, core 1 96 %') && B.includes('busiest task esp_timer 71 %') && B.includes('longest network turn 3900 ms'));
   assert(X.linkLines({rssi: -60, link: {ps: 0, ps_name: 'off', ap: 0}}).includes('WiFi power save off'));
+  assert(X.linkLines({rssi: -60, fet_target: {asleep: true}, link: {phy_name: '802.11b', ps: 0, ps_name: 'off'}}).includes('Board: 802.11b · asleep (10 MHz clock off) · WiFi power save off'));
   assert(!X.linkLines({rssi: -55, link: null}).includes('drop') && X.linkLines({rssi: null, link: null}) === '', 'an ESP-01: the signal only');
 }
 // TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>

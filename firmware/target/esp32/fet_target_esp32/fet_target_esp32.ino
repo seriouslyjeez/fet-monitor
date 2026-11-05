@@ -38,7 +38,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.3"
+#define FW_VERSION "0.2.4"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;
@@ -215,7 +215,7 @@ static SemaphoreHandle_t capLock;                                         // Cap
 static volatile uint32_t msTick = 0;
 static int16_t tempDeci = tgt::NO_TEMP;
 static bool lightsOff = false;
-static bool sleeping = false;                                              // lights and status LEDs out, shots ignored (not saved)
+static volatile bool sleeping = false;                                     // lights, status LEDs and the 10 MHz clock out, shots ignored
 static uint32_t shotFlashUntil = 0;
 
 struct Esp32Actions : tgt::Actions {
@@ -267,7 +267,14 @@ static volatile uint8_t comState = 0;                                     // 0 n
 static void lights() { ledcWrite(PIN_LED_PWM, sleeping || lightsOff ? 0 : (uint32_t)(settings.get(tgt::S_LED_PCT) * 4095L / 100)); }
 
 const char* Esp32Actions::sleep(bool on) {                                 // from the main loop (commands, the lights button)
+  // Asleep, the 10 MHz reference is off as well: nothing is timed, and its harmonics (2430 and 2440 MHz) lie inside
+  // WiFi channel 6, so sleeping against waking is also a test of whether it disturbs the board's WiFi. Waking arms the
+  // capture again, which starts it.
+  xSemaphoreTake(capLock, portMAX_DELAY);
   sleeping = on;
+  if (on) { gpio_set_level((gpio_num_t)PIN_OSC, 0); gpio_set_level((gpio_num_t)PIN_STOP_N, 0); }
+  else capture.begin(msTick);
+  xSemaphoreGive(capLock);
   if (!on) lightsOff = false;
   lights();
   if (on) statusLeds(OFF, OFF, OFF);                                       // awake: the loop lights them again within a second
@@ -289,7 +296,7 @@ void Esp32Actions::settingsChanged(const tgt::Settings& s) {
 static void onTick(void*) {                                                // 1 kHz, esp_timer task
   uint32_t ms = ++msTick;
   if (xSemaphoreTake(capLock, 0) != pdTRUE) return;                        // the loop holds it for a moment: next tick
-  capture.tick(ms, (uint32_t)esp_timer_get_time());
+  if (!sleeping) capture.tick(ms, (uint32_t)esp_timer_get_time());         // asleep: the clock stays off (no arming)
   xSemaphoreGive(capLock);
 }
 

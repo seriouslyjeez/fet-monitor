@@ -32,7 +32,7 @@ REASONS = {1: "unspecified", 2: "authentication expired", 3: "the router ended i
 
 INTS = ("reset", "drops", "reason", "last_drop_ms", "down_ms", "longest_ms", "bssid_changes", "ch",
         "rejoins", "posts", "post_fail_connect", "post_fail_reply", "post_max_ms",
-        "ps", "ap", "loop_max_ms", "idle0", "idle1", "top_pct")     # 0.2.3: power save, setup network, CPU, network task
+        "ps", "ap", "loop_max_ms", "idle0", "idle1", "top_pct", "phy")   # phy: 0.2.4, WIFI_PROTOCOL_11B 1 | 11G 2 | 11N 4     # 0.2.3: power save, setup network, CPU, network task
 PS = {0: "off", 1: "on (minimum)", 2: "on (maximum)"}
 TASK_RE = re.compile(r"^[A-Za-z0-9_ -]{1,16}$")
 RESTARTS = {"net_stuck": "its network task was stuck for 3 minutes", "no_wifi": "it had no WiFi for 20 minutes"}
@@ -64,6 +64,8 @@ def view(link: Optional[dict], uptime_ms: Optional[int] = None) -> Optional[dict
         v["reset_trouble"] = link["reset"] in TROUBLE_RESETS
     if link.get("restart_why") in RESTARTS:
         v["reset_name"], v["reset_trouble"] = "its WiFi safety net: " + RESTARTS[link["restart_why"]], True
+    if "phy" in link:
+        v["phy_name"] = "802.11" + "/".join(x for b, x in ((1, "b"), (2, "g"), (4, "n"), (8, "LR"), (16, "ax")) if link["phy"] & b)
     if "ps" in link:
         v["ps_name"] = PS.get(link["ps"], f"code {link['ps']}")
     if link.get("posts"):
