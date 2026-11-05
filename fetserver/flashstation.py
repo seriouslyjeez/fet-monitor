@@ -28,11 +28,13 @@ kept in the job (the page shows the job).
 from __future__ import annotations
 
 import binascii
+import importlib.util
 import json
 import os
 import re
 import secrets
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -41,6 +43,8 @@ from typing import Callable, Dict, List, Optional
 
 from .firmware import ID_RE, flash_label, version_tuple
 from .seriallink import SerialLink
+
+ESPTOOL_SHIM = str(Path(__file__).resolve().parent / "esptool_shim" / "run.py")   # esptool with the ESP32 stubs Debian leaves out
 
 SYS_TTY = "/sys/class/tty"
 BAUD = "230400"                        # 460800 garbled transfers: the ESP32 board's FTDI (B59) and an ESP-01 on a Pi 3 (2026-11)
@@ -166,6 +170,9 @@ def settings_line(settings: dict) -> bytes:
 def why_esptool(out: str) -> str:
     if re.search(r"Failed to connect|Timed out waiting for packet header|No serial data received", out, re.I):
         return "no answer from an ESP chip. On an ESP-01 programmer with a switch: set it to PROG (or UART), unplug and plug in again"
+    if re.search(r"stub_flasher_\w+\.json", out):
+        return ("this Pi's esptool has no stub flasher for this chip (Debian leaves the ESP32 ones out); "
+                "FeT Monitor brings them for esptool 4.7.0 only: " + (out.strip().splitlines() or ["?"])[-1][:160])
     if re.search(r"Permission denied|could not open port", out, re.I):
         return "the port could not be opened (in use, or no permission)"
     return (out.strip().splitlines() or ["?"])[-1][:200]
@@ -175,7 +182,9 @@ class FlashStation:
     def __init__(self, images, data_dir: Optional[Path], run: Runner = run_tool, sys_tty: str = SYS_TTY,
                  esptool: Optional[List[str]] = None, now: Callable[[], float] = time.time, background: bool = True,
                  opener: Callable[[str], SerialLink] = SerialLink, target_images=None,
-                 register_key: Optional[Callable[[bytes, str], str]] = None, esp32_images=None):
+                 register_key: Optional[Callable[[bytes, str], str]] = None, esp32_images=None,
+                 has_module: Callable[[str], bool] = lambda name: importlib.util.find_spec(name) is not None):
+        self.has_module = has_module
         self.images, self.run, self.sys_tty, self.now, self.background = images, run, sys_tty, now, background
         self.opener = opener
         self.target_images = target_images          # FeT target firmware for the Mega (targetfw.TargetFirmwareStore)
@@ -190,6 +199,8 @@ class FlashStation:
 
     # ------------------------------------------------------------------------------------- tools
     def _esptool(self) -> List[str]:
+        if self.esptool is None and self.has_module("esptool"):
+            self.esptool = [sys.executable, ESPTOOL_SHIM]   # the installed esptool, through esptool_shim/run.py
         if self.esptool is None:                 # Debian installs "esptool"; pip installs "esptool.py"
             for name in ("esptool", "esptool.py"):
                 if self.run([name, "version"], 20, None)[0] != 127:

@@ -156,7 +156,7 @@ class Case(unittest.TestCase):
     def station(self, tools, link=None):
         self.tools, self.link = tools, link
         st = FlashStation(self.store, self.root, run=tools, sys_tty=str(self.sys / "class/tty"), now=lambda: 1_800_000_000, background=False,
-                          opener=link.open if link else no_serial)
+                          opener=link.open if link else no_serial, has_module=lambda name: False)
         st.hello_wait, st.hello_every, st.reply_wait, st.mega_wait = 0.6, 0.05, 0.2, 0.3
         return st
 
@@ -644,7 +644,7 @@ class Mega(Case):
             return hashlib.sha256(key).hexdigest()[:8]
         self.avr, self.mega = avr, mega
         st = FlashStation(self.store, self.root, run=avr, sys_tty=str(self.sys / "class/tty"), now=lambda: 1_800_000_000,
-                          background=False, opener=mega.open, target_images=self.tstore, register_key=register)
+                          background=False, opener=mega.open, target_images=self.tstore, register_key=register, has_module=lambda name: False)
         st.hello_wait, st.hello_every, st.reply_wait, st.mega_wait = 0.6, 0.05, 0.3, 0.3
         return st
 
@@ -776,7 +776,8 @@ class OverHttp(MatchHttpBase):
         usb_tree(self.sysroot, "ttyUSB0", "1a86", "7523")
         store = FirmwareStore(self.dir)
         store.dir.mkdir(parents=True)
-        self.server.flash = FlashStation(store, self.dir, run=Tools(), sys_tty=str(self.sysroot / "class/tty"), background=False)
+        self.server.flash = FlashStation(store, self.dir, run=Tools(), sys_tty=str(self.sysroot / "class/tty"), background=False,
+                                         has_module=lambda name: False)
 
     def test_range_control_only(self):
         self.assertEqual(self.req("GET", "/api/v1/admin/flash")[0], 401)

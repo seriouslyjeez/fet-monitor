@@ -6,3 +6,9 @@ FeT Monitor is an independent project that works with targets running the
 freETarget firmware (https://github.com/ten-point-nine/freETarget, MIT License).
 It is not part of, affiliated with or endorsed by the freETarget project.
 "freETarget" is the name of that project; FeT Monitor does not use it as its own.
+
+fetserver/esptool_shim/ is not under the MIT License: it holds three stub flasher files from esptool 4.7.0
+(Espressif Systems, https://github.com/espressif/esptool, tag v4.7.0; the stubs' source is its flasher_stub/
+folder) and a small launcher, all under esptool's license, GPL-2.0-or-later (fetserver/esptool_shim/LICENSE).
+Debian's esptool package leaves those stubs out; the flash station runs esptool through the launcher as a separate
+program so it can write the ESP32-S3 board.
