@@ -1,9 +1,12 @@
 // FeT target firmware for the ESP32-S3 board "V6.2F NGT" (freETarget-compatible, upstream revision 620).
 //
-// The board does the timing: a RUN flip-flop per microphone gates one of the ESP32-S3's pulse counters (PCNT), which
-// count a 10 MHz reference oscillator from the moment that microphone heard the shot until the counters are stopped.
+// The board does the timing. A RUN flip-flop per microphone goes high when that microphone hears the shot. Since 0.3.0
+// the ESP32-S3 stamps each RUN edge with its own capture timers (MCPWM, 80 MHz) and the board's 10 MHz reference
+// oscillator stays off: running, it disturbed the board's WiFi (B59, 2026-11-05: reports and the setup network
+// failed; with it off both worked). Upstream (and FET_TIMING_PCNT 1 here) gate a pulse counter (PCNT) per microphone
+// with RUN and count that oscillator instead. Either way a shot's times go out as 10 MHz counts (core/src/stamps.h).
 // This sketch is the platform layer around firmware/target/core, as the Mega's is: Capture (1 kHz esp_timer) reads
-// those counters, every shot goes out as a signed line with the raw times (the server computes the position), and
+// those times, every shot goes out as a signed line with the raw times (the server computes the position), and
 // signed commands change the settings or move the paper. Pins, polarities and the arm/stop sequence are upstream
 // freETarget's for this board (Software/ESP32 6.4.2 drivers/gpio_define.c, gpio.c, dac.c, analog_io.c; MIT,
 // "Copyright 2020, ten-point-nine project").
@@ -23,6 +26,9 @@
 #include <Wire.h>
 #include <esp_timer.h>
 #include <driver/pulse_cnt.h>
+#include <driver/mcpwm_cap.h>
+#include <driver/gpio.h>
+#include <stamps.h>
 #include <freertos/semphr.h>
 #include <capture.h>
 #include <commands.h>
@@ -38,7 +44,10 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.6"
+#define FW_VERSION "0.3.0"
+#ifndef FET_TIMING_PCNT
+#define FET_TIMING_PCNT 0       // 0: the ESP32-S3's capture timers, 10 MHz clock off (0.3.0); 1: PCNT counting the 10 MHz clock
+#endif
 #ifndef FET_OSC_TEST_OFF
 #define FET_OSC_TEST_OFF 0      // 1: the 10 MHz clock is never switched on (test build 0.2.5: shots cannot be timed)
 #endif
@@ -69,9 +78,10 @@ static const int32_t VREF_DEFAULT_MV = 1250;                               // up
 static const uint32_t MAX_SPREAD_TICKS = 7500;                             // 750 us
 
 // ---------------------------------------------------------------------------------------------- the board
+#if FET_TIMING_PCNT
 static pcnt_unit_handle_t pcnt[4];
 
-static bool pcntBegin() {
+static bool timingBegin() {
   for (int i = 0; i < 4; i++) {
     pcnt_unit_config_t uc = {};
     uc.low_limit = -1000;
@@ -120,6 +130,98 @@ struct Esp32Counters : tgt::CounterHw {
     gpio_set_level((gpio_num_t)PIN_STOP_N, 1);
   }
 };
+#else
+// The capture timers: group 0 stamps North and East, group 1 South and West, and both stamp the re-arm edge (STOP_N
+// going high, which this firmware drives), so their offset is known at every arm; both run from the same clock. The
+// first edge after an arm counts (RUN stays high until cleared); a re-arm edge always replaces the last.
+static mcpwm_cap_timer_handle_t capTimer[2];
+static uint32_t capHz = 0, armOffset = 0;
+static volatile uint32_t stamp[6];                                         // N, E, S, W, re-arm in group 0, in group 1
+static volatile uint8_t stampHave = 0;
+static const uint8_t SLOT_GROUP[6] = {0, 0, 1, 1, 0, 1};
+static portMUX_TYPE stampMux = portMUX_INITIALIZER_UNLOCKED;
+
+static bool IRAM_ATTR onStamp(mcpwm_cap_channel_handle_t, const mcpwm_capture_event_data_t* e, void* ctx) {
+  int slot = (int)(intptr_t)ctx;
+  portENTER_CRITICAL_ISR(&stampMux);
+  if (slot >= 4 || !(stampHave & (1 << slot))) { stamp[slot] = e->cap_value; stampHave |= (uint8_t)(1 << slot); }
+  portEXIT_CRITICAL_ISR(&stampMux);
+  return false;
+}
+
+static bool timingBegin() {
+  gpio_set_level((gpio_num_t)PIN_OSC, 0);                                  // the 10 MHz clock: never on
+  for (int g = 0; g < 2; g++) {
+    mcpwm_capture_timer_config_t tc = {};
+    tc.group_id = g;
+    tc.clk_src = MCPWM_CAPTURE_CLK_SRC_DEFAULT;
+    tc.resolution_hz = 80000000;
+    if (mcpwm_new_capture_timer(&tc, &capTimer[g]) != ESP_OK) return false;
+  }
+  if (mcpwm_capture_timer_get_resolution(capTimer[0], &capHz) != ESP_OK || capHz < tgt::COUNT_HZ) return false;
+  uint32_t hz1 = 0;
+  if (mcpwm_capture_timer_get_resolution(capTimer[1], &hz1) != ESP_OK || hz1 != capHz) return false;
+  const int pins[6] = {PIN_RUN[0], PIN_RUN[1], PIN_RUN[2], PIN_RUN[3], PIN_STOP_N, PIN_STOP_N};
+  for (int s = 0; s < 6; s++) {
+    mcpwm_capture_channel_config_t cc = {};
+    cc.gpio_num = pins[s];
+    cc.prescale = 1;
+    cc.flags.pos_edge = 1;
+    cc.flags.io_loop_back = s >= 4;                                        // STOP_N: driven here, stamped by both groups
+    mcpwm_cap_channel_handle_t ch;
+    if (mcpwm_new_capture_channel(capTimer[SLOT_GROUP[s]], &cc, &ch) != ESP_OK) return false;
+    mcpwm_capture_event_callbacks_t cb = {};
+    cb.on_cap = onStamp;
+    if (mcpwm_capture_channel_register_event_callbacks(ch, &cb, (void*)(intptr_t)s) != ESP_OK || mcpwm_capture_channel_enable(ch) != ESP_OK)
+      return false;
+  }
+  for (int g = 0; g < 2; g++)
+    if (mcpwm_capture_timer_enable(capTimer[g]) != ESP_OK || mcpwm_capture_timer_start(capTimer[g]) != ESP_OK) return false;
+  gpio_set_direction((gpio_num_t)PIN_STOP_N, GPIO_MODE_INPUT_OUTPUT);       // still ours to drive, and seen by the stamps
+  return true;
+}
+
+static void clearMicStamps() {                                             // with STOP_N low: no microphone edge can come
+  portENTER_CRITICAL(&stampMux);
+  stampHave &= (uint8_t)~0x0F;
+  portEXIT_CRITICAL(&stampMux);
+}
+
+struct Esp32Counters : tgt::CounterHw {
+  uint8_t running() override {
+    uint8_t m = 0;
+    for (int i = 0; i < 4; i++) if (gpio_get_level((gpio_num_t)PIN_RUN[i])) m |= (uint8_t)(1 << i);
+    return m;
+  }
+  void stopAndRead(uint32_t out[4]) override {
+    uint8_t want = running();                                              // these must have a stamp (its interrupt may lag
+    int64_t until = esp_timer_get_time() + 3000;                           // behind a flash write: wait up to 3 ms)
+    while ((stampHave & want) != want && esp_timer_get_time() < until) {}
+    gpio_set_level((gpio_num_t)PIN_STOP_N, 0);
+    uint32_t st[4];
+    portENTER_CRITICAL(&stampMux);
+    for (int i = 0; i < 4; i++) st[i] = stamp[i];
+    uint8_t have = stampHave;
+    uint32_t a0 = stamp[4], a1 = stamp[5];
+    portEXIT_CRITICAL(&stampMux);
+    if ((have & 0x30) == 0x30) armOffset = a1 - a0;                         // the last re-arm, seen by both groups
+    static const uint8_t group[4] = {0, 0, 1, 1};
+    tgt::stampsToCounts(st, (uint8_t)(have & 0x0F), group, armOffset, capHz, out);
+  }
+  void clearRun() override {
+    gpio_set_level((gpio_num_t)PIN_STOP_N, 0);
+    clearMicStamps();
+    gpio_set_level((gpio_num_t)PIN_STOP_N, 1);                             // a re-arm edge: both groups stamp it
+  }
+  void arm() override {                                                    // upstream arm_timers(), without the clock
+    gpio_set_level((gpio_num_t)PIN_CLK_START, 0);
+    gpio_set_level((gpio_num_t)PIN_STOP_N, 0);
+    gpio_set_level((gpio_num_t)PIN_OSC, 0);
+    clearMicStamps();
+    gpio_set_level((gpio_num_t)PIN_STOP_N, 1);
+  }
+};
+#endif
 
 // Settings, key and boot count in one NVS blob (NVS writes are atomic per key: a power cut keeps the old blob).
 struct NvsNvm : tgt::Nvm {
@@ -463,7 +565,8 @@ void setup() {
   static tgt::Commands cmds(settings, actions, identity.boot());
   commands = &cmds;
   if (identity.hasKey()) commands->setKey(identity.key(), tgt::Identity::KEY_LEN);
-  bool countersOk = pcntBegin();
+  bool countersOk = timingBegin();
+  fete::say(FET_TIMING_PCNT ? "Timing: PCNT counting the 10 MHz clock" : "Timing: capture timers, 10 MHz clock off", countersOk ? "" : " (FAILED to start)");
   actions.settingsChanged(settings);                                       // lights, paper, capture timing, the trip point
   tempDeci = readTempDeci();
 

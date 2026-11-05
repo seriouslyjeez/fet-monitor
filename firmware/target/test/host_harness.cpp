@@ -14,6 +14,7 @@
 #include "../core/src/paper.h"
 #include "../core/src/settings.h"
 #include "../core/src/shotline.h"
+#include "../core/src/stamps.h"
 #include "../core/src/tgt_sha256.h"
 
 using namespace tgt;
@@ -125,6 +126,15 @@ int main() {
     is >> cmd;
     if (cmd == "run") { int m; is >> std::hex >> m; hw.run |= (uint8_t)m; }
     else if (cmd == "counts") { for (int i = 0; i < 4; i++) is >> hw.counts[i]; }
+    else if (cmd == "stamps") {                   // stamps N E S W  have  gN gE gS gW  offset  resolution_hz
+      uint32_t st[4], off, res, out[4]; unsigned have; unsigned g[4]; uint8_t gg[4];
+      for (int i = 0; i < 4; i++) is >> st[i];
+      is >> have;
+      for (int i = 0; i < 4; i++) { is >> g[i]; gg[i] = (uint8_t)g[i]; }
+      is >> off >> res;
+      tgt::stampsToCounts(st, (uint8_t)have, gg, off, res, out);
+      std::cout << out[0] << " " << out[1] << " " << out[2] << " " << out[3] << "\n";
+    }
     else if (cmd == "tick") { uint32_t ms, us; is >> ms >> us; cap.tick(ms, us); }
     else if (cmd == "face") { uint32_t us; is >> us; cap.face(us); }
     else if (cmd == "key") { std::string h; is >> h; key = unhex(h); haveKey = true; }

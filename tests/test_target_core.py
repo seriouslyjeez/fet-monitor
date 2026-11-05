@@ -92,6 +92,36 @@ class Crypto(Case):
 
 
 class Capture(Case):
+    # ---- the ESP32 board's capture timestamps (core/src/stamps.h, firmware 0.3.0+)
+    def stamps(self, st, have=15, groups=(0, 0, 1, 1), offset=0, res=80000000):
+        out = self.h.run("stamps %s %d %s %d %d" % (" ".join(str(x % 2 ** 32) for x in st), have, " ".join(map(str, groups)), offset % 2 ** 32, res))
+        return [int(x) for x in out.split()]
+
+    def test_stamps_become_10_mhz_counts(self):
+        # North first, West last: 80 MHz ticks, 8 per count; the last microphone gets the base (1000)
+        self.assertEqual(self.stamps([1000, 1800, 2600, 4000], groups=(0, 0, 0, 0)), [1375, 1275, 1175, 1000])
+        self.assertEqual(self.stamps([1000, 1003, 1005, 1008], groups=(0, 0, 0, 0)), [1001, 1001, 1000, 1000],
+                         "rounded to the nearest 100 ns (3/8 down, 5/8 and 8/8 up from the latest)")
+
+    def test_the_second_group_is_moved_by_the_offset(self):
+        # group 1's timer runs 123456 ticks ahead of group 0's: the same instants
+        same = self.stamps([1000, 1800, 2600 + 123456, 4000 + 123456], offset=123456)
+        self.assertEqual(same, [1375, 1275, 1175, 1000])
+        # without the offset: S and W look 123456 ticks late, so N and E come out far too early
+        self.assertEqual(self.stamps([1000, 1800, 2600 + 123456, 4000 + 123456], offset=0), [16807, 16707, 1175, 1000])
+
+    def test_across_the_wrap_of_the_timer(self):
+        base = 2 ** 32 - 1000                    # the timer wraps between the first and the last microphone
+        self.assertEqual(self.stamps([base, base + 800, base + 1600, base + 3000], groups=(0, 0, 0, 0)), [1375, 1275, 1175, 1000])
+        # group 1 runs 5000 ticks behind group 0 (offset -5000), and wraps too
+        self.assertEqual(self.stamps([base, base + 800, base + 1600 - 5000, base + 3000 - 5000], offset=-5000), [1375, 1275, 1175, 1000])
+
+    def test_missing_microphones_and_other_rates(self):
+        self.assertEqual(self.stamps([1000, 0, 2600, 4000], have=0b1101, groups=(0, 0, 0, 0)), [1375, 0, 1175, 1000], "East did not hear it")
+        self.assertEqual(self.stamps([0, 0, 0, 0], have=0), [0, 0, 0, 0])
+        self.assertEqual(self.stamps([7, 0, 0, 0], have=1), [1000, 0, 0, 0], "one microphone: just the base")
+        self.assertEqual(self.stamps([0, 400, 0, 1200], have=0b1010, groups=(0, 0, 0, 0), res=40000000), [0, 1200, 0, 1000], "40 MHz: 4 per count")
+
     def test_all_four_at_once(self):
         self.h.run("counts 5123 4987 5401 5290")
         self.tick(9)
