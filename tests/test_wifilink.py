@@ -21,6 +21,10 @@ class Link(unittest.TestCase):
                          ("the task watchdog", True, "the router ended it (deauthenticated)", 60))
         self.assertEqual(W.view({"reset": 99, "drops": 1, "reason": 77})["reason_name"], "code 77")
         self.assertIsNone(W.view(None))
+        v = W.view({"reset": 3, "restart_why": "no_wifi", "posts": 50, "post_fail_connect": 2, "post_fail_reply": 3})
+        self.assertEqual((v["reset_name"], v["reset_trouble"], v["post_failed"]), ("its WiFi safety net: it had no WiFi for 20 minutes", True, 5))
+        self.assertNotIn("restart_why", W.clean({"restart_why": "boom", "drops": 1}), "only the two the firmware sends")
+        self.assertEqual(W.clean({"rejoins": 2, "restart_why": "net_stuck"}), {"rejoins": 2, "restart_why": "net_stuck"})
 
     def test_the_codes_are_esp_idfs(self):
         """Spot checks against esp_wifi_types_generic.h and esp_system.h (Arduino-ESP32 3.3.12)."""

@@ -299,13 +299,17 @@ static void sendAll(const char* line, size_t n) {                          // US
   toBridge.put(line, n);
 }
 
+static volatile uint32_t netAliveS = 0;                                    // the network task's last turn (s since start)
+
 static void netTask(void*) {                                               // the bridge: may wait seconds on the network
   for (;;) {
     uint64_t now = fete::nowMs();
+    netAliveS = (uint32_t)(now / 1000);
     std::string b = toBridge.take();
     for (size_t i = 0; i < b.size(); i++) bridge->onByte((uint8_t)b[i], now);
     net->update(now);
     bridge->tick(fete::nowMs());
+    net->watch(fete::nowMs(), bridge->lastOkMs, portal->isOpen());
     quick->tick(fete::nowMs());
     portal->loop(fete::nowMs());
     if (hooks.portalWanted) { hooks.portalWanted = false; portal->open(fete::nowMs()); }
@@ -347,6 +351,11 @@ static void bridgeBegin() {
   fet::BridgeInfo info{id, cfg.name, BRIDGE_FW};
   bridge = new fet::Bridge(lfs, *net, cmdUart, hooks, info, cap, FET_LOG_SEGMENT_BYTES);
   bridge->begin(fete::nowMs());
+  std::string why;                                                         // the board restarted itself last time: say why
+  if (fsOk && lfs.read(FET_RESTART_WHY, why)) {
+    lfs.remove(FET_RESTART_WHY);
+    if (why == "net_stuck" || why == "no_wifi") { net->setRestartWhy(why); fete::say("Restarted by the WiFi safety net: ", why); }
+  }
   prov = new fet::Provision(lfs, usbUart, hooks, id, BRIDGE_FW);
   bool openPortal = wantPortal || !cfg.wifiConfigured();
   net->startWifi(cfg.name, openPortal);
@@ -460,6 +469,22 @@ void setup() {
   sendHello();
 }
 
+// The last resort, from this task (it runs even if the network task hangs): restart the board when the network task
+// has not moved for FET_NET_STUCK_MS (not during a firmware download), or there has been no WiFi at all for
+// FET_NO_WIFI_RESTART_MS despite the retries. Never within 2 minutes of a shot. The queue is in flash: nothing
+// queued is lost. The reason goes to flash and into the next heartbeats ("restart_why").
+static uint32_t lastShotS = 0;
+static void safetyNet() {
+  if (!net || !portal) return;
+  const char* why = fet::restartWhy((uint32_t)(fete::nowMs() / 1000), lastShotS, netAliveS, net->noWifiSinceS(), upd.pending,
+                                    portal->isOpen(), FET_NET_STUCK_MS / 1000, FET_NO_WIFI_RESTART_MS / 1000);
+  if (!why) return;
+  fete::say("WiFi safety net: restarting the board: ", why);
+  lfs.writeAtomic(FET_RESTART_WHY, why);
+  delay(50);
+  ESP.restart();
+}
+
 void loop() {
   uint32_t now = millis();
   tgt::Shot s;
@@ -468,6 +493,7 @@ void loop() {
     bool got = capture.pop(s);
     xSemaphoreGive(capLock);
     if (!got) break;
+    lastShotS = (uint32_t)(fete::nowMs() / 1000);
     if (sleeping) continue;                                                // asleep: shots are ignored
     char out[tgt::SHOT_LINE_MAX];
     size_t n = tgt::formatShot(s, identity.boot(), tempDeci, settings.id(), capture.dropped(),
@@ -507,6 +533,6 @@ void loop() {
     else statusLeds(v12Volts() >= 10.0f ? GREEN : RED, comColor(), flash ? WHITE : GREEN);
   }
   static uint32_t lastTemp = 0;
-  if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); }
+  if (now - lastTemp >= 1000) { lastTemp = now; tempDeci = readTempDeci(); safetyNet(); }
   delay(1);
 }

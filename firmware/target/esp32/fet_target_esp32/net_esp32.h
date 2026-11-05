@@ -9,6 +9,7 @@
 #include <vector>
 #include <config.h>
 #include <interfaces.h>
+#include <safetynet.h>
 
 namespace fete {
 
@@ -17,6 +18,11 @@ namespace fete {
 #define FET_MAX_RESPONSE 6000
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000
+#define FET_SILENT_REJOIN_MS 60000UL        // FeT Monitor silent this long: drop the WiFi and join again ...
+#define FET_REJOIN_MAX_MS 600000UL          // ... waiting twice as long each time, up to 10 min
+#define FET_NO_WIFI_RESTART_MS 1200000UL    // no WiFi at all this long: restart the board (the main loop decides)
+#define FET_NET_STUCK_MS 180000UL           // the network task made no progress this long: restart the board
+#define FET_RESTART_WHY "/restart_why"      // why the board restarted itself (read and removed at the next start)
 
 uint64_t nowMs();
 std::string deviceIdFromChip();                    // fet-xxxxxx (the last 3 bytes of the WiFi MAC)
@@ -65,6 +71,11 @@ class WifiNet : public fet::Net {
   bool wifiUp() const;
   std::string serverText() const;
   std::string linkJson() override;
+  // FeT Monitor's last answer (Bridge::lastOkMs): long silent while the WiFi says connected (the core keeps
+  // WL_CONNECTED after some disconnects, e.g. reason 2), drop the WiFi and join again. Not while the portal is open.
+  void watch(uint64_t now, uint64_t lastOkMs, bool portalOpen);
+  uint32_t noWifiSinceS() const { return noWifiSinceS_; }   // seconds since start when the WiFi went (0 = up); any task
+  void setRestartWhy(const std::string& why) { restartWhy_ = why; }
  private:
   bool resolveServer(uint64_t now);
   const fet::Config& cfg_;
@@ -81,6 +92,11 @@ class WifiNet : public fet::Net {
   uint16_t dropReason_ = 0;
   uint8_t bssid_[6] = {0, 0, 0, 0, 0, 0};
   bool haveBssid_ = false;
+  uint32_t rejoins_ = 0;
+  uint32_t posts_ = 0, failConnect_ = 0, failReply_ = 0, postMaxMs_ = 0;   // every request to FeT Monitor since the start
+  fet::SilenceWatch silence_{FET_SILENT_REJOIN_MS, FET_REJOIN_MAX_MS};
+  volatile uint32_t noWifiSinceS_ = 0;
+  std::string restartWhy_;                        // "net_stuck" / "no_wifi" when the board restarted itself, else ""
 };
 
 // Commands from the server to the target: queued for the main loop, which answers through toBridge.

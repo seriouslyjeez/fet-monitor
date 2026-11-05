@@ -971,6 +971,9 @@ function linkLines(t) {                          // the WiFi link: signal; for E
     esc(L.reason_name || '?') + (L.last_drop_ago_s != null ? ', ' + esc(dur(L.last_drop_ago_s * 1000)) + ' ago' : '') +
     ' <span class="mut">· without WiFi ' + esc(dur(L.down_ms || 0)) + ' in all, longest ' + esc(dur(L.longest_ms || 0)) +
     (L.bssid_changes ? ' · moved between access points ' + esc(L.bssid_changes) + ' time' + (L.bssid_changes === 1 ? '' : 's') : '') + '</span>');
+  if (L && L.posts) out.push('Reports to FeT Monitor: ' + esc(L.posts) + ', ' + (L.post_failed ? '<b class="bad">' + esc(L.post_failed) + ' failed</b> <span class="mut">(' +
+    esc(L.post_fail_connect || 0) + ' could not connect, ' + esc(L.post_fail_reply || 0) + ' no complete reply)</span>' : 'none failed') +
+    ' <span class="mut">· slowest ' + esc(((L.post_max_ms || 0) / 1000).toFixed(1)) + ' s' + (L.rejoins ? ' · joined the WiFi again ' + esc(L.rejoins) + ' time' + (L.rejoins === 1 ? '' : 's') + ' after FeT Monitor went silent' : '') + '</span>');
   return out.length ? '<p>' + out.join('<br>') + '</p>' : '';
 }
 function deviceSection(t) {                    // the target as a device: trip point, WiFi link, its own page, setup portal, factory reset

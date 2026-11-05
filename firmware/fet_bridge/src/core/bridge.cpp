@@ -88,6 +88,7 @@ void Bridge::sendEvents(uint64_t now) {
   sentBatches++;
   bool got = net_.post("/api/v1/events", body, status, resp);
   lastStatus = got ? status : 0;
+  if (got && status == 200) lastOkMs = now;
   auto fail = [&](const char* why) {
     httpErrors++;
     lastError_ = why;
@@ -163,6 +164,7 @@ void Bridge::sendHeartbeat(uint64_t now) {
   int status = 0;
   std::string resp;
   bool got = net_.post("/api/v1/heartbeat", body, status, resp);
+  if (got && status == 200) lastOkMs = now;
   if (!got || status != 200) {
     if (got && (status == 401 || status == 403)) { authError = true; lastError_ = "server refused our token"; }
     else if (!got) lastError_ = "no response from server";

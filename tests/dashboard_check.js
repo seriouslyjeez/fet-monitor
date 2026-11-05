@@ -527,6 +527,10 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
   assert(L.includes('<b class="bad">a brownout') && L.includes('dropped <b>3</b> times') && L.includes('beacon timeout &lt;x&gt;, 12 min ago'));
   assert(L.includes('without WiFi 61 s in all, longest 45 s') && L.includes('moved between access points 2 times'));
   assert(X.linkLines({rssi: -55, link: {reset_name: 'power-on', reset_trouble: false, drops: 0}}).includes('No WiFi drops since then'));
+  const R = X.linkLines({rssi: -60, link: {drops: 0, posts: 120, post_failed: 7, post_fail_connect: 5, post_fail_reply: 2, post_max_ms: 9100, rejoins: 1}});
+  assert(R.includes('Reports to FeT Monitor: 120, <b class="bad">7 failed</b>') && R.includes('5 could not connect, 2 no complete reply') &&
+         R.includes('slowest 9.1 s') && R.includes('joined the WiFi again 1 time after'));
+  assert(X.linkLines({rssi: -60, link: {drops: 0, posts: 3, post_failed: 0, post_max_ms: 40}}).includes('none failed'));
   assert(!X.linkLines({rssi: -55, link: null}).includes('drop') && X.linkLines({rssi: null, link: null}) === '', 'an ESP-01: the signal only');
 }
 // TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>

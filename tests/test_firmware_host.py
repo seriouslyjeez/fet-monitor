@@ -413,6 +413,51 @@ class FirmwareHost(unittest.TestCase):
         self.assertEqual((v["reset_name"], v["reset_trouble"], v["reason_name"][:14]), ("a brownout (supply voltage dropped)", True, "beacon timeout"))
         self.assertGreater(v["last_drop_ago_s"], 0)
 
+    def test_the_bridge_knows_when_fet_monitor_last_answered(self):
+        """Bridge::lastOkMs: the ESP32's safety net re-joins the WiFi when it gets old (FeT Monitor silent)."""
+        self.tick(6000)
+        first = int(self.h.run("lastok"))
+        self.assertGreater(first, 0, "a heartbeat answered")
+        self.h.run("fake 500")                                 # answers, but not 200
+        self.tick(20000)
+        self.assertEqual(int(self.h.run("lastok")), first)
+        self.h.run("fake 0")
+        self.h.run("net down")
+        self.tick(20000)
+        self.assertEqual(int(self.h.run("lastok")), first, "no network: no answer")
+        self.h.run("net up")
+        self.tick(40000)
+        self.assertGreater(int(self.h.run("lastok")), first + 40000)
+
+    def test_the_silence_watch(self):
+        sw = lambda now, ok: tuple(int(x) for x in self.h.run("sw %d %d" % (now, ok)).split())
+        self.h.run("sw new 60000 600000 1000")
+        self.assertEqual(sw(60000, 0), (0, 60000), "silent 59 s since the start: not yet")
+        self.assertEqual(sw(61000, 0), (1, 60000), "60 s: re-join")
+        self.assertEqual(sw(100000, 0), (0, 60000))
+        self.assertEqual([sw(t, 0) for t in (121000, 241000, 481000, 961000)], [(1, 120000), (1, 240000), (1, 480000), (1, 600000)],
+                         "no answer: each wait twice the last")
+        self.assertEqual(sw(1561000, 0), (1, 600000), "up to 10 minutes")
+        self.assertEqual(sw(1600000, 1590000), (0, 60000), "an answer starts over")
+        self.assertEqual(sw(1649000, 1590000), (0, 60000))
+        self.assertEqual(sw(1650000, 1590000), (1, 60000), "60 s after the answer")
+        self.assertEqual(sw(1709000, 1590000), (0, 60000), "and the next 60 s after that re-join...")
+        self.assertEqual(sw(1710000, 1590000), (1, 120000), "... then doubling again")
+
+    def test_restart_decision(self):
+        why = lambda *v: self.h.run("restartwhy " + " ".join(str(x) for x in v))
+        # nowS lastShotS aliveS noWifiSinceS downloading portalOpen stuckS noWifiS
+        self.assertEqual(why(1000, 0, 999, 0, 0, 0, 180, 1200), "-", "all well")
+        self.assertEqual(why(1000, 0, 819, 0, 0, 0, 180, 1200), "net_stuck", "the network task has not moved for 181 s")
+        self.assertEqual(why(1000, 0, 820, 0, 0, 0, 180, 1200), "-", "180 s: not yet")
+        self.assertEqual(why(1000, 0, 819, 0, 1, 0, 180, 1200), "-", "not while a firmware image downloads")
+        self.assertEqual(why(2000, 0, 1999, 799, 0, 0, 180, 1200), "no_wifi", "no WiFi for 1201 s")
+        self.assertEqual(why(2000, 0, 1999, 800, 0, 0, 180, 1200), "-")
+        self.assertEqual(why(2000, 1900, 1, 1, 0, 0, 180, 1200), "-", "never within 2 minutes of a shot")
+        self.assertEqual(why(2000, 1880, 1, 1, 0, 0, 180, 1200), "net_stuck")
+        self.assertEqual(why(2000, 0, 1, 1, 0, 1, 180, 1200), "-", "nor while the setup portal is open")
+        self.assertEqual(why(119, 0, 1, 1, 0, 0, 10, 10), "-", "nor in the first 2 minutes")
+
     def test_http_response_parsing(self):
         def p(raw):
             return self.h.run("httpparse " + raw.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n"))

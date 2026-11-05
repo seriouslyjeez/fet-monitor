@@ -18,6 +18,7 @@
 #include "../fet_bridge/src/core/httpparse.h"
 #include "../fet_bridge/src/core/provision.h"
 #include "../fet_bridge/src/core/sha256.h"
+#include "../fet_bridge/src/core/safetynet.h"
 
 using namespace fet;
 
@@ -176,6 +177,18 @@ int main() {
     else if (cmd == "fake") net.fakeStatus = atoi(rest.c_str());
     else if (cmd == "token") net.token = rest;
     else if (cmd == "link") net.link = rest;
+    else if (cmd == "lastok") std::cout << br->lastOkMs << "\n";
+    else if (cmd == "sw") {                       // the silence watch: "sw new <silent> <max> <start>" / "sw <now> <lastOk>"
+      static std::unique_ptr<fet::SilenceWatch> sw;
+      std::istringstream a(rest); std::string w; a >> w;
+      if (w == "new") { unsigned long long si, mx, st; a >> si >> mx >> st; sw.reset(new fet::SilenceWatch(si, mx)); sw->start(st); std::cout << "ok\n"; }
+      else { unsigned long long nw = std::stoull(w), ok; a >> ok; bool d = sw->due(nw, ok); std::cout << (d ? 1 : 0) << " " << sw->waitMs() << "\n"; }
+    }
+    else if (cmd == "restartwhy") {               // nowS lastShotS aliveS noWifiSinceS downloading portalOpen stuckS noWifiS
+      std::istringstream a(rest); unsigned long v[8]; for (auto& x : v) a >> x;
+      const char* w = fet::restartWhy((uint32_t)v[0], (uint32_t)v[1], (uint32_t)v[2], (uint32_t)v[3], v[4] != 0, v[5] != 0, (uint32_t)v[6], (uint32_t)v[7]);
+      std::cout << (w ? w : "-") << "\n";
+    }
     else if (cmd == "tear") fs.tearNext = atol(rest.c_str());
     else if (cmd == "failappends") fs.failAppends = rest == "1";
     else if (cmd == "free") fs.freeSet = atol(rest.c_str());

@@ -4,6 +4,7 @@
 #include <httpparse.h>
 #include <esp_mac.h>
 #include <esp_system.h>
+#include <esp_wifi.h>
 #include <Update.h>
 #include <tgt_sha256.h>
 
@@ -134,6 +135,7 @@ static volatile uint16_t lastReason = 0;          // the last disconnect's reaso
 void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   hostname_ = hostname;
   reset_ = (int)esp_reset_reason();               // why this start: power-on, brownout, crash, watchdog ... (esp_system.h)
+  silence_.start(nowMs());
   WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
     if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) lastReason = info.wifi_sta_disconnected.reason;
   });
@@ -143,6 +145,12 @@ void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   // replies to a phone get lost meanwhile (B59, 2026-11-02: DHCP answered, the phone never got the answer).
   WiFi.mode(!withAccessPoint ? WIFI_STA : cfg_.wifiConfigured() ? WIFI_AP_STA : WIFI_AP);
   WiFi.setSleep(false);                           // the radio stays awake: a reply sent while it dozes is lost
+  // 802.11b/g as the ESP-01 (FET_WIFI_PHY_G): on the author's ASUS ZenWiFi an 802.11n link let the ESP-01 join but not
+  // get through (firmware 0.1.14), and this board's heartbeats came minutes apart where the ESP-01's never did (2026-11-05)
+  if (cfg_.wifiConfigured()) {                    // (the station side exists only then)
+    esp_err_t pe = esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G);
+    say("WiFi options: ", std::string("sleep off, 802.11b/g") + (pe == ESP_OK ? "" : " (not set: " + std::string(esp_err_to_name(pe)) + ")"));
+  }
   WiFi.setAutoReconnect(true);
   if (!cfg_.wifiConfigured()) return;
   if (cfg_.fixedIp()) {                           // skip DHCP
@@ -161,6 +169,18 @@ void WifiNet::announce() {
   else say("No WiFi settings saved: ", "waiting for setup");
 }
 
+void WifiNet::watch(uint64_t now, uint64_t lastOkMs, bool portalOpen) {
+  if (!cfg_.wifiConfigured() || portalOpen) return;
+  if (!silence_.due(now, lastOkMs)) return;
+  rejoins_++;
+  say("No answer from FeT Monitor ", std::string(lastOkMs ? "for " + std::to_string((unsigned long)((now - lastOkMs) / 1000)) + " s" : "since the start") + " (WiFi says " +
+      (wifiUp() ? "connected" : "not connected") + "): joining " + cfg_.ssid + " again, re-join " + std::to_string((unsigned long)rejoins_));
+  haveIp_ = false; nextResolve_ = 0;
+  WiFi.disconnect();
+  WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
+  lastBegin_ = now;
+}
+
 std::string WifiNet::linkJson() {
   uint64_t now = nowMs(), down = downMs_ + (droppedAt_ ? now - droppedAt_ : 0);
   char mac[18] = "";
@@ -169,7 +189,10 @@ std::string WifiNet::linkJson() {
          ",\"reason\":" + std::to_string((unsigned)dropReason_) + ",\"last_drop_ms\":" + std::to_string((unsigned long long)lastDropUp_) +
          ",\"down_ms\":" + std::to_string((unsigned long long)down) + ",\"longest_ms\":" + std::to_string((unsigned long long)longestMs_) +
          ",\"bssid\":\"" + mac + "\",\"bssid_changes\":" + std::to_string((unsigned long)bssidChanges_) +
-         ",\"ch\":" + std::to_string((int)(wifiUp() ? WiFi.channel() : 0)) + "}";
+         ",\"ch\":" + std::to_string((int)(wifiUp() ? WiFi.channel() : 0)) + ",\"rejoins\":" + std::to_string((unsigned long)rejoins_) +
+         ",\"posts\":" + std::to_string((unsigned long)posts_) + ",\"post_fail_connect\":" + std::to_string((unsigned long)failConnect_) +
+         ",\"post_fail_reply\":" + std::to_string((unsigned long)failReply_) + ",\"post_max_ms\":" + std::to_string((unsigned long)postMaxMs_) +
+         (restartWhy_.empty() ? std::string() : ",\"restart_why\":\"" + restartWhy_ + "\"") + "}";
 }
 
 bool WifiNet::wifiUp() const { return WiFi.status() == WL_CONNECTED; }
@@ -213,6 +236,8 @@ void WifiNet::update(uint64_t now) {
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
   if (up) lastBegin_ = now;
+  if (up || !cfg_.wifiConfigured()) noWifiSinceS_ = 0;
+  else if (!noWifiSinceS_) noWifiSinceS_ = (uint32_t)(now / 1000) + 1;
   if (!up && wasUp_) {
     haveIp_ = false; nextResolve_ = 0;
     drops_++; droppedAt_ = now; lastDropUp_ = now; dropReason_ = lastReason;
@@ -237,10 +262,13 @@ bool WifiNet::resolveServer(uint64_t now) {
 bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 
 bool WifiNet::post(const char* path, const std::string& body, int& status, std::string& resp) {
+  uint64_t began = nowMs();
+  posts_++;
   WiFiClient c;
   c.setTimeout(FET_CONNECT_TIMEOUT_MS / 1000 + 1);
   bool got = false;
   if (!c.connect(ip_, (uint16_t)port_, FET_CONNECT_TIMEOUT_MS)) {
+    failConnect_++;
     if (++connectFails_ >= 3) { haveIp_ = false; nextResolve_ = 0; connectFails_ = 0; }
   } else {
     connectFails_ = 0;
@@ -266,7 +294,10 @@ bool WifiNet::post(const char* path, const std::string& body, int& status, std::
     }
     c.stop();
     got = complete && fet::parseHttpResponse(raw, status, resp);
+    if (!got) failReply_++;
   }
+  uint32_t took = (uint32_t)(nowMs() - began);
+  if (took > postMaxMs_) postMaxMs_ = took;
   if (!reportedFirst_) {
     reportedFirst_ = true;
     say("First report to FET: ", (got && status == 200) ? "success" : "fail");

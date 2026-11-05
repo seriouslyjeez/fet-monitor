@@ -30,6 +30,7 @@ class Bridge : public RecordSink {
   // exposed for tests and the status page
   uint32_t sentBatches = 0, ackedEvents = 0, rejectedEvents = 0, droppedPoison = 0, httpErrors = 0;
   int lastStatus = 0;
+  uint64_t lastOkMs = 0;                          // when FeT Monitor last answered 200 (events or heartbeat); 0 = never
   bool authError = false;
   bool fsOk = true;                               // false if the boot counter could not be saved
 
