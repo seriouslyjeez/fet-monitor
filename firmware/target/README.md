@@ -27,9 +27,15 @@ the position (fetserver/shotsolve.py). Plan and review of the upstream code: doc
 the lights, paper drive and microphone circuits are not powered as designed. The first status LED (V12) is red
 without it.
 
-Open (2026-11-05): B59's WiFi reports to FeT Monitor mostly fail ("could not connect"), the board answers ARP 2.8 s
-late and pings in 0.06-5 s with 69 % lost, with power save off and both cores 95 % idle; an ESP-01 beside it answers in
-7-45 ms. Not fixed by 802.11b (test build 0.2.4) nor by connecting the 12 V (9 of 10 failed on USB, 12 of 21 with 12 V).
+**The 10 MHz clock disturbs the ESP32 board's WiFi (B59, 2026-11-05).** With the clock running (whenever the board is
+armed, as in upstream's firmware), B59's reports to FeT Monitor mostly failed ("could not connect"), it answered ARP
+2.8 s late and pings in 0.06-5 s with 69 % lost, with power save off and both cores 95 % idle; an ESP-01 beside it
+answered in 7-45 ms. Neither 802.11b (test build 0.2.4) nor the 12 V changed that. Asleep (0.2.4: clock off) and in
+test build 0.2.5 (awake, everything running except the clock) it answered normally (0 % loss, 7-99 ms). The clock's
+harmonics lie every 10 MHz across the 2.4 GHz band (2430 and 2440 MHz inside channel 6). The clock must run while the
+board waits for a shot, so the fix is in hardware. Open: B59 only, or every 6.2 board (a second board to compare);
+whether the iPhone's missing address on the setup network has the same cause. Shots are not lost meanwhile: they are
+kept in flash and delivered exactly once, only later.
 
 On hardware (2026-11): the Mega board 3.1 and the ESP32 board B59 (WiFi, commands, OTA, rollback, a tampered image
 refused). Open: phones (iPhone) get no address from the ESP32's setup network (also with upstream's own); set the
