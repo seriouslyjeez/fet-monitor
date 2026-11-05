@@ -351,6 +351,10 @@ class Commands(Base):
         st = json.loads(self.target()["target_status_json"])
         self.assertEqual((st["up"], st["d"], st["q"], st["vr"]), (5000, 1, 4, 650), "the status is kept on its own")
         self.assertNotIn("k", st)
+        self.core.target_command("t1", "status")                     # newer firmware: a status field this server does not know
+        self.send("target_reply", signed("FT1 R b=3 i=6 r=ok k=11223344 up=6000 d=1 q=4 vr=650 wq=7"))
+        self.assertEqual(json.loads(self.target()["target_settings_json"]), {"led_pct": 80, "wait_ms": 2}, "is not a setting")
+        self.assertEqual(self.target()["target_settings_id"], "11223344", "the settings id in a status reply still counts")
         v = self.core.list_targets()[0]["v_ref"]
         self.assertEqual((v["volts"], v["from"]), (0.65, "target"), "the trip point on the target's page, in volts")
 

@@ -397,6 +397,22 @@ class FirmwareHost(unittest.TestCase):
         st = json.loads(self.h.run("status"))
         self.assertEqual((st["queued"], st["acked"], st["uptime_s"] >= 60), (0, 1, True))
 
+    def test_the_wifi_link_history_reaches_range_control(self):
+        """An ESP32 board's heartbeat carries "link" (Net::linkJson); an ESP-01 (empty) sends none."""
+        def link():
+            r = self.core.db.conn().execute("SELECT link_json FROM targets WHERE device_id='fet-test01'").fetchone()
+            return json.loads(r[0]) if r[0] else None
+        self.tick(6000)
+        self.assertIsNone(link(), "no link from a bridge that has nothing to say")
+        self.h.run('link {"reset":9,"drops":3,"reason":200,"last_drop_ms":4000,"down_ms":61000,"longest_ms":45000,'
+                   '"bssid":"aa:bb:cc:dd:ee:ff","bssid_changes":2,"ch":6}')
+        self.tick(6000)
+        self.assertEqual(link(), {"reset": 9, "drops": 3, "reason": 200, "last_drop_ms": 4000, "down_ms": 61000, "longest_ms": 45000,
+                                  "bssid": "aa:bb:cc:dd:ee:ff", "bssid_changes": 2, "ch": 6})
+        v = next(t for t in self.core.admin_view()["targets"] if t["device_id"] == "fet-test01")["link"]
+        self.assertEqual((v["reset_name"], v["reset_trouble"], v["reason_name"][:14]), ("a brownout (supply voltage dropped)", True, "beacon timeout"))
+        self.assertGreater(v["last_drop_ago_s"], 0)
+
     def test_http_response_parsing(self):
         def p(raw):
             return self.h.run("httpparse " + raw.replace("\\", "\\\\").replace("\r", "\\r").replace("\n", "\\n"))

@@ -148,6 +148,8 @@ void Bridge::sendHeartbeat(uint64_t now) {
   if (!arduinoVersion_.empty()) { std::string av; jescape(av, arduinoVersion_); body += ",\"arduino_version\":\"" + av + "\""; }
   uint32_t space = net_.otaSpace();
   if (space) body += ",\"ota_space\":" + u32s(space) + ",\"flash_size\":" + u32s(net_.flashSize());
+  std::string link = net_.linkJson();
+  if (!link.empty()) body += ",\"link\":" + link;
   body += ",\"rssi\":" + i32s(net_.rssi()) + ",\"queue_depth\":" + u32s((uint32_t)log_.pending()) +
           ",\"overflow_count\":" + u32s((uint32_t)log_.overflow()) + ",\"cmd_results\":[";
   size_t sentResults = results_.size();

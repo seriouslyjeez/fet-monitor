@@ -3,6 +3,7 @@
 #include <WiFiClient.h>
 #include <httpparse.h>
 #include <esp_mac.h>
+#include <esp_system.h>
 #include <Update.h>
 #include <tgt_sha256.h>
 
@@ -128,8 +129,14 @@ std::vector<std::string> LfsFs::list(const std::string& prefix) {
 }
 
 // ---------------------------------------------------------------- WiFi
+static volatile uint16_t lastReason = 0;          // the last disconnect's reason code (the WiFi event task writes it)
+
 void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
   hostname_ = hostname;
+  reset_ = (int)esp_reset_reason();               // why this start: power-on, brownout, crash, watchdog ... (esp_system.h)
+  WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
+    if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) lastReason = info.wifi_sta_disconnected.reason;
+  });
   WiFi.persistent(false);                         // our settings live in /config.json, not the SDK's NVS
   WiFi.setHostname(hostname.c_str());
   // Nothing to join: the access point alone. A station with nowhere to go scans channels, and the setup network's
@@ -154,6 +161,17 @@ void WifiNet::announce() {
   else say("No WiFi settings saved: ", "waiting for setup");
 }
 
+std::string WifiNet::linkJson() {
+  uint64_t now = nowMs(), down = downMs_ + (droppedAt_ ? now - droppedAt_ : 0);
+  char mac[18] = "";
+  if (haveBssid_) snprintf(mac, sizeof mac, "%02x:%02x:%02x:%02x:%02x:%02x", bssid_[0], bssid_[1], bssid_[2], bssid_[3], bssid_[4], bssid_[5]);
+  return std::string("{\"reset\":") + std::to_string(reset_) + ",\"drops\":" + std::to_string((unsigned long)drops_) +
+         ",\"reason\":" + std::to_string((unsigned)dropReason_) + ",\"last_drop_ms\":" + std::to_string((unsigned long long)lastDropUp_) +
+         ",\"down_ms\":" + std::to_string((unsigned long long)down) + ",\"longest_ms\":" + std::to_string((unsigned long long)longestMs_) +
+         ",\"bssid\":\"" + mac + "\",\"bssid_changes\":" + std::to_string((unsigned long)bssidChanges_) +
+         ",\"ch\":" + std::to_string((int)(wifiUp() ? WiFi.channel() : 0)) + "}";
+}
+
 bool WifiNet::wifiUp() const { return WiFi.status() == WL_CONNECTED; }
 int WifiNet::rssi() { return wifiUp() ? (int)WiFi.RSSI() : 0; }
 
@@ -165,6 +183,18 @@ std::string WifiNet::serverText() const {
 void WifiNet::update(uint64_t now) {
   bool up = wifiUp();
   if (up && !wasUp_) {
+    if (droppedAt_) {                             // back after a drop
+      uint64_t d = now - droppedAt_;
+      downMs_ += d;
+      if (d > longestMs_) longestMs_ = d;
+      droppedAt_ = 0;
+    }
+    uint8_t* b = WiFi.BSSID();
+    if (b) {
+      if (haveBssid_ && memcmp(b, bssid_, 6) != 0) bssidChanges_++;
+      memcpy(bssid_, b, 6);
+      haveBssid_ = true;
+    }
     std::string t;
     if (firstBegin_) { t = ", after " + std::to_string((unsigned long)((now - firstBegin_ + 500) / 1000)) + " s"; firstBegin_ = 0; }
     say("Connected to network: ", std::string(WiFi.SSID().c_str()) + " (" + WiFi.localIP().toString().c_str() + ")" + t);
@@ -183,7 +213,12 @@ void WifiNet::update(uint64_t now) {
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
   if (up) lastBegin_ = now;
-  if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
+  if (!up && wasUp_) {
+    haveIp_ = false; nextResolve_ = 0;
+    drops_++; droppedAt_ = now; lastDropUp_ = now; dropReason_ = lastReason;
+    say("WiFi dropped: reason ", std::to_string((unsigned)dropReason_) + " (ESP-IDF wifi_err_reason_t), drop " + std::to_string((unsigned long)drops_) +
+        " since start, signal was " + std::to_string((int)WiFi.RSSI()) + " dBm");
+  }
   wasUp_ = up;
 }
 

@@ -38,7 +38,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.2.1"
+#define FW_VERSION "0.2.2"
 // In the flash image, so the Pi's flash station can tell what an image is and what a board runs.
 extern const char FW_ID[] __attribute__((used)) = "fet-target-esp32/" FW_VERSION;
 static const uint16_t BOARD_REV = 620;

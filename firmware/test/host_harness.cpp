@@ -99,6 +99,8 @@ struct TcpNet : Net {
   }
   bool ready() override { return up; }
   int rssi() override { return -57; }
+  std::string link;                                 // the ESP32's link history (the "link" command); empty: none
+  std::string linkJson() override { return link; }
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override {
     requests++;
     if (fakeStatus) { status = fakeStatus; resp = "{}"; return true; }
@@ -173,6 +175,7 @@ int main() {
     else if (cmd == "drop") net.dropPct = atoi(rest.c_str());
     else if (cmd == "fake") net.fakeStatus = atoi(rest.c_str());
     else if (cmd == "token") net.token = rest;
+    else if (cmd == "link") net.link = rest;
     else if (cmd == "tear") fs.tearNext = atol(rest.c_str());
     else if (cmd == "failappends") fs.failAppends = rest == "1";
     else if (cmd == "free") fs.freeSet = atol(rest.c_str());

@@ -519,6 +519,16 @@ const tt = tvTargets(D.targets, [B], {m: '2'});
 assert(tt.includes('data-clock="tv-2"') && count(tt, /class="card/g) === D.targets.filter(t => ['lane-1', 'lane-2'].includes(t.device_id)).length, 'the match\'s targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {t: 'lane-4'}), /class="card/g), 1, 'a chosen list of targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.targets.length, 'all targets');
+// the WiFi link on a target's settings sheet (ESP32 boards 0.2.2+: why it started, drops)
+{
+  const L = X.linkLines({rssi: -74, link: {reset_name: 'a brownout (supply voltage dropped)', reset_trouble: true, drops: 3, reason_name: 'beacon timeout <x>',
+    last_drop_ago_s: 720, down_ms: 61000, longest_ms: 45000, bssid: 'aa:bb:cc:dd:ee:ff', ch: 6, bssid_changes: 2}});
+  assert(L.includes('-74 dBm') && L.includes('weak') && L.includes('aa:bb:cc:dd:ee:ff, channel 6'));
+  assert(L.includes('<b class="bad">a brownout') && L.includes('dropped <b>3</b> times') && L.includes('beacon timeout &lt;x&gt;, 12 min ago'));
+  assert(L.includes('without WiFi 61 s in all, longest 45 s') && L.includes('moved between access points 2 times'));
+  assert(X.linkLines({rssi: -55, link: {reset_name: 'power-on', reset_trouble: false, drops: 0}}).includes('No WiFi drops since then'));
+  assert(!X.linkLines({rssi: -55, link: null}).includes('drop') && X.linkLines({rssi: null, link: null}) === '', 'an ESP-01: the signal only');
+}
 // TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>
 {
   assert(X.RC_TABS.some(t => t[0] === 'tv' && t[1] === 'TV displays'), 'a Range Control tab');

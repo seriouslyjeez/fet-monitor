@@ -961,9 +961,21 @@ function targetSettingsPanel(d, rc) {          // Range Control → Target setti
         '<td><button class="pri" data-act="rctopen" data-id="' + esc(t.device_id) + '">Settings…</button></td></tr>';
     }).join('') + '</table></div></div>';
 }
-function deviceSection(t) {                    // the target as a device: trip point, its own page, setup portal, factory reset
+const dur = ms => { const s = Math.round(ms / 1000); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.floor(s / 3600) + ' h ' + Math.round(s % 3600 / 60) + ' min'; };
+function linkLines(t) {                          // the WiFi link: signal; for ESP32 boards (0.2.2+) why it started and its drops
+  const L = t.link, out = [];
+  if (t.rssi != null && t.rssi !== 0) out.push('WiFi signal <b>' + esc(t.rssi) + ' dBm</b>' + (t.rssi < -70 ? ' <span class="bad">weak</span>' : '') +
+    (L && L.bssid ? ' <span class="mut">· access point ' + esc(L.bssid) + (L.ch ? ', channel ' + esc(L.ch) : '') + '</span>' : ''));
+  if (L && L.reset_name) out.push('Started by ' + (L.reset_trouble ? '<b class="bad">' + esc(L.reset_name) + '</b>' : esc(L.reset_name)));
+  if (L && L.drops != null) out.push(!L.drops ? 'No WiFi drops since then' : 'WiFi dropped <b>' + esc(L.drops) + '</b> time' + (L.drops === 1 ? '' : 's') + ' since then; last: ' +
+    esc(L.reason_name || '?') + (L.last_drop_ago_s != null ? ', ' + esc(dur(L.last_drop_ago_s * 1000)) + ' ago' : '') +
+    ' <span class="mut">· without WiFi ' + esc(dur(L.down_ms || 0)) + ' in all, longest ' + esc(dur(L.longest_ms || 0)) +
+    (L.bssid_changes ? ' · moved between access points ' + esc(L.bssid_changes) + ' time' + (L.bssid_changes === 1 ? '' : 's') : '') + '</span>');
+  return out.length ? '<p>' + out.join('<br>') + '</p>' : '';
+}
+function deviceSection(t) {                    // the target as a device: trip point, WiFi link, its own page, setup portal, factory reset
   const su = statusUrl(t.ip), id = esc(t.device_id);
-  return '<h4>Device</h4>' +
+  return '<h4>Device</h4>' + linkLines(t) +
     (t.v_ref ? '<p>Trip point (V_REF) <b>' + esc(Number(t.v_ref.volts).toFixed(2)) + ' V</b> <span class="mut">' +
       (t.v_ref.from === 'target' ? 'measured by the target' : 'with its last shot') + (t.v_ref.at ? ', ' + esc(when(t.v_ref.at)) : '') + '</span></p>' : '') +
     '<p>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">Its own status page (' + esc(t.ip) + ')</a> <span class="mut">WiFi, signal, server, shots waiting</span>'
@@ -3085,7 +3097,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

@@ -64,6 +64,7 @@ class WifiNet : public fet::Net {
   void update(uint64_t now);
   bool wifiUp() const;
   std::string serverText() const;
+  std::string linkJson() override;
  private:
   bool resolveServer(uint64_t now);
   const fet::Config& cfg_;
@@ -72,6 +73,14 @@ class WifiNet : public fet::Net {
   uint64_t nextResolve_ = 0, ipAt_ = 0, lastBegin_ = 0, firstBegin_ = 0, nextWifiNote_ = 0;
   int connectFails_ = 0, port_ = 8080;
   std::string hostname_;
+  // The link's history since this start (linkJson): drops are connected -> not connected; downMs_/longestMs_ the time
+  // without WiFi after a drop until connected again; bssid_ the access point (a mesh moves units between its nodes).
+  int reset_ = 0;
+  uint32_t drops_ = 0, bssidChanges_ = 0;
+  uint64_t downMs_ = 0, longestMs_ = 0, droppedAt_ = 0, lastDropUp_ = 0;
+  uint16_t dropReason_ = 0;
+  uint8_t bssid_[6] = {0, 0, 0, 0, 0, 0};
+  bool haveBssid_ = false;
 };
 
 // Commands from the server to the target: queued for the main loop, which answers through toBridge.

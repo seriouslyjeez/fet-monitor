@@ -446,6 +446,12 @@ MIGRATIONS = [
         updated_ms  INTEGER NOT NULL
     );
     """,
+    """
+    -- A target's WiFi link as its firmware last reported it in a heartbeat (fetserver/wifilink.py; FeT target firmware
+    -- for the ESP32 board 0.2.2+): why it started, WiFi drops since then with the last reason, time without WiFi, the
+    -- access point. JSON; NULL for firmware that does not report it.
+    ALTER TABLE targets ADD COLUMN link_json TEXT;
+    """,
 ]
 
 

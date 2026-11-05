@@ -32,6 +32,9 @@ struct Net {
   virtual bool updateFirmware(const std::string& sha256hex, uint32_t size, std::string& err) {
     (void)sha256hex; (void)size; err = "not supported here"; return false;
   }
+  // The WiFi link's history as a JSON object (why the unit last started, drops and their reason, time offline), sent
+  // in the heartbeat as "link"; empty = nothing to say (the ESP-01).
+  virtual std::string linkJson() { return std::string(); }
   virtual uint32_t otaSpace() { return 0; }    // bytes free for a new firmware image; 0 = cannot update
   virtual uint32_t flashSize() { return 0; }   // the flash size this firmware was built for (an image must match it)
 };

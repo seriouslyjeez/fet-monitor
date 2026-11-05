@@ -17,6 +17,7 @@ from .shotsolve import Geometry, solve, timers_from_reported
 from .targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
 from .scoring import SCORING_VERSION
 from . import faces as F
+from . import wifilink
 from .sightadj import suggest
 from .matches import ACTIVE_SQL, Matches, _check
 from .competitions import Competitions
@@ -413,6 +414,10 @@ class Core:
         asleep = {"sleep": 1, "wake": 0}.get(verb, r["values"].get("sl") if verb == "status" else None)
         if asleep in (0, 1):
             c.execute("UPDATE targets SET target_asleep=? WHERE device_id=?", (asleep, device_id))
+        if verb not in ("get", "set"):            # only those answer with settings: a status field this server does not know
+            if r["values"].get("k") is not None:  # (newer firmware) is not a setting; the settings id still counts
+                c.execute("UPDATE targets SET target_settings_id=? WHERE device_id=?", (r["values"]["k"], device_id))
+            return
         vals = {k: v for k, v in r["values"].items() if k not in ("k",) + STATUS_KEYS}
         t = c.execute("SELECT target_settings_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
         cur = json.loads(t["target_settings_json"]) if t["target_settings_json"] else {}
@@ -543,7 +548,8 @@ class Core:
                         rssi=payload.get("rssi") if isinstance(payload.get("rssi"), int) else None,
                         queue_depth=payload.get("queue_depth") if isinstance(payload.get("queue_depth"), int) else None,
                         overflow_count=payload.get("overflow_count") if isinstance(payload.get("overflow_count"), int) else None,
-                        ota_space=_nonneg(payload.get("ota_space")), flash_size=_nonneg(payload.get("flash_size")))
+                        ota_space=_nonneg(payload.get("ota_space")), flash_size=_nonneg(payload.get("flash_size")),
+                        link_json=json.dumps(link) if (link := wifilink.clean(payload.get("link"))) else None)
             self._register_boot(c, device_id, boot_count, recv_ms - uptime_ms)
             for r in results:
                 if isinstance(r, dict) and isinstance(r.get("id"), int):
@@ -1204,8 +1210,9 @@ class Core:
         targets = self.list_targets(None)
         jobs = self.firmware_jobs()
         for t in targets:
-            r = self.db.conn().execute("SELECT ota_space, flash_size FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
+            r = self.db.conn().execute("SELECT ota_space, flash_size, link_json, uptime_ms FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
+            t["link"] = wifilink.view(json.loads(r["link_json"]) if r["link_json"] else None, r["uptime_ms"])
             t["fw_job"] = jobs.get(t["device_id"])
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
                                                   hello_key_fp, target_seen_ms, target_status_json, target_asleep FROM targets WHERE device_id=?""",
