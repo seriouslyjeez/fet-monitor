@@ -27,16 +27,15 @@ import json
 from typing import Dict, List, Optional
 
 from fetcore import faces
+from fetcore import matchengine as me
 from fetcore import matchformats as mf
 from fetcore import ranking
-from fetcore.rules import guidance, lookup_text
 from fetcore import rulebooks as rb
 from fetcore.rulebooks import interruption_time, range_interruption   # noqa: F401 (tests and callers use them from here)
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
-from fetcore.matchengine import (ACTIVE, ACTIVE_SQL, CLOSE_MS, DECISIONS, LIVE, MATCH_ENGINE_EXPORTS, MAX_LANES,   # noqa: F401
-                                 MISFIT_FLAG_UM, PACING, SIGHTER_DECISIONS, UNPLACED_DECISIONS, MatchError, _check, _lane_spans,
-                                 _pauses, own_clock, rules_of)
+from fetcore.matchengine import (ACTIVE, ACTIVE_SQL, CLOSE_MS, DECISIONS, LIVE, MAX_LANES, PACING,   # noqa: F401 (callers
+                                 SIGHTER_DECISIONS, UNPLACED_DECISIONS, MatchError, _check, own_clock, rules_of)   # import them from here)
 from fetcore.matchengine import discharged_at as _discharged_at
 
 
@@ -319,11 +318,7 @@ class Matches:
         self._set_modes(c, m, "sighter", now, everyone=True)   # nothing after STOP counts as record
 
     def remaining_ms(self, m, now: int) -> int:
-        if m["phase"] < 0 or m["state"] not in LIVE:
-            return 0
-        p = json.loads(m["format_json"])["phases"][m["phase"]]
-        used = m["phase_used_ms"] + (now - m["phase_started_ms"] if m["state"] == "running" and m["phase_started_ms"] else 0)
-        return max(0, p["seconds"] * 1000 + m["phase_extra_ms"] - used)
+        return me.remaining_ms(json.loads(m["format_json"]), m, now)
 
     def tick(self) -> int:
         """End every phase whose time is up. Returns how many phases ended (tests use it)."""
@@ -419,11 +414,7 @@ class Matches:
                 self._log(c, m["id"], now, "place", m["phase"], ln["device_id"], {"place": pl})
                 self.core._set_mode_in(c, ln["device_id"], "sighter", self._session(m, ln), now)
 
-    @staticmethod
-    def _countback_3p(tenths: List[int]) -> tuple:
-        """ISSF 6.17.3 i, for two finalists tied after the second standing series (shots 1-10 kneeling, 11-20 prone,
-        21-25 and 26-30 standing): the second standing series, the first, then the last prone shot and on backwards."""
-        return (sum(tenths[25:30]), sum(tenths[20:25])) + tuple(reversed(tenths[:20]))
+    _countback_3p = staticmethod(me.countback_3p)
 
     def _all_fired(self, c, m) -> bool:
         """A final's shot phase (early) ends as soon as every finalist in it has fired its shots (CMP 3PAR 10.4.6 c)."""
@@ -515,9 +506,7 @@ class Matches:
                   "AND own_left_ms > 0", (now, mid))
 
     def _overrun(self, m, now: int) -> int:
-        p = json.loads(m["format_json"])["phases"][m["phase"]]
-        used = m["phase_used_ms"] + (now - m["phase_started_ms"])
-        return max(0, used - (p["seconds"] * 1000 + m["phase_extra_ms"]))
+        return me.overrun(json.loads(m["format_json"]), m, now)
 
     def command(self, mid: int, action: str, by: str, seconds: Optional[int] = None, device_id: Optional[str] = None,
                 paced: Optional[str] = None) -> None:
@@ -683,21 +672,13 @@ class Matches:
     @staticmethod
     def _lane_devs(c, mid, device_id) -> List[str]:
         """Every target a lane has used, newest first (a shooter may have been moved)."""
-        devs, cur = [device_id], device_id
-        for r in c.execute("SELECT device_id, data FROM match_log WHERE match_id=? AND kind='move' ORDER BY id DESC", (mid,)):
-            if r["device_id"] == cur:
-                cur = json.loads(r["data"])["from"]
-                devs.append(cur)
-        return devs
+        return me.lane_devs(c.execute("SELECT kind, device_id, data FROM match_log WHERE match_id=? AND kind='move' ORDER BY id",
+                                      (mid,)).fetchall(), device_id)
 
     # ------------------------------------------------------------------------------------------- moving a shooter
     def lane_left_ms(self, m, ln, now: int) -> int:
         """A lane's own time left in its phase."""
-        if ln["moving_since_ms"] is not None:
-            return ln["moving_left_ms"] or 0
-        if ln["own_phase"] is not None:
-            return max(0, ln["own_left_ms"] - (now - ln["own_since_ms"] if ln["own_since_ms"] is not None else 0))
-        return self.remaining_ms(m, now) + ln["extra_ms"] if m["state"] in LIVE else 0
+        return me.lane_left_ms(json.loads(m["format_json"]), m, ln, now)
 
     def _lane(self, c, mid, device_id):
         ln = c.execute("SELECT * FROM match_lanes WHERE match_id=? AND device_id=?", (mid, device_id)).fetchone()
@@ -996,32 +977,8 @@ class Matches:
 
     # ------------------------------------------------------------------------------------------- reading
     def windows(self, c, mid) -> List[dict]:
-        """The timeline as intervals: {phase, attempt, start, end, live, hold, superseded}. live False = the clock was
-        paused (hold True: waiting for START). superseded: a later restart went back to this phase or an earlier one."""
-        out, cur, attempts, restarts = [], None, {}, []
-        for r in c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (mid,)):
-            k = r["kind"]
-            data = json.loads(r["data"]) if r["data"] else {}
-            if k == "phase_start":
-                attempts[r["phase"]] = attempts.get(r["phase"], 0) + 1
-                cur = {"phase": r["phase"], "attempt": attempts[r["phase"]], "start": r["at_ms"], "live": not data.get("hold"),
-                       "hold": bool(data.get("hold")), "start_id": r["id"]}
-            elif k in ("pause", "resume", "go") and cur is not None:
-                cur["end"] = r["at_ms"]
-                out.append(cur)
-                cur = dict(cur, start=r["at_ms"], live=k != "pause", hold=False)
-            elif k == "phase_end" and cur is not None:
-                cur["end"] = r["at_ms"]
-                out.append(cur)
-                cur = None
-            elif k == "restart":
-                restarts.append((r["at_ms"], r["phase"], r["id"]))
-        if cur is not None:
-            cur["end"] = None                                  # still open
-            out.append(cur)
-        for w in out:                                     # by log order, exact even when times are equal
-            w["superseded"] = any(rid > w["start_id"] and to <= w["phase"] for _, to, rid in restarts)
-        return out
+        """The timeline as intervals (fetcore.matchengine.windows)."""
+        return me.windows(self._log_rows(c, mid))
 
     @staticmethod
     def discharged_at(c, mid: int) -> Optional[int]:
@@ -1031,158 +988,41 @@ class Matches:
         return _discharged_at(c.execute("SELECT kind, at_ms FROM match_log WHERE match_id=? AND kind IN ('discharge', 'restart') "
                                         "ORDER BY id", (mid,)).fetchall())
 
+    # The facts the pure engine (fetcore.matchengine) works from, loaded from the database.
+    @staticmethod
+    def _log_rows(c, mid) -> list:
+        return c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (mid,)).fetchall()
+
+    @staticmethod
+    def _series_shots(c, series_id) -> list:
+        if series_id is None:
+            return []
+        return c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring, inner, ax_h, ay_h, misfit_um FROM shots "
+                         "WHERE series_id=? ORDER BY event_ms, id", (series_id,)).fetchall()
+
+    @staticmethod
+    def _series_unplaced(c, series_id) -> list:
+        if series_id is None:
+            return []
+        return c.execute("SELECT * FROM unplaced WHERE series_id=? ORDER BY event_ms, id", (series_id,)).fetchall()
+
     def flags(self, c, m) -> List[dict]:
         """Every shot of the match's lanes that the timeline says did not happen in its time, or is a record shot
-        beyond the stage's count. Recomputed from the facts every time."""
-        fmt = json.loads(m["format_json"])
-        wins = self.windows(c, m["id"])
-        first = wins[0]["start"] if wins else None
-        attempt_start: Dict[tuple, int] = {}
-        for w in wins:
-            attempt_start.setdefault((w["phase"], w["attempt"]), w["start"])
-        out = []
+        beyond the stage's count (fetcore.matchengine.flags)."""
+        lanes = self._lanes(c, m["id"])
         decisions = {r["shot_id"]: r["decision"] for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (m["id"],))}
-        discharged = self.discharged_at(c, m["id"])
-        log = c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (m["id"],)).fetchall()
-        pauses = _pauses(log)
-        for ln in self._lanes(c, m["id"]):
-            if ln["series_id"] is None:
-                continue
-            devs = set(self._lane_devs(c, m["id"], ln["device_id"]))
-            mine = [r for r in log if r["device_id"] in devs]
-            switches = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "start_record"]
-            backs = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "to_sighters"]       # NRA SB 9.2, ISSF 7.7.3
-            pos_log = [(r["phase"], r["at_ms"], 1 if r["kind"] == "to_sighters" else 0) for r in mine if r["kind"] in ("to_sighters", "start_record")]
-            readies = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] in ("lane_ready", "sighters")] + \
-                [(r["phase"], r["at_ms"]) for r in log if r["kind"] == "sighters" and r["device_id"] is None]
-            stops = [(r["phase"], r["at_ms"]) for r in mine if r["kind"] == "lane_stop"]
-            moving, own = _lane_spans(log, devs, wins)
-
-            def sighting_ok(ph, a_start, t):          # after a move, or rejoining from an earlier relay (CMP 3PAR 7.18.3, CMP AG 7.12.2):
-                rejoin = [a_start] if ph == ln["start_phase"] and ln["from_match"] is not None else []   # unlimited sighters
-                ready = max([at for q, at in readies if q == ph and a_start <= at <= t] + rejoin, default=None)   # until record starts
-                return ready is not None and not any(q == ph and ready <= at < t for q, at in switches)
-
-            def pos_events(ph, a_start, t, sighter):  # ISSF 7.7.3: to sighting (1) and back to MATCH (0), in log order. A
-                # command in the same millisecond as the shot came before it when it explains the shot's stream: a
-                # sighter after "to sighting", a record shot after "back to MATCH"
-                before = [k for q, at, k in pos_log if q == ph and a_start <= at < t]
-                same = [k for q, at, k in pos_log if q == ph and a_start <= at == t]
-                want = 1 if sighter else 0
-                return before + (same[:len(same) - same[::-1].index(want)] if want in same else [])
-
-            def between_at(ph, a_start, t):           # sighting between positions when the shot was fired
-                ev = pos_events(ph, a_start, t, True)
-                return bool(ev) and ev[-1] == 1
-
-            def pos_at(ph, a_start, t):               # the position a record shot belongs to: one more after each switch back
-                pos, btw = 0, False
-                for k in pos_events(ph, a_start, t, False):
-                    if k:
-                        btw = True
-                    elif btw:
-                        pos, btw = pos + 1, False
-                return pos
-
-            def in_record(ph, a_start, t):            # an NRA-style stage: record started (and no move, nor back to sighters, since)
-                sw = max((at for q, at in switches if q == ph and at >= a_start and t > at), default=None)
-                return sw is not None and not any(q == ph and sw <= at <= t for q, at in readies + backs)
-            counted: Dict[tuple, int] = {}
-            eff = self.core.corrections.effects(c, m, ln["lane"])
-            items = [dict(r) for r in c.execute("SELECT id, event_ms, stream, series_no, is_miss, tenths, ring, misfit_um FROM shots WHERE series_id=? ORDER BY event_ms, id",
-                                                (ln["series_id"],)) if r["id"] not in eff["annulled"]]      # an annulled shot needs no flag
-            items += [{"id": None, "event_ms": a["at_ms"], "stream": "scored"} for a in eff["added"]]     # added shots count, never flagged
-            items.sort(key=lambda r: (r["event_ms"], r["id"] or 0))
-            heard = [(r["event_ms"], r["id"], r["series_no"], False) for r in items if r["id"] is not None] + \
-                [(u["event_ms"], u["id"], None, True) for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=?", (ln["series_id"],))]
-            for s in items:
-                t = s["event_ms"]
-                if discharged is not None and t >= discharged:
-                    continue                           # after "You may discharge air downrange": expected, never counted
-                inside = lambda sp: sp["start"] <= t and (sp["end"] is None or t < sp["end"])
-                o = next((sp for sp in own if inside(sp)), None)
-                if o is not None:                      # finishing their own phase after the match went on
-                    w = {"phase": o["phase"], "attempt": o["attempt"], "start": o["start"], "end": o["end"], "hold": False,
-                         "live": not any(inside(pz) for pz in pauses), "superseded": o["superseded"]}
-                else:
-                    w = next((w for w in wins if w["start"] <= t and (w["end"] is None or t < w["end"])), None)
-                why, code, kind, pair = None, None, None, None   # code + the phase's kind: what the rulebook guidance looks up
-                stopped = next((sp for sp in moving if inside(sp)), None)
-                if stopped is not None:
-                    why, code = stopped["why"], "moving"
-                elif w is None:
-                    code = "before_start" if first is None or t < first else "after_end"
-                    why = "before the start" if code == "before_start" else "after the end"
-                elif w["superseded"]:
-                    why, code = f"fired before {fmt['phases'][w['phase']]['label'].lower()} was restarted", "restarted"
-                elif w["phase"] < ln["start_phase"]:
-                    why, code = f"before this shooter rejoins at {fmt['phases'][ln['start_phase']]['label'].lower()}", "waiting"
-                elif any(ph == w["phase"] and at <= t and at >= attempt_start[(w["phase"], w["attempt"])] for ph, at in stops):
-                    why, code = "after this shooter's own time", "after_own_time"
-                elif ln["out_place"] is not None and t >= ln["out_ms"] and ln["out_place"] > 1:
-                    why, code = "after being eliminated", "eliminated"
-                elif fmt["phases"][w["phase"]].get("lanes") is not None and ln["lane"] not in fmt["phases"][w["phase"]]["lanes"]:
-                    why, code = f"during {fmt['phases'][w['phase']]['label'].lower()}, not in it", "not_in_shoot_off"
-                elif w["hold"]:
-                    kind = fmt["phases"][w["phase"]]["kind"]
-                    why, code = f"before START of {fmt['phases'][w['phase']]['label'].lower()}", "before_cmd"
-                elif not w["live"]:
-                    why, code = "while the clock was paused", "paused"
-                else:
-                    p = fmt["phases"][w["phase"]]
-                    rec = s["stream"] == "scored"
-                    kind = p["kind"]
-                    check = _check(s, heard, self.close_ms) if s["id"] is not None else None
-                    if p["kind"] not in mf.FIRE_KINDS:
-                        why, code = f"during {p['label'].lower()} (no firing)", "no_fire"
-                    elif p["kind"] == "sight" and rec:
-                        why, code = f"a record shot during {p['label'].lower()}", "record_in_sight"
-                    elif p["kind"] == "record" and not rec and not sighting_ok(w["phase"], attempt_start[(w["phase"], w["attempt"])], t) \
-                            and not (mf.blocks(p) and between_at(w["phase"], attempt_start[(w["phase"], w["attempt"])], t)):
-                        why, code = f"a sighting shot during {p['label'].lower()}", "sighter_in_record"
-                    elif p["kind"] == "stage" and not rec and in_record(w["phase"], attempt_start[(w["phase"], w["attempt"])], t):
-                        why, code = "a sighting shot after record started", "sighter_after_record"
-                    elif check and not (rec and decisions.get(s["id"]) in ("count", "miss", "penalty2")):
-                        why, code, pair = check                # not counted (yet): it does not use up a record shot
-                    elif rec:
-                        key = (w["phase"], w["attempt"])
-                        base = counted.get(key, ln["carry_shots"] if w["phase"] == ln["start_phase"] else 0)   # a later relay: shots already fired
-                        blk = mf.blocks(p)
-                        pos = pos_at(w["phase"], attempt_start[key], t) if blk else 0
-                        if blk and pos < len(blk) and blk[pos] <= base < p["shots"]:
-                            why, code = (f"an extra {p['positions'][pos]['position']} shot: after its {p['positions'][pos]['shots']} MATCH shots, "
-                                         "without switching to sighting", "extra_in_position")
-                        else:
-                            counted[key] = base + 1
-                            if counted[key] > p["shots"]:
-                                why, code = f"more than {p['shots']} record shots in {p['label'].lower()}", "too_many"
-                            elif check:                        # decided to count: still listed with its decision
-                                why, code, pair = check
-                if why and s["id"] is not None:
-                    out.append({"shot_id": s["id"], "device_id": ln["device_id"], "lane": ln["lane"], "n": s["series_no"],
-                                "stream": s["stream"], "why": why, "event_ms": t, "decision": decisions.get(s["id"]),
-                                "miss": bool(s["is_miss"]), "decimal": s["tenths"] / 10.0, "ring": s["ring"], "code": code, "pair": pair,
-                                "guide": guidance(code, kind, s["stream"], rb.book_of(fmt))})
-        return out
+        return me.flags(json.loads(m["format_json"]), self._log_rows(c, m["id"]), lanes,
+                        {ln["series_id"]: self._series_shots(c, ln["series_id"]) for ln in lanes},
+                        {ln["series_id"]: self._series_unplaced(c, ln["series_id"]) for ln in lanes}, decisions,
+                        {ln["lane"]: self.core.corrections.effects(c, m, ln["lane"]) for ln in lanes}, self.close_ms)
 
     def unplaced(self, c, m) -> List[dict]:
         """Record-time reports the target heard but could not place, on this match's firing points. They count as
         nothing until the director decides: ignore (noise, an echo) or miss (it was a shot)."""
-        out = []
-        for ln in self._lanes(c, m["id"]):
-            if ln["series_id"] is None:
-                continue
-            shots = c.execute("SELECT id, event_ms, series_no FROM shots WHERE series_id=?", (ln["series_id"],)).fetchall()
-            for u in c.execute("SELECT * FROM unplaced WHERE series_id=? AND stream='scored' AND event_ms < ? ORDER BY event_ms, id",
-                               (ln["series_id"], self.discharged_at(c, m["id"]) or 2 ** 62)):
-                before = [r for r in shots if self.close_ms is not None and r["event_ms"] <= u["event_ms"] <= r["event_ms"] + self.close_ms]
-                prev = max(before, key=lambda r: r["event_ms"]) if before else None
-                out.append({"id": u["id"], "lane": ln["lane"], "device_id": ln["device_id"], "event_ms": u["event_ms"],
-                            "why": "heard but not placed by the target" + (
-                                f", {(u['event_ms'] - prev['event_ms']) / 1000:.1f} s after shot {prev['series_no']}: a double load, an echo or noise?" if prev else ""),
-                            "pair": {"shot_id": prev["id"], "n": prev["series_no"]} if prev else None,
-                            "decision": u["decision"], "decided_by": u["decided_by"]})
-        return out
+        lanes = self._lanes(c, m["id"])
+        return me.unplaced_reports(lanes, {ln["series_id"]: self._series_shots(c, ln["series_id"]) for ln in lanes},
+                                   {ln["series_id"]: self._series_unplaced(c, ln["series_id"]) for ln in lanes},
+                                   self.discharged_at(c, m["id"]), self.close_ms)
 
     def decide_unplaced(self, mid: int, unplaced_id: int, decision: str, by: str) -> None:
         if decision not in UNPLACED_DECISIONS and decision != "undecided":
@@ -1197,26 +1037,7 @@ class Matches:
         self._pub(mid)
 
     def _clock(self, m, now: int) -> dict:
-        fmt = json.loads(m["format_json"])
-        i = m["phase"]
-        p = fmt["phases"][i] if 0 <= i < len(fmt["phases"]) else None
-        nxt = fmt["phases"][i + 1] if p and i + 1 < len(fmt["phases"]) else None
-        rem = self.remaining_ms(m, now)
-        prev = fmt["phases"][i - 1] if p and i > 0 else None
-        if m["state"] == "overtime":                       # the match time is over; moved shooters are finishing
-            return {"state": "overtime", "paced": m["paced"], "phase": i, "phase_count": len(fmt["phases"]),
-                    "label": "Time over: moved shooters are finishing", "prev_end_say": "", "kind": None, "position": None,
-                    "shots": 0, "seconds": 0, "extra_ms": 0, "remaining_ms": 0, "ends_at_ms": None, "next_start_say": "",
-                    "next": None, "warnings": [], "start_say": "", "end_say": "", "server_time_ms": now,
-                    "paused": m["phase_started_ms"] is None}
-        return {"state": m["state"], "paced": m["paced"], "phase": i, "phase_count": len(fmt["phases"]), "label": p["label"] if p else None,
-                "prev_end_say": prev["end"] if prev else "",
-                "kind": p["kind"] if p else None, "position": p["position"] if p else None,
-                "shots": p["shots"] if p else 0, "seconds": p["seconds"] if p else 0, "extra_ms": m["phase_extra_ms"],
-                "remaining_ms": rem, "ends_at_ms": now + rem if m["state"] == "running" else None,
-                "next_start_say": nxt["start"] if nxt else "",
-                "next": nxt["label"] if nxt else None, "warnings": p["warnings"] if p else [],
-                "start_say": p["start"] if p else "", "end_say": p["end"] if p else "", "server_time_ms": now}
+        return me.clock(json.loads(m["format_json"]), m, now)
 
     def detail(self, mid: int) -> dict:
         now = self.core.now_ms()
@@ -1400,102 +1221,22 @@ class Matches:
     # ------------------------------------------------------------------------------------------- results
     def counted(self, c, m, ln, flags: Dict[int, dict]) -> List[dict]:
         """One lane's counted record shots in firing order, after the match director's decisions and the corrections
-        (corrections.py). A record shot counts unless flagged; flagged ones only as decided (count as fired, miss = 0,
-        penalty2 = 2 points off, not below 0; annul / undecided do not count). Corrections: annulled shots (also
-        crossfires received) are left out; an override replaces the value (orig keeps the fired one); added shots and
-        crossfire misses take their place in firing order (n None). Decisions on stray sighting shots land on the first
-        record shot (miss_first: 0; penalty2_first: 2 points off each); penalties on their shot, or
-        on the first series. Values: tenths (decimal x10) and ring, both after penalties."""
-        out = []
-        if ln["series_id"] is None:
-            return out
-        eff = self.core.corrections.effects(c, m, ln["lane"])
-        face = faces.face(json.loads(m["format_json"]).get("face"))     # X's of higher value (NRA SB ties) from the position
-        until = self.discharged_at(c, m["id"]) or 2 ** 62               # nothing fired after "discharge air" counts
-        for s in c.execute("""SELECT id, is_miss, tenths, ring, inner, ax_h, ay_h, series_no, event_ms FROM shots
-                              WHERE series_id=? AND stream='scored' AND event_ms < ? ORDER BY event_ms, id""", (ln["series_id"], until)):
-            if s["id"] in eff["annulled"]:
-                continue
-            f = flags.get(s["id"])
-            decision = f["decision"] if f else "count"
-            if decision not in ("count", "miss", "penalty2"):
-                continue
-            fired = {"tenths": s["tenths"], "ring": s["ring"], "miss": bool(s["is_miss"]), "inner": not s["is_miss"] and bool(s["inner"])}
-            o = eff["overrides"].get(s["id"])
-            v = {k: o[k] for k in ("tenths", "ring", "miss", "inner")} if o else fired
-            miss = v["miss"] or decision == "miss"
-            tenths, ring = (0, 0) if miss else (v["tenths"], v["ring"])
-            if decision == "penalty2":
-                tenths, ring = max(0, tenths - 20), max(0, ring - 2)
-            inner = decision == "count" and not miss and v["inner"]
-            out.append({"id": s["id"], "n": s["series_no"], "tenths": tenths, "ring": ring, "miss": miss,
-                        "inner": inner, "higher": inner and not o and faces.higher(face, s["ax_h"], s["ay_h"]), "decision": decision if f else None,
-                        "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0,
-                        "t": s["event_ms"], "orig": fired if o else None, "override": o["note"] if o else None})
-        for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=? AND stream='scored' AND decision='miss' AND event_ms < ?",
-                           (ln["series_id"], until)):
-            out.append({"id": None, "n": None, "tenths": 0, "ring": 0, "miss": True, "inner": False, "decision": "miss",
-                        "x_mm": None, "y_mm": None, "t": u["event_ms"], "unplaced": True})      # heard, not placed: decided a shot
-        for a in eff["added"]:
-            out.append({"id": None, "n": None, "tenths": 0 if a["miss"] else a["tenths"], "ring": 0 if a["miss"] else a["ring"], "miss": a["miss"],
-                        "inner": a["inner"], "decision": None, "x_mm": None, "y_mm": None, "t": a["at_ms"],
-                        "added": not a.get("crossfire_to"), "crossfire_to": a.get("crossfire_to"), "note": a.get("note")})
-        out.sort(key=lambda x: (x["t"], x["id"] or 0))
-        pens = [f["decision"] for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "sighter"]
-        if out and ("miss_first" in pens or "penalty2_first" in pens):
-            first = out[0]
-            if "miss_first" in pens:
-                first.update(tenths=0, ring=0, inner=False)
-            n = pens.count("penalty2_first")
-            first.update(tenths=max(0, first["tenths"] - 20 * n), ring=max(0, first["ring"] - 2 * n), inner=first["inner"] and not n,
-                         decision=first["decision"] or ("miss_first" if "miss_first" in pens else "penalty2_first"))   # shown as decided
-        for p in self._decision_penalties(m, ln, flags):   # too many shots: 2 points off the LOWEST shot of the first series
-            for x in sorted(out[:10], key=lambda y: (y["tenths"], y["t"]))[:1]:
-                x.update(tenths=max(0, x["tenths"] - 20), ring=max(0, x["ring"] - 2), inner=False)
-                x.setdefault("penalties", []).append(p["rule"])
-        for p in eff["penalties"]:                     # whole points off its shot, or off the first series (its best shot,
-            if p["shot_id"] is not None:                # so the whole deduction applies: ISSF 6.11.6.3, 6.12.6.1 a)
-                hit = [y for y in out if y["id"] == p["shot_id"]]
-            else:
-                hit = sorted(out[:10], key=lambda y: -y["tenths"])[:1]
-            for x in hit:
-                x.update(tenths=max(0, x["tenths"] - 10 * p["points"]), ring=max(0, x["ring"] - p["points"]), inner=False)
-                x.setdefault("penalties", []).append(p["rule"])
-        return out
+        (fetcore.matchengine.counted)."""
+        return me.counted(json.loads(m["format_json"]), ln, self._series_shots(c, ln["series_id"]), self._series_unplaced(c, ln["series_id"]),
+                          flags, self.core.corrections.effects(c, m, ln["lane"]), self.discharged_at(c, m["id"]))
 
     @staticmethod
     def _decision_penalties(m, ln, flags: Dict[int, dict]) -> List[dict]:
-        """2 points for each record shot the director annulled as one too many (decision annul_penalty2)."""
-        rule = rb.rule(rb.book_of(json.loads(m["format_json"])), "too_many") or "too many shots"
-        return [{"points": 2, "rule": rule, "note": "shot %s: one too many" % f["n"], "shot_id": None}
-                for f in flags.values() if f["device_id"] == ln["device_id"] and f["stream"] == "scored" and f["decision"] == "annul_penalty2"]
+        return me.decision_penalties(json.loads(m["format_json"]), ln, flags)
 
     def counted_row(self, c, m, ln, flags: Dict[int, dict]) -> tuple:
-        """(counted shots, extras) for a results row. Disqualified: no shots (their values are cleared). extras: dq,
-        penalties ({points, rule, note}) and removed (record shots annulled by a correction, for the score card)."""
-        shots = self.counted(c, m, ln, flags)
+        """(counted shots, extras) for a results row (fetcore.matchengine.counted_row)."""
         eff = self.core.corrections.effects(c, m, ln["lane"])
-        removed = []
-        for sid, a in eff["annulled"].items():
-            r = c.execute("SELECT series_no, stream, tenths, is_miss FROM shots WHERE id=?", (sid,)).fetchone()
-            if r is not None and r["stream"] == "scored":
-                why = ("crossfire from firing point %d" % a["from_lane"] if a["from_lane"] else "crossfire (source unknown)") \
-                    if a["kind"] == "crossfire" else (a["note"] or "annulled")
-                removed.append({"n": r["series_no"], "tenths": 0 if r["is_miss"] else r["tenths"], "why": why})
-        book = rb.book_of(json.loads(m["format_json"]))
-        dq = dict(eff["dq"], text=lookup_text(eff["dq"]["rule"], book)) if eff["dq"] else None
-        extras = {"dq": dq, "removed": sorted(removed, key=lambda x: x["n"] or 0),
-                  "penalties": [{"points": p["points"], "rule": p["rule"], "note": p["note"], "text": lookup_text(p["rule"], book)}
-                                for p in self._decision_penalties(m, ln, flags) + eff["penalties"]]}
-        return ([] if eff["dq"] else shots), extras
+        annulled = {sid: c.execute("SELECT series_no, stream, tenths, is_miss FROM shots WHERE id=?", (sid,)).fetchone() for sid in eff["annulled"]}
+        return me.counted_row(json.loads(m["format_json"]), ln, self._series_shots(c, ln["series_id"]), self._series_unplaced(c, ln["series_id"]),
+                              flags, eff, self.discharged_at(c, m["id"]), {k: v for k, v in annulled.items() if v is not None})
 
-    @staticmethod
-    def entry_view(shots: List[dict], decimal: bool) -> dict:
-        """What a results row shows, from counted shots."""
-        vals = [s["tenths"] if decimal else s["ring"] * 10 for s in shots]
-        ser = [sum(vals[i:i + 10]) for i in range(0, len(vals), 10)]
-        return {"total": sum(vals) / 10.0, "x": sum(1 for s in shots if s["inner"]), "shots": len(shots),
-                "series": [v / 10.0 for v in ser], "last10": [v / 10.0 for v in vals[-10:]]}
+    entry_view = staticmethod(me.entry_view)
 
     def results(self, mid: int) -> dict:
         """Standings of one match, ranked with its format's tie-break rules (ranking.py)."""

@@ -7,6 +7,7 @@ from fetserver.core import BadRequest, Core, Forbidden
 from fetserver.db import Database
 from fetserver.matches import MatchError
 from fetcore.matchformats import BUILTIN, record_shots, validate
+from tests import engine_replay
 
 BASE = 1_000_000_000
 SHOT = '{"shot":%d, "miss":0, "name":"TARGET", "time":1.00 ,"x":%s, "y":0.50 , "N":1, "E":2, "S":3, "W":0 , "VERSION":"4.3.0" }'
@@ -34,6 +35,7 @@ class MatchCase(unittest.TestCase):
         self.core = Core(Database(os.path.join(tmp.name, "t.db")), now_ms=self.clock, lease_ms=10 ** 9)
         self.m = self.core.matches
         self.m.close_ms = None          # these tests fire several shots at one instant; tests.test_doubleload covers it
+        self.addCleanup(engine_replay.check, self, self.core)    # the pure engine agrees on every match (runs before tmp.cleanup)
         self.seq = {}
         for did in ("lane-1", "lane-2"):
             self.core.handle_heartbeat({"device_id": did, "boot_count": 1, "uptime_ms": 0})

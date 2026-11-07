@@ -23,6 +23,7 @@ import math
 from typing import Dict, List, Optional
 
 from .matches import MatchError, rules_of
+from fetcore import matchengine as me
 from fetcore import rulebooks as rb
 from fetcore.scoring import is_inner_ten
 from fetcore import faces as F
@@ -225,47 +226,9 @@ class Corrections:
         return c.execute("SELECT COUNT(*) FROM shot_corrections WHERE match_id=? AND status='open'", (mid,)).fetchone()[0]
 
     def effects(self, c, m, lane: int) -> dict:
-        """What the corrections do to one firing point: annulled shot ids, overrides by shot id, added shots (incl.
-        crossfire misses), penalties, disqualification, and the corrections that touch it (for display)."""
-        mid = m["id"]
-        book = rb.book_of(json.loads(m["format_json"]))
-        say = lambda key: rb.rule(book, key) or "the match director decides"
-        out = {"annulled": {}, "overrides": {}, "added": [], "penalties": [], "dq": None}
-        for r in c.execute("SELECT * FROM shot_corrections WHERE match_id=? AND status!='void' ORDER BY id", (mid,)):
-            d = json.loads(r["data"])
-            k = r["kind"]
-            if r["lane"] == lane:
-                if k == "disturbance" and d.get("outcome") == "justified":
-                    out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": "annul", "from_lane": None, "note": "disturbance (%s)" % say("disturbance")}
-                elif k == "double_load":
-                    out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
-                                                        "note": "double load: the lower shot (%s)" % say("double_load")}
-                elif k == "not_registered" and d.get("outcome") in ("found", "not_found"):
-                    out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": d["tenths"], "ring": d["ring"], "inner": d["inner"],
-                                         "miss": d["miss"], "added": True, "by": r["resolved_by"],
-                                         "note": "did not register, %s (%s)" % ("found" if d["outcome"] == "found" else "not found: a miss", say("not_registered"))})
-                    if d.get("annul_shot"):
-                        out["annulled"][d["annul_shot"]] = {"id": r["id"], "kind": "annul", "from_lane": None,
-                                                            "note": "the extra shot after one that did not register (%s)" % say("not_registered")}
-                elif k in ("annul", "crossfire"):
-                    out["annulled"][r["shot_id"]] = {"id": r["id"], "kind": k, "from_lane": d.get("from_lane"), "note": d.get("note")}
-                elif k == "override":
-                    out["overrides"][r["shot_id"]] = dict(d, id=r["id"])          # the latest wins
-                elif k == "added":
-                    out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": d["tenths"], "ring": d["ring"], "inner": d["inner"],
-                                         "miss": d["miss"], "added": True, "note": d.get("note"), "by": r["created_by"]})
-                elif k == "penalty":
-                    out["penalties"].append({"corr": r["id"], "points": d["points"], "rule": d["rule"], "note": d.get("note"), "shot_id": r["shot_id"]})
-                elif k == "dq":
-                    out["dq"] = {"corr": r["id"], "rule": d["rule"], "official": d["official"], "note": d.get("note"), "by": r["created_by"]}
-            if k == "crossfire" and d.get("from_lane") == lane:            # this firing point fired it
-                if d.get("firer_stream") == "scored":
-                    out["added"].append({"corr": r["id"], "at_ms": d["at_ms"], "tenths": 0, "ring": 0, "inner": False, "miss": True,
-                                         "crossfire_to": r["lane"], "note": "crossfire onto firing point %d" % r["lane"]})
-                elif d.get("hit_stream") == "scored" and rb.rule(book, "sighter_crossfire"):
-                    out["penalties"].append({"corr": r["id"], "points": rb.sighter_crossfire_points(book), "rule": rb.rule(book, "sighter_crossfire"),
-                                             "note": "sighter crossfired onto the record target of firing point %d" % r["lane"], "shot_id": None})
-        return out
+        """What the corrections do to one firing point (fetcore.matchengine.correction_effects)."""
+        return me.correction_effects(json.loads(m["format_json"]), c.execute(
+            "SELECT * FROM shot_corrections WHERE match_id=? AND status!='void' ORDER BY id", (m["id"],)).fetchall(), lane)
 
     # ------------------------------------------------------------------------------------------- helpers
     @staticmethod
