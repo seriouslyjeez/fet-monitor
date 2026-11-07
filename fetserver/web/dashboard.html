@@ -1497,6 +1497,8 @@ function mcConsole(mc) {
     (live ? '<button data-act="mclate">Late arrival…</button>' : '') +
     (st === 'running' || st === 'paused' ? '<button data-act="mccmd" data-a="extra" data-s="60">+1 min</button><button data-act="mccmd" data-a="extra" data-s="300">+5 min</button>' : '') +
     (live ? '<button data-act="mccmd" data-a="next">' + (st === 'holding' ? 'Skip this phase' : 'End this phase now') + '</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
+    (st === 'done' ? (d.discharged_ms ? '<span class="mut">Discharge given at ' + esc(new Date(d.discharged_ms).toLocaleTimeString()) + ': shots after it do not count</span>'
+      : '<button class="pri" data-act="mccmd" data-a="discharge" title="Shots fired after this never count and are never flagged">You may discharge air downrange</button>') : '') +
     (ot ? (c.paused ? '<button class="pri" data-act="mccmd" data-a="resume">Resume their clocks</button>' : '<button data-act="mccmd" data-a="pause">Pause their clocks</button>') +
       '<button data-act="mccmd" data-a="next" data-ot="1">End their time now</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
     (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' && !ot ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
@@ -2849,9 +2851,11 @@ async function matchAct(el, a) {
     if (action === 'abort' && !confirm('Stop the whole match now? This cannot be undone.')) return;
     if (action === 'interrupt' && !confirm(((mc.detail || {}).rb || {}).range_interrupt || 'Interrupt the whole range now?')) return;
     if (action === 'next' && !el.dataset.ot && !confirm('End this phase now and go to the next one?')) return;
+    if (action === 'discharge' && !confirm('Give the command "You may discharge air downrange"? Shots fired after it never count.')) return;
     if (action === 'pacing' && !confirm('Switch the commands to "' + PACE[el.dataset.v][0] + '"?\n\n' + PACE[el.dataset.v][1] + ' (from the next phase on).')) return;
     const res = await matchCall('/matches/' + mc.open + '/command', {action: action, seconds: el.dataset.s ? +el.dataset.s : undefined, device_id: el.dataset.id, paced: el.dataset.v});
     if (!show(res)) toast(mc.msg);
+    else if (action === 'discharge' && mc.speak) say('You may discharge air downrange');
     return refresh();
   }
 }

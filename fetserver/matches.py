@@ -543,6 +543,14 @@ class Matches:
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
+            if action == "discharge":                 # "You may discharge air downrange": after the relay's end only
+                if m["state"] != "done":
+                    raise MatchError("only after the relay has ended (no one may still be firing)")
+                if self.discharged_at(c, mid) is not None:
+                    raise MatchError("already given")
+                self._log(c, mid, now, "discharge", None, None, {"by": by})
+                self._pub(mid)
+                return
             if m["state"] == "overtime":
                 self._overtime_command(c, m, action, by, now)
                 self._pub(mid)
@@ -1029,6 +1037,18 @@ class Matches:
             w["superseded"] = any(rid > w["start_id"] and to <= w["phase"] for _, to, rid in restarts)
         return out
 
+    @staticmethod
+    def discharged_at(c, mid: int) -> Optional[int]:
+        """When the range officer said "You may discharge air downrange" (docs/PROTOCOL.md, version 2): a shot fired
+        from then on never counts and is never flagged (air discharged, a pellet left in the bore). A restart after it
+        reopens the match, and the command no longer holds."""
+        rows = c.execute("SELECT kind, at_ms FROM match_log WHERE match_id=? AND kind IN ('discharge', 'restart') ORDER BY id",
+                         (mid,)).fetchall()
+        at = None
+        for r in rows:
+            at = r["at_ms"] if r["kind"] == "discharge" else None
+        return at
+
     def flags(self, c, m) -> List[dict]:
         """Every shot of the match's lanes that the timeline says did not happen in its time, or is a record shot
         beyond the stage's count. Recomputed from the facts every time."""
@@ -1040,6 +1060,7 @@ class Matches:
             attempt_start.setdefault((w["phase"], w["attempt"]), w["start"])
         out = []
         decisions = {r["shot_id"]: r["decision"] for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (m["id"],))}
+        discharged = self.discharged_at(c, m["id"])
         log = c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (m["id"],)).fetchall()
         pauses = _pauses(log)
         for ln in self._lanes(c, m["id"]):
@@ -1094,6 +1115,8 @@ class Matches:
                 [(u["event_ms"], u["id"], None, True) for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=?", (ln["series_id"],))]
             for s in items:
                 t = s["event_ms"]
+                if discharged is not None and t >= discharged:
+                    continue                           # after "You may discharge air downrange": expected, never counted
                 inside = lambda sp: sp["start"] <= t and (sp["end"] is None or t < sp["end"])
                 o = next((sp for sp in own if inside(sp)), None)
                 if o is not None:                      # finishing their own phase after the match went on
@@ -1168,7 +1191,8 @@ class Matches:
             if ln["series_id"] is None:
                 continue
             shots = c.execute("SELECT id, event_ms, series_no FROM shots WHERE series_id=?", (ln["series_id"],)).fetchall()
-            for u in c.execute("SELECT * FROM unplaced WHERE series_id=? AND stream='scored' ORDER BY event_ms, id", (ln["series_id"],)):
+            for u in c.execute("SELECT * FROM unplaced WHERE series_id=? AND stream='scored' AND event_ms < ? ORDER BY event_ms, id",
+                               (ln["series_id"], self.discharged_at(c, m["id"]) or 2 ** 62)):
                 before = [r for r in shots if self.close_ms is not None and r["event_ms"] <= u["event_ms"] <= r["event_ms"] + self.close_ms]
                 prev = max(before, key=lambda r: r["event_ms"]) if before else None
                 out.append({"id": u["id"], "lane": ln["lane"], "device_id": ln["device_id"], "event_ms": u["event_ms"],
@@ -1234,6 +1258,7 @@ class Matches:
         return {"id": m["id"], "name": m["name"], "format": fmt, "face": faces.view(faces.face(fmt.get("face"))), "state": m["state"], "created_by": m["created_by"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
+                "discharged_ms": self.discharged_at(c, m["id"]),
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "move_extra_s": rb.move_extra(rb.book_of(fmt))[0], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)),
@@ -1404,8 +1429,9 @@ class Matches:
             return out
         eff = self.core.corrections.effects(c, m, ln["lane"])
         face = faces.face(json.loads(m["format_json"]).get("face"))     # X's of higher value (NRA SB ties) from the position
+        until = self.discharged_at(c, m["id"]) or 2 ** 62               # nothing fired after "discharge air" counts
         for s in c.execute("""SELECT id, is_miss, tenths, ring, inner, ax_h, ay_h, series_no, event_ms FROM shots
-                              WHERE series_id=? AND stream='scored' ORDER BY event_ms, id""", (ln["series_id"],)):
+                              WHERE series_id=? AND stream='scored' AND event_ms < ? ORDER BY event_ms, id""", (ln["series_id"], until)):
             if s["id"] in eff["annulled"]:
                 continue
             f = flags.get(s["id"])
@@ -1424,7 +1450,8 @@ class Matches:
                         "inner": inner, "higher": inner and not o and faces.higher(face, s["ax_h"], s["ay_h"]), "decision": decision if f else None,
                         "x_mm": None if s["is_miss"] else s["ax_h"] / 100.0, "y_mm": None if s["is_miss"] else s["ay_h"] / 100.0,
                         "t": s["event_ms"], "orig": fired if o else None, "override": o["note"] if o else None})
-        for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=? AND stream='scored' AND decision='miss'", (ln["series_id"],)):
+        for u in c.execute("SELECT id, event_ms FROM unplaced WHERE series_id=? AND stream='scored' AND decision='miss' AND event_ms < ?",
+                           (ln["series_id"], until)):
             out.append({"id": None, "n": None, "tenths": 0, "ring": 0, "miss": True, "inner": False, "decision": "miss",
                         "x_mm": None, "y_mm": None, "t": u["event_ms"], "unplaced": True})      # heard, not placed: decided a shot
         for a in eff["added"]:

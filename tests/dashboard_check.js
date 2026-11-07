@@ -496,6 +496,13 @@ const dcon = mcConsole({status: {role: 'director'}, detail: DET(), speak: false}
 assert(count(dcon, /data-act="mcrestart"/g) === 3 && dcon.includes('id="mcrsel"'));
 assert(correctionsPanel(DET({state: 'done'}), true).includes('reopens a finished match') && !correctionsPanel(DET({state: 'done'}), true).includes('Restart this phase'));
 assert.strictEqual(correctionsPanel(DET({state: 'ready'}), true), '');
+{ // "You may discharge air downrange": offered once the relay has ended, then shown as given
+  const done = mcConsole({status: {role: 'officer'}, detail: DET({state: 'done'}), speak: false});
+  assert(done.includes('data-a="discharge"') && done.includes('You may discharge air downrange'));
+  assert(!mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('data-a="discharge"'), 'not while the match runs');
+  const given = mcConsole({status: {role: 'officer'}, detail: DET({state: 'done', discharged_ms: 1793000000000}), speak: false});
+  assert(!given.includes('data-a="discharge"') && given.includes('Discharge given at') && given.includes('shots after it do not count'));
+}
 assert(commandsPanel(DET()).includes('id="mcsay"') && commandsPanel(DET()).includes('Given: “Stage”'));
 const sflag = DET({flags: [{shot_id: 7, lane: 1, n: 1, stream: 'sighter', why: 'during set-up', miss: false, decimal: 10.1, decision: null}]});
 const sc = mcConsole({status: {role: 'director'}, detail: sflag, speak: false});

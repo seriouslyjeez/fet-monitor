@@ -449,6 +449,13 @@ from one loading heard as one shot whose microphone times disagree, or as two re
 - in practice nothing is decided: the shot list marks such shots with a red **?** (the reason on hover, and under the
   last shot) and counts "heard, not placed" reports below the list; totals are what the target sent.
 
+### "You may discharge air downrange" (0.7.16)
+Once a relay has ended, the range officer's console offers this command (spoken when the console's sound is on). A
+shot fired from then on, such as air being discharged or a pellet left in the bore, never counts and is not flagged.
+A shot after the end but before the command is flagged for the match director as always (the rulebook decides). A
+restart reopens the match and cancels the command. No rulebook here names the command: it is a range convention, and
+the same rule applies to remote matches on deeptens (docs/PROTOCOL.md, version 2).
+
 ### Corrections (*Shots…*; fetserver/corrections.py)
 - range officers mark a shot *under review*, record a *protest*, a *disturbance* or a shot that *did not register*;
   the match director settles them; a protest of a shot value that is not upheld suggests 2 points off where the book
