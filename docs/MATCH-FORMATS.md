@@ -1,7 +1,7 @@
 # Match formats and procedures, one rulebook at a time (built in; please check against your copies)
 
 Every format belongs to ONE rulebook, and its procedures, rule references, screen texts, tie-breaks and finals come
-from that book only (fetserver/rulebooks.py). A book that does not cover something leaves it available, with no rule
+from that book only (fetcore/rulebooks.py). A book that does not cover something leaves it available, with no rule
 cited: "the match director decides". A custom format ("Design your own match") must name its book, or "No rulebook".
 Custom formats saved before 0.6.29 have no book until they are edited (they run as "No rulebook").
 
@@ -19,7 +19,7 @@ anywhere (electronic targets). Times are minutes unless marked.
 | **No rulebook** (`NONE`) | — | custom only | any built final (each follows its own book) |
 
 The documents themselves are not in this repository (each is its publisher's copyright). The Pi downloads them from
-the links in fetserver/rulebooks.py (DOCS, with the SHA-256 of the edition FeT Monitor was built against) and keeps
+the links in fetcore/rulebooks.py (DOCS, with the SHA-256 of the edition FeT Monitor was built against) and keeps
 them, so the book is available without internet; Match Control → Rulebooks shows them and the publishers' pages.
 USA Shooting applies the ISSF rules; its current rule extract (2025-26, chapters 6 and 7) is hosted by the NCAA, as
 USA Shooting's own site lists only its 2011 rules.
@@ -369,7 +369,7 @@ ATTENTION 3 2 1, START, 75 s). A finalist who does not report is placed last (i)
 ## NRA Smallbore (Smallbore Rifle Rules, revised February 2026)
 
 Each course is scored in whole rings with X's (center shots on targets without an X ring) on its own face
-(fetserver/faces.py, the dimensions of 4.2-4.10, the .224 in gauge of 14.3 a). Every course starts with a 3-minute
+(fetcore/faces.py, the dimensions of 4.2-4.10, the .224 in gauge of 14.3 a). Every course starts with a 3-minute
 preparation period (10.3.1). Sighters are allowed at any time (9.2): each stage is one clock, sighters until the
 shooter starts record. No time warnings are given (8.4). The commands are 10.7's ("Load. Commence firing." /
 "Cease firing. Bolts open, insert your ECIs.").
@@ -463,7 +463,7 @@ from one loading heard as one shot whose microphone times disagree, or as two re
   counts) or not found (a miss); either way the last shot of that stage, the extra one, is annulled; marked twice,
   the console offers Move;
 - nothing is deleted: every correction is kept with who and when, and can be voided;
-- rule references are explained in plain words on the results and score cards (fetserver/rules.py), looked up in
+- rule references are explained in plain words on the results and score cards (fetcore/rules.py), looked up in
   the match's book unless the reference names another.
 
 ### Official results and decision guidance
@@ -480,13 +480,13 @@ from one loading heard as one shot whose microphone times disagree, or as two re
 - Sighters granted by an interruption, malfunction or late arrival are allowed until the shooter (or the range
   officer) presses *Start record*.
 
-### How the formats are built in (fetserver/matchformats.py)
+### How the formats are built in (fetcore/matchformats.py)
 Each table above is one format; each phase carries its rule number and the book's spoken commands. The "pause"
 between sighting and record is 30 s (ISSF 6.11.1.1 j says about 30 s; the CMP books say a pause is needed without a
 length: 30 s is our choice). NRA 3-position: one clock per position (sighting time + record time, 8.1) and a
 15-minute position change (8.2 b, recommended; at least 5).
 
-### Ranking and tie-breaking (fetserver/ranking.py)
+### Ranking and tie-breaking (fetcore/ranking.py)
 
 | Book | Rule | Order |
 |---|---|---|

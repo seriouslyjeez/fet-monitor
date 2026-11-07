@@ -43,7 +43,7 @@ Request:
 - `type`: `shot` (a shot line from the Arduino), `config` (its `{"ECHO":0}` settings block), `arduino_boot` (the
   Arduino's start-up banner, e.g. `freETarget "4.3.0"`), `log`; from the FeT target firmware (firmware/target):
   `target_shot` (`FT1 S ...`), `target_hello` (`FT1 H ...`), `target_reply` (`FT1 R ...`), each the line exactly as
-  the target sent it (signed by the target; see fetserver/targetproto.py). Unknown types are rejected (that event
+  the target sent it (signed by the target; see fetcore/targetproto.py). Unknown types are rejected (that event
   only).
 - `raw`: the text line exactly as the Arduino printed it (at most 16384 characters), or `data`: the same as a JSON
   object. A shot needs `shot` (number) and, unless `miss` is 1, `x` and `y` in millimetres from the centre;
