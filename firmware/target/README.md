@@ -38,8 +38,9 @@ harmonics lie every 10 MHz across the 2.4 GHz band (2430 and 2440 MHz inside cha
 board waited for a shot. The iPhone's missing address on the board's setup network had the same cause (it worked with
 the clock off). Firmware 0.3.0 times shots without the clock: the ESP32-S3's capture timers stamp the RUN edges, which
 latch without it (0.2.5: shots registered). Group 0 stamps North and East, group 1 South and West, both the re-arm
-edge (STOP_N, via io_loop_back) for their offset. To check on hardware: accuracy against 0.2.x (cards), and whether
-other 6.2 boards show the WiFi problem with the clock running (B59 only, or the design).
+edge (STOP_N, via io_loop_back) for their offset. On B59 (2026-11-06) 0.3.0 starts its timers (RDY green), its WiFi
+answers pings cleanly while armed, and shots land where they hit. Still to check: accuracy on cards (none measured on
+the ESP32 board yet, with either timing), and whether other 6.2 boards show the WiFi problem with the clock running.
 
 On hardware (2026-11): the Mega board 3.1 and the ESP32 board B59 (WiFi, commands, OTA, rollback, a tampered image
 refused). Open: phones (iPhone) get no address from the ESP32's setup network (also with upstream's own); set the
