@@ -118,6 +118,7 @@ int main() {
   int16_t temp = NO_TEMP;
   uint32_t sid = 0x1234abcd, boot = 7;
   size_t cap_ = SHOT_LINE_MAX;
+  uint32_t rate = 0;
   cap.begin(0);
   std::string line;
   while (std::getline(std::cin, line)) {
@@ -126,13 +127,13 @@ int main() {
     is >> cmd;
     if (cmd == "run") { int m; is >> std::hex >> m; hw.run |= (uint8_t)m; }
     else if (cmd == "counts") { for (int i = 0; i < 4; i++) is >> hw.counts[i]; }
-    else if (cmd == "stamps") {                   // stamps N E S W  have  gN gE gS gW  offset  resolution_hz
-      uint32_t st[4], off, res, out[4]; unsigned have; unsigned g[4]; uint8_t gg[4];
+    else if (cmd == "stamps") {                   // stamps N E S W  have  gN gE gS gW  offset  resolution_hz  count_hz
+      uint32_t st[4], off, res, chz, out[4]; unsigned have; unsigned g[4]; uint8_t gg[4];
       for (int i = 0; i < 4; i++) is >> st[i];
       is >> have;
       for (int i = 0; i < 4; i++) { is >> g[i]; gg[i] = (uint8_t)g[i]; }
-      is >> off >> res;
-      tgt::stampsToCounts(st, (uint8_t)have, gg, off, res, out);
+      is >> off >> res >> chz;
+      tgt::stampsToCounts(st, (uint8_t)have, gg, off, res, chz, out);
       std::cout << out[0] << " " << out[1] << " " << out[2] << " " << out[3] << "\n";
     }
     else if (cmd == "tick") { uint32_t ms, us; is >> ms >> us; cap.tick(ms, us); }
@@ -141,6 +142,7 @@ int main() {
     else if (cmd == "nokey") haveKey = false;
     else if (cmd == "temp") { int t; is >> t; temp = (int16_t)t; }
     else if (cmd == "linecap") is >> cap_;
+    else if (cmd == "rate") is >> rate;                                 // r= in shot lines (0: none)
     else if (cmd == "set") { std::string k; int v; is >> k >> v;
       if (k == "wait") cap.waitMs = (uint16_t)v; else if (k == "ring") cap.ringMs = (uint16_t)v; else if (k == "facealone") cap.faceAloneMs = (uint16_t)v; else if (k == "paperquiet") cap.paperQuietMs = (uint16_t)v; }
     else if (cmd == "pop") {
@@ -148,7 +150,7 @@ int main() {
       if (!cap.pop(s)) { std::cout << "none\n"; }
       else {
         char out[SHOT_LINE_MAX + 40];
-        size_t n = formatShot(s, boot, temp, sid, cap.dropped(), haveKey ? key.data() : nullptr, key.size(), out, cap_);
+        size_t n = formatShot(s, boot, temp, sid, cap.dropped(), haveKey ? key.data() : nullptr, key.size(), out, cap_, rate);
         if (n == 0) std::cout << "TOO LONG\n"; else std::cout << std::string(out, n - 1) << "\n";
       }
     }

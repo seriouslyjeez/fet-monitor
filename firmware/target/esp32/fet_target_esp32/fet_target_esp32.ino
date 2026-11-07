@@ -44,7 +44,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.3.1"
+#define FW_VERSION "0.3.2"
 #ifndef FET_TIMING_PCNT
 #define FET_TIMING_PCNT 0       // 0: the ESP32-S3's capture timers, 10 MHz clock off (0.3.0); 1: PCNT counting the 10 MHz clock
 #endif
@@ -75,7 +75,9 @@ static const uint8_t DAC_I2C = 0x60, TEMP_I2C = 0x48;                      // MC
 static const float DAC_FULL_MV = 4750.0f;                                  // 5 V less the diode drop (upstream dac.c)
 static const int32_t VREF_DEFAULT_MV = 1250;                               // upstream VREF_LO default
 // Sound needs about 676 us across the 232 mm sensor circle at 20 C (700 us at 0 C): 10 MHz ticks, with margin.
-static const uint32_t MAX_SPREAD_TICKS = 7500;                             // 750 us
+static const uint32_t MAX_SPREAD_US = 750;
+static uint32_t countHz = 10000000;                                        // the rate of a shot's counts (r=, 0.3.2+)
+static uint32_t maxSpreadTicks = MAX_SPREAD_US * 10;                       // MAX_SPREAD_US in those counts
 
 // ---------------------------------------------------------------------------------------------- the board
 #if FET_TIMING_PCNT
@@ -206,7 +208,7 @@ struct Esp32Counters : tgt::CounterHw {
     portEXIT_CRITICAL(&stampMux);
     if ((have & 0x30) == 0x30) armOffset = a1 - a0;                         // the last re-arm, seen by both groups
     static const uint8_t group[4] = {0, 0, 1, 1};
-    tgt::stampsToCounts(st, (uint8_t)(have & 0x0F), group, armOffset, capHz, out);
+    tgt::stampsToCounts(st, (uint8_t)(have & 0x0F), group, armOffset, capHz, capHz, out);   // the full resolution
   }
   void clearRun() override {
     gpio_set_level((gpio_num_t)PIN_STOP_N, 0);
@@ -566,6 +568,9 @@ void setup() {
   commands = &cmds;
   if (identity.hasKey()) commands->setKey(identity.key(), tgt::Identity::KEY_LEN);
   bool countersOk = timingBegin();
+#if !FET_TIMING_PCNT
+  if (countersOk) { countHz = capHz; maxSpreadTicks = (uint32_t)((uint64_t)MAX_SPREAD_US * capHz / 1000000u); }
+#endif
   fete::say(FET_TIMING_PCNT ? "Timing: PCNT counting the 10 MHz clock" : "Timing: capture timers, 10 MHz clock off", countersOk ? "" : " (FAILED to start)");
   actions.settingsChanged(settings);                                       // lights, paper, capture timing, the trip point
   tempDeci = readTempDeci();
@@ -613,9 +618,9 @@ void loop() {
     if (sleeping) continue;                                                // asleep: shots are ignored
     char out[tgt::SHOT_LINE_MAX];
     size_t n = tgt::formatShot(s, identity.boot(), tempDeci, settings.id(), capture.dropped(),
-                               identity.hasKey() ? identity.key() : 0, tgt::Identity::KEY_LEN, out, sizeof out);
+                               identity.hasKey() ? identity.key() : 0, tgt::Identity::KEY_LEN, out, sizeof out, FET_TIMING_PCNT ? 0 : countHz);
     sendAll(out, n);
-    if (tgt::placeable(s, MAX_SPREAD_TICKS) && settings.get(tgt::S_PAPER_ECO_MM) == 0) paper.request();
+    if (tgt::placeable(s, maxSpreadTicks) && settings.get(tgt::S_PAPER_ECO_MM) == 0) paper.request();
     shotFlashUntil = now + 200;
   }
   while (Serial.available()) {                                             // USB: provisioning first (it keeps its lines)

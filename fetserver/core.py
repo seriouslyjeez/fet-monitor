@@ -1,6 +1,7 @@
 """Ingest and query logic, independent of HTTP so it can be tested directly."""
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -331,11 +332,20 @@ class Core:
             return Geometry.from_upstream({"SENSOR": 232, "ANGLE": 45}, clock_mhz=10.0)
         return Geometry.from_upstream({"SENSOR": 230, "ANGLE": 45})       # freETarget's defaults, Mega 8 MHz
 
+    @staticmethod
+    def at_rate(g: Geometry, rate_hz: Optional[int]) -> Geometry:
+        """The geometry for counts at rate_hz (a shot's r=): the clock, and the threshold delay walk_ticks kept the same
+        in microseconds. None: unchanged (the board revision's clock)."""
+        if rate_hz is None:
+            return g
+        mhz = rate_hz / 1e6
+        return dataclasses.replace(g, clock_mhz=mhz, walk_ticks=g.walk_ticks * mhz / g.clock_mhz)
+
     def _derive_target_shot(self, c, event_id, device_id, event_ms, raw) -> None:
         """A signed shot: wrong signature -> no shot at all (ProtoError); no key here -> stored, auth 0."""
         p = parse_shot(raw, self._target_key(c, device_id))
         c.execute("UPDATE targets SET target_seen_ms=? WHERE device_id=?", (self.now_ms(), device_id))
-        sol = solve(p["counts"], self._geometry(c, device_id), 20.0 if p["temp_c"] is None else p["temp_c"])
+        sol = solve(p["counts"], self.at_rate(self._geometry(c, device_id), p["rate_hz"]), 20.0 if p["temp_c"] is None else p["temp_c"])
         n, e, s, w = p["raw_counts"]
         if not sol.ok and sum(1 for t in p["counts"] if t is not None) >= 3:   # heard by enough, but fits no point
             self._store_unplaced(c, event_id, device_id, event_ms, p["seq"], (n, e, s, w))

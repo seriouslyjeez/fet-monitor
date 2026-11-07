@@ -25,9 +25,10 @@ def hello(boot, key=KEY, fp=FP, fw="0.1.0", rev=310):
     return signed(f"FT1 H b={boot} fw={fw} rev={rev} k=1234abcd key={fp or 'none'}", key)
 
 
-def shot(seq, counts, mask=15, temp="200", face="-", key=KEY):
+def shot(seq, counts, mask=15, temp="200", face="-", key=KEY, rate=None):
     n, e, s, w = (int(v) for v in counts)
-    return signed(f"FT1 S b=3 q={seq} t=1000 n={n} e={e} s={s} w={w} m={mask:x} f={face} c={temp} k=1234abcd d=0", key)
+    r = "" if rate is None else f" r={rate}"
+    return signed(f"FT1 S b=3 q={seq} t=1000 n={n} e={e} s={s} w={w} m={mask:x} f={face} c={temp} k=1234abcd d=0{r}", key)
 
 
 class Base(unittest.TestCase):
@@ -220,6 +221,34 @@ class Shots(Base):
         self.send("target_shot", shot(1, forward(1.0, 2.0, GEOM, 20.0), key=other), dev="t2")   # shots only, no hello yet
         ft2 = next(x for x in self.core.admin_view()["targets"] if x["device_id"] == "t2")["fet_target"]
         self.assertEqual((ft2["hello_key_fp"], ft2["key_fp"]), (None, None), "listed from its shots alone")
+
+    def test_the_full_80_mhz_resolution(self):
+        """ESP32 firmware 0.3.2 sends its capture timers' counts at 80 MHz with r=80000000: the same shot as at 10 MHz,
+        8 times finer. walk_ticks is kept in microseconds (Core.at_rate)."""
+        self.core.add_target_key(KEY, "test")
+        self.send("target_hello", hello(3, rev=620))
+        esp = Geometry.from_upstream({"SENSOR": 232, "ANGLE": 45}, clock_mhz=10.0)
+        fine = Core.at_rate(esp, 80_000_000)
+        self.assertEqual((fine.clock_mhz, fine.walk_ticks), (80.0, esp.walk_ticks * 8))
+        self.assertIs(Core.at_rate(esp, None), esp)
+        worst = {}
+        for rate, g in ((None, esp), (80_000_000, fine)):
+            errs = []
+            for k, (x, y) in enumerate([(5.0, -8.0), (-31.7, 12.2), (0.4, 44.9), (-17.3, -26.1)]):
+                self.send("target_shot", shot(len(self.shots()) + 1, forward(x, y, g, 20.0), rate=rate))
+                r = self.shots()[-1]
+                tx, ty = g.to_target(x, y)
+                errs.append(math.hypot(r["x_h"] / 100 - tx, r["y_h"] / 100 - ty))
+            worst[rate] = max(errs)
+        self.assertLess(worst[80_000_000], 0.012, "placed from 12.5 ns counts (stored to 0.01 mm)")
+        self.assertLess(worst[80_000_000], worst[None], "finer than the 10 MHz counts of the same shots")
+
+    def test_a_bad_counter_rate_is_refused(self):
+        self.core.add_target_key(KEY, "test")
+        self.send("target_hello", hello(3, rev=620))
+        for rate in (999_999, 1_000_000_001):
+            self.send("target_shot", shot(1, forward(1.0, 1.0, GEOM, 20.0), rate=rate))
+        self.assertEqual(len(self.shots()), 0, "outside 1 MHz to 1 GHz: not a shot")
 
     def test_an_esp32_board_counts_at_10_mhz(self):
         """The ESP32-S3 board 6.2 counts the 10 MHz oscillator (PCNT); upstream's circle there is 232 mm. The board

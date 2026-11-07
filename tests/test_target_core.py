@@ -93,8 +93,9 @@ class Crypto(Case):
 
 class Capture(Case):
     # ---- the ESP32 board's capture timestamps (core/src/stamps.h, firmware 0.3.0+)
-    def stamps(self, st, have=15, groups=(0, 0, 1, 1), offset=0, res=80000000):
-        out = self.h.run("stamps %s %d %s %d %d" % (" ".join(str(x % 2 ** 32) for x in st), have, " ".join(map(str, groups)), offset % 2 ** 32, res))
+    def stamps(self, st, have=15, groups=(0, 0, 1, 1), offset=0, res=80000000, count_hz=10000000):
+        out = self.h.run("stamps %s %d %s %d %d %d" % (" ".join(str(x % 2 ** 32) for x in st), have, " ".join(map(str, groups)),
+                                                      offset % 2 ** 32, res, count_hz))
         return [int(x) for x in out.split()]
 
     def test_stamps_become_10_mhz_counts(self):
@@ -121,6 +122,34 @@ class Capture(Case):
         self.assertEqual(self.stamps([0, 0, 0, 0], have=0), [0, 0, 0, 0])
         self.assertEqual(self.stamps([7, 0, 0, 0], have=1), [1000, 0, 0, 0], "one microphone: just the base")
         self.assertEqual(self.stamps([0, 400, 0, 1200], have=0b1010, groups=(0, 0, 0, 0), res=40000000), [0, 1200, 0, 1000], "40 MHz: 4 per count")
+
+    def test_stamps_at_full_resolution(self):
+        # 0.3.2: the counts at the timers' own rate (80 MHz): nothing rounded; the latest microphone gets 100 us = 8000
+        self.assertEqual(self.stamps([1000, 1003, 1005, 1008], groups=(0, 0, 0, 0), count_hz=80000000), [8008, 8005, 8003, 8000])
+        self.assertEqual(self.stamps([1000, 1800, 2600 + 123456, 4000 + 123456], offset=123456, count_hz=80000000),
+                         [11000, 10200, 9400, 8000], "the offset between the groups, exactly")
+        self.assertEqual(self.stamps([0, 0, 0, 0], have=0, count_hz=80000000), [0, 0, 0, 0])
+        self.assertEqual(self.stamps([5, 0, 0, 0], have=1, count_hz=0), [0, 0, 0, 0], "no rate: nothing")
+
+    def test_the_shot_line_carries_its_rate(self):
+        self.h.run("key " + "11" * 32)
+        self.h.run("rate 80000000")
+        self.h.run("counts 8008 8005 8003 8000")
+        self.tick(9)
+        self.h.run("run f")
+        self.tick(10)
+        line = self.pop()
+        self.assertIn(" d=0 r=80000000 h=", line, "r= signed with the rest, before h=")
+        p = parse_shot(line, bytes.fromhex("11" * 32))
+        self.assertEqual((p["rate_hz"], p["counts"], p["authenticated"]), (80000000, [8008, 8005, 8003, 8000], True))
+        self.h.run("rate 0")
+        self.tick(500)                                           # past the ring time
+        self.h.run("counts 1 2 3 4")
+        self.h.run("run f")
+        self.tick(501)
+        line = self.pop()
+        self.assertNotIn(" r=", line, "without a rate: the version-1 line")
+        self.assertIsNone(parse_shot(line, bytes.fromhex("11" * 32))["rate_hz"])
 
     def test_all_four_at_once(self):
         self.h.run("counts 5123 4987 5401 5290")

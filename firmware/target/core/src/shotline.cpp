@@ -31,7 +31,7 @@ void LineBuf::addHex(uint32_t v, int digits) {
 }
 
 size_t formatShot(const Shot& s, uint32_t boot, int16_t tempDeci, uint32_t settingsId, uint16_t dropped,
-                  const uint8_t* key, size_t keyLen, char* out, size_t cap) {
+                  const uint8_t* key, size_t keyLen, char* out, size_t cap, uint32_t rateHz) {
   LineBuf b(out, cap);
   b.add("FT1 S b="); b.addU(boot);
   b.add(" q="); b.addU(s.seq);
@@ -49,6 +49,7 @@ size_t formatShot(const Shot& s, uint32_t boot, int16_t tempDeci, uint32_t setti
   if (tempDeci == NO_TEMP) b.add("-"); else b.addI(tempDeci);
   b.add(" k="); b.addHex(settingsId, 8);
   b.add(" d="); b.addU(dropped);
+  if (rateHz) { b.add(" r="); b.addU(rateHz); }
   return signLine(b, out, key, keyLen);
 }
 

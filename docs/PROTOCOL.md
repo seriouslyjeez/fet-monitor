@@ -135,5 +135,100 @@ deliver every shot exactly once into its store. Things to get right (checked by 
 acknowledge repeats; never acknowledge what was not stored; answer `401` to a wrong token without storing anything;
 keep `rejected` events out of `acked`.
 
-Planned (not in the firmware yet): a full URL as the server setting (host names, a base path, HTTPS on 4 MB modules);
-see the project plan.
+## Version 2 (written 2026-11-07)
+
+Version 2 lets a target report to FeT Monitor on a LAN and, through it or directly, to deeptens.com, where remote
+matches are run (docs/PLAN-deeptens.md). It keeps everything above: the two requests, at-least-once delivery, the
+`(device_id, boot_count, seq)` identity, acknowledgements, commands on the heartbeat. Each part below says whether it
+is **built** or **planned**. A version-1 bridge keeps working with a version-2 server.
+
+### Who decides
+
+- **Local match:** the authority is the range's FeT Monitor. It runs the clock, decides which shots count, scores them
+  (fetcore), decides flagged shots and publishes the result.
+- **Remote match:** the authority is deeptens, for all of the same. A FeT Monitor only carries, shows, stores and
+  replays; its own score on the lane display is provisional until deeptens confirms it.
+- Remote matches accept only lines signed by FeT target firmware (`target_shot`). A shot from the original freETarget
+  firmware (`type: shot`, unsigned JSON) is never counted in a remote match.
+
+### Shot lines: the counter rate (built: ESP32 firmware 0.3.2, FeT Monitor 0.7.15)
+
+```
+FT1 S b=<boot> q=<seq> t=<ms> n=<N> e=<E> s=<S> w=<W> m=<mask> f=<face us|-> c=<temp|-> k=<settings id>
+      d=<dropped> r=<counts per second> h=<16 hex>
+```
+
+- `r=` (optional, signed with the rest): the rate of `n e s w`. The ESP32 board (0.3.2+) sends its capture timers'
+  full resolution, `r=80000000` (12.5 ns). Without `r=`, the board revision decides as before: 10 MHz for revision
+  500 and up (ESP32 boards), 8 MHz for the Mega.
+- The rate travels with **each shot**, not in the hello: a board's queue may still hold shots taken by older firmware.
+- Counts: one per microphone, larger for a microphone that heard the shot earlier; only differences matter (the
+  solver takes arrival times up to a constant). `0` = no time for that microphone.
+
+### The Monitor carries signed lines (planned, Phase 1)
+
+A linked FeT Monitor forwards each target line it stores (`target_shot`, `target_hello`, `target_reply`) to deeptens
+at once, **as the target sent it**, with its identity and the Monitor's boot anchor for that boot (the earliest
+`arrival − uptime` it has seen). It never re-signs or alters a line; deeptens checks the target's own signature.
+Forwarding is not batched except to clear a backlog (5-second goal). The link is one outbound WebSocket from the
+Monitor (no inbound connections); deeptens acknowledges by identity as above, and the Monitor resends what was not
+acknowledged.
+
+### Signatures (planned, Phase 1 for ranges, Phase 3 for home targets)
+
+| Target | Signs shots with | Who can check | Who holds the secret |
+|---|---|---|---|
+| ESP32 board | ECDSA P-256 key pair made on the board (deterministic, RFC 6979) **and** the shared HMAC key (commands) | anyone with the public key | only the board |
+| Mega (+ ESP-01) | the shared HMAC key | FeT Monitor; deeptens | the board, FeT Monitor, deeptens (encrypted, key kept outside the database) |
+
+- P-256, not Ed25519: Arduino-ESP32 3.3.12's Mbed TLS has ECDSA P-256 (`CONFIG_MBEDTLS_ECDSA_C`, `SECP256R1`,
+  deterministic) and no EdDSA; it is also the curve of the DeepTens device CA. The Mega cannot sign with a key pair at
+  all (Ed25519 takes about 5 s on a 16 MHz AVR).
+- Lines: the hello adds `p=<public key, 66 hex: compressed point>`; a shot adds `g=<signature, 128 hex: r || s>`
+  after `h=` and over the same bytes as `h=` covers. A version-1 parser stops at `h=`; version 2 checks both.
+- Results from shared-key (Mega) targets are accepted but marked "may require submission of the witness paper to
+  certify the result". deeptens may stop accepting them from a date it announces (a forced upgrade).
+- The HMAC key keeps its second job, authorising commands (including firmware updates). With a key pair, a pairing
+  step decides who may give orders; the public key alone never authorises anything.
+
+### Credentials (planned, Phase 1)
+
+- Each device gets its own token instead of the shared `X-FET-Token` (header unchanged). The server maps the token
+  to one `device_id` and refuses a request whose `device_id` differs (`403`).
+- On a LAN, FeT Monitor keeps accepting the shared token during a changeover, as a Range Control setting.
+- Set over USB (`FETCFG`, the flash station) or in the setup portal (a claim code for deeptens).
+
+### Server address (planned, Phase 3)
+
+A full URL replaces host and port: scheme, host name, port, base path. HTTPS on 4 MB modules and the ESP32 only,
+trusting the DeepTens device CA (ECDSA P-256) and ISRG Root X1 as a backup; the 1 MB ESP-01 stays plain HTTP to a FeT
+Monitor. Connections stay open between requests (HTTP keep-alive), so the TLS handshake is not paid per shot.
+
+### Settings fixed during a remote match (planned, Phase 4)
+
+- The entry records the target's settings id (`k=`), geometry, calibration and face. A shot whose `k=` differs from
+  the entry's is not counted automatically; the Match Director sees it.
+- The authority sends a signed `lock` command at the start; the target refuses `set` (from the server, the portal or
+  USB) until a signed `unlock` or its own next start after the match's end.
+
+### Which shots count (FeT Monitor's match engine, planned in fetcore; the same rules on deeptens)
+
+- Fired during firing time: counted. Fired after STOP: as the rulebook says (flagged for the Match Director today).
+- **"You may discharge air downrange"**: a range officer command (local and remote matches). A shot fired after it
+  never counts and is not flagged: discharging air, or a pellet left in the bore, is expected.
+- A relay **closes** per its rulebook, otherwise when provisional scores are posted. A shot fired in time that
+  arrives after the close is kept and shown to the Match Director, who can reopen the result.
+- "Fired" means the event time (above): it needs a boot anchored by the authority. A shot of a boot never anchored is
+  never counted automatically.
+
+### Playback (planned, Phase 3)
+
+A home target keeps an archive of its acknowledged signed lines for 90 days, oldest dropped first: the archive never
+blocks a new shot. A signed `replay since=<event time>` command makes it send them again as ordinary events with
+`"replay": true`; the server deduplicates by identity, so a replay never adds or changes a shot. A FeT Monitor keeps
+every line it stored, and replays from there.
+
+### Versions
+
+The heartbeat carries `"protocol": 2` from a version-2 device; a version-2 server answers with `"protocol": 2`.
+Neither side relies on the other's version: every field above is optional to a version-1 peer.
