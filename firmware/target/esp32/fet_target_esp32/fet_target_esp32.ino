@@ -44,7 +44,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.3.0"
+#define FW_VERSION "0.3.1"
 #ifndef FET_TIMING_PCNT
 #define FET_TIMING_PCNT 0       // 0: the ESP32-S3's capture timers, 10 MHz clock off (0.3.0); 1: PCNT counting the 10 MHz clock
 #endif

@@ -413,6 +413,104 @@ class FirmwareHost(unittest.TestCase):
         self.assertEqual((v["reset_name"], v["reset_trouble"], v["reason_name"][:14]), ("a brownout (supply voltage dropped)", True, "beacon timeout"))
         self.assertGreater(v["last_drop_ago_s"], 0)
 
+    # ---- the 5-second goal (docs/PLAN-deeptens.md): shots first, never held by a backoff
+    def until_delivered(self, limit_ms, step=100):
+        """Harness time (ms) until the queue is empty, ticking in steps; None if not within limit_ms."""
+        t = 0
+        while t < limit_ms:
+            self.tick(step)
+            t += step
+            if json.loads(self.h.run("status"))["queued"] == 0:
+                return t
+        return None
+
+    def test_a_new_shot_is_not_held_by_a_running_backoff(self):
+        self.tick(6000)
+        self.h.run("fake 500")                                   # the server fails for a while: the backoff grows
+        self.feed(self.shot(1))
+        self.tick(60000)                                         # 1 s retries for 5 s, then 2, 4, 8, 16, 30 s
+        self.assertEqual(len(self.shots()), 0)
+        self.h.run("fake 0")                                     # the server is back
+        self.feed(self.shot(2))                                  # a new shot: goes at once, not after the 30 s wait
+        t = self.until_delivered(5000)
+        self.assertIsNotNone(t, "delivered within 5 s")
+        self.assertLessEqual(t, 1000)
+        self.assertEqual([e[1] for e in self.shots()], [1, 2], "the old one with it")
+
+    def test_a_fresh_shot_is_retried_every_second(self):
+        self.tick(6000)
+        self.h.run("fake 500")
+        self.feed(self.shot(1))
+        self.tick(3200)                                          # failed at 0, 1, 2 and 3 s: not 1, 2, 4
+        before = self.h.flags()["requests"]
+        self.h.run("fake 0")
+        t = self.until_delivered(5000)
+        self.assertIsNotNone(t)
+        self.assertLessEqual(t, 900, "the next one-second retry delivers it")
+        self.assertGreaterEqual(before, 4)
+
+    def test_older_backlog_backs_off(self):
+        self.tick(6000)
+        self.h.run("fake 500")
+        self.feed(self.shot(1))
+        self.tick(20000)                                         # the shot is 20 s old: a backlog now
+        self.h.run("paths")
+        self.tick(4000)
+        self.assertLessEqual(self.h.run("paths").count("E"), 1, "no once-a-second retries for old shots")
+
+    def test_waiting_shots_go_before_a_heartbeat(self):
+        self.tick(6000)
+        self.h.run("net down")
+        for n in range(1, 31):                                   # 30 shots queued: three batches of 10
+            self.feed(self.shot(n))
+        self.tick(8000)                                          # a heartbeat is due by now
+        self.h.run("net up")
+        self.h.run("paths")
+        self.tick(1000)
+        self.assertEqual(self.h.run("paths").split()[:4], ["E", "E", "E", "H"], "the backlog first, then the heartbeat")
+        self.assertEqual(len(self.shots()), 30)
+
+    def backlog(self, n):
+        self.h.run("cap 2000000")                                # room for the queue's full 600 events
+        self.h.run("free 100000000")
+        self.h.run("boot")
+        self.tick(6000)
+        self.h.run("net down")
+        for k in range(1, n + 1):
+            self.feed(self.shot(k))
+        self.tick(6000)
+        self.h.run("net up")
+        self.h.run("paths")
+
+    def test_a_full_backlog_goes_before_the_heartbeat(self):
+        self.backlog(600)                                        # the most the queue holds: 60 batches, 3 s here
+        self.tick(5000)
+        p = self.h.run("paths").split()
+        self.assertEqual((p.count("E"), p.index("H")), (60, 60), "all of it before the heartbeat")
+        self.assertEqual(len(self.shots()), 600)
+
+    def test_a_long_backlog_does_not_starve_the_heartbeat(self):
+        self.backlog(600)
+        self.h.run("hblate 1000")                                # held back at most 1 s (default 10 s)
+        self.tick(5000)
+        p = self.h.run("paths").split()
+        self.assertEqual(p.count("E"), 60)
+        self.assertTrue(18 <= p.index("H") <= 22, p.index("H"))  # after 1 s (20 ticks of 50 ms) of backlog
+
+    def test_each_backlog_holds_the_heartbeat_afresh(self):
+        self.backlog(600)
+        self.h.run("hblate 1000")
+        self.tick(5000)                                          # the first backlog: drained, a heartbeat let through
+        self.h.run("net down")
+        for k in range(601, 901):                                # a second backlog later on
+            self.feed(self.shot(k))
+        self.tick(6000)
+        self.h.run("net up")
+        self.h.run("paths")
+        self.tick(3000)
+        p = self.h.run("paths").split()
+        self.assertGreaterEqual(p.index("H"), 18, "held back again (1 s of batches), not let through at once")
+
     def test_the_bridge_knows_when_fet_monitor_last_answered(self):
         """Bridge::lastOkMs: the ESP32's safety net re-joins the WiFi when it gets old (FeT Monitor silent)."""
         self.tick(6000)

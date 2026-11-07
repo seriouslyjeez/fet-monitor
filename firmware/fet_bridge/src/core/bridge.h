@@ -31,6 +31,7 @@ class Bridge : public RecordSink {
   uint32_t sentBatches = 0, ackedEvents = 0, rejectedEvents = 0, droppedPoison = 0, httpErrors = 0;
   int lastStatus = 0;
   uint64_t lastOkMs = 0;                          // when FeT Monitor last answered 200 (events or heartbeat); 0 = never
+  uint32_t hbLateMs = 10000;                      // a due heartbeat held back by waiting events at most this long
   bool authError = false;
   bool fsOk = true;                               // false if the boot counter could not be saved
 
@@ -48,7 +49,8 @@ class Bridge : public RecordSink {
   Assembler asm_;
   uint32_t boot_ = 0, seq_ = 0;
   uint64_t now_ = 0;
-  uint64_t nextEvent_ = 0, nextHb_ = 0;
+  uint64_t nextEvent_ = 0, nextHb_ = 0, freshUntil_ = 0;   // freshUntil_: an event that came in is under 5 s old
+  uint64_t hbHeldSince_ = 0;                       // a due heartbeat held back by waiting events since then (0: not)
   uint32_t evBackoff_ = 0, hbBackoff_ = 0, hbInterval_ = 5000;
   size_t batchMax_ = 10;
   long long lastCmd_ = 0;

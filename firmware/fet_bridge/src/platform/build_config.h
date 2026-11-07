@@ -3,7 +3,7 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
-#define FET_FW_VERSION "0.4.0"
+#define FET_FW_VERSION "0.4.1"
 // Sent as the User-Agent; the server also finds it inside an uploaded image to recognise our firmware and its version.
 #define FET_FW_ID "fet-monitor-bridge/" FET_FW_VERSION
 
@@ -19,10 +19,11 @@
 
 #define FET_SERIAL_BAUD 115200
 #define FET_RX_BUFFER 2048
-#define FET_HTTP_TIMEOUT_MS 6000
+#define FET_HTTP_TIMEOUT_MS 2500         // a report: sent and answered within this (5-second goal: one retry fits)
 #define FET_FW_IDLE_MS 15000        // firmware download: give up after this long without a byte
 #define FET_FW_TOTAL_MS 180000      // ... or after this long in all
-#define FET_CONNECT_TIMEOUT_MS 3000
+#define FET_CONNECT_TIMEOUT_MS 1000      // a report's connection (LAN: milliseconds; a lost SYN is faster tried anew)
+#define FET_FW_CONNECT_MS 3000           // a firmware download's connection
 #define FET_MAX_RESPONSE 6000
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000   // one LittleFS block is 8 KB; keep a segment inside one block

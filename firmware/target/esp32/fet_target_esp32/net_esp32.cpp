@@ -355,7 +355,7 @@ bool WifiNet::fetchImage(const uint8_t sha[32], uint32_t size, std::string& err)
   for (int i = 0; i < 32; i++) { shaHex += HX[sha[i] >> 4]; shaHex += HX[sha[i] & 15]; }
   if (!ready()) { err = "server not reachable"; return false; }
   WiFiClient c;
-  if (!c.connect(ip_, (uint16_t)port_, FET_CONNECT_TIMEOUT_MS)) { err = "could not connect to the server"; return false; }
+  if (!c.connect(ip_, (uint16_t)port_, FET_FW_CONNECT_MS)) { err = "could not connect to the server"; return false; }
   std::string req = "GET /api/v1/firmware/" + shaHex + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() + "\r\nUser-Agent: " +
                     userAgent + "\r\nX-FET-Token: " + cfg_.token + "\r\nConnection: close\r\n\r\n";
   if (c.write((const uint8_t*)req.data(), req.size()) != req.size()) { c.stop(); err = "request not sent"; return false; }

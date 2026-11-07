@@ -1201,6 +1201,30 @@ class Core:
             return None
         return {"volts": last["v_ref"], "at": iso(last["event_ms"]), "from": "shot"}
 
+    DELIVERY_GOAL_MS = 5000                             # the 5-second goal (docs/PLAN-deeptens.md)
+    DELIVERY_WINDOW_MS = 24 * 3600 * 1000
+
+    def delivery(self) -> dict:
+        """How long each target's shots took from its bridge to this server, over the last 24 h: per target the
+        number of shots, the worst and the median time, and how many took longer than the 5-second goal. The time a
+        shot reached the bridge is its boot start (the quickest request's estimate) plus the bridge's uptime then;
+        shots of an unknown boot are left out. Late shots after a WiFi or server outage count too: that is when they
+        came."""
+        since = self.now_ms() - self.DELIVERY_WINDOW_MS
+        rows = self.db.conn().execute(
+            """SELECT device_id, recv_ms - event_ms - CASE WHEN type='shot' THEN ? ELSE 0 END AS ms FROM events
+               WHERE type IN ('shot', 'target_shot') AND time_quality != 'unknown' AND event_ms > ?""",
+            (self.shot_lag_ms, since)).fetchall()
+        per: dict = {}
+        for r in rows:
+            per.setdefault(r["device_id"], []).append(max(0, r["ms"]))
+        out = {}
+        for did, ms in per.items():
+            ms.sort()
+            out[did] = {"shots": len(ms), "worst_ms": ms[-1], "median_ms": ms[(len(ms) - 1) // 2],
+                        "over_goal": sum(1 for m in ms if m > self.DELIVERY_GOAL_MS), "goal_ms": self.DELIVERY_GOAL_MS}
+        return out
+
     # ---- Range Control (the HTTP layer checks the admin session) ------------
     def admin_view(self) -> dict:
         """Every target for Range Control, plus the banned ones (which no other screen shows)."""
@@ -1209,11 +1233,13 @@ class Core:
                   for r in self.db.conn().execute("SELECT * FROM targets WHERE banned=1 ORDER BY COALESCE(name, device_id)")]
         targets = self.list_targets(None)
         jobs = self.firmware_jobs()
+        delivery = self.delivery()
         for t in targets:
             r = self.db.conn().execute("SELECT ota_space, flash_size, link_json, uptime_ms FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()
             t["ota_space"], t["flash_size"] = r["ota_space"], r["flash_size"]
             t["link"] = wifilink.view(json.loads(r["link_json"]) if r["link_json"] else None, r["uptime_ms"])
             t["fw_job"] = jobs.get(t["device_id"])
+            t["delivery"] = delivery.get(t["device_id"])
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
                                                   hello_key_fp, target_seen_ms, target_status_json, target_asleep FROM targets WHERE device_id=?""",
                                         (t["device_id"],)).fetchone()

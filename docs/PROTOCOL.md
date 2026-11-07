@@ -70,6 +70,22 @@ boot never heard from: arrival time used); `reanchored` (the device reused a boo
 wiped: the boot start disagrees with the current request by more than 30 s, so the current request is trusted).
 A shot's time decides which session/series it belongs to (not its arrival time), so a late upload lands correctly.
 
+## When a bridge sends (the 5-second goal)
+
+A shot should reach the server within 5 seconds of the bridge receiving it (docs/PLAN-deeptens.md). FeT Bridge 0.4.1
+and the ESP32 target firmware 0.3.1 send like this (firmware/fet_bridge/src/core/bridge.cpp):
+
+- A new event goes at once, whatever wait an earlier failure started.
+- While an event is under 5 s old, a failed send is tried again after 1 s at most. Only older backlog waits longer
+  (doubling from 1 s up to 30 s).
+- Events waiting to go are sent before a heartbeat. A due heartbeat is held back for at most 10 s, so commands still
+  get through while a long backlog drains.
+- A report connects within 1 s and is answered within 2.5 s, or it counts as failed. One failed attempt and its retry
+  then fit inside the 5 s. Firmware downloads have their own, longer limits.
+
+A server should answer an events request quickly (store, then answer) and never make a bridge wait on other work.
+Range Control → Targets shows each target's delivery times over the last 24 h, worst and median, against the 5 s.
+
 ## POST /api/v1/heartbeat
 
 Every few seconds (the server says how often), also when there is nothing to send. Request:

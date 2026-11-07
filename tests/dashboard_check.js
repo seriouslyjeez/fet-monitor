@@ -519,6 +519,14 @@ const tt = tvTargets(D.targets, [B], {m: '2'});
 assert(tt.includes('data-clock="tv-2"') && count(tt, /class="card/g) === D.targets.filter(t => ['lane-1', 'lane-2'].includes(t.device_id)).length, 'the match\'s targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {t: 'lane-4'}), /class="card/g), 1, 'a chosen list of targets');
 assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.targets.length, 'all targets');
+// shot delivery against the 5-second goal (Range Control → Targets)
+{
+  assert(X.deliveryCell(null).includes('no shots'));
+  const ok = X.deliveryCell({shots: 12, worst_ms: 1800, median_ms: 240, over_goal: 0, goal_ms: 5000});
+  assert(ok.includes('worst 1.8 s') && ok.includes('median 0.2 s · 12 shots') && !ok.includes('bad'));
+  const late = X.deliveryCell({shots: 1, worst_ms: 37500, median_ms: 37500, over_goal: 1, goal_ms: 5000});
+  assert(late.includes('<b class="bad">worst 38 s</b>') && late.includes('1 shot ·') && late.includes('1 over 5.0 s'));
+}
 // the WiFi link on a target's settings sheet (ESP32 boards 0.2.2+: why it started, drops)
 {
   const L = X.linkLines({rssi: -74, link: {reset_name: 'a brownout (supply voltage dropped)', reset_trouble: true, drops: 3, reason_name: 'beacon timeout <x>',

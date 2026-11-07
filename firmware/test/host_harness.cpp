@@ -49,6 +49,7 @@ struct TcpNet : Net {
   bool up = true;
   int dropPct = 0;            // chance a reply is lost AFTER the server has handled the request
   int fakeStatus = 0;         // if set, answer this status without talking to the server
+  std::string paths;          // the requests in order: E events, H heartbeat (the "paths" command prints and clears)
   unsigned requests = 0;
   unsigned rng = 12345;
   uint32_t space = 0;          // otaSpace(); 0 = this "chip" cannot update (like firmware before 0.2.0)
@@ -104,6 +105,8 @@ struct TcpNet : Net {
   std::string linkJson() override { return link; }
   bool post(const char* path, const std::string& body, int& status, std::string& resp) override {
     requests++;
+    std::string p(path);
+    paths += (paths.empty() ? "" : " ") + std::string(p.find("heartbeat") != std::string::npos ? "H" : p.find("events") != std::string::npos ? "E" : "?");
     if (fakeStatus) { status = fakeStatus; resp = "{}"; return true; }
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     sockaddr_in a{}; a.sin_family = AF_INET; a.sin_port = htons(port); inet_pton(AF_INET, host.c_str(), &a.sin_addr);
@@ -175,6 +178,8 @@ int main() {
     else if (cmd == "net") net.up = rest == "up";
     else if (cmd == "drop") net.dropPct = atoi(rest.c_str());
     else if (cmd == "fake") net.fakeStatus = atoi(rest.c_str());
+    else if (cmd == "hblate") br->hbLateMs = (uint32_t)atol(rest.c_str());
+    else if (cmd == "paths") { std::cout << (net.paths.empty() ? "-" : net.paths) << "\n"; net.paths.clear(); }
     else if (cmd == "token") net.token = rest;
     else if (cmd == "link") net.link = rest;
     else if (cmd == "lastok") std::cout << br->lastOkMs << "\n";

@@ -13,8 +13,9 @@
 
 namespace fete {
 
-#define FET_HTTP_TIMEOUT_MS 6000
-#define FET_CONNECT_TIMEOUT_MS 3000
+#define FET_HTTP_TIMEOUT_MS 2500         // a report: sent and answered within this (5-second goal: one retry fits)
+#define FET_CONNECT_TIMEOUT_MS 1000      // a report's connection
+#define FET_FW_CONNECT_MS 3000           // a firmware download's connection
 #define FET_MAX_RESPONSE 6000
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000

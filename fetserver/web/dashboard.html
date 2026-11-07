@@ -1222,6 +1222,13 @@ function rangeView(S) {                          // Range Control: one tab at a 
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
+function deliveryCell(D) {                       // the 5-second goal: worst and median over the last 24 h
+  if (!D || !D.shots) return '<span class="mut">no shots</span>';
+  const s = ms => (ms / 1000).toFixed(ms < 10000 ? 1 : 0) + ' s';
+  return (D.over_goal ? '<b class="bad">' : '') + 'worst ' + s(D.worst_ms) + (D.over_goal ? '</b>' : '') +
+    '<div class="mut">median ' + s(D.median_ms) + ' · ' + D.shots + ' shot' + (D.shots === 1 ? '' : 's') +
+    (D.over_goal ? ' · <span class="bad">' + D.over_goal + ' over ' + s(D.goal_ms) + '</span>' : '') + '</div>';
+}
 const faceName = id => ((S.faces || [AR10]).find(f => f.id === (id || AR10.id)) || {name: id}).name;
 const sleepers = d => (d.targets || []).filter(t => t.fet_target && t.fet_target.key_fp);   // targets that can be put to sleep
 function targetsTab(d, rc) {                     // the targets: mode, session, sleep, restart, remove, ban
@@ -1244,7 +1251,8 @@ function targetsTab(d, rc) {                     // the targets: mode, session, 
     '<button class="danger" data-act="rcremove"' + dis + '>Remove</button>' +
     '<button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
-    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th></tr>' +
+    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th>' +
+    '<th title="How long shots took from the target to this Pi, last 24 h (goal: under 5 s)">Shot delivery</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
       const su = statusUrl(t.ip), ft = t.fet_target;
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
@@ -1253,7 +1261,8 @@ function targetsTab(d, rc) {                     // the targets: mode, session, 
         '<td>' + esc(faceName(t.installed_face)) + '</td>' +
         '<td>' + (ft && ft.key_fp ? (ft.asleep ? '<b>asleep</b>' : 'on') : '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
-        '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td></tr>';
+        '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td>' +
+        '<td>' + deliveryCell(t.delivery) + '</td></tr>';
     }).join('') : '<tr><td colspan="10" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
@@ -3104,7 +3113,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

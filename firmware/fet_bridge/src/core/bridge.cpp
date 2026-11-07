@@ -8,6 +8,11 @@
 namespace fet {
 
 static const uint32_t BACKOFF_MIN = 1000, BACKOFF_MAX = 30000;
+// The 5-second goal (docs/PLAN-deeptens.md): a new event goes at once whatever backoff is running, and while one is
+// under FRESH_MS old a failed send is tried again after FRESH_RETRY_MS at most; only older backlog backs off. Events
+// waiting to go are sent before a heartbeat; after hbLateMs of holding a due heartbeat back, it goes anyway (commands
+// still get through while a long backlog drains).
+static const uint32_t FRESH_MS = 5000, FRESH_RETRY_MS = 1000;
 static const size_t BATCH_BYTES = 5000;
 
 Bridge::Bridge(Fs& fs, Net& net, Uart& uart, Hooks& hooks, const BridgeInfo& info, size_t cap, size_t segBytes)
@@ -66,7 +71,8 @@ void Bridge::onRecord(const char* type, const std::string& text) {
   jescape(esc, text);
   seq_++;
   log_.append(boot_, seq_, type, now_, esc);
-  if (evBackoff_ == 0) nextEvent_ = now_;                  // send promptly unless we are backing off
+  freshUntil_ = now_ + FRESH_MS;
+  if (!authError && nextEvent_ > now_) nextEvent_ = now_;  // never held by a backoff (a refused token: no use trying)
 }
 
 void Bridge::tick(uint64_t now) {
@@ -74,7 +80,14 @@ void Bridge::tick(uint64_t now) {
   asm_.tick(now);
   if (!net_.ready()) return;
   if (log_.pending() && now >= nextEvent_) sendEvents(now);
-  if (now >= nextHb_) sendHeartbeat(now);
+  if (now < nextHb_) return;
+  bool eventsWaiting = log_.pending() && nextEvent_ <= now;         // more to send right away: they go first
+  if (eventsWaiting) {
+    if (!hbHeldSince_) hbHeldSince_ = now;
+    if (now - hbHeldSince_ < hbLateMs) return;
+  }
+  hbHeldSince_ = 0;
+  sendHeartbeat(now);
 }
 
 void Bridge::sendEvents(uint64_t now) {
@@ -93,7 +106,9 @@ void Bridge::sendEvents(uint64_t now) {
     httpErrors++;
     lastError_ = why;
     evBackoff_ = evBackoff_ ? (evBackoff_ * 2 > BACKOFF_MAX ? BACKOFF_MAX : evBackoff_ * 2) : BACKOFF_MIN;
-    nextEvent_ = now + evBackoff_;
+    uint32_t wait = evBackoff_;
+    if (now < freshUntil_ && wait > FRESH_RETRY_MS) wait = FRESH_RETRY_MS;   // an event under 5 s old: about once a second
+    nextEvent_ = now + wait;
   };
   if (!got) return fail("no response from server");
   if (status == 401 || status == 403) { authError = true; evBackoff_ = BACKOFF_MAX; nextEvent_ = now + BACKOFF_MAX; lastError_ = "server refused our token"; httpErrors++; return; }

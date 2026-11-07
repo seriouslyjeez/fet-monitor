@@ -384,7 +384,7 @@ bool WifiNet::updateFirmware(const std::string& sha, uint32_t size, std::string&
   if (size > ESP.getFreeSketchSpace()) { err = "image too big for this chip"; return false; }
   if (!ready()) { err = "server not reachable"; return false; }
   WiFiClient c;
-  c.setTimeout(FET_CONNECT_TIMEOUT_MS);
+  c.setTimeout(FET_FW_CONNECT_MS);
   if (!c.connect(ip_, (uint16_t)port_)) { err = "could not connect to the server"; return false; }
   std::string req = "GET /api/v1/firmware/" + sha + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() +
                     "\r\nUser-Agent: " FET_FW_ID "\r\nX-FET-Token: " + cfg_.token + "\r\nConnection: close\r\n\r\n";
