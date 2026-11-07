@@ -1,6 +1,6 @@
 """firmware/target/core (the new target firmware's platform-independent core), compiled for the PC: SHA-256/HMAC
 against Python, the capture state machine with a fake counter board, and signed shot lines checked by
-fetserver/targetproto.py (the server's side). Built as C++11 with warnings as errors, like the Mega's toolchain.
+fetcore/targetproto.py (the server's side). Built as C++11 with warnings as errors, like the Mega's toolchain.
 Mutation checks (2026-10-29): all killed except one equivalent: face() ignoring edges while ringing (re-arming
 clears the face flag anyway; kept in case interrupts can preempt each other on the ESP32)."""
 import hashlib
@@ -12,7 +12,7 @@ import subprocess
 import tempfile
 import unittest
 
-from fetserver.targetproto import ProtoError, mac, parse_shot
+from fetcore.targetproto import ProtoError, mac, parse_shot
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TGT = os.path.join(HERE, "..", "firmware", "target")
@@ -402,9 +402,9 @@ if __name__ == "__main__":
 
 
 class ServerSide(unittest.TestCase):
-    """fetserver/targetproto.py on its own: building commands and checking replies."""
+    """fetcore/targetproto.py on its own: building commands and checking replies."""
     def test_make_command(self):
-        from fetserver.targetproto import make_command
+        from fetcore.targetproto import make_command
         line = make_command(7, 3, "set", {"led_pct": 80}, KEY)
         head, _, tag = line.rstrip("\n").rpartition(" h=")
         self.assertEqual(head, "FT1 C b=7 i=3 set led_pct=80")
@@ -415,7 +415,7 @@ class ServerSide(unittest.TestCase):
                 make_command(7, 1, verb, settings, KEY)
 
     def test_parse_reply(self):
-        from fetserver.targetproto import parse_reply
+        from fetcore.targetproto import parse_reply
 
         def signed(head, key=KEY):
             return f"{head} h={mac(key, head.encode())}"
@@ -621,12 +621,12 @@ class CommandChannel(Case):
         return self.h.run("cmd " + line.rstrip("\n"))
 
     def cmd(self, cmd_id, verb, settings=None, boot=7, key=KEY):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         r = self.send(make_command(boot, cmd_id, verb, settings, key))
         return parse_reply(r, KEY)
 
     def test_update_is_only_for_a_board_that_can(self):
-        from fetserver.targetproto import make_update, parse_reply
+        from fetcore.targetproto import make_update, parse_reply
         self.h.run("ckey " + KEY.hex())
         sha = hashlib.sha256(b"image").hexdigest()
         r = parse_reply(self.send(make_update(7, 1, sha, 123456, KEY)), KEY)
@@ -636,7 +636,7 @@ class CommandChannel(Case):
         self.assertTrue(r["ok"] and r["authenticated"])
         self.assertEqual(self.h.run("lastupdate"), sha + " 123456", "the platform got exactly the signed image")
         head = "FT1 C b=7 i=4 update sha=" + sha.upper() + " size=5"
-        from fetserver.targetproto import mac
+        from fetcore.targetproto import mac
         r = parse_reply(self.send(head + " h=" + mac(KEY, head.encode())), KEY)
         self.assertEqual(r["reason"], "malformed", "one spelling of an image: lowercase hex")
         for i, (s, n) in enumerate(((sha[:-2], "5"), (sha, "0"), (sha, "-5"), (sha, "x"))):
@@ -661,7 +661,7 @@ class CommandChannel(Case):
         self.assertEqual(self.cmd(9, "status")["values"]["sl"], 0)
 
     def test_refused_until_a_key_is_set(self):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         r = parse_reply(self.send(make_command(7, 1, "paper", key=KEY)), KEY)
         self.assertEqual((r["ok"], r["reason"], r["authenticated"]), (False, "not_provisioned", False))
         self.assertEqual(self.h.run("acts"), "0 0")
@@ -708,7 +708,7 @@ class CommandChannel(Case):
         self.assertEqual(self.h.run("sget led_pct"), "81", "in force now, saved at the next successful save")
 
     def test_forged_commands(self):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         self.h.run("ckey " + KEY.hex())
         good = make_command(7, 5, "set", {"led_pct": 90}, KEY)
         g = good.rstrip("\n")
@@ -724,7 +724,7 @@ class CommandChannel(Case):
         self.assertTrue(parse_reply(self.send(good), KEY)["ok"], "a forgery uses up no ids")
 
     def test_replays(self):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         self.h.run("ckey " + KEY.hex())
         line = make_command(7, 5, "paper", key=KEY)
         self.assertTrue(parse_reply(self.send(line), KEY)["ok"])
@@ -738,7 +738,7 @@ class CommandChannel(Case):
         self.assertEqual(self.h.run("acts"), "2 0")
 
     def test_malformed_and_unknown(self):
-        from fetserver.targetproto import mac, parse_reply
+        from fetcore.targetproto import mac, parse_reply
         self.h.run("ckey " + KEY.hex())
 
         def signed(head):
@@ -759,7 +759,7 @@ class CommandChannel(Case):
 
     def test_overlong_line_handed_in_directly(self):
         self.h.run("ckey " + KEY.hex())
-        from fetserver.targetproto import parse_reply
+        from fetcore.targetproto import parse_reply
         r = parse_reply(self.send("FT1 C b=7 i=1 get " + "x" * 250 + " h=0123456789abcdef"), KEY)
         self.assertEqual(r["reason"], "malformed")
 
@@ -771,7 +771,7 @@ class CommandChannel(Case):
         self.assertEqual(self.h.run("rfeed def\\n"), "1 [def]")
 
     def test_refused_without_a_boot_count(self):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         self.h.run("ckey " + KEY.hex())
         self.h.run("cboot 0")                                      # the start could not be counted
         r = parse_reply(self.send(make_command(0, 1, "paper", key=KEY)), KEY)
@@ -783,7 +783,7 @@ class CommandChannel(Case):
             self.assertEqual(self.send(line), "none", line)
 
     def test_line_reader(self):
-        from fetserver.targetproto import make_command, parse_reply
+        from fetcore.targetproto import make_command, parse_reply
         self.h.run("ckey " + KEY.hex())
         a = make_command(7, 1, "paper", key=KEY).rstrip("\n")
         b = make_command(7, 2, "status", key=KEY).rstrip("\n")
@@ -798,7 +798,7 @@ class CommandChannel(Case):
     def test_reply_buffer_too_small(self):
         self.h.run("ckey " + KEY.hex())
         self.h.run("replycap 60")
-        from fetserver.targetproto import make_command
+        from fetcore.targetproto import make_command
         self.assertEqual(self.send(make_command(7, 1, "get", key=KEY)), "none", "never a cut-off reply")
 
 

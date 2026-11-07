@@ -5,8 +5,8 @@ import unittest
 
 from fetserver.core import BadRequest, Core, even_h
 from fetserver.db import Database
-from fetserver.groupstats import convex_hull, group_stats, min_enclosing_ellipse
-from fetserver.scoring import score_xy
+from fetcore.groupstats import convex_hull, group_stats, min_enclosing_ellipse
+from fetcore.scoring import score_xy
 from tests.test_series import ALICE, BASE, BOB, MISS, SHOT, SeriesCase
 
 

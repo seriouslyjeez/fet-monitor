@@ -10,7 +10,7 @@ from unittest import mock
 
 from fetserver import rulebookfiles as rf
 from fetserver.rulebookfiles import RulebookError, RulebookFiles, https_get
-from fetserver.rulebooks import BOOK_DOC, BOOKS, DOCS, DOC_BY_ID, NONE, texts
+from fetcore.rulebooks import BOOK_DOC, BOOKS, DOCS, DOC_BY_ID, NONE, texts
 from fetserver.server import make_server
 from tests.test_match_http import MatchHttpBase
 

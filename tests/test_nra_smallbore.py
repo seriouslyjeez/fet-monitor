@@ -3,9 +3,9 @@ preparation 10.3.1, position changes 8.2, no warnings 8.4), their faces, and a m
 smallbore tie-breaks (15.7) and its own procedures."""
 import unittest
 
-from fetserver import faces as F
-from fetserver import rulebooks as rb
-from fetserver.matchformats import BUILTIN, SB_POS_S, record_shots, validate
+from fetcore import faces as F
+from fetcore import rulebooks as rb
+from fetcore.matchformats import BUILTIN, SB_POS_S, record_shots, validate
 from fetserver.core import Forbidden
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase

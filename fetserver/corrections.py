@@ -23,9 +23,9 @@ import math
 from typing import Dict, List, Optional
 
 from .matches import MatchError, rules_of
-from . import rulebooks as rb
-from .scoring import is_inner_ten
-from . import faces as F
+from fetcore import rulebooks as rb
+from fetcore.scoring import is_inner_ten
+from fetcore import faces as F
 
 KINDS = ("review", "protest", "override", "annul", "added", "crossfire", "penalty", "dq", "not_registered", "disturbance", "double_load")
 OPEN_KINDS = ("review", "protest", "not_registered", "disturbance")      # open until the match director settles them

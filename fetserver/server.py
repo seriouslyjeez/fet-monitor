@@ -18,11 +18,11 @@ from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, NotFound, iso
-from . import faces as F
+from fetcore import faces as F
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
-from .rulebooks import DOC_BY_ID, REPOSITORIES
+from fetcore.rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
 from .flashstation import FlashError, FlashStation
 from .targetfw import BadImage as BadHex, TargetFirmwareStore
@@ -810,7 +810,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._device_firmware(dm.group(1))
         if url.path == "/api/v1/stream":
             return self._stream()
-        if url.path == "/api/v1/faces":                # public: the target faces (fetserver/faces.py)
+        if url.path == "/api/v1/faces":                # public: the target faces (fetcore/faces.py)
             return self._send(200, {"faces": [F.view(f) for f in F.FACES.values()], "default": F.DEFAULT_FACE})
         if url.path == "/api/v1/rulebooks":            # public: the rulebooks, their local copies and the publishers' pages
             return self._send(200, {"docs": self.server.rulebooks.status(), "repositories": [{"name": n, "url": u} for n, u in REPOSITORIES]})

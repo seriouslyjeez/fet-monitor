@@ -1,4 +1,4 @@
-"""fetserver/shotsolve.py: the faithful port of freETarget's hit computation (checked against a real shot from the
+"""fetcore/shotsolve.py: the faithful port of freETarget's hit computation (checked against a real shot from the
 user's target) and the new least-squares solver (exact recovery, quantisation, misfit, three microphones).
 Mutation checks (2026-10-29): all killed except two equivalents: shifting the arrival times by a constant (only
 conditioning), and the port's NaN branch for ae (the NaN arises through be/acos anyway for every reachable input).
@@ -7,7 +7,7 @@ import math
 import random
 import unittest
 
-from fetserver.shotsolve import E, Geometry, _solve3, forward, solve, speed_of_sound, timers_from_reported, upstream_solve
+from fetcore.shotsolve import E, Geometry, _solve3, forward, solve, speed_of_sound, timers_from_reported, upstream_solve
 
 GEOM = Geometry.from_upstream({"SENSOR": 230, "ANGLE": 45})          # the user's target runs the defaults
 REAL = {"counts": [427, 593, 71, 0], "x": -3.61, "y": -14.56, "T": 19.0}   # freETarget 4.3.0, 2026-10, serial 302

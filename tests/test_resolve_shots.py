@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fetserver.core import Core
 from fetserver.db import Database
-from fetserver.shotsolve import Geometry, forward, upstream_solve
+from fetcore.shotsolve import Geometry, forward, upstream_solve
 from fetserver.simtarget import ECHO_SAMPLE, shot_line
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -173,7 +173,7 @@ class ReviewsPenaltiesDq(CorrCase):
 
 class RuleText(CorrCase):
     def test_references_become_text(self):
-        from fetserver.rules import explain
+        from fetcore.rules import explain
         for ref, book, want in (("ISSF 6.11.6.3", "CMP-3PAR", "2 points off the firer's first series"), ("6.11.6.3", "ISSF", "first series"),
                                 ("issf 6.12.6.1a", "CMP-3PAR", "Open rule violation"), ("ISSF 6.12.6.1 (b)", "CMP-AG", "concealed"),
                                 ("Rule 7.22.2", "CMP-3PAR", "two match officials"), ("USAS 6.16.5.2 c", "NRA", "not upheld"),
@@ -261,7 +261,7 @@ class DecisionGuidance(CorrCase):
         self.assertEqual(g["after the end"]["url"], "https://issf-sports.org/rules")
 
     def test_each_rulebook(self):
-        from fetserver.rules import guidance
+        from fetcore.rules import guidance
         cases = [(("before_cmd", "record", "sighter", "CMP-3PAR"), ("CMP 3PAR 7.17.2", "penalty2_first")),
                  (("before_cmd", "sight", "sighter", "CMP-3PAR"), ("CMP 3PAR 7.17.1", "miss_first")),
                  (("before_cmd", "record", "sighter", "CMP-AG"), ("CMP AG 7.11.2", "miss_first")),

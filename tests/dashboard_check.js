@@ -1091,7 +1091,7 @@ console.log('OK');
   console.log('flash OK');
 }
 
-// target faces (fetserver/faces.py views, as the server sends them)
+// target faces (fetcore/faces.py views, as the server sends them)
 {
   const {faceOf, AR10, zoomBar, fullHalf, lowestRing, faceWarning} = X;
   const FC = id => D.faces.find(f => f.id === id);

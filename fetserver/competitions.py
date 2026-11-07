@@ -14,11 +14,11 @@ import random
 from functools import cmp_to_key
 from typing import Dict, List, Optional
 
-from . import faces
-from . import matchformats as mf
-from . import ranking
+from fetcore import faces
+from fetcore import matchformats as mf
+from fetcore import ranking
 from .matches import ACTIVE, PACING, MatchError, own_clock, rules_of
-from . import rulebooks as rb
+from fetcore import rulebooks as rb
 
 MAX_COMPETITORS = 500
 

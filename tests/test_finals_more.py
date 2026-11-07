@@ -1,6 +1,6 @@
 """The other finals, each by its own book: ISSF 10 m Air Rifle (6.17.2), CMP 3PAR Standing Start-from-Zero (10.5) and
 Three-Position Start-from-Zero (10.3), NRA Precision Air Rifle (7.1.2)."""
-from fetserver import matchformats as mf
+from fetcore import matchformats as mf
 from fetserver.matches import MatchError
 from tests.test_finals import AirGunFinal, FinalCase
 from tests.test_matches import MatchCase
@@ -241,7 +241,7 @@ class WholeRingQualification(Drive, MatchCase):
 
 class FinalGuidance(MatchCase):
     def test_firing_out_of_turn(self):
-        from fetserver.rules import guidance
+        from fetcore.rules import guidance
         self.assertIn("no penalty (ISSF 6.17.1.14 m)", guidance("not_in_shoot_off", "record", "scored", "ISSF")["text"])
         self.assertIn("no penalty (ISSF 6.17.1.14 m)", guidance("eliminated", "record", "scored", "ISSF")["text"])
         self.assertIn("(ISSF 6.17.2 h)", guidance("not_in_shoot_off", "record", "scored", "ISSF")["text"])

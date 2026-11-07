@@ -2,7 +2,7 @@
 
 New firmware for freETarget-compatible target boards (Arduino Mega board v3.x, the ESP32-S3 board 6.2), written for
 FeT Monitor: the target sends raw microphone times with every shot, signed with its own key, and FeT Monitor computes
-the position (fetserver/shotsolve.py). Plan and review of the upstream code: docs/PLAN-target-firmware.md (local).
+the position (fetcore/shotsolve.py). Plan and review of the upstream code: docs/PLAN-target-firmware.md (local).
 
 - `core/` platform-independent C++ (no STL, no heap), an Arduino library: shot capture (`capture.h`), signed shot
   lines (`shotline.h`), SHA-256/HMAC, settings (two slots, CRC, per-board defaults), signed commands (`commands.h`:

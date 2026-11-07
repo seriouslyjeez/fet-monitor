@@ -235,7 +235,7 @@ class Installer(InstallerBase):
         self.assertEqual((self.root / "var/lib/fet-monitor/device_token").read_text().strip(), tok)
         self.assertEqual((self.root / "var/lib/fet-monitor/admin_password").read_text(), pw_before)
         self.assertFalse((self.root / "opt/fet-monitor/fetserver/stale_module.py").exists(), "code replaced, not merged")
-        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "bin", "fetserver", "fetsetup"],
+        self.assertEqual(sorted(p.name for p in (self.root / "opt/fet-monitor").iterdir()), ["LICENSE", "NOTICE", "bin", "fetcore", "fetserver", "fetsetup"],
                          "no fetserver.old / fetserver.new left behind")
         self.assertIn("stopping the running server for the upgrade", r.stdout)
         self.assertEqual(self.get("/api/v1/targets")["targets"][0]["shot_count"], 1, "data untouched")

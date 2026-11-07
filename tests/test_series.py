@@ -4,7 +4,7 @@ import unittest
 
 from fetserver.core import BadRequest, Core, Forbidden
 from fetserver.db import Database
-from fetserver.scoring import INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
+from fetcore.scoring import INNER_TEN_MIN_TENTHS, is_inner_ten, score_xy
 
 ALICE = "alice-client-01"
 BOB = "bob-client-0002"

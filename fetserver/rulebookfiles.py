@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 from urllib.parse import urlparse
 
-from .rulebooks import DOCS, DOC_BY_ID
+from fetcore.rulebooks import DOCS, DOC_BY_ID
 
 MAX_PDF = 32 * 1024 * 1024
 log = logging.getLogger("fetserver")

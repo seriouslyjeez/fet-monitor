@@ -88,7 +88,7 @@ DB_BACKUP="${backups[${#backups[@]}-1]}"
 [ -f "$DB_BACKUP" ] || fail "the database backup is missing; nothing was changed"
 
 status running "$VERSION" "installing"
-PKGS=(fetserver fetsetup)                               # every package the install replaces; .prev for a rollback
+PKGS=(fetserver fetsetup fetcore)                       # every package the install replaces; .prev for a rollback
 for pkg in "${PKGS[@]}"; do
   rm -rf "$CODE/$pkg.prev"
   if [ -d "$CODE/$pkg" ]; then cp -a "$CODE/$pkg" "$CODE/$pkg.prev"; fi

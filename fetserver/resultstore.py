@@ -17,11 +17,11 @@ import json
 import re
 from typing import Dict, List
 
-from . import faces
-from . import matchformats as mf
-from . import ranking
+from fetcore import faces
+from fetcore import matchformats as mf
+from fetcore import ranking
 from .matches import LIVE, MatchError, rules_of
-from . import rulebooks as rb
+from fetcore import rulebooks as rb
 
 KEY_RE = re.compile(r"^([cma]?)(\d{1,9})$")
 MAX_DELETE = 200

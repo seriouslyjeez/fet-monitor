@@ -3,9 +3,9 @@ format's own book; a book that does not cover something says the match director 
 import re
 import unittest
 
-from fetserver import matchformats as mf
-from fetserver import rulebooks as rb
-from fetserver import rules
+from fetcore import matchformats as mf
+from fetcore import rulebooks as rb
+from fetcore import rules
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase, tiny
 

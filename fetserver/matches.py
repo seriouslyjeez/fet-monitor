@@ -26,12 +26,12 @@ from __future__ import annotations
 import json
 from typing import Dict, List, Optional
 
-from . import faces
-from . import matchformats as mf
-from . import ranking
-from .rules import guidance, lookup_text
-from . import rulebooks as rb
-from .rulebooks import interruption_time, range_interruption   # noqa: F401 (tests and callers use them from here)
+from fetcore import faces
+from fetcore import matchformats as mf
+from fetcore import ranking
+from fetcore.rules import guidance, lookup_text
+from fetcore import rulebooks as rb
+from fetcore.rulebooks import interruption_time, range_interruption   # noqa: F401 (tests and callers use them from here)
 from .admin import ROLES, USERNAME_RE, MIN_PASSWORD, hash_password
 
 ACTIVE = ("ready", "running", "paused", "holding", "overtime")

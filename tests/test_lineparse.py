@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 
-from fetserver.lineparse import ParseError, echo_summary, normalise, parse_echo, parse_shot_line
+from fetcore.lineparse import ParseError, echo_summary, normalise, parse_echo, parse_shot_line
 
 HERE = os.path.dirname(__file__)
 

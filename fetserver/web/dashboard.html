@@ -150,7 +150,7 @@ body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}
 const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record', ammo: 'Ammo test'};
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
 const dec = v => (v == null ? '–' : v.toFixed(1));
-// Target faces come from the server (fetserver/faces.py, faces.view): ring diameters, the black, the projectile.
+// Target faces come from the server (fetcore/faces.py, faces.view): ring diameters, the black, the projectile.
 // Without one (shots from before faces, a page without data) it is the ISSF 10 m air rifle face.
 const AR10 = {id: 'issf-ar10', name: '10 m Air Rifle (ISSF)', decimal: true, black_mm: 30.5, white_ten: true, inner_mm: null, projectile_mm: 4.5, ring_mm: 2.5,
   rings: [0.5, 5.5, 10.5, 15.5, 20.5, 25.5, 30.5, 35.5, 40.5, 45.5].map((d, i) => ({value: 10 - i, dia_mm: d}))};

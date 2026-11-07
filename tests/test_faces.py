@@ -1,11 +1,11 @@
-"""Target faces (fetserver/faces.py) against the rulebooks: the CMP decimal maximum-radii chart (air rifle and air
+"""Target faces (fetcore/faces.py) against the rulebooks: the CMP decimal maximum-radii chart (air rifle and air
 pistol), the ISSF and NRA ring tables at their edges, the inner ten / X rules, and exactly the scoring the 10 m air
-rifle face had before faces existed (fetserver/scoring.py)."""
+rifle face had before faces existed (fetcore/scoring.py)."""
 import random
 import unittest
 
-from fetserver import faces as F
-from fetserver.scoring import is_inner_ten, score_xy
+from fetcore import faces as F
+from fetcore.scoring import is_inner_ten, score_xy
 
 
 def at(face, r_mm_h, p=None):

@@ -10,7 +10,7 @@ from pathlib import Path
 from fetserver.core import BadRequest, Core
 from fetserver.db import Database
 from fetserver.esp32fw import APP_OFFSET, FULL_SIZE, BadImage, Esp32FirmwareStore, image_length, inspect
-from fetserver.targetproto import mac, parse_hello
+from fetcore.targetproto import mac, parse_hello
 from tests.test_firmware import TOKEN, ServerCase
 from tests.test_target_server import KEY, hello
 

@@ -8,7 +8,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from fetserver.lineparse import parse_shot_line
+from fetcore.lineparse import parse_shot_line
 from fetserver.matches import CLOSE_MS, MatchError
 from tests.test_match_http import BASE as HTTP_BASE, MatchHttpBase
 from tests.test_matches import BASE, MatchCase

@@ -1,5 +1,5 @@
 """FeT Monitor's side of the FeT target firmware: keys found by fingerprint, signed hello / shots / replies, the
-position solved from raw times (fetserver/shotsolve.py), and signed commands with boot and id."""
+position solved from raw times (fetcore/shotsolve.py), and signed commands with boot and id."""
 import json
 import math
 import os
@@ -9,8 +9,8 @@ import unittest
 
 from fetserver.core import BadRequest, Core
 from fetserver.db import Database
-from fetserver.shotsolve import Geometry, forward
-from fetserver.targetproto import key_fingerprint, mac
+from fetcore.shotsolve import Geometry, forward
+from fetcore.targetproto import key_fingerprint, mac
 
 KEY = bytes(range(1, 33))
 FP = key_fingerprint(KEY)
@@ -211,7 +211,7 @@ class Shots(Base):
         """The key was set by another Pi (or the hello was lost): the target still shows in Range Control, with what it
         says its key is, so the page can say what to do (2026-11-03)."""
         other = bytes(range(32, 64))
-        from fetserver.targetproto import key_fingerprint
+        from fetcore.targetproto import key_fingerprint
         self.send("target_hello", hello(3, key=other, fp=key_fingerprint(other)))
         t = self.target()
         self.assertEqual((t["key_fp"], t["hello_key_fp"]), (None, key_fingerprint(other)), "not bound, but noted")

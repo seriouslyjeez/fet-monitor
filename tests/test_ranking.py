@@ -2,8 +2,8 @@
 being tested, and must be split by exactly that rule."""
 import unittest
 
-from fetserver import ranking
-from fetserver.ranking import combine, rank, summary
+from fetcore import ranking
+from fetcore.ranking import combine, rank, summary
 
 
 def shots(spec):
@@ -118,7 +118,7 @@ class OrderOfTheRules(unittest.TestCase):
         self.assertEqual(order([("A", "10 10 7 7"), ("B", "10 9 9 6")], "NRA", False), [("A", 1), ("B", 2)], "count 10s first, not 6s")
 
     def test_longer_list_wins_when_the_other_is_its_prefix(self):
-        from fetserver.ranking import _cmp
+        from fetcore.ranking import _cmp
         self.assertEqual((_cmp([5, 3], [5, 3, 1]), _cmp([5, 3, 1], [5, 3]), _cmp([5, 3], [5, 3])), (-1, 1, 0))
         self.assertEqual(_cmp((1, [2, 3]), (1, [2, 4])), -1)
 

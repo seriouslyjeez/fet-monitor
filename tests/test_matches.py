@@ -6,7 +6,7 @@ import unittest
 from fetserver.core import BadRequest, Core, Forbidden
 from fetserver.db import Database
 from fetserver.matches import MatchError
-from fetserver.matchformats import BUILTIN, record_shots, validate
+from fetcore.matchformats import BUILTIN, record_shots, validate
 
 BASE = 1_000_000_000
 SHOT = '{"shot":%d, "miss":0, "name":"TARGET", "time":1.00 ,"x":%s, "y":0.50 , "N":1, "E":2, "S":3, "W":0 , "VERSION":"4.3.0" }'

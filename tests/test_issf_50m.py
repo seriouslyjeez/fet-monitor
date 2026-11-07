@@ -2,7 +2,7 @@
 3-position switch between positions on one clock (7.7.3)."""
 import unittest
 
-from fetserver.matchformats import BUILTIN, blocks, final_fits, validate
+from fetcore.matchformats import BUILTIN, blocks, final_fits, validate
 from fetserver.matches import MatchError
 from tests.test_matches import MatchCase
 

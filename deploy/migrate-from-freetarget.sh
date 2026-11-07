@@ -45,9 +45,10 @@ mkdir -p "$NEW_CODE" "$NEW_DATA" "$NEW_BACKUPS"
 say "4/7 copying data, backups and code"
 cp -a "$OLD_DATA/." "$NEW_DATA/"
 [ -d "$OLD_BACKUPS" ] && cp -a "$OLD_BACKUPS/." "$NEW_BACKUPS/"
-rm -rf "$NEW_CODE/fetserver" "$NEW_CODE/fetsetup"
+rm -rf "$NEW_CODE/fetserver" "$NEW_CODE/fetsetup" "$NEW_CODE/fetcore"
 cp -r fetserver "$NEW_CODE/"
 if [ -d fetsetup ]; then cp -r fetsetup "$NEW_CODE/"; fi
+if [ -d fetcore ]; then cp -r fetcore "$NEW_CODE/"; fi      # the shared scoring package (0.7.16+)
 chown -R "$NEW_USER:$NEW_USER" "$NEW_DATA" "$NEW_BACKUPS"
 
 say "5/7 installing services"

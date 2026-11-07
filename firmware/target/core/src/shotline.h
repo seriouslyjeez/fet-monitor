@@ -8,7 +8,7 @@
 // temperature in tenths of a degree, k the id of the settings in force (CRC-32, hex), d shots lost so far because
 // the queue was full, r the rate of n/e/s/w (protocol v2; absent: the board revision's clock, 10 MHz ESP32, 8 MHz
 // Mega). h covers every byte before " h="; "h=-" means the target has no key yet (the server marks
-// such shots as not authenticated). Parsed and checked by fetserver/targetproto.py. No braces: lines may pass
+// such shots as not authenticated). Parsed and checked by fetcore/targetproto.py. No braces: lines may pass
 // through equipment that treats braces as commands.
 #pragma once
 #include <stddef.h>

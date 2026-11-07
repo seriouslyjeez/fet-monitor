@@ -3,7 +3,7 @@ import random
 import unittest
 from decimal import Decimal
 
-from fetserver.scoring import MISS, Score, ring_outer_radius_h, ring_reach_h, score_xy, to_hundredths
+from fetcore.scoring import MISS, Score, ring_outer_radius_h, ring_reach_h, score_xy, to_hundredths
 
 
 class ToHundredths(unittest.TestCase):

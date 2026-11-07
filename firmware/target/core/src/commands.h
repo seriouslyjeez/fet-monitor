@@ -18,7 +18,7 @@
 // r=not_supported). Replies are signed with the same key and repeat b and i, so the server
 // can match them. Reasons have no spaces: r=bad_signature, old_command, wrong_boot, unknown_verb, malformed,
 // unknown_setting:<key>, out_of_range:<key>, save_failed, not_provisioned, no_boot_count (this start could not be
-// counted, so a recorded command could be replayed: nothing is carried out). Lines from fetserver/targetproto.py.
+// counted, so a recorded command could be replayed: nothing is carried out). Lines from fetcore/targetproto.py.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>

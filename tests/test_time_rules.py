@@ -32,7 +32,7 @@ class Rules(MatchCase):
         self.assertEqual(range_interruption("CMP-3PAR", 200)[:2], (0, False))
 
     def test_malfunction_by_rulebook(self):
-        from fetserver.rulebooks import malfunction
+        from fetcore.rulebooks import malfunction
         self.assertEqual(malfunction("CMP-AG", 300_000, False), (True, 120, "CMP AG 7.13"))          # the last 5 minutes
         self.assertEqual(malfunction("CMP-AG", 300_001, False), (True, 0, "CMP AG 7.13"))
         self.assertEqual(malfunction("CMP-3PAR", 100_000, False), (True, 120, "CMP 3PAR 7.19.1"))

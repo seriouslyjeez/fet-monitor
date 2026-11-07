@@ -116,7 +116,7 @@ class StandardFinal(FinalCase):
 
 class RankingRules(FinalCase):
     def test_ties_below_the_medals_go_by_the_final_score(self):
-        from fetserver.ranking import summary
+        from fetcore.ranking import summary
         def row(name, total, final, so=()):
             return {"name": name, "total": total, "final": final, "shoot_off": list(so), "dq": None,
                     "summary": summary([{"tenths": int(final * 10), "ring": int(final), "inner": False}])}

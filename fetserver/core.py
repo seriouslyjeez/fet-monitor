@@ -11,15 +11,15 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Callable, Optional
 
 from .db import Database
-from .groupstats import group_stats
+from fetcore.groupstats import group_stats
 from .hub import Hub
-from .lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
-from .shotsolve import Geometry, solve, timers_from_reported
-from .targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
-from .scoring import SCORING_VERSION
-from . import faces as F
+from fetcore.lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
+from fetcore.shotsolve import Geometry, solve, timers_from_reported
+from fetcore.targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
+from fetcore.scoring import SCORING_VERSION
+from fetcore import faces as F
 from . import wifilink
-from .sightadj import suggest
+from fetcore.sightadj import suggest
 from .matches import ACTIVE_SQL, Matches, _check
 from .competitions import Competitions
 from .resultstore import ResultStore
@@ -30,7 +30,7 @@ log = logging.getLogger("fetserver.core")
 STATUS_KEYS = ("up", "d", "q", "vr", "sl")            # a FeT target's status reply: counts, the measured trip point, asleep
 
 EVENT_TYPES = {"shot", "config", "arduino_boot", "log",
-               "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetserver/targetproto.py)
+               "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetcore/targetproto.py)
 MAX_EVENTS_PER_BATCH = 50
 MAX_RAW_CHARS = 16384
 DEVICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")

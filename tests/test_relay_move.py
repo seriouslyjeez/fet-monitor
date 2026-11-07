@@ -115,7 +115,7 @@ class LaterRelayOtherBooks(MatchCase):
     """Only the CMP books cover finishing on a later relay: elsewhere it stays available, the match director decides
     (no extra time, no rule cited); the time left is still kept."""
     def test_no_extra_time_without_the_rule(self):
-        from fetserver.rulebooks import later_relay
+        from fetcore.rulebooks import later_relay
         self.assertEqual([later_relay(b) for b in ("CMP-3PAR", "CMP-AG", "ISSF", "NRA", "NONE")],
                          [(120_000, "CMP 3PAR 7.18, 7.18.3"), (120_000, "CMP AG 7.12, 7.12.2"), (0, None), (0, None), (0, None)])
         self.core.handle_heartbeat({"device_id": "lane-3", "boot_count": 1, "uptime_ms": 0})

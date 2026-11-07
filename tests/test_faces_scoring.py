@@ -87,7 +87,7 @@ class Choosing(CtlCase):
         self.assertEqual(self.series_faces()[-1], "issf-r50", "the lane's match series is on the match's face")
 
     def test_formats_name_a_face(self):
-        from fetserver.matchformats import validate
+        from fetcore.matchformats import validate
         base = {"name": "X", "book": "NONE", "phases": [{"kind": "record", "label": "R", "seconds": 600, "shots": 10}]}
         self.assertEqual(validate(dict(base))["face"], "issf-ar10", "the 10 m air rifle face unless said")
         with self.assertRaisesRegex(ValueError, "face"):

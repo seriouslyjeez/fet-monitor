@@ -1,0 +1,20 @@
+# fetcore as an installable package (deeptens pins it to a tagged fet-monitor release):
+#   pip install "git+https://github.com/seriouslyjeez/fet-monitor@<tag>#subdirectory=fetcore"
+# FeT Monitor itself does not install it: it imports fetcore/ from its own folder (/opt/fet-monitor).
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fetcore"
+dynamic = ["version"]
+description = "The scoring brain shared by FeT Monitor and deeptens.com: shot solver, faces, scoring, formats, tie-breaks"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+
+[tool.setuptools]
+packages = ["fetcore"]
+package-dir = {"fetcore" = "."}
+
+[tool.setuptools.dynamic]
+version = {attr = "fetcore.__version__"}

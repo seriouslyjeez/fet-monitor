@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-solve the shots stored in a FeT Monitor database with fetserver/shotsolve.py (read-only).
+"""Re-solve the shots stored in a FeT Monitor database with fetcore/shotsolve.py (read-only).
 
     python3 tools/resolve_shots.py path/to/fetserver.db [--device ID] [--since YYYY-MM-DD] [--csv out.csv]
 
@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from fetserver.lineparse import parse_echo                     # noqa: E402
-from fetserver.shotsolve import Geometry, solve, timers_from_reported   # noqa: E402
+from fetcore.lineparse import parse_echo                     # noqa: E402
+from fetcore.shotsolve import Geometry, solve, timers_from_reported   # noqa: E402
 
 
 def settings_for(conn, device_id: str) -> dict:

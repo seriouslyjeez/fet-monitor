@@ -1,7 +1,7 @@
 """ISSF finals beyond 10 m air rifle (ISSF Rule Book 2026): the 50 m Rifle 3 Positions Final (6.17.3: kneeling and prone
 on one 22-minute clock with the switch between positions, standing series, eliminations, the countback for two tied
 after the second standing series) and the 10 m Air Pistol Final (6.17.2, on the air pistol face)."""
-from fetserver import matchformats as mf
+from fetcore import matchformats as mf
 from fetserver.matches import MatchError
 from tests.test_finals_more import Drive
 from tests.test_matches import MatchCase

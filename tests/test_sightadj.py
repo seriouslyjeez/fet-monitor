@@ -8,8 +8,8 @@ from unittest import mock
 
 from fetserver.core import BadRequest, Core, NotFound
 from fetserver.db import Database
-from fetserver import sightadj
-from fetserver.sightadj import FLYER_MIN_H, find_flyers, geometric_median, suggest
+from fetcore import sightadj
+from fetcore.sightadj import FLYER_MIN_H, find_flyers, geometric_median, suggest
 
 from tests.test_http import ServerCase
 

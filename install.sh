@@ -19,7 +19,7 @@ SYSTEMD_RUN="$R/run/systemd/system"
 OLD_DATA="$R/var/lib/freetarget"
 SETUP_DIR="$R/var/lib/fet-setup"
 UNITS=(fet-monitor.service fet-monitor-backup.service fet-monitor-backup.timer fet-monitor-update.path fet-monitor-update.service fet-setup.service fet-system.path fet-system.service fet-os-update.service fet-os-update.timer)
-PACKAGES=(fetserver fetsetup)
+PACKAGES=(fetserver fetsetup fetcore)
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 RESET_PASSWORD=0
@@ -259,7 +259,7 @@ install_code() {
   for f in LICENSE NOTICE; do
     if [ -f "$HERE/$f" ]; then install -m 0644 "$HERE/$f" "$CODE_DIR/$f"; fi
   done
-  info "code in $CODE_DIR/fetserver and $CODE_DIR/fetsetup"
+  info "code in $CODE_DIR/fetserver, $CODE_DIR/fetsetup and $CODE_DIR/fetcore"
   [ "$was_active" -eq 0 ] || info "(the server is restarted below)"
 }
 
