@@ -792,6 +792,16 @@ class OverHttp(MatchHttpBase):
         self.assertEqual((st, "identify" in body["error"]), (400, True))
         self.assertEqual(self.req("GET", "/api/v1/admin/flash-backups/84f3eb123456-20261028-120000.bin", None, "admin")[0], 404)
 
+    def test_esp32_install_skips_the_backup_only_when_asked(self):
+        seen = []
+        self.server.flash.start_esp32_flash = lambda port, sha, by, settings=None, backup=True: (seen.append(backup), {"state": "done", "what": "x"})[1]
+        st, _, cookie = self.req("POST", "/api/v1/admin/login", {"password": "range-pass"})
+        self.cookies["admin"] = cookie.split(";")[0]
+        for body in ({}, {"skip_backup": "yes"}, {"skip_backup": True}):
+            st, _, _ = self.req("POST", "/api/v1/admin/flash/esp32-install", dict(body, port="/dev/ttyUSB0", sha256="a" * 64), "admin")
+            self.assertEqual(st, 202)
+        self.assertEqual(seen, [True, True, False], "saved unless skip_backup is exactly true")
+
     def test_configure_uses_this_servers_port_and_token(self):
         link = FakeBridge()
         st = self.server.flash
@@ -967,6 +977,64 @@ class Esp32(Case):
         self.assertEqual(self.registered, ["installed ESP32 0.2.0 by test"], "the server knew it first")
         self.assertEqual(board.settings["ssid"], "club")
         self.assertIn("configured as fet-db173c", job["message"])
+
+    def booting_tools(self):
+        """Like the real board (range install, 2026-11-08): esptool restarts it after a write unless told
+        "--after no_reset"; FeT target firmware's first start then writes to flash (settings store, file system), and a
+        full-chip verify fails."""
+        written = {"booted": False}
+        plain = self.tools
+
+        def run(argv, timeout, cb):
+            if "write_flash" in argv and "no_reset" not in argv:
+                written["booted"] = True
+            if "verify_flash" in argv and written["booted"] and "0x0" in argv:
+                self.tools.calls.append(argv)
+                return 2, "Verifying 0x800000 (8388608) bytes @ 0x00000000 in flash against ...\nA fatal error occurred: Verify failed."
+            return plain(argv, timeout, cb)
+        return run
+
+    def test_first_install_verifies_before_the_board_starts(self):
+        board = FakeEsp32("upstream")
+        st = self.station32(board)
+        st.run = self.booting_tools()
+        st.identify("/dev/ttyUSB0")
+        board.runs = "fet"
+        job = st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test", SETTINGS)
+        self.assertEqual(job["state"], "done", job.get("message"))
+        write = self.esptool_args("write_flash")[0]
+        self.assertEqual(write[write.index("--after") + 1], "no_reset", "the board stays in its boot loader until verified")
+        self.assertLess(write.index("--after"), write.index("write_flash"), "a global esptool option")
+        self.assertNotIn("--after", self.esptool_args("verify_flash")[0], "the verify's own restart starts the firmware")
+        self.assertEqual(len(board.keys), 1, "and it got its key in the same job")
+
+    def test_every_esp32_write_keeps_the_board_in_its_boot_loader(self):
+        board = FakeEsp32("fet", fw="0.1.1", key_fp="ab12cd34")
+        st = self.station32(board)
+        st.identify("/dev/ttyUSB0")
+        st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test")
+        (self.root / "flash-backups").mkdir(exist_ok=True)
+        (self.root / "flash-backups/7cdfa1001122-20261102-221212.bin").write_bytes(b"\xff" * (8 << 20))
+        st.identify("/dev/ttyUSB0")
+        job = st.start_esp32_restore("/dev/ttyUSB0", "7cdfa1001122-20261102-221212.bin", "test")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        writes = self.esptool_args("write_flash")
+        self.assertEqual(len(writes), 2)
+        self.assertTrue(all(w[w.index("--after") + 1] == "no_reset" for w in writes), "reinstall and put back too")
+
+    def test_first_install_without_the_backup(self):
+        board = FakeEsp32("upstream")
+        st = self.station32(board)
+        st.identify("/dev/ttyUSB0")
+        board.runs = "fet"
+        job = st.start_esp32_flash("/dev/ttyUSB0", self.img["sha256"], "test", backup=False)
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertEqual(self.tools.subcmds(), ["version", "flash_id", "flash_id", "write_flash", "verify_flash"], "no 8 MB read")
+        self.assertNotIn("backup", job)
+        self.assertIn("NOT saved", job["message"])
+        self.assertEqual(len(board.keys), 1)
+        st.backups = None                                        # no data folder: fine when nothing is saved
+        st.identify("/dev/ttyUSB0")
 
     def test_reinstall_keeps_key_settings_and_shots(self):
         board = FakeEsp32("fet", fw="0.1.1", key_fp="ab12cd34")
