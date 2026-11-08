@@ -1088,6 +1088,15 @@ console.log('OK');
   const mk = flashPanel(fm, {});
   assert(mk.includes('Reinstall FeT target') && mk.includes('data-act="rcmegakey"'), 'ours: reinstall and a new key');
   assert(/rcmegago[^>]*disabled/.test(flashPanel(Object.assign({}, fm, {job: {state: 'running', port: 'x', what: 'y', step: 'z', percent: 1}}), {})), 'one job at a time');
+  // the ESP32 board: a first install may skip the 8 MB backup (a batch of identical boards), only when asked
+  const e32 = {ports: [{port: '/dev/ttyUSB0', adapter: 'FTDI', product: 'FT231X USB UART', hint: 'esp'}], job: null, server_host: '1.2.3.4',
+    probes: {'/dev/ttyUSB0': {device: 'esp32', label: 'ESP32-S3 board (8 MB flash), not FeT target firmware (first install)', first_install: true,
+                              same: false, mac: '7c:df:a1:00:11:22', offer: {sha256: 'cc', version: '0.3.1'}}}, backups: []};
+  const eh = flashPanel(e32, {});
+  assert(eh.includes('data-act="rce32nobk"') && !/rce32nobk"[^>]*checked/.test(eh), 'first install: skip the backup offered, not ticked');
+  assert(/rce32nobk"[^>]*checked/.test(flashPanel(e32, {e32NoBackup: true})), 'ticked stays ticked across redraws');
+  e32.probes['/dev/ttyUSB0'] = Object.assign({}, e32.probes['/dev/ttyUSB0'], {first_install: false, same: true, running: '0.3.1'});
+  assert(!flashPanel(e32, {}).includes('rce32nobk'), 'a reinstall saves nothing anyway: no choice shown');
   console.log('flash OK');
 }
 

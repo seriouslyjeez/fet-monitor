@@ -54,6 +54,10 @@ GARBLED_RE = re.compile(r"Invalid SLIP escape|Corrupt data|Invalid head of packe
                         r"MD5 of file does not match|checksum mismatch", re.I)
 ESP32_APP, ESP32_OTADATA = 0x10000, (0xE000, 0x2000)   # the 8 MB layout: app slot 0; which slot boots
 ESP32_FULL = 8 << 20
+# Write, then verify, with the board still in its boot loader: esptool restarts it after a write by default, and FeT
+# target firmware's first start writes to flash at once (settings store, file system), so a full-chip verify then
+# failed, before the key step (range install, 2026-11-08). The verify's own restart starts it.
+NO_RESET = ["--after", "no_reset"]
 APP_READ = 0x80000                     # the first 512 KB holds the application (and its identification string)
 ESP_ADAPTERS = {("1a86", "7523"): "CH340", ("1a86", "55d4"): "CH9102", ("10c4", "ea60"): "CP2102", ("0403", "6001"): "FTDI",
                 ("0403", "6015"): "FTDI"}
@@ -331,10 +335,11 @@ class FlashStation:
         if (MAC_RE.search(out) or [None, ""])[1].lower() != probe["mac"]:
             raise FlashError("a different board is plugged in now: identify it again")
 
-    def start_esp32_flash(self, port: str, sha: str, by: str, settings: Optional[dict] = None) -> dict:
-        """FeT target firmware on the ESP32 board identified on port. First install: the whole 8 MB is saved, then the
-        full image is written and verified, then a key (and the WiFi settings, if given) go in over USB. Reinstall:
-        only the app (and which slot boots), so the board keeps its key, settings and queued shots."""
+    def start_esp32_flash(self, port: str, sha: str, by: str, settings: Optional[dict] = None, backup: bool = True) -> dict:
+        """FeT target firmware on the ESP32 board identified on port. First install: the whole 8 MB is saved (unless
+        backup is False: the match director's choice, e.g. a batch of identical boards whose original is saved once),
+        then the full image is written and verified, then a key (and the WiFi settings, if given) go in over USB.
+        Reinstall: only the app (and which slot boots), so the board keeps its key, settings and queued shots."""
         with self.lock:
             probe = self.probes.get(port)
         if not probe or probe.get("device") != "esp32" or not probe.get("offer") or probe["offer"]["sha256"] != sha:
@@ -345,27 +350,28 @@ class FlashStation:
         full, app = self.esp32_images.full_path(sha), self.esp32_images.app_path(sha)
         line = settings_line(self._settings(settings)) if settings else None
         first = probe["first_install"]
-        if first and self.backups is None:
+        if first and backup and self.backups is None:
             raise FlashError("no data folder for the backup of the original firmware")
 
         def work(job):
             self._same_esp32(port, probe)
             if first:
-                self.backups.mkdir(parents=True, exist_ok=True)
-                name = f"{probe['mac'].replace(':', '')}-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.now()))}.bin"
-                self._step("saving the original firmware (8 MB: about 7 minutes)")
-                self._esp(port, ["read_flash", "0", hex(ESP32_FULL), str(self.backups / name)], 1500, progress=True, baud=ESP32_BAUD)
-                with self.lock:
-                    job["backup"] = name
+                if backup:
+                    self.backups.mkdir(parents=True, exist_ok=True)
+                    name = f"{probe['mac'].replace(':', '')}-{time.strftime('%Y%m%d-%H%M%S', time.localtime(self.now()))}.bin"
+                    self._step("saving the original firmware (8 MB: about 7 minutes)")
+                    self._esp(port, ["read_flash", "0", hex(ESP32_FULL), str(self.backups / name)], 1500, progress=True, baud=ESP32_BAUD)
+                    with self.lock:
+                        job["backup"] = name
                 self._step("writing")
-                self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(full)], 900,
+                self._esp(port, NO_RESET + ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(full)], 900,
                           progress=True, baud=ESP32_BAUD)
                 self._step("verifying")
                 self._esp(port, ["verify_flash", "0x0", str(full)], 900, baud=ESP32_BAUD)
             else:
                 self._step("writing (the board keeps its key, settings and queued shots)")
                 self._esp(port, ["erase_region", hex(ESP32_OTADATA[0]), hex(ESP32_OTADATA[1])], 120, baud=ESP32_BAUD)
-                self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", hex(ESP32_APP), str(app)], 900,
+                self._esp(port, NO_RESET + ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", hex(ESP32_APP), str(app)], 900,
                           progress=True, baud=ESP32_BAUD)
                 self._step("verifying")
                 self._esp(port, ["verify_flash", hex(ESP32_APP), str(app)], 900, baud=ESP32_BAUD)
@@ -374,7 +380,8 @@ class FlashStation:
                              label=f"{probe['chip']} board ({flash_label(probe['flash_size'])} flash), FeT target {img['version']}")
             fp = probe.get("key_fp") if not first and probe.get("key_fp") else self._mega_key(port, f"installed ESP32 {img['version']} by {by}",
                                                                                               restart=True)
-            msg = f"FeT target {img['version']} installed and verified, key {fp}"
+            msg = f"FeT target {img['version']} installed and verified, key {fp}" + (
+                "; its original firmware was NOT saved (skipped)" if first and not backup else "")
             if line:
                 self._step("sending the WiFi settings")
                 msg += f"; configured as {self._configure(port, line, self.hello_wait)}"
@@ -401,7 +408,7 @@ class FlashStation:
         def work(job):
             self._same_esp32(port, probe)
             self._step("writing the saved firmware back")
-            self._esp(port, ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(path)], 1500,
+            self._esp(port, NO_RESET + ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", "0x0", str(path)], 1500,
                       progress=True, baud=ESP32_BAUD)
             self._step("verifying")
             self._esp(port, ["verify_flash", "0x0", str(path)], 900, baud=ESP32_BAUD)

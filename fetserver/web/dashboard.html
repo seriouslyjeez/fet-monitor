@@ -897,7 +897,9 @@ function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a
       (pr.same ? 'Reinstall' : pr.first_install ? 'Install' : 'Update to') + ' FeT target ' + esc(pr.offer.version) + '</button>' +
       ' <span class="mut">and send it the WiFi settings below, if they have a WiFi name</span></div>' +
       (pr.first_install ? '<p class="mut">First install: the board\'s whole flash (8 MB) is saved first, about 7 minutes (it can be put back), ' +
-        'then FeT target firmware is written and checked, then the board gets its own key.</p>'
+        'then FeT target firmware is written and checked, then the board gets its own key.</p>' +
+        '<label><input type="checkbox" data-act="rce32nobk"' + (rc.e32NoBackup ? ' checked' : '') + '> Skip saving its original firmware ' +
+        '(saves about 7 minutes; only when one board of this batch is already saved: then it cannot be put back from here)</label>'
         : '<p class="mut">Only the program is written: the board keeps its key, WiFi settings and stored shots.</p>')
       : '<p class="mut">' + esc(pr.why_not || '') + '</p>') +
     (mine.length ? '<p class="mut">Its original firmware, saved here:</p>' + mine.map(b => '<div class="bulk"><button data-act="rce32restore" data-port="' + esc(p.port) + '" data-name="' + esc(b.name) + '"' + dis + '>Put back ' + esc(b.name) + '</button>' +
@@ -2368,14 +2370,18 @@ async function rangeAct(el, a) {
     if (res.status === 200) rc.musers = res.data.users;
     return refresh();
   }
+  if (a === 'rce32nobk') { rc.e32NoBackup = el.checked; return render(true); }
   if (a === 'rce32go' || a === 'rce32key' || a === 'rce32restore') {
-    const what = a === 'rce32go' ? 'Install FeT target firmware on the ESP32 board on ' + el.dataset.port + '?\n\nOn a first install its whole flash is saved first (about 7 minutes).'
+    const nobk = a === 'rce32go' && rc.e32NoBackup && ((rc.flash || {}).probes || {})[el.dataset.port] && rc.flash.probes[el.dataset.port].first_install;
+    const what = a === 'rce32go' ? 'Install FeT target firmware on the ESP32 board on ' + el.dataset.port + '?\n\n' +
+        (nobk ? 'Its original firmware will NOT be saved.' : 'On a first install its whole flash is saved first (about 7 minutes).')
       : a === 'rce32key' ? 'Give the ESP32 board on ' + el.dataset.port + ' a new key?\n\nIts old key stops working for this target.'
       : 'Write the saved firmware ' + el.dataset.name + ' back onto the ESP32 board on ' + el.dataset.port + '?\n\nFeT target firmware, its key and settings are replaced.';
     if (!confirm(what)) return;
     const body = {port: el.dataset.port, sha256: el.dataset.sha, name: el.dataset.name};
     const s = flashSettings(rc, rc.flash || {});
     if (a === 'rce32go' && s) body.settings = s;
+    if (nobk) body.skip_backup = true;
     const res = await adminCall(a === 'rce32go' ? '/flash/esp32-install' : a === 'rce32key' ? '/flash/esp32-key' : '/flash/esp32-restore', body);
     if (res.status !== 202) rc.flashMsg = res.data.error || 'not started';
     return refresh();

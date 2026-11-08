@@ -556,7 +556,8 @@ class Handler(BaseHTTPRequestHandler):
                 settings = dict(settings, port=self.server.server_address[1], token=self.server.token)
             try:
                 if path.endswith("install"):
-                    job = fl.start_esp32_flash(port, str(payload.get("sha256", "")), "Range Control", settings if isinstance(settings, dict) else None)
+                    job = fl.start_esp32_flash(port, str(payload.get("sha256", "")), "Range Control", settings if isinstance(settings, dict) else None,
+                                               backup=payload.get("skip_backup") is not True)
                 elif path.endswith("key"):
                     job = fl.start_esp32_key(port, "Range Control")
                 else:
