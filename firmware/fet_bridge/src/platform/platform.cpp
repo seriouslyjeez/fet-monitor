@@ -385,6 +385,7 @@ bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 
 // One report over the kept-open TLS connection; a connection the server closed meanwhile is opened again once.
 bool WifiNet::postTls(const char* path, const std::string& body, int& status, std::string& resp) {
+  if (WiFi.getMode() & WIFI_AP) { tlsDrop(); return false; }      // the setup portal is open: it needs the memory a TLS connection takes
   if (!tlsTimeAsked) { configTime(0, 0, "pool.ntp.org", "time.nist.gov"); tlsTimeAsked = true; }
   if (time(nullptr) < 1700000000) return false;                    // no clock yet: no certificate can be checked
   if (!tlsTrust) tlsTrust = new BearSSL::X509List(FET_TLS_TEST_CA);

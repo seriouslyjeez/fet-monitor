@@ -1,6 +1,7 @@
 #include "provision.h"
 #include "config.h"
 #include "crc32.h"
+#include "jmini.h"
 
 namespace fet {
 
@@ -75,6 +76,13 @@ void Provision::handle(const std::string& body) {
   }
   if (crc32(json.data(), json.size()) != want) { reply("ERROR checksum mismatch: send it again"); return; }
   Config c;
+  // "merge": true changes only the fields sent and keeps the rest (the WiFi, say) as stored; otherwise the line is
+  // the whole of the new settings, as the flash station sends them.
+  JVal v;
+  if (jparse(json, v) && v.type == JVal::Obj) {
+    const JVal* m = v.get("merge");
+    if (m && m->type == JVal::Bool && m->b) loadConfig(fs_, c);
+  }
   if (!configFromJson(json, c)) { reply("ERROR the settings are not valid JSON"); return; }
   std::string why = validateConfig(c);
   if (!why.empty()) { reply("ERROR " + why); return; }

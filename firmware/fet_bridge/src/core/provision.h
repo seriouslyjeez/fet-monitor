@@ -1,7 +1,7 @@
 // Settings over the serial port, for the Pi's flash station ("flash and configure"): right after flashing, the Pi
 // sends one line
 //     FETCFG <the settings JSON, as hex> <crc32 of that JSON, 8 hex digits>
-// and the bridge checks it (validateConfig), stores it (saveConfig) and restarts with it. "FETCFG HELLO" asks who it
+// (with "merge": true in the JSON only the fields sent change; the others keep their stored values) and the bridge checks it (validateConfig), stores it (saveConfig) and restarts with it. "FETCFG HELLO" asks who it
 // is. Replies (to the serial port, i.e. back to the Pi; in a target they would reach the Arduino, so never braces):
 //     FETCFG HELLO <device id> <firmware version>
 //     FETCFG OK <device id>

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import csv
 import http.client
+import json
 import os
 import shutil
 import socket
@@ -188,6 +189,34 @@ class Proxy:
                 pass
 
 
+def configure(args) -> None:
+    """Over the USB programmer, in the bridge's first minute after it starts: only the server, port and token change
+    ("merge": the WiFi stays as stored). Start this, then power the ESP-01S up (run mode)."""
+    import binascii
+    import serial                                   # pyserial
+    token = (OUT / "pi" / "device_token").read_text().strip() if args.token is None else args.token
+    body = json.dumps({"merge": True, "host": host_of(args.ip), "port": args.port, "token": token}).encode()
+    line = b"FETCFG %s %08x\n" % (body.hex().encode(), binascii.crc32(body))
+    s = serial.Serial(args.serial, 115200, timeout=0.2)
+    print(f"waiting up to {args.wait} s for the bridge on {args.serial}: power it up now (run mode)", flush=True)
+    end, buf, said = time.time() + args.wait, b"", False
+    while time.time() < end:
+        s.write(b"FETCFG HELLO\n")
+        buf += s.read(2048)
+        if b"FETCFG HELLO " in buf and not said:
+            hello = buf[buf.index(b"FETCFG HELLO "):].split(b"\n")[0].decode(errors="replace").strip()
+            print(hello, "-> sending the server, port and token", flush=True)
+            said, buf = True, b""
+            s.write(line)
+        if said and b"FETCFG OK" in buf:
+            print(f"saved: {host_of(args.ip)}:{args.port}; the bridge restarts with it")
+            return
+        if said and b"FETCFG ERROR" in buf:
+            sys.exit(buf[buf.index(b"FETCFG ERROR"):].split(b"\n")[0].decode(errors="replace"))
+        time.sleep(0.5)
+    sys.exit("no answer: is it in run mode, and was it powered up while this was waiting (the first minute only)?")
+
+
 def proxy(args) -> None:
     if not (OUT / "server.crt").exists():
         sys.exit("make the certificates first: tls_test.py certs --ip <this Mac's address>")
@@ -231,10 +260,16 @@ def main() -> int:
     p.add_argument("--port", type=int, default=8443)
     p.add_argument("--idle", type=float, default=60, help="close a connection after this many seconds without a request")
     p.add_argument("--log", default=str(OUT / "log.csv"))
+    g = sp.add_parser("configure")
+    g.add_argument("--serial", required=True, help="the USB programmer, e.g. /dev/cu.usbserial-1130")
+    g.add_argument("--ip", required=True, help="this Mac's address (the name is <ip with dashes>.sslip.io)")
+    g.add_argument("--port", type=int, default=8443)
+    g.add_argument("--token", help="default: the test FeT Monitor's (dist/tls-test/pi/device_token)")
+    g.add_argument("--wait", type=int, default=120)
     r = sp.add_parser("report")
     r.add_argument("--log", default=str(OUT / "log.csv"))
     a = ap.parse_args()
-    {"certs": certs, "build": build, "proxy": proxy, "report": report}[a.cmd](a)
+    {"certs": certs, "build": build, "configure": configure, "proxy": proxy, "report": report}[a.cmd](a)
     return 0
 
 

@@ -699,6 +699,28 @@ class FirmwareHost(unittest.TestCase):
         self.assertEqual(self.h.flags()["reboots"], 1)
         self.assertTrue(self.h.run("qboot").startswith("normal 1"), "the settings restart must not open the portal")
 
+    def test_prov_merge_changes_only_the_fields_sent(self):
+        self.prov(self.settings_line())
+        self.h.run("uartclear")
+        self.prov(self.settings_line({"merge": True, "host": "192-168-50-101.sslip.io", "port": 8443, "token": "new-token"}))
+        self.assertEqual(self.replies(), ["FETCFG OK fet-test01"])
+        saved = json.loads(self.h.run("config").replace("\\n", "\n"))
+        self.assertEqual((saved["ssid"], saved["pass"], saved["name"]), ("club", "password1", "Lane-7"), "kept: the WiFi and the name")
+        self.assertEqual((saved["host"], saved["port"], saved["token"]), ("192-168-50-101.sslip.io", 8443, "new-token"))
+
+    def test_prov_without_merge_is_the_whole_of_the_settings(self):
+        fixed = dict(self.SETTINGS, ip="10.0.0.20", gw="10.0.0.1", mask="255.255.255.0")
+        self.prov(self.settings_line(fixed))
+        self.prov(self.settings_line({"merge": True, "port": 8443}))
+        saved = json.loads(self.h.run("config").replace("\\n", "\n"))
+        self.assertEqual((saved["ip"], saved["port"]), ("10.0.0.20", 8443), "merge: the fixed address kept")
+        self.prov(self.settings_line(self.SETTINGS))
+        saved = json.loads(self.h.run("config").replace("\\n", "\n"))
+        self.assertEqual((saved["ip"], saved["gw"]), ("", ""), "no merge: not sent, not kept (the flash station's lines, as before)")
+        self.prov(self.settings_line(fixed))
+        self.prov(self.settings_line(dict(self.SETTINGS, merge=False)))
+        self.assertEqual(json.loads(self.h.run("config").replace("\\n", "\n"))["ip"], "", '"merge": false is no merge')
+
     def test_prov_hex_in_either_case_and_crlf(self):
         line = self.settings_line().rstrip("\n")
         head, crc = line.rsplit(" ", 1)
