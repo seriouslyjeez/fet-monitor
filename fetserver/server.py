@@ -18,6 +18,7 @@ from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
+from .deeptens import DeepTens, LinkError
 from fetcore import faces as F
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
@@ -514,6 +515,27 @@ class Handler(BaseHTTPRequestHandler):
                 t["fw_best"] = {"sha256": best["sha256"], "version": best["version"]} if best else None
                 t["fw_best_reason"] = why
             return self._send(200, view)
+        if path.startswith("/api/v1/admin/deeptens"):     # This Pi -> deepTENS: link, cancel, unlink, status
+            dt = self.server.deeptens
+            if dt is None:
+                raise NotFound("the deepTENS link is not available on this server")
+            try:
+                if path == "/api/v1/admin/deeptens" and method == "GET":
+                    return self._send(200, dt.status())
+                if path == "/api/v1/admin/deeptens/link" and method == "POST":
+                    st = dt.start_link(payload.get("url") if isinstance(payload.get("url"), str) else None)
+                    log.warning("Range Control from %s: linking to deepTENS (%s)", self.client_address[0], st["url"])
+                    return self._send(200, st)
+                if path == "/api/v1/admin/deeptens/cancel" and method == "POST":
+                    dt.cancel_link()
+                    return self._send(200, dt.status())
+                if path == "/api/v1/admin/deeptens/unlink" and method == "POST":
+                    dt.unlink()
+                    log.warning("Range Control from %s: unlinked from deepTENS", self.client_address[0])
+                    return self._send(200, dt.status())
+            except LinkError as exc:
+                return self._send(400, {"error": str(exc)})
+            return self._send(404, {"error": "not found"})
         if path == "/api/v1/admin/target-firmware" and method == "GET":
             return self._send(200, {"images": self.server.target_firmware.list()})
         if path == "/api/v1/admin/esp32-firmware" and method == "GET":
@@ -823,6 +845,9 @@ class Handler(BaseHTTPRequestHandler):
         rf = RULEBOOK_FILE_RE.match(url.path)
         if rf:
             return self._rulebook_file(rf.group(1))
+        if url.path == "/api/v1/deeptens":             # public: only whether this Pi is linked and reaching deepTENS (the icon)
+            st = self.server.deeptens.status() if self.server.deeptens is not None else {"linked": False, "connected": False}
+            return self._send(200, {"linked": st["linked"], "connected": st["connected"]})
         if url.path == "/api/v1/health":
             return self._send(200, {"ok": True, "version": __version__, "time": iso(core.now_ms()),
                                     "event_conflicts": core.conflict_count(), "activity": core.activity()})
@@ -987,8 +1012,9 @@ class FetHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
                  rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None,
-                 target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None):
+                 target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None):
         super().__init__(addr, Handler)
+        self.deeptens = deeptens                      # the link to deepTENS (None: not available, e.g. tests)
         self.esp32_firmware = esp32_firmware if esp32_firmware is not None else Esp32FirmwareStore(None)
         self.target_firmware = target_firmware if target_firmware is not None else (
             flash.target_images if flash is not None and flash.target_images is not None else TargetFirmwareStore(None))
@@ -1021,6 +1047,6 @@ class FetHTTPServer(ThreadingHTTPServer):
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
                 firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
                 appliance: Appliance = None, flash: FlashStation = None, target_firmware: TargetFirmwareStore = None,
-                esp32_firmware: Esp32FirmwareStore = None) -> FetHTTPServer:
+                esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None) -> FetHTTPServer:
     return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash, target_firmware,
-                         esp32_firmware)
+                         esp32_firmware, deeptens)

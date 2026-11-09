@@ -232,3 +232,68 @@ every line it stored, and replays from there.
 
 The heartbeat carries `"protocol": 2` from a version-2 device; a version-2 server answers with `"protocol": 2`.
 Neither side relies on the other's version: every field above is optional to a version-1 peer.
+
+## The Monitor link: FeT Monitor ⇄ deepTENS (P1, written and built 2026-11-08)
+
+A FeT Monitor (the Pi) linked to a range on deepTENS sends it that range's matches and its own status. Decisions in
+docs/PLAN-deeptens.md (P1 Q1-Q4). The Pi is the authority for its local matches; deepTENS keeps copies, and shows a
+match publicly only when its Match Director published it.
+
+**Transport.** HTTPS to the deepTENS address (Range Control setting; `https://deeptens.com:8443` until deepTENS goes
+public), JSON bodies, Python's standard library on the Pi (certificates checked against the system's). Every call
+but the two link calls carries `Authorization: Bearer <token>`. Connect timeout 5 s, whole request 20 s.
+
+### Linking (device-code flow, RFC 8628 style)
+1. `POST /api/monitor/v1/link` `{"name": "Club Pi", "version": "0.7.18"}` →
+   `{"device_code", "user_code": "KQ7-M4P", "verification_uri", "verification_uri_complete", "expires_in": 900, "interval": 5}`.
+   The user code uses 2-9 and A-Z without I, L, O, U (no look-alikes); it is valid 15 minutes.
+2. Range Control shows the code and a QR code for `verification_uri_complete`. A person signs in on deepTENS with a
+   strong sign-in, enters the code, and picks one of their ranges where they are Range Manager, or creates a range
+   (they become its Range Manager).
+3. The Pi polls `POST /api/monitor/v1/link/poll` `{"device_code"}` no faster than `interval`:
+   `{"status": "pending"}`, `{"status": "slow_down"}`, `{"status": "denied"}`, `{"status": "expired"}`, or once:
+   `{"status": "approved", "token", "monitor_id", "range": {"id", "name"}}`. The token is shown only this once;
+   deepTENS keeps its SHA-256. The Pi keeps it in `<data dir>/deeptens.json` (mode 600), never in its database (so
+   never in a database backup).
+
+### Unlinking
+From the Pi: `POST /api/monitor/v1/unlink`, then the Pi forgets the token (it forgets it even when deepTENS cannot be
+reached; the Range Manager can unlink it there too). From deepTENS: the Range Manager unlinks it, and every later call
+answers `401`; the Pi then forgets the token and shows "unlinked on deepTENS". Linking again is a new link.
+
+### Heartbeat (every 30 s)
+`POST /api/monitor/v1/heartbeat`
+`{"version", "name", "lanes": [{"lane": 3, "name": "North", "online": true}], "outbox": 12, "now_ms"}` →
+`{"ok": true, "server_time_ms", "range": {"id", "name"}, "lane_conflicts": [3]}`. `lanes` lists the Pi's targets
+that have a lane (spares are never sent). `lane_conflicts`: lane numbers another Monitor of the same range also
+reports (each lane is used once per range); Range Control shows them. The deepTENS icon on the Pi is green while the
+last heartbeat or upload succeeded less than 90 s ago, red otherwise; no icon when the Pi is not linked.
+
+### Uploads (the outbox)
+Everything for deepTENS waits in the Pi's outbox (table `deeptens_outbox`) until deepTENS acknowledges it; nothing
+for deepTENS ever blocks shooting. Each item is a whole snapshot with a key and a revision:
+`POST /api/monitor/v1/items` `{"items": [{"id": 41, "kind": "match", "key": "m12", "rev": 5, "data": {...}}]}` →
+`{"acks": [41], "rejected": [{"id": 42, "why": "..."}]}`. The body may be gzip-compressed
+(`Content-Encoding: gzip`); at most 20 items and 8 MB unpacked per request.
+- **kinds**: `match` (a single match: key `m<id>`) and `competition` (key `c<id>`, its relays and finals).
+- **rev** grows by one each time the Pi queues a new snapshot of that key. deepTENS keeps the highest revision per
+  (monitor, key) and acknowledges an older or equal one without changing anything, so a resend after an outage, a
+  restart or a lost answer is harmless. While an item is unsent, a newer snapshot of the same key replaces it.
+- **data**: FeT Monitor's results view of the match or competition (the same JSON as its results pages, with each
+  shooter's shots), plus `"state"`, `"official"` (true once the results are official) and `"publish"` (the Match
+  Director's choice, below). Names are as typed in Match Control.
+- **When**: a snapshot is queued when a match or competition changes state (started, finished, posted, official,
+  reopened), when a correction or decision changes its results, and when its Match Director publishes or unpublishes.
+  Matches that never started are not sent.
+- A rejected item (malformed) is kept, marked, and shown in Range Control; it is not retried.
+
+### Publishing
+`"publish": true` is the Match Director's choice on the Pi ("Would you like to publish these results on
+deeptens.com?" when a match ends; "Publish to deepTENS" once official; "Unpublish"). deepTENS shows a match publicly
+only when publish is true and its results are official; in a competition, each finished relay shows as provisional and
+the whole becomes official only when the competition's results are. Names typed in Match Control are shown publicly
+as initials; full names only for competitors linked to a deepTENS athlete profile, by that athlete's own choice.
+
+### Retrying
+On a network error, a 5xx or 429, the Pi waits 2 s, then doubles up to 60 s; a success resets it. Uploads go oldest
+first. The heartbeat is sent even while uploads wait, so the icon tells the truth.

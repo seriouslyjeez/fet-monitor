@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import signal
+import socket
 import sqlite3
 import sys
 import threading
@@ -24,6 +25,8 @@ from .rulebookfiles import RulebookFiles
 from .appliance import Appliance
 from .flashstation import FlashStation
 from .server import make_server
+from .deeptens import DeepTens
+from . import __version__
 
 log = logging.getLogger("fetserver")
 
@@ -47,10 +50,12 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     esp32_firmware = Esp32FirmwareStore(data_dir)
     flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key,
                          esp32_images=esp32_firmware)
+    deeptens = DeepTens(core, data_dir, name=socket.gethostname, version=__version__)
+    core.deeptens = deeptens                     # the match code queues snapshots while linked
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
                          firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
                          appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware,
-                         esp32_firmware=esp32_firmware)
+                         esp32_firmware=esp32_firmware, deeptens=deeptens)
     stop = threading.Event()
 
     def on_signal(signum, _frame):
@@ -72,6 +77,7 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
                     last_err, last_at = repr(exc), time.monotonic()
 
     threading.Thread(target=match_clock, daemon=True).start()
+    threading.Thread(target=deeptens.run, args=(stop,), daemon=True).start()   # the link to deepTENS, if linked
     if not args.no_rulebook_download:          # the rulebooks not stored yet, from their publishers (needs internet once)
         threading.Thread(target=rulebooks.download_missing, daemon=True).start()
     log.info("listening on %s:%d, data in %s", args.host, args.port, data_dir)

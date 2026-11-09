@@ -466,6 +466,24 @@ MIGRATIONS = [
         WHERE removed=0 AND banned=0;
     CREATE UNIQUE INDEX targets_lane ON targets (lane) WHERE lane IS NOT NULL;
     """,
+    """
+    -- The link to deepTENS (fetserver/deeptens.py, docs/PROTOCOL.md "The Monitor link"): snapshots of matches and
+    -- competitions waiting until deepTENS acknowledges them (one row per key: a newer snapshot replaces a waiting one),
+    -- and each key's last revision. rejected: why deepTENS refused it (kept and shown, not retried).
+    CREATE TABLE deeptens_outbox (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind      TEXT NOT NULL,
+        key       TEXT NOT NULL UNIQUE,
+        rev       INTEGER NOT NULL,
+        data      TEXT NOT NULL,
+        queued_ms INTEGER NOT NULL,
+        rejected  TEXT
+    );
+    CREATE TABLE deeptens_revs (
+        key TEXT PRIMARY KEY,
+        rev INTEGER NOT NULL
+    );
+    """,
 ]
 
 

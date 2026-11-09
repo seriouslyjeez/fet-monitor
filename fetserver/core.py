@@ -161,6 +161,7 @@ class Core:
         self.results = ResultStore(self)
         self.displays = Displays(self)
         self.corrections = Corrections(self)
+        self.deeptens = None                  # the link to deepTENS (fetserver/deeptens.py), set by the server when it runs
 
     # ---- target bookkeeping -------------------------------------------------
     def _touch(self, c, device_id: str, recv_ms: int, **fields) -> None:

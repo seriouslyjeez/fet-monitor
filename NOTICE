@@ -12,3 +12,7 @@ fetserver/esptool_shim/ is not under the MIT License: it holds three stub flashe
 folder) and a small launcher, all under esptool's license, GPL-2.0-or-later (fetserver/esptool_shim/LICENSE).
 Debian's esptool package leaves those stubs out; the flash station runs esptool through the launcher as a separate
 program so it can write the ESP32-S3 board.
+
+The deepTENS name and mark (the round target drawn in fetserver/web/dashboard.html as DT_MARK, shown when this Pi
+is linked to deepTENS) are not under the MIT License. They are the brand of deepTENS (deeptens.com), owned by Jake
+Miller, and may be used only to refer to deepTENS. Forks that link to another service should remove them.

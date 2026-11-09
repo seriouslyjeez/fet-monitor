@@ -15,7 +15,9 @@ a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thicknes
 *{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:var(--on-accent)}
-#live{margin-left:auto;font-size:12px;color:var(--mut)}main{padding:12px;max-width:1500px;margin:0 auto}
+#live{margin-left:auto;font-size:12px;color:var(--mut)}
+#dt{display:inline-flex;position:relative;width:22px;height:22px;margin-left:8px}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
+.dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
 .badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:var(--on-accent);white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
@@ -134,7 +136,7 @@ body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button><span id="power" hidden><button data-act="rcsys" data-a="restart" title="Restart the Pi">Restart</button><button class="danger" data-act="rcsys" data-a="shutdown" title="Shut the Pi down">Shut down</button></span></header>
+<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><span id="dt" hidden></span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button><span id="power" hidden><button data-act="rcsys" data-a="restart" title="Restart the Pi">Restart</button><button class="danger" data-act="rcsys" data-a="shutdown" title="Shut the Pi down">Shut down</button></span></header>
 <div id="printbar" class="noprint mcbar" hidden><button class="pri" data-act="print">Print</button><span id="printinfo" class="mut"></span></div>
 <main id="app"></main>
 <div id="overlay"></div>
@@ -1115,6 +1117,35 @@ function targetSettingsChanges(t, rc) {        // only what was typed and differ
 const SYS_STATE = {running: 'Working', done: 'Done', failed: 'Not done'};
 const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user', 'sy_upw'],      // what each request used
   network: ['sy_ssid', 'sy_psk', 'sy_ossid', 'sy_opsk', 'sy_ochan', 'sy_ip', 'sy_prefix', 'sy_gw']};
+// deepTENS (fetserver/deeptens.py): the icon on the staff pages (green ball: connected; red: not; none: not linked), and
+// Range Control -> This Pi: link this Pi to a range on deepTENS by a code, see what waits to be sent, unlink.
+const DT_MARK = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="22" height="22" aria-hidden="true"><circle cx="50" cy="50" r="47.6" fill="#14202B"/><circle cx="50" cy="50" r="44" fill="none" stroke="#F4F2EE" stroke-width="2.4"/><circle cx="50" cy="42" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4"/><circle cx="57.61" cy="47.53" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4"/><circle cx="54.7" cy="56.47" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4"/><circle cx="45.3" cy="56.47" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4"/><circle cx="42.39" cy="47.53" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4"/><clipPath id="dt-m"><polygon points="50,50 -35.6,22.19 -2.9,-22.81 50,-40"/></clipPath><circle cx="50" cy="42" r="22" fill="#14202B" stroke="#F4F2EE" stroke-width="2.4" clip-path="url(#dt-m)"/><circle cx="50" cy="50" r="22" fill="#14202B" stroke="#F26A21" stroke-width="4.4"/><path fill="#F4F2EE" transform="translate(37.34 56.33) scale(0.19)" d="M58.50 0L10.20 0L10.20-12.90L26.60-12.90L26.60-49.60L10.10-49.60L10.10-59.30Q14.10-59.60 18.85-61Q23.60-62.40 28.25-64.45Q32.90-66.50 36.60-68.80L36.60-68.80L43-68.80L43-12.90L58.50-12.90L58.50 0ZM91.69 1.20L91.69 1.20Q84.49 1.20 79.39-0.95Q74.29-3.10 71.09-7.45Q67.89-11.80 66.39-18.50Q64.89-25.20 64.89-34.40L64.89-34.40Q64.89-43.50 66.39-50.20Q67.89-56.90 71.09-61.25Q74.29-65.60 79.39-67.75Q84.49-69.90 91.69-69.90L91.69-69.90Q98.89-69.90 103.94-67.75Q108.99-65.60 112.19-61.25Q115.39-56.90 116.89-50.20Q118.39-43.50 118.39-34.40L118.39-34.40Q118.39-25.200 116.89-18.50Q115.39-11.80 112.19-7.45Q108.99-3.10 103.94-0.95Q98.89 1.20 91.69 1.20ZM91.69-10.70L91.69-10.70Q95.69-10.70 97.94-12.85Q100.19-15 101.04-19.35Q101.89-23.70 101.89-30.40L101.89-30.40L101.89-38.20Q101.89-45 101.04-49.40Q100.19-53.80 97.94-55.90Q95.69-58 91.69-58L91.69-58Q87.69-58 85.44-55.90Q83.19-53.80 82.29-49.45Q81.39-45.10 81.39-38.30L81.39-38.30L81.39-30.60Q81.39-23.80 82.29-19.40Q83.19-15 85.44-12.85Q87.69-10.70 91.69-10.70Z"/></svg>';
+const dtIcon = st => DT_MARK + '<span class="ball' + (st.connected ? ' on' : '') + '"></span>';
+function deeptensPanel(st) {
+  if (!st) return '';
+  let h = '<div class="panel"><h3>deepTENS</h3>';
+  if (st.linked) {
+    h += '<p>Linked to <b>' + esc((st.range || {}).name || '?') + '</b> on ' + esc(st.url) + '. ' +
+      (st.connected ? '<span class="ok">Connected.</span>' : '<span class="bad">Not connected' + (st.last_ok_ms ? ' since ' + esc(clock(new Date(st.last_ok_ms).toISOString())) : '') + '.</span>') +
+      ' ' + (st.outbox ? esc(st.outbox) + ' waiting to be sent.' : 'Nothing waiting.') + '</p>' +
+      (st.error ? '<p class="mut">' + esc(st.error) + '</p>' : '') +
+      (st.lane_conflicts.length ? '<p class="bad">Another FeT Monitor of this range also has lane ' + st.lane_conflicts.map(esc).join(', ') + ': each lane number is used once per range.</p>' : '') +
+      (st.rejected.length ? '<p class="bad">Refused by deepTENS (not sent again): ' + st.rejected.map(x => esc(x.key) + ' (' + esc(x.why) + ')').join(', ') + '</p>' : '') +
+      '<div class="bulk"><button class="danger" data-act="rcdtunlink">Unlink</button></div>';
+  } else if (st.linking) {
+    h += '<p>On a phone or computer, open <a href="' + esc(st.linking.uri_complete) + '" target="_blank" rel="noopener">' + esc(st.linking.uri) + '</a>, ' +
+      'sign in as the range\'s Range Manager (with a passkey or two steps), and enter this code:</p><p class="dtcode">' + esc(st.linking.user_code) + '</p>' +
+      '<p class="mut">The code lasts 15 minutes. This page shows the link as soon as it is approved.</p>' +
+      '<div class="bulk"><button data-act="rcdtcancel">Cancel</button></div>';
+  } else {
+    h += '<p>Link this Pi to your range on deepTENS: matches go up there, and their Match Directors can publish results. ' +
+      'Shooting never waits for deepTENS: what is for it waits here while the internet is down.</p>' +
+      (st.unlinked_remotely ? '<p class="bad">This Pi was unlinked on deepTENS.</p>' : st.error ? '<p class="bad">' + esc(st.error) + '</p>' : '') +
+      '<div class="bulk"><label>deepTENS address <input type="url" id="dt_url" size="28" value="' + esc(st.url) + '"></label>' +
+      '<button class="pri" data-act="rcdtlink">Link to deepTENS</button></div>';
+  }
+  return h + '</div>';
+}
 function systemPanel(v, rc) {                   // Range Control → This Pi (fetserver/appliance.py, root helper fetsetup/sysreq.py)
   if (!v) return '';
   const f = v.facts || {}, st = v.status, sf = rc.sysf || {}, n = sf.network || {mode: 'wifi', address: 'dhcp', channel: 6}, off = !v.helper_installed;
@@ -1204,7 +1235,7 @@ const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
   targets: ['/targets', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
-  firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/updates'],
+  firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
   users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
 const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['tv', 'TV displays'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
   ['updates', 'Updates'], ['pi', 'This Pi'], ['users', 'Users']];
@@ -1227,7 +1258,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
   h += '<nav class="tabs">' + RC_TABS.map(([k, l]) => '<a href="#/range' + (k === 'targets' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
   const d = rc.data || {targets: [], banned: []};
   const body = tab === 'settings' ? targetSettingsPanel(d, rc) : tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
-    : tab === 'tv' ? displaysTab(rc) : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+    : tab === 'tv' ? displaysTab(rc) : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? deeptensPanel(rc.dt) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
@@ -1968,6 +1999,7 @@ async function refresh() {
       S.rc.status = (await adminCall('/status')).data;
     }
     if (!S.faces && (route().range || route().match)) S.faces = (await get('/faces')).faces;   // the face names, once
+    if (route().range || route().match) S.dt = await get('/deeptens').catch(() => S.dt);      // the deepTENS icon
     if (route().range) {
       S.rc = S.rc || {sel: {}};
       S.rc.status = (await adminCall('/status')).data;
@@ -1984,6 +2016,7 @@ async function refresh() {
         if (ok('/target-firmware')) S.rc.timages = r['/target-firmware'].data.images;
         if (ok('/esp32-firmware')) S.rc.e32images = r['/esp32-firmware'].data.images;
         if (ok('/system')) S.rc.system = r['/system'].data;
+        if (ok('/deeptens')) S.rc.dt = r['/deeptens'].data;
         if (ok('/displays')) S.rc.displays = r['/displays'].data;
         const up = r['/updates'];
         if (up && up.status === 200) {
@@ -2104,6 +2137,9 @@ function render(force) {                  // force: a structural change (e.g. an
   document.getElementById('nav-match').className = r.match ? 'on' : '';
   document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
   document.getElementById('power').hidden = !(S.rc && S.rc.status && S.rc.status.logged_in);   // the Pi's power, for Range Control only
+  const dtEl = document.getElementById('dt'), dtShow = !!((route().range || route().match) && S.dt && S.dt.linked);
+  dtEl.hidden = !dtShow;
+  if (dtShow) { const h = dtIcon(S.dt); if (dtEl.innerHTML !== h) dtEl.innerHTML = h; dtEl.title = S.dt.connected ? 'deepTENS: connected' : 'deepTENS: not connected'; }
   const ae = document.activeElement;
   if (!force && pressing) { held = true; return; }
   if (!force && (r.range || r.match) && app.contains(ae) && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.type !== 'checkbox' && ae.type !== 'radio') { held = true; return; }   // never redraw under typing: after it
@@ -2535,6 +2571,13 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rclogout') { await adminCall('/logout', {}); rc.data = null; rc.sel = {}; return refresh(); }
+  if (a === 'rcdtlink' || a === 'rcdtcancel' || a === 'rcdtunlink') {
+    if (a === 'rcdtunlink' && !confirm('Unlink this Pi from deepTENS?\nIt stops sending matches there; what is waiting is dropped. You can link it again.')) return;
+    const u = document.getElementById('dt_url');
+    const res = await adminCall('/deeptens/' + {rcdtlink: 'link', rcdtcancel: 'cancel', rcdtunlink: 'unlink'}[a], a === 'rcdtlink' ? {url: u ? u.value : undefined} : {});
+    if (res.status === 200) rc.dt = res.data; else toast(res.data.error || 'error ' + res.status);
+    return refresh();
+  }
   if (a === 'rclane') {                            // the target's lane: a number used once, or empty for a spare
     const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
     if (!t) return;
@@ -3148,7 +3191,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

@@ -337,6 +337,22 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
   assert(/data-mcl="a"(?![^>]*disabled)/.test(nm) && /data-mcl="b"[^>]*disabled/.test(nm) && !/data-mcl="b"[^>]*checked/.test(nm), 'a spare cannot be chosen');
   assert(nm.includes('give it a lane in Range Control'));
 }
+// deepTENS: the icon and Range Control -> This Pi
+{
+  const {deeptensPanel, dtIcon} = X;
+  assert(dtIcon({connected: true}).includes('class="ball on"') && dtIcon({connected: false}).includes('class="ball"') && dtIcon({}).includes('<svg'), 'the mark with a green or red ball');
+  const base = {linked: false, url: 'https://deeptens.com:8443', range: null, connected: false, outbox: 0, rejected: [], lane_conflicts: [], error: '', linking: null};
+  const off = deeptensPanel(base);
+  assert(off.includes('data-act="rcdtlink"') && off.includes('value="https://deeptens.com:8443"') && !off.includes('rcdtunlink'), 'not linked: the address and Link');
+  assert(deeptensPanel(Object.assign({}, base, {unlinked_remotely: true})).includes('unlinked on deepTENS'));
+  const ing = deeptensPanel(Object.assign({}, base, {linking: {user_code: 'KQ7-M4P', uri: 'https://d/link/', uri_complete: 'https://d/link/?code=KQ7M4P', expires_ms: 0}}));
+  assert(ing.includes('<p class="dtcode">KQ7-M4P</p>') && ing.includes('href="https://d/link/?code=KQ7M4P"') && ing.includes('data-act="rcdtcancel"'), 'linking: the code and where to type it');
+  const on = deeptensPanel(Object.assign({}, base, {linked: true, range: {name: '<b>Riverside</b>'}, connected: false, last_ok_ms: 1, outbox: 3,
+                                                   lane_conflicts: [2], rejected: [{key: 'm9', why: 'bad'}]}));
+  assert(on.includes('&lt;b&gt;Riverside') && on.includes('Not connected') && on.includes('3 waiting') && on.includes('also has lane 2') && on.includes('m9 (bad)') && on.includes('rcdtunlink'), 'linked: state, waiting, conflicts, refusals');
+  assert(deeptensPanel(Object.assign({}, base, {linked: true, range: {name: 'R'}, connected: true})).includes('Connected.'));
+  assert.strictEqual(deeptensPanel(null), '');
+}
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));
 assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));

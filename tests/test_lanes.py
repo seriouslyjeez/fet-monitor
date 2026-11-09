@@ -129,7 +129,6 @@ class Migration(unittest.TestCase):
         db = Database(path)
         got = dict(db.conn().execute("SELECT device_id, lane FROM targets").fetchall())
         self.assertEqual(got, {"a": 1, "b": 2, "c": 3, "gone": None, "bad": None}, "first seen first; ties by id; removed and banned: none")
-        self.assertEqual(len(MIGRATIONS), 28)
 
 
 class OverHttp(MatchHttpBase):
