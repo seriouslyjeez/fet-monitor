@@ -328,3 +328,55 @@ ends when a roster fetched after it no longer gives the role, or when the Pi is 
 when the internet is down, checked against the roster; it stops working once the roster is 30 days old. Wrong
 passcodes lock the address out like wrong passwords (5 in 10 minutes). Passcodes are set on deepTENS (at least 10
 characters, not only digits).
+
+### Target sign-in (P2, built 2026-11-09)
+A deepTENS athlete signs in at a lane; every shot fired on that target while signed in (by event time, so a shot that
+arrives late still counts) goes into their history. One athlete per target, one target per athlete (signing in at
+lane 5 ends lane 3). Only while the Pi is linked. Each athlete profile on deepTENS has an athlete number (6 digits) and
+may have a target PIN (4 to 6 digits, a slow hash; five wrong tries lock it for 15 minutes).
+
+**Three ways in.**
+1. *Phone.* The lane's screen shows a QR code: `<deepTENS>/t/<monitor id>/<lane>/<lane code>/`. The phone signs in on
+   deepTENS (on its own data, no range WiFi needed), the person picks who shoots (themselves or a child they look
+   after) and taps "Shoot on lane N". The Pi asks `POST /api/monitor/v1/signins` `{"acks": [{"id", "ok", "why"}]}`
+   every 3 s → `{"signins": [{"id", "kind": "in"|"out", "lane", "code", "athlete"}]}` (each handed over once; dropped
+   after 2 minutes), signs the athlete in if the code is the lane's current (or previous) one and the lane is free,
+   and reports how it went in its next round; the phone shows it. The lane code is 8 characters, made by the Pi, new
+   at every sign-in and sign-out and at least every 30 minutes. A sign-out from the phone needs no code, only the same
+   athlete.
+2. *Athlete number and PIN* on the lane's screen: `POST /api/v1/targets/<id>/signin` `{"number", "pin"}` on the Pi.
+   Online the Pi asks `POST /api/monitor/v1/athletes/pin` `{"number", "pin"}` → `{"athlete"}` (403 wrong, 429 locked
+   or 30 a minute per Monitor), so any athlete can sign in at any linked range; it waits 6 s at most. When deepTENS
+   cannot be reached, the range's athletes in the roster can still sign in (their PIN hashes are there). The Pi also
+   locks a number for 15 minutes after five wrong tries.
+3. *Staff.* Range Control (`POST /api/v1/admin/targets/<id>/athlete`) and Match Control directors and range officers
+   (`POST /api/v1/match/targets/<id>/athlete`) sign one of the range's athletes in (`{"athlete_id"}`) or the lane's
+   athlete out (`{"athlete_id": null}`, in a match too). `GET .../athletes` lists the range's athletes (no hashes).
+
+`athlete` is `{"athlete_id", "number", "name", "public_name"}`; `public_name` is the name the athlete chose for
+results (full name, initials or "Athlete").
+
+**The roster** gains `"athletes": [athlete + "pin"]` (the range's list, set by its Range Manager by athlete number,
+active profiles only) and `"signin_idle_min"` (the range's idle time, 5 to 240, default 15).
+
+**On the Pi** (`athlete_sessions`, migration 31): signing in outside a match starts a fresh series in the athlete's
+results name; signing out starts a fresh one in no one's name. A match created (or joined late) by a lane with an
+athlete signed in takes the athlete's results name unless the Match Director typed one; signing in at a lane already
+in a match names its firing point if it has no name. Signed out after the range's idle time without a shot, after 4
+hours, never while the target is in a match (the lane's screen and phones cannot sign out then; staff can). Unlinking
+signs everyone out. `GET /api/v1/targets` shows each target's `athlete` and, when nobody is signed in, `signin_url`.
+
+**Sessions** go up through the outbox as kind `session`, key `s<id>`: `{"athlete_id", "number", "lane", "target",
+"via", "started_ms", "ended_ms", "end_why", "series": [{"series_id", "kind", "name", "label", "started_ms", "ended_ms",
+"face", "match": {"key", "name"}|null, "scored": {"agg", "groups", "shots"}, "sighter": {...}}]}` with only the shots
+fired inside the session. A new revision is queued when its shots change, also up to 15 minutes after it ends (late
+shots). deepTENS keeps a session only for an athlete it signed in through that Monitor (a right PIN, a phone) or one on
+the range's list (offline PIN, staff), and refuses others.
+
+**Match results.** Each competitor row of a match or competition snapshot carries `athlete_id` when an athlete was
+signed in on that firing point when its first shot was fired. deepTENS links it to the athlete (same rule as
+sessions) and shows them in published results by the name they chose.
+
+**Coaches.** `POST /api/monitor/v1/lanes` lanes carry `athlete_id` while someone is signed in, and the Pi sends lanes
+while anyone is signed in even when the public board is off. deepTENS keeps those lanes only for coaches (never on a
+board that is off; never the athlete's name on the board).

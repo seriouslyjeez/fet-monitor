@@ -259,6 +259,20 @@ class Sending(Case):
         xs = sorted(sh["x_mm"] for x in d["series"] for sh in x["scored"]["shots"])
         self.assertEqual(len(xs), 3, xs)
 
+    def test_signing_in_mid_match_keeps_only_the_shots_after(self):
+        fid = self.custom([("sight", 30, 0), ("record", 60, 3)])
+        mid = self.m.create("League", fid, [{"device_id": "lane-1", "competitor": "Typed"}], "md", publish=True)
+        self.m.start(mid, "md")
+        self.shoot("lane-1", "4.00")                          # the match series, before anyone signed in
+        self.clock.t += 1000
+        s = self.a.pin_sign_in("lane-1", "123456", "2580")
+        self.shoot("lane-1", "1.00")
+        self.step(1)
+        d = self.sent(f"s{s['id']}")
+        shots = [sh for x in d["series"] for st in ("scored", "sighter") for sh in x[st]["shots"]]
+        self.assertEqual(len(shots), 1, "the same series, but only the shot fired while signed in")
+        self.assertEqual(d["series"][0]["match"]["key"], f"m{mid}")
+
     def test_match_results_carry_the_athlete(self):
         fid = self.custom([("sight", 30, 0), ("record", 60, 3)])
         self.a.pin_sign_in("lane-1", "123456", "2580")
