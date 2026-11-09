@@ -1546,7 +1546,8 @@ function mcConsole(mc) {
       '<button data-act="mccmd" data-a="next" data-ot="1">End their time now</button><button class="danger" data-act="mccmd" data-a="abort">Stop match</button>' : '') +
     (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' && !ot ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
       : '<button class="pri" data-act="mcspeak">Turn on sound for spoken commands</button>') : '') + '</div></div>' +
-    commandsPanel(d) + finalPanel(d, director) + correctionsPanel(d, director) + officialPanel(d, director);
+    commandsPanel(d) + finalPanel(d, director) + correctionsPanel(d, director) + officialPanel(d, director) +
+    (d.competition_id ? '' : publishPanel(d, director, S.dt && S.dt.linked, false));
   h += lanesPanel(d, mc, director);
   h += flagsPanel(d, mc, director);
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
@@ -1762,6 +1763,26 @@ function finalPanel(d, director) {              // on a final's console: standin
     (f.shoot_off_needed.length ? '<div class="warnbox">Tied for ' + (f.tie_places === 3 ? 'a medal place' : 'a place') + ': a one-shot shoot-off, ' + esc(f.so_s) + ' seconds (' + esc(f.so_rule) + '). ' +
       (director ? f.shoot_off_needed.map(g => '<button class="pri" data-act="mcshootoff" data-lanes="' + g.join(',') + '">Shoot-off: lanes ' + g.map(k => fpKey(d, k)).join(', ') + '</button>').join(' ') : 'The match director starts it.') + '</div>' : '') + '</div>';
 }
+// deepTENS: the Match Director decides whether results go public there (P1: never without them). A single match: asked when it
+// ends, public once official, a Publish button once official, Unpublish. A competition: its finished relays show as
+// provisional, the whole as official once every relay is.
+function publishPanel(d, director, linked, comp) {
+  if (!director || !linked) return '';
+  const p = d.publish_deeptens, id = d.id, kind = comp ? 'c' : 'm';
+  const ended = comp ? (d.relays || []).some(r => ['done', 'aborted'].includes(r.state)) : d.state === 'done';
+  const official = comp ? false : !!d.official_ms;
+  const btn = (v, text, cls) => '<button' + (cls ? ' class="' + cls + '"' : '') + ' data-act="mcpublish" data-kind="' + kind + '" data-id="' + id + '" data-v="' + v + '">' + text + '</button>';
+  let h = '<div class="panel"><h3>deepTENS</h3>';
+  if (p === 1) h += '<p>Published on deepTENS: ' + (comp ? 'finished relays show as provisional; the results become official there when they are here.'
+      : official ? 'the results are public there.' : 'they become public there once they are official.') + '</p><div class="mcbar">' + btn(0, 'Unpublish') + '</div>';
+  else if (p == null && ended) h += '<p><b>Would you like to publish these results on deeptens.com?</b> ' +
+      (comp ? 'Finished relays show there as provisional until the results are official.' : 'They become public there once they are official.') +
+      ' Names are shown as initials.</p><div class="mcbar">' + btn(1, 'Yes, publish', 'pri') + btn(0, 'Not now') + '</div>';
+  else if (p === 0 && (official || comp)) h += '<p class="mut">Not published on deepTENS.</p><div class="mcbar">' + btn(1, 'Publish to deepTENS', 'pri') + '</div>';
+  else if (p === 0) h += '<p class="mut">Not published on deepTENS. "Publish to deepTENS" appears here once the results are official.</p>';
+  else h += '<p class="mut">You are asked whether to publish on deepTENS when the match ends.</p>';
+  return h + '</div>';
+}
 function officialPanel(d, director) {         // provisional -> posted (protest time) -> official
   if (d.state === 'ready') return '';
   const report = '<a href="#/print/incidents/' + d.id + '" target="_blank" rel="noopener">Range incident report</a>';
@@ -1819,6 +1840,7 @@ function mcCompPage(mc) {
       '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label>' +
       ((c.rb || {}).challenge ? '<label title="' + esc(c.rb.protest_time) + '">Challenge time <input type="number" min="1" max="1440" style="width:70px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
       '<button data-act="mccsave">Save settings</button></div>' : '') + '</div>';
+  h += publishPanel(c, director, S.dt && S.dt.linked, true);
   h += '<div class="panel mcform"><h3>Competitors (' + c.competitors.length + ')</h3><table class="t"><tr><th>Family name</th><th>Given name</th><th>Class</th><th>Team</th><th>Relay · FP</th><th></th></tr>' +
     c.competitors.map(p => '<tr>' + ['family', 'given', 'class', 'team'].map(k => '<td>' + esc(p[k] || '') + '</td>').join('') +
       '<td>' + (p.relay ? esc(p.relay) + ' · ' + esc(FP(p)) : '–') + '</td><td>' + (director ? '<button data-act="mcpedit" data-id="' + p.id + '" title="Edit ' + esc(p.name) + '" aria-label="Edit ' + esc(p.name) + '">✎</button>' : '') + '</td></tr>').join('') + '</table>' +
@@ -2815,6 +2837,13 @@ async function matchAct(el, a) {
     if (mc.msg) toast(mc.msg);
     return refresh();
   }
+  if (a === 'mcpublish') {
+    const on = el.dataset.v === '1', what = el.dataset.kind === 'c' ? '/competitions/' : '/matches/';
+    if (on && !confirm('Publish these results on deeptens.com? Anyone can see them there' + (el.dataset.kind === 'c' ? ' (finished relays as provisional).' : ' once they are official.') + ' Names are shown as initials.')) return;
+    const res = await matchCall(what + el.dataset.id + '/publish', {publish: on});
+    if (res.status !== 200) mc.msg = (res.data && res.data.error) || 'error ' + res.status;
+    return refresh();
+  }
   if (a === 'mcofficial') {
     const k = el.dataset.a;
     const ask = {reopen: 'Reopen the official results? Decisions and corrections become possible again; this is logged.',
@@ -3191,7 +3220,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {publishPanel, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

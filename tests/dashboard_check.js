@@ -353,6 +353,25 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
   assert(deeptensPanel(Object.assign({}, base, {linked: true, range: {name: 'R'}, connected: true})).includes('Connected.'));
   assert.strictEqual(deeptensPanel(null), '');
 }
+// publishing on deepTENS: the Match Director's choice
+{
+  const {publishPanel} = X;
+  const m = o => Object.assign({id: 4, state: 'done', official_ms: null, publish_deeptens: null}, o || {});
+  assert.strictEqual(publishPanel(m(), false, true, false), '', 'directors only');
+  assert.strictEqual(publishPanel(m(), true, false, false), '', 'only when this Pi is linked');
+  const ask = publishPanel(m(), true, true, false);
+  assert(ask.includes('Would you like to publish these results on deeptens.com?') && ask.includes('data-v="1"') && ask.includes('Not now'), 'asked when it ends');
+  assert(!publishPanel(m({state: 'running'}), true, true, false).includes('Would you like'), 'not while it runs');
+  assert(publishPanel(m({publish_deeptens: 0}), true, true, false).includes('appears here once the results are official') &&
+         !publishPanel(m({publish_deeptens: 0}), true, true, false).includes('data-act="mcpublish"'), 'not now: the button waits for official');
+  assert(publishPanel(m({publish_deeptens: 0, official_ms: 5}), true, true, false).includes('>Publish to deepTENS</button>'), 'official: Publish to deepTENS');
+  const pub = publishPanel(m({publish_deeptens: 1}), true, true, false);
+  assert(pub.includes('once they are official') && pub.includes('>Unpublish</button>') && pub.includes('data-kind="m"'));
+  assert(publishPanel(m({publish_deeptens: 1, official_ms: 5}), true, true, false).includes('the results are public there'));
+  const comp = publishPanel({id: 2, publish_deeptens: null, relays: [{state: 'done'}, {state: 'ready'}]}, true, true, true);
+  assert(comp.includes('Would you like') && comp.includes('as provisional') && comp.includes('data-kind="c"'), 'a competition: asked after its first relay');
+  assert(!publishPanel({id: 2, publish_deeptens: null, relays: [{state: 'ready'}]}, true, true, true).includes('Would you like'));
+}
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));
 assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));

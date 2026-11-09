@@ -484,6 +484,12 @@ MIGRATIONS = [
         rev INTEGER NOT NULL
     );
     """,
+    """
+    -- Publishing on deepTENS (the Match Director's choice): NULL not asked yet, 0 not published, 1 published (public
+    -- once official; a competition's finished relays show as provisional before that).
+    ALTER TABLE matches ADD COLUMN publish_deeptens INTEGER;
+    ALTER TABLE competitions ADD COLUMN publish_deeptens INTEGER;
+    """,
 ]
 
 

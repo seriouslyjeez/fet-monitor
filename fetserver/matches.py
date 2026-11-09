@@ -75,6 +75,17 @@ class Matches:
 
     def _pub(self, match_id):
         self.core.hub.publish({"type": "match", "match_id": match_id})
+        if self.core.deeptens is not None:            # a new snapshot for deepTENS (made in the link's own thread)
+            self.core.deeptens.changed("m", match_id)
+
+    def set_publish(self, mid: int, publish: bool, by: str) -> None:
+        """The Match Director's choice: publish this single match's results on deepTENS (public once official), or not."""
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["competition_id"] is not None:
+                raise MatchError("a relay or final is published with its competition")
+            c.execute("UPDATE matches SET publish_deeptens=? WHERE id=?", (1 if publish else 0, mid))
+        self._pub(mid)
 
     # ------------------------------------------------------------------------------------------- users
     def users(self) -> List[dict]:
@@ -616,7 +627,7 @@ class Matches:
         return {"id": m["id"], "name": m["name"], "format": fmt, "face": faces.view(faces.face(fmt.get("face"))), "state": m["state"], "created_by": m["created_by"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
-                "discharged_ms": self.discharged_at(c, m["id"]),
+                "discharged_ms": self.discharged_at(c, m["id"]), "publish_deeptens": m["publish_deeptens"],
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "fps": {str(ln["lane"]): ln["fp"] for ln in lanes},     # key -> firing point, for the flags and corrections lists

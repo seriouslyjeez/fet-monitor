@@ -14,7 +14,9 @@ from pathlib import Path
 from fetserver.core import Core
 from fetserver.db import Database
 from fetserver.deeptens import DeepTens, LinkError, check_url
+from fetserver.matches import MatchError
 from tests.test_match_http import MatchHttpBase
+from tests.test_matches import MatchCase
 
 
 class FakeDeepTens:
@@ -334,6 +336,138 @@ class OverHttp(MatchHttpBase):
         self.assertEqual(self.req("GET", "/api/v1/deeptens", header=False)[1], {"linked": True, "connected": True})
         st, body, _ = self.req("POST", "/api/v1/admin/deeptens/unlink", {}, "admin")
         self.assertEqual((st, body["linked"], self.fake.linked), (200, False, False))
+
+
+class Publishing(MatchCase):
+    """What goes to deepTENS as a match runs, and the Match Director's choice to publish (P1 Q2, answers 7-9)."""
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.fake = FakeDeepTens()
+        self.addCleanup(self.fake.close)
+        self.dt = DeepTens(self.core, tmp.name, clock=lambda: self.clock.t / 1000, name=lambda: "Club Pi")
+        self.core.deeptens = self.dt
+        self.fid = self.custom([("record", 60, 2)])
+
+    def link(self):
+        self.dt.start_link(self.fake.url)
+        self.fake.approved = True
+        self.dt.next_poll = 0
+        self.dt.step()
+        self.assertTrue(self.dt.linked)
+
+    def deliver(self):
+        for _ in range(10):
+            self.dt.next_hb = self.dt.next_send = 0
+            self.dt.step()
+
+    def sent(self, key):
+        return self.fake.stored.get(key, (0, None))
+
+    def finished(self):
+        mid = self.m.create("Night", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md")
+        self.m.start(mid, "md")
+        self.shoot("lane-1"); self.shoot("lane-1")
+        self.at(61)
+        self.assertEqual(self.m.detail(mid)["state"], "done")
+        return mid
+
+    def test_nothing_goes_up_unless_linked(self):
+        self.finished()
+        self.link()
+        self.deliver()
+        self.assertEqual(self.fake.stored, {}, "matches from before the link stay on the Pi")
+
+    def test_a_match_goes_up_private_then_public_when_published_and_official(self):
+        self.link()
+        mid = self.m.create("Night", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md")
+        self.deliver()
+        self.assertEqual(self.fake.stored, {}, "a match that never started is not sent")
+        self.m.start(mid, "md")
+        self.shoot("lane-1"); self.shoot("lane-1")
+        self.at(61)
+        self.deliver()
+        rev, data = self.sent(f"m{mid}")
+        self.assertEqual((data["state"], data["publish"], data["official"]), ("done", False, False))
+        self.assertEqual(data["classes"][0]["individuals"][0]["shots"], 2)
+        self.assertIn("shot_list", data["classes"][0]["individuals"][0], "with the shots")
+        self.assertIsNone(self.m.detail(mid)["publish_deeptens"], "not asked yet")
+        self.m.set_publish(mid, True, "md")
+        self.deliver()
+        self.assertEqual((self.sent(f"m{mid}")[1]["publish"], self.sent(f"m{mid}")[1]["official"]), (True, False), "published: public once official")
+        self.m.post_results(mid, "md")
+        self.m.make_official(mid, "md", override=True)
+        self.deliver()
+        self.assertGreater(self.sent(f"m{mid}")[0], rev)
+        self.assertEqual(self.sent(f"m{mid}")[1]["official"], True)
+        self.m.set_publish(mid, False, "md")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1]["publish"], False, "unpublished")
+
+    def test_snapshots_are_made_in_the_link_thread(self):
+        self.link()
+        self.finished()
+        self.assertEqual(self.dt.outbox_count(), 0, "the match code only marks it changed")
+        self.assertTrue(self.dt.dirty)
+        self.deliver()
+        self.assertFalse(self.dt.dirty)
+
+    def test_deleted_results_and_deleted_matches(self):
+        self.link()
+        mid = self.finished()
+        self.m.set_publish(mid, True, "md")
+        self.deliver()
+        self.core.results.delete_results([f"m{mid}"], "md")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1]["publish"], False, "results deleted on the Pi: not public")
+        self.core.results.restore_results([f"m{mid}"], "md")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1]["publish"], True, "shown again")
+        self.core.results.delete_matches([mid], [], "md")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1], {"deleted": True, "publish": False, "official": False, "classes": []})
+        self.dt.changed("m", 99999)
+        self.deliver()
+        self.assertNotIn("m99999", self.fake.stored, "never sent: nothing to delete")
+
+    def test_a_relay_is_sent_with_its_competition(self):
+        self.link()
+        cc = self.core.competitions
+        cid = cc.create("League", self.fid, "md")
+        a = cc.save_competitor(cid, {"family": "Smith", "given": "Jane"})
+        rid = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
+        with self.assertRaisesRegex(MatchError, "competition"):
+            self.m.set_publish(rid, True, "md")
+        cc.set_publish(cid, True, "md")
+        self.deliver()
+        self.assertEqual(self.fake.stored, {}, "no relay started yet")
+        self.m.start(rid, "md")
+        self.shoot("lane-1"); self.shoot("lane-1")
+        self.at(61)
+        self.deliver()
+        self.assertNotIn(f"m{rid}", self.fake.stored)
+        data = self.sent(f"c{cid}")[1]
+        self.assertEqual((data["publish"], data["official"]), (True, False), "published, provisional while not official")
+        self.assertEqual(cc.detail(cid)["publish_deeptens"], 1)
+
+
+class PublishOverHttp(MatchHttpBase):
+    def test_only_the_match_director_publishes(self):
+        fid = self.core.matches.save_format({"name": "T", "book": "ISSF", "phases": [{"kind": "record", "label": "R", "seconds": 60, "shots": 1}]}, "md")["id"]
+        mid = self.core.matches.create("M", fid, [{"device_id": "lane-1"}], "md")
+        for who, pw in (("ro", "officer-pass"), ("md", "director-pass")):
+            st, _, cookie = self.req("POST", "/api/v1/match/login", {"username": who, "password": pw})
+            self.cookies[who] = cookie.split(";")[0]
+        self.assertEqual(self.req("POST", f"/api/v1/match/matches/{mid}/publish", {"publish": True}, "ro")[0], 403)
+        st, body, _ = self.req("POST", f"/api/v1/match/matches/{mid}/publish", {"publish": True}, "md")
+        self.assertEqual((st, body["publish_deeptens"]), (200, 1))
+        st, body, _ = self.req("POST", f"/api/v1/match/matches/{mid}/publish", {"publish": "yes"}, "md")
+        self.assertEqual(body["publish_deeptens"], 0, "only true publishes")
+        cid = self.core.competitions.create("C", fid, "md")
+        st, body, _ = self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "md")
+        self.assertEqual((st, body["publish_deeptens"]), (200, 1))
+        self.assertEqual(self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "ro")[0], 403)
 
 
 if __name__ == "__main__":

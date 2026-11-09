@@ -36,6 +36,15 @@ class Competitions:
 
     def _pub(self, cid):
         self.core.hub.publish({"type": "competition", "competition_id": cid})
+        if self.core.deeptens is not None:
+            self.core.deeptens.changed("c", cid)
+
+    def set_publish(self, cid: int, publish: bool, by: str) -> None:
+        """The Match Director's choice: publish this competition on deepTENS (finished relays provisional, then official)."""
+        with self.db.write() as c:
+            self._row(c, cid)
+            c.execute("UPDATE competitions SET publish_deeptens=? WHERE id=?", (1 if publish else 0, cid))
+        self._pub(cid)
 
     def _row(self, c, cid):
         r = c.execute("SELECT * FROM competitions WHERE id=?", (cid,)).fetchone()
@@ -568,6 +577,7 @@ class Competitions:
                              for l in c.execute("SELECT * FROM match_lanes WHERE match_id=? ORDER BY lane", (m["id"],))]}
                   for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NULL ORDER BY relay", (cid,)).fetchall()]
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
+                "publish_deeptens": r["publish_deeptens"],
                 "challenge_min": r["challenge_min"] if r["challenge_min"] is not None else 30,
                 "paced": r["paced"], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)), "record_shots": mf.record_shots(fmt),
                 "finals_allowed": [{"kind": k, "name": mf.FINAL_KINDS[k]["name"], "draw": mf.FINAL_KINDS[k]["draw"], "elim": mf.FINAL_KINDS[k]["elim"],

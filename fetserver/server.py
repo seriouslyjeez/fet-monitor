@@ -33,9 +33,10 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters)$")
-MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
+MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw|publish)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
+COMP_PUBLISH_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/publish$")
 COMP_IMPORT_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})/competitors/import$")
 RULEBOOK_RE = re.compile(r"^/api/v1/match/rulebooks/([a-z0-9-]{2,40})/(download|upload)$")
 RULEBOOK_FILE_RE = re.compile(r"^/api/v1/rulebooks/([a-z0-9-]{2,40})\.pdf$")
@@ -210,6 +211,12 @@ class Handler(BaseHTTPRequestHandler):
                 cid = core.competitions.create(payload.get("name"), payload.get("format_id"), who, payload.get("override"),
                                                payload.get("team_size"), bool(payload.get("best_count")), payload.get("paced") or "spoken")
                 return self._send(200, core.competitions.detail(cid))
+            cp = COMP_PUBLISH_RE.match(path)
+            if cp and method == "POST":                    # the Match Director publishes (or not) on deepTENS
+                need_director()
+                core.competitions.set_publish(int(cp.group(1)), payload.get("publish") is True, who)
+                log.warning("Match Control: %s %s competition %s on deepTENS", who, "published" if payload.get("publish") is True else "unpublished", cp.group(1))
+                return self._send(200, core.competitions.detail(int(cp.group(1))))
             cm = COMP_RE.match(path)
             if cm:
                 cid, sub, pid, delete = int(cm.group(1)), cm.group(2), cm.group(3), cm.group(4)
@@ -327,6 +334,11 @@ class Handler(BaseHTTPRequestHandler):
                     log.warning("Match Control: %s recorded %s on firing point %s of match %d (correction %d)", who, payload.get("kind"),
                                 payload.get("lane"), mid, cid)
                     return self._send(200, {"id": cid, **mc.detail(mid)})
+                if method == "POST" and mm.group(2) == "publish":      # the Match Director publishes (or not) on deepTENS
+                    need_director()
+                    mc.set_publish(mid, payload.get("publish") is True, who)
+                    log.warning("Match Control: %s %s match %d on deepTENS", who, "published" if payload.get("publish") is True else "unpublished", mid)
+                    return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "official":     # make the results official, or reopen them
                     need_director()
                     action = payload.get("action")

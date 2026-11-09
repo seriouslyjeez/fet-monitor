@@ -126,6 +126,7 @@ class ResultStore:
                 else:
                     c.execute(f"UPDATE {'competitions' if kind == 'c' else 'matches'} SET results_hidden=1 WHERE id=?", (n,))
         self.core.hub.publish({"type": "results"})
+        self._tell_deeptens(parsed)
         return len(parsed)
 
     def restore_results(self, keys: List, by: str) -> int:
@@ -137,7 +138,15 @@ class ResultStore:
             for kind, n in parsed:
                 c.execute(f"UPDATE {'competitions' if kind == 'c' else 'matches'} SET results_hidden=0 WHERE id=?", (n,))
         self.core.hub.publish({"type": "results"})
+        self._tell_deeptens(parsed)
         return len(parsed)
+
+    def _tell_deeptens(self, keys) -> None:
+        """Deleted or restored results change what deepTENS may show (fetserver/deeptens.py)."""
+        if self.core.deeptens is not None:
+            for kind, n in keys:
+                if kind in ("m", "c"):
+                    self.core.deeptens.changed(kind, n)
 
     def delete_matches(self, match_ids: List, competition_ids: List, by: str) -> Dict[str, int]:
         """Delete single matches and competitions (with every relay) from Match Control, keeping a frozen copy of
@@ -186,6 +195,7 @@ class ResultStore:
         for kind, n, *_ in todo:
             self.core.hub.publish({"type": "competition" if kind == "competition" else "match",
                                    ("competition_id" if kind == "competition" else "match_id"): n})
+        self._tell_deeptens([("c" if kind == "competition" else "m", n) for kind, n, *_ in todo])
         return {"deleted": len(todo), "frozen": frozen}
 
     @staticmethod

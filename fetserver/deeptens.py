@@ -84,6 +84,7 @@ class DeepTens:
         self.backoff = 0
         self.next_hb = self.next_send = self.next_poll = 0.0
         self.wake = threading.Event()
+        self.dirty = set()                              # (kind, id) changed since the last snapshot: "m" match, "c" competition
 
     # ---------------------------------------------------------------------------------------------- the settings file
     def _load(self) -> dict:
@@ -188,6 +189,61 @@ class DeepTens:
             c.execute("INSERT INTO deeptens_outbox (kind, key, rev, data, queued_ms) VALUES (?,?,?,?,?)", (kind, key, rev, blob, now_ms))
         return rev
 
+    # ---------------------------------------------------------------------------------------------------- snapshots
+    def changed(self, kind: str, n: int) -> None:
+        """A match ("m") or competition ("c") changed: a new snapshot is made in the link's thread (never in the
+        request that changed it). Only while linked."""
+        if self.linked:
+            with self.lock:
+                self.dirty.add((kind, n))
+            self.wake.set()
+
+    def snapshot(self, kind: str, n: int) -> Optional[tuple]:
+        """(kind, key, data) to send for a change, or None. A relay or final is part of its competition. Matches and
+        competitions that never started are not sent; one deleted after it was sent goes as {"deleted": true}."""
+        from .matches import MatchError
+        c = self.core.db.conn()
+        if kind == "m":
+            m = c.execute("SELECT * FROM matches WHERE id=?", (n,)).fetchone()
+            if m is not None and m["competition_id"] is not None:
+                kind, n = "c", m["competition_id"]
+            elif m is None:
+                return self._gone("match", f"m{n}")
+            elif m["state"] == "ready":
+                return None
+            else:
+                res = self.core.results.get(f"m{n}", with_shots=True, hidden_too=True)
+                shown = not m["results_hidden"]
+                return "match", f"m{n}", dict(res, state=m["state"], official=shown and bool(m["official_ms"]),
+                                              publish=shown and m["publish_deeptens"] == 1)
+        row = c.execute("SELECT * FROM competitions WHERE id=?", (n,)).fetchone()
+        if row is None:
+            return self._gone("competition", f"c{n}")
+        if c.execute("SELECT 1 FROM matches WHERE competition_id=? AND state!='ready' LIMIT 1", (n,)).fetchone() is None:
+            return None
+        try:
+            res = self.core.results.get(f"c{n}", with_shots=True, hidden_too=True)
+        except MatchError:
+            return None
+        shown = not row["results_hidden"]
+        return "competition", f"c{n}", dict(res, official=shown and bool(res.get("official_ms")), publish=shown and row["publish_deeptens"] == 1)
+
+    def _gone(self, kind: str, key: str) -> Optional[tuple]:
+        sent = self.core.db.conn().execute("SELECT 1 FROM deeptens_revs WHERE key=?", (key,)).fetchone()
+        return (kind, key, {"deleted": True, "publish": False, "official": False, "classes": []}) if sent else None
+
+    def _snapshots(self, now: float) -> None:
+        with self.lock:
+            todo, self.dirty = self.dirty, set()
+        for kind, n in sorted(todo):
+            try:
+                snap = self.snapshot(kind, n)
+                if snap is not None:
+                    with self.core.db.write() as c:
+                        self.enqueue(c, *snap, int(now * 1000))
+            except Exception:                           # one broken snapshot must not stop the others (or the link)
+                log.exception("deepTENS snapshot of %s%s", kind, n)
+
     # --------------------------------------------------------------------------------------------------------- work
     def _ok(self, now: float) -> None:
         self.last_ok, self.backoff, self.error = now, 0, ""
@@ -208,6 +264,8 @@ class DeepTens:
             return self._poll(now)
         if not self.linked:
             return 5.0
+        if self.dirty:
+            self._snapshots(now)
         if now >= self.next_hb:
             if not self._heartbeat(now):
                 if not self.linked:
