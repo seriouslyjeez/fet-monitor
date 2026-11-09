@@ -35,6 +35,8 @@ class FakeDeepTens:
         self.reject_keys = set()
         self.during_items = None         # called while an items request is being answered (a race with the Pi)
         self.members = []                # the roster: staff of the range
+        self.board = False               # the range's public lane board
+        self.lane_posts = []             # every lanes update the Pi sent
         self.codes = {}                  # one-time sign-in code -> {"user", "roles"}
         fake = self
 
@@ -81,7 +83,10 @@ class FakeDeepTens:
             return 401, {"error": "not linked"}
         if path == "/api/monitor/v1/heartbeat":
             self.heartbeats.append(body)
-            return 200, {"ok": True, "lane_conflicts": [2] if any(x["lane"] == 2 for x in body["lanes"]) else []}
+            return 200, {"ok": True, "lane_conflicts": [2] if any(x["lane"] == 2 for x in body["lanes"]) else [], "lane_board": self.board}
+        if path == "/api/monitor/v1/lanes":
+            self.lane_posts.append(body["lanes"])
+            return 200, {"ok": True, "lane_board": self.board}
         if path == "/api/monitor/v1/roster":
             return 200, {"range": {"id": 3, "name": "Riverside"}, "members": self.members}
         if path == "/api/monitor/v1/signin/exchange":
@@ -503,6 +508,100 @@ class PublishOverHttp(MatchHttpBase):
         st, body, _ = self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "md")
         self.assertEqual((st, body["publish_deeptens"]), (200, 1))
         self.assertEqual(self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "ro")[0], 403)
+
+
+class LaneBoard(MatchCase):
+    """The public lane board (P1 step 4): sent only while the range has it on, live only, every 2 s when changed."""
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.fake = FakeDeepTens()
+        self.addCleanup(self.fake.close)
+        self.dt = DeepTens(self.core, tmp.name, clock=lambda: self.clock.t / 1000, name=lambda: "Club Pi")
+        self.core.deeptens = self.dt
+        self.dt.start_link(self.fake.url)
+        self.fake.approved = True
+        self.dt.next_poll = 0
+        self.dt.step()
+        self.fid = self.custom([("sight", 30, 0), ("record", 60, 3)])
+
+    def lanes(self):
+        return {x["lane"]: x for x in self.fake.lane_posts[-1]}
+
+    def beat(self, seconds=0):
+        self.clock.t += int(seconds * 1000)
+        self.dt.next_hb = 0
+        self.dt.step()
+
+    def test_nothing_unless_the_range_turned_it_on(self):
+        self.shoot("lane-1")
+        self.beat(); self.beat(3)
+        self.assertEqual(self.fake.lane_posts, [])
+        self.fake.board = True
+        self.beat(3)
+        self.assertEqual(sorted(self.lanes()), [1, 2], "every lane once the heartbeat says so")
+        self.fake.board = False
+        self.beat(3)
+        n = len(self.fake.lane_posts)
+        self.beat(3); self.beat(3)
+        self.assertEqual(len(self.fake.lane_posts), n, "turned off: stops")
+
+    def test_practice_lanes_and_spares(self):
+        self.core.handle_heartbeat({"device_id": "spare", "boot_count": 1, "uptime_ms": 0})
+        self.core.set_lane("spare", None)
+        self.fake.board = True
+        self.shoot("lane-1", "1.00")
+        self.beat()
+        d = self.lanes()
+        self.assertEqual(sorted(d), [1, 2], "spares never")
+        self.assertEqual((d[1]["state"], d[1].get("name"), d[1]["count"], len(d[1]["shots"])), ("practice", None, 1, 1))
+        self.assertAlmostEqual(d[1]["shots"][0]["x"], 1.0, delta=0.5)
+        self.assertEqual(d[2]["state"], "idle")
+        self.assertTrue(d[1]["face"]["rings"] and d[1]["face"]["black"] > 0, "the face's rings to draw")
+
+    def test_only_changes_every_2_s_and_a_refresh_every_30_s(self):
+        self.fake.board = True
+        self.beat()
+        n = len(self.fake.lane_posts)
+        self.clock.t += 2500; self.dt.step()
+        self.assertEqual(len(self.fake.lane_posts), n, "nothing changed: not sent")
+        self.shoot("lane-1")
+        self.clock.t += 1000; self.dt.step()
+        self.assertEqual(len(self.fake.lane_posts), n, "not before 2 s")
+        self.clock.t += 1500; self.dt.step()
+        self.assertEqual(len(self.fake.lane_posts), n + 1, "a change: sent")
+        self.clock.t += 31000; self.dt.step()
+        self.assertEqual(len(self.fake.lane_posts), n + 2, "unchanged for 30 s: sent again")
+
+    def test_matches_published_or_not(self):
+        self.fake.board = True
+        pub = self.m.create("League", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md", publish=True)
+        priv = self.m.create("Private", self.fid, [{"device_id": "lane-2", "competitor": "Bob Jones"}], "md", publish=False)
+        self.m.start(pub, "md"); self.m.start(priv, "md")
+        self.shoot("lane-1"); self.shoot("lane-2")
+        self.beat()
+        d = self.lanes()
+        self.assertEqual((d[1]["state"], d[1]["name"], d[1]["shots"], d[1]["label"]), ("match", "Jane Smith", [], "League · sighters"), "no sighters")
+        self.assertEqual(set(d[2]) - {"lane", "online", "face", "state"}, set(), "a match that is not published: nothing but the lane")
+        self.assertEqual(d[2]["state"], "private")
+        self.at(31)
+        self.shoot("lane-1")
+        self.beat(3)
+        d = self.lanes()
+        self.assertEqual((d[1]["label"], d[1]["count"], len(d[1]["shots"])), ("League", 1, 1), "record shots")
+
+    def test_live_only_nothing_kept_for_later(self):
+        self.fake.board = True
+        self.beat()
+        self.fake.down = 503
+        self.shoot("lane-1")
+        self.beat(3)
+        self.assertEqual(self.dt.outbox_count(), 0, "never queued")
+        self.fake.down = None
+        n = len(self.fake.lane_posts)
+        self.beat(60)
+        self.assertEqual(len(self.fake.lane_posts), n + 1, "the current state, once deepTENS answers again")
 
 
 RM = {"user_id": 1, "name": "Rita Manager", "email": "rm@example.com", "roles": ["range_manager"]}

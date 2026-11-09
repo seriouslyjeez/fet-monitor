@@ -28,6 +28,8 @@ CONNECTED_S = 90                                 # green while the last success 
 ROSTER_S = 600                                   # the staff roster is fetched again after this long
 ROSTER_MAX_AGE_S = 30 * 86400                    # offline sign-in stops working when the roster is older (P1 Q3)
 SIGNIN_TTL_S = 600                               # a sign-in started on the Pi must come back within this long
+LANES_S = 2                                      # the public lane board: at most this often, and only when changed
+LANES_REFRESH_S = 30                             # ... or this often unchanged (so deepTENS knows the lanes are alive)
 BACKOFF_MIN_S, BACKOFF_MAX_S = 2, 60
 BATCH_ITEMS, BATCH_BYTES = 20, 7 << 20          # deepTENS takes 20 items, 8 MB unpacked
 REQUEST_TIMEOUT_S = 20                           # each connect and each read
@@ -93,6 +95,8 @@ class DeepTens:
         self.roster = self._load_roster()               # {"members": [...], "fetched_ms", "range"}: who may sign in, and how
         self.next_roster = 0.0
         self.signins = {}                               # state -> (where to, expires): sign-ins started here
+        self.lane_board = False                         # the range's public lane board is on (deepTENS says, in heartbeats)
+        self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
 
     # ---------------------------------------------------------------------------------------------- the settings file
     def _load(self) -> dict:
@@ -288,6 +292,57 @@ class DeepTens:
         else:
             self.next_roster = now + 60
 
+    # ------------------------------------------------------------------------------------------ the public lane board
+    def lanes_payload(self) -> list:
+        """Every target with a lane as the public board shows it (P1 Q2 answer 6). In a published match: its
+        competitor and record shots (no sighters); in a match that is not published: no shots ("private"); otherwise
+        its current shots, no name."""
+        c = self.core.db.conn()
+        out = []
+        for t in self.core.list_targets():
+            if t["lane"] is None:
+                continue
+            v, mi = t["view"], t["match"]
+            f = v.get("face") or {}
+            lane = {"lane": t["lane"], "online": t["online"],
+                    "face": {"rings": [r["dia_mm"] for r in f.get("rings", [])], "black": f.get("black_mm") or 0,
+                             "proj": f.get("projectile_mm") or 4.5, "decimal": bool(f.get("decimal"))}}
+            if mi:
+                m = c.execute("SELECT m.name, m.publish_deeptens, c.publish_deeptens AS cpub, c.name AS cname FROM matches m "
+                              "LEFT JOIN competitions c ON c.id=m.competition_id WHERE m.id=?", (mi["match_id"],)).fetchone()
+                published = m is not None and (m["publish_deeptens"] == 1 or m["cpub"] == 1)
+                if not published:
+                    out.append(dict(lane, state="private"))
+                    continue
+                record = t["mode"] not in ("sighter",)
+                out.append(dict(lane, state="match", name=mi.get("competitor") or "", label=(m["cname"] or m["name"]) + ("" if record else " · sighters"),
+                                shots=self._shots(v) if record else [], total=v["agg"]["decimal"] if record else None,
+                                count=v["count"] if record else 0, x=v["agg"]["x"] if record else 0))
+                continue
+            if not v.get("series_id"):
+                out.append(dict(lane, state="idle", shots=[], total=None, count=0, x=0))
+                continue
+            out.append(dict(lane, state="sighter" if t["mode"] == "sighter" else "practice", shots=self._shots(v),
+                            total=v["agg"]["decimal"], count=v["count"], x=v["agg"]["x"]))
+        return out
+
+    @staticmethod
+    def _shots(v) -> list:
+        return [{"x": s["x_mm"], "y": s["y_mm"], "v": s["decimal"], "m": s["miss"]} for s in v.get("bull_shots", [])]
+
+    def _send_lanes(self, now: float) -> None:
+        self.next_lanes = now + LANES_S
+        lanes = self.lanes_payload()
+        if lanes == self.last_lanes and now - self.lanes_sent_at < LANES_REFRESH_S:
+            return
+        try:
+            st, r = self._call("/lanes", {"lanes": lanes})
+        except OSError:
+            return                                      # live only: what is missed is not sent later
+        if st == 200:
+            self.last_lanes, self.lanes_sent_at = lanes, now
+            self.lane_board = r.get("lane_board") is True
+
     # ---------------------------------------------------------------------------------------------------- snapshots
     def changed(self, kind: str, n: int) -> None:
         """A match ("m") or competition ("c") changed: a new snapshot is made in the link's thread (never in the
@@ -376,7 +431,11 @@ class DeepTens:
                 self.next_send = max(self.next_send, self.next_hb)   # deepTENS is not answering: uploads wait with it
         if now >= self.next_send and self.outbox_count():
             self._send(now)
+        if self.lane_board and self.linked and now >= self.next_lanes and now - self.last_ok < CONNECTED_S:
+            self._send_lanes(now)
         nxt = min(self.next_hb, self.next_send if self.outbox_count() else self.next_hb)
+        if self.lane_board:
+            nxt = min(nxt, self.next_lanes)
         return max(0.2, min(5.0, nxt - self.clock()))
 
     def _poll(self, now: float) -> float:
@@ -432,6 +491,7 @@ class DeepTens:
         with self.lock:
             self._ok(now)
             self.lane_conflicts = [x for x in r.get("lane_conflicts", []) if isinstance(x, int)]
+            self.lane_board = r.get("lane_board") is True
         self.next_hb = now + HEARTBEAT_S
         return True
 
