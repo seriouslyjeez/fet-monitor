@@ -22,6 +22,10 @@ header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;
 .dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
+.lanesign{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
+.lanesign .qr{flex:none;width:118px;height:118px;border-radius:6px;overflow:hidden;background:#fff}.lanesign .qr svg{width:100%;height:100%;display:block}
+.lanesign .row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.lanesign .row input{width:9.5em}.lanesign.on{justify-content:space-between}
+.lanesign b.who{font-size:17px}
 .badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:var(--on-accent);white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
 button,input,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
 button{cursor:pointer}button.pri{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button.sel{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
@@ -149,6 +153,7 @@ body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}
 <input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
 <input type="file" id="pdffile" accept=".pdf,application/pdf" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
+<script src="/qrcode.js"></script>
 <script>
 'use strict';
 const API = '/api/v1', MODES = {practice: 'Practice', sighter: 'Sighter', record: 'Record', ammo: 'Ammo test'};
@@ -667,8 +672,28 @@ function shooterView(t, S) {
   return '<div class="shoot"><div class="left">' +
     faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + '</div>' +
     '<div class="right"><div class="topbar">' + zoomBar(S.zoom, v.face) + (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '</div>' +
-    mb + banner + pager + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v, true) : shotsTable(v, true) + lastPanel(v)) +
+    mb + banner + pager + (reviewing ? '' : laneSignin(t, S)) + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v, true) : shotsTable(v, true) + lastPanel(v)) +
     (mine ? '<div class="exitbar">' + exitButton + '</div>' : '') + '</div></div>';
+}
+// Target sign-in (P2): the athlete signed in on this lane, or how to sign in with deepTENS: the lane's QR code (opens
+// deepTENS on the phone, its own data), the athlete number and PIN here, and the address of this page for a phone on
+// the range's WiFi when there is no internet. Nothing when the Pi is not linked to deepTENS.
+function qrSvg(url) {
+  if (typeof qrcode !== 'function' || !url) return '';
+  try { const q = qrcode(0, 'M'); q.addData(url); q.make(); return q.createSvgTag({cellSize: 4, margin: 8, scalable: true}); } catch (e) { return ''; }
+}
+function laneSignin(t, S, phone) {
+  const a = t.athlete;
+  if (a) return '<div class="lanesign on"><span><span class="mut">Signed in</span><br><b class="who">' + esc(a.name) + '</b></span>' +
+    '<button data-act="lnout" data-name="' + esc(a.name) + '">Sign out</button></div>';
+  if (!t.signin_url) return '';
+  const form = S.lnpin ? '<div class="row"><input id="ln_num" inputmode="numeric" autocomplete="off" placeholder="Athlete number" maxlength="7">' +
+      '<input id="ln_pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="6"><button class="pri" data-act="lnin">Sign in</button>' +
+      '<button data-act="lnpin">Cancel</button></div>' : '<div class="row"><button data-act="lnpin">Use athlete number and PIN</button></div>';
+  const here = location.host + '/#/t/' + encodeURIComponent(t.device_id);
+  return '<div class="lanesign">' + (phone ? '' : '<div class="qr" aria-label="Sign-in code for this lane">' + qrSvg(t.signin_url) + '</div>') +
+    '<div><b>Sign in with deepTENS</b><div class="mut">' + (phone ? 'Your shots go into your deepTENS history.' : 'Scan with your phone to keep your shots in your deepTENS history.') + '</div>' +
+    form + (phone ? '' : '<div class="mut">No internet on your phone? On the range WiFi open ' + esc(here) + ' and use your number and PIN.</div>') + '</div></div>';
 }
 // A phone: the card of All targets, larger, with a menu for everything else
 function phoneView(t, S) {
@@ -684,7 +709,7 @@ function phoneView(t, S) {
     '<button data-act="theme">' + themeLabel() + ' mode</button>' + (L.mine ? '' : '<a href="#/">All targets</a>') + '</div>' : '';
   return '<div class="phone"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b><span>' + badge(mode) +
     ' <button class="menubtn" data-act="menu" aria-label="Menu" aria-expanded="' + !!S.menu + '">☰</button></span></div>' + menu +
-    (reviewing ? '<div class="banner">Reviewing from ' + esc(when(v.started)) + ' <button data-act="rback">Back to live</button></div>' + reviewPager(v, ammo) : matchBanner(t.match, t, S)) +
+    (reviewing ? '<div class="banner">Reviewing from ' + esc(when(v.started)) + ' <button data-act="rback">Back to live</button></div>' + reviewPager(v, ammo) : matchBanner(t.match, t, S) + laneSignin(t, S, true)) +
     faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) +
     '<div class="who">' + esc(v.shooter || t.shooter || '–') + (L.held_by && !L.mine ? ' <span class="mut">· controlled by ' + esc(L.held_by) + '</span>' : '') + '</div>' +
     (ammo ? '<div class="pscore"><span class="v">' + (v.ammo.shots ? v.ammo.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm group</span><span class="mut">' + v.count + ' shots</span></div>'
@@ -1236,7 +1261,7 @@ function fwJobText(t, images) {      // the latest firmware update of a target, 
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
-  targets: ['/targets', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
+  targets: ['/targets', '/athletes', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
   firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
   users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
 const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['tv', 'TV displays'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
@@ -1294,20 +1319,23 @@ function targetsTab(d, rc) {                     // the targets: mode, session, 
     '<button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
     '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
     '<th title="Each lane number is used once. A target without one is a spare: no matches, never shown publicly.">Lane</th>' +
-    '<th>Target</th><th>Mode</th><th>Session</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th>' +
+    '<th>Target</th><th>Mode</th><th>Session</th><th title="The deepTENS athlete signed in on the lane">Athlete</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th>' +
     '<th title="How long shots took from the target to this Pi, last 24 h (goal: under 5 s)">Shot delivery</th></tr>' +
     (d.targets.length ? d.targets.map(t => {
       const su = statusUrl(t.ip), ft = t.fet_target;
       return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
         '<td><button data-act="rclane" data-id="' + esc(t.device_id) + '" title="Change the lane">' + esc(laneOf(t)) + '</button></td>' +
         '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
-        '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td><td>' + esc(t.lease.held_by || '–') + '</td>' +
+        '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td>' +
+        '<td>' + (t.athlete ? esc(t.athlete.name) + ' <button data-act="rcathout" data-id="' + esc(t.device_id) + '">Sign out</button>'
+          : (rc.athletes && rc.athletes.length && t.lane != null ? '<button data-act="rcathin" data-id="' + esc(t.device_id) + '">Sign in…</button>' : '–')) + '</td>' +
+        '<td>' + esc(t.lease.held_by || '–') + '</td>' +
         '<td>' + esc(faceName(t.installed_face)) + '</td>' +
         '<td>' + (ft && ft.key_fp ? (ft.asleep ? '<b>asleep</b>' : 'on') : '–') + '</td>' +
         '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
         '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td>' +
         '<td>' + deliveryCell(t.delivery) + '</td></tr>';
-    }).join('') : '<tr><td colspan="12" class="mut">No targets.</td></tr>') + '</table></div>' +
+    }).join('') : '<tr><td colspan="13" class="mut">No targets.</td></tr>') + '</table></div>' +
     '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
     'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
   return h + '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
@@ -1402,7 +1430,8 @@ function mcNew(mc) {
       '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(tName(t)) + (t.in_match ? ' <span class="mut">(in a match)</span>' : '') +
         (t.lane == null ? ' <span class="mut">(a spare: give it a lane in Range Control to use it)</span>' : '') +
         (swap ? '<div class="bad">has the ' + esc(faceName(t.installed_face)) + ': swap its mask and faceplate</div>' : '') + '</td>' +
-      '<td><input type="text" maxlength="60" data-mcc="' + esc(t.device_id) + '" value="' + esc(ln.competitor || '') + '" placeholder="optional"></td></tr>';
+      '<td><input type="text" maxlength="60" data-mcc="' + esc(t.device_id) + '" value="' + esc(ln.competitor || '') + '" placeholder="' +
+        (t.athlete ? esc(t.athlete.public_name) + ' (signed in)' : 'optional') + '"></td></tr>';
   }).join('') + '</table>' : '<p class="mut">No targets.</p>');
   const pc = d.paced || 'spoken';
   h += '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + ['spoken', 'officer', 'auto'].map(k =>
@@ -1595,6 +1624,7 @@ function lanesPanel(d, mc, director) {          // firing points: shots so far, 
       (l.sighting && l.own !== 'moving' ? '<span class="mut">sighting</span><button data-act="mclrecord" data-id="' + esc(l.device_id) + '">Start record</button>' : '') +
       ((live || (ot && l.own)) && l.own !== 'moving' ? '<button data-act="mclextra" data-id="' + esc(l.device_id) + '" title="Extra time for this shooter only">+1 min</button>' : '') +
       (canMove ? '<button data-act="mcmove" data-id="' + esc(l.device_id) + '">Move…</button>' : '') +
+      mcAthlete(l.device_id) +
       (st !== 'ready' ? '<button data-act="mcshots" data-lane="' + l.lane + '">Shots…</button>' : '') + '</div></td></tr>';
   }).join('') + '</table></div>';
 }
@@ -2054,6 +2084,7 @@ async function refresh() {
         const ok = p => r[p] && r[p].status === 200;
         if (got.some(x => x.status === 401)) S.rc.status.logged_in = false;      // logged out meanwhile
         if (ok('/targets')) { S.rc.data = r['/targets'].data; (S.rc.data.targets || []).sort(byLane); }
+        if (ok('/athletes')) S.rc.athletes = r['/athletes'].data.athletes;
         if (ok('/firmware')) S.rc.images = r['/firmware'].data.images;
         if (ok('/match-users')) S.rc.musers = r['/match-users'].data.users;
         if (ok('/flash')) S.rc.flash = r['/flash'].data;
@@ -2074,10 +2105,11 @@ async function refresh() {
       const mc = S.mc = S.mc || {view: 'list', draft: {lanes: {}}, spoken: {}};
       mc.status = (await matchCall('/status')).data;
       if (mc.status.logged_in) {
-        const [ms, fs, ts] = await Promise.all([matchCall('/matches'), matchCall('/formats'), matchCall('/targets')]);
+        const [ms, fs, ts, as] = await Promise.all([matchCall('/matches'), matchCall('/formats'), matchCall('/targets'), matchCall('/athletes')]);
         if (ms.status === 200) mc.matches = ms.data.matches;
         if (fs.status === 200) mc.formats = fs.data.formats;
         if (ts.status === 200) mc.targets = ts.data.targets.sort(byLane);
+        if (as.status === 200) mc.athletes = as.data.athletes;
         const rl = await matchCall('/results');
         if (rl.status === 200) mc.results = rl.data.results;
         const cs = await matchCall('/competitions');
@@ -2288,6 +2320,22 @@ async function act(el) {
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
   if (!id) return;
+  if (a === 'lnpin') { S.lnpin = !S.lnpin; render(); const n = document.getElementById('ln_num'); if (n) n.focus(); return; }
+  if (a === 'lnin') {                            // target sign-in with the athlete number and PIN (deepTENS checks it)
+    const num = val('ln_num') || '', pin = val('ln_pin') || '';
+    el.disabled = true;
+    const res = await post('/targets/' + id + '/signin', {number: num, pin: pin});
+    el.disabled = false;
+    if (res.status !== 200) { const p = document.getElementById('ln_pin'); if (p) p.value = ''; return toast(res.data.error || 'Could not sign in'); }
+    S.lnpin = false; toast('Signed in: ' + res.data.athlete.name);
+    return refresh();
+  }
+  if (a === 'lnout') {
+    if (!confirm('Sign ' + el.dataset.name + ' out of this lane?')) return;
+    const res = await post('/targets/' + id + '/signout', {});
+    if (res.status !== 200) toast(res.data.error || 'Could not sign out');
+    return refresh();
+  }
   if (a === 'exitrange') {                       // leave the shooter screen: release the target
     if (!confirm('Are you sure you want to exit?')) return;
     S.menu = false;
@@ -2636,6 +2684,21 @@ async function rangeAct(el, a) {
     if (res.status === 200) rc.dt = res.data; else toast(res.data.error || 'error ' + res.status);
     return refresh();
   }
+  if (a === 'rcathin' || a === 'rcathout') {       // target sign-in (P2): one of the range's athletes on a lane, or off it
+    const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id), list = rc.athletes || [];
+    if (!t) return;
+    let body = {athlete_id: null};
+    if (a === 'rcathin') {
+      const v = prompt('Sign in on ' + t.name + ' (lane ' + t.lane + '): type the number in front of the athlete\n\n' +
+        list.map((x, i) => (i + 1) + ')  ' + x.name + '  ' + x.number).join('\n'));
+      const k = v === null ? NaN : Number(v.trim());
+      if (!(Number.isInteger(k) && k >= 1 && k <= list.length)) return;
+      body = {athlete_id: list[k - 1].athlete_id};
+    } else if (!confirm('Sign ' + t.athlete.name + ' out of ' + t.name + '?')) return;
+    const res = await adminCall('/targets/' + encodeURIComponent(t.device_id) + '/athlete', body);
+    if (res.status !== 200) toast(res.data.error || 'not changed');
+    return refresh();
+  }
   if (a === 'rclane') {                            // the target's lane: a number used once, or empty for a spare
     const t = ((rc.data || {}).targets || []).find(x => x.device_id === el.dataset.id);
     if (!t) return;
@@ -2691,9 +2754,29 @@ async function uploadFirmware(files) {
   return refresh();
 }
 
+function mcAthlete(did) {                        // target sign-in (P2): the deepTENS athlete on a firing point, for staff
+  const mc = S.mc || {}, t = (mc.targets || []).find(x => x.device_id === did);
+  if (!t) return '';
+  if (t.athlete) return '<span class="mut">deepTENS: ' + esc(t.athlete.name) + '</span><button data-act="mcathout" data-id="' + esc(did) + '">Sign out</button>';
+  return (mc.athletes || []).length ? '<button data-act="mcathin" data-id="' + esc(did) + '">Sign in athlete…</button>' : '';
+}
 async function matchAct(el, a) {
   const mc = S.mc = S.mc || {view: 'list', draft: {lanes: {}}, spoken: {}};
   const show = res => { mc.msg = res.status >= 400 ? (res.data.error || 'error ' + res.status) : ''; return res.status < 400; };
+  if (a === 'mcathin' || a === 'mcathout') {
+    const t = (mc.targets || []).find(x => x.device_id === el.dataset.id), list = mc.athletes || [];
+    if (!t) return;
+    let body = {athlete_id: null};
+    if (a === 'mcathin') {
+      const v = prompt('Sign in on ' + tName(t) + ': type the number in front of the athlete\n\n' + list.map((x, i) => (i + 1) + ')  ' + x.name + '  ' + x.number).join('\n'));
+      const k = v === null ? NaN : Number(v.trim());
+      if (!(Number.isInteger(k) && k >= 1 && k <= list.length)) return;
+      body = {athlete_id: list[k - 1].athlete_id};
+    } else if (!confirm('Sign ' + t.athlete.name + ' out of ' + tName(t) + '?')) return;
+    const res = await matchCall('/targets/' + encodeURIComponent(t.device_id) + '/athlete', body);
+    if (res.status !== 200) toast(res.data.error || 'not changed');
+    return refresh();
+  }
   if (a === 'mcmyrecord' || a === 'mcmysighters') {   // on the shooter's own screen (needs the lane's control claim)
     const t = current();
     if (!t) return;

@@ -18,6 +18,7 @@ from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, MIN_PASSWORD, Admin, hash_password, verify_password
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
+from .athletes import SigninError
 from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
 from .deeptens import DeepTens, LinkError
 from fetcore import faces as F
@@ -33,7 +34,8 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters|signin|signout)$")
+MATCH_ATHLETE_RE = re.compile(r"^/api/v1/match/targets/([A-Za-z0-9_-]{1,64})/athlete$")
 MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw|publish)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
 COMP_RE = re.compile(r"^/api/v1/match/competitions/(\d{1,9})(?:/(relays|competitors|finals)(?:/(\d{1,12})(/delete|/move)?)?)?$")
@@ -46,7 +48,7 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane|athlete)$")
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
@@ -284,9 +286,16 @@ class Handler(BaseHTTPRequestHandler):
                 if not mc.delete_format(fd.group(1)):
                     raise NotFound("no such custom format")
                 return self._send(200, {"ok": True})
+            if path == "/api/v1/match/athletes" and method == "GET":
+                return self._send(200, {"athletes": core.athletes.roster_athletes()})
+            ma = MATCH_ATHLETE_RE.match(path)
+            if ma and method == "POST":
+                log.info("Match Control (%s) from %s: athlete %s %s", who, self.client_address[0], ma.group(1), payload)
+                return self._staff_athlete(ma.group(1), payload)
             if path == "/api/v1/match/targets" and method == "GET":
                 return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "lane": t["lane"], "online": t["online"],
-                                                     "in_match": bool(t["match"]), "lease": t["lease"], "installed_face": t["installed_face"]}
+                                                     "in_match": bool(t["match"]), "lease": t["lease"], "installed_face": t["installed_face"],
+                                                     "athlete": t["athlete"]}
                                                     for t in core.list_targets(None)]})
             if path == "/api/v1/match/competitions" and method == "GET":
                 return self._send(200, {"competitions": core.competitions.list()})
@@ -604,6 +613,8 @@ class Handler(BaseHTTPRequestHandler):
                               headers=[("Set-Cookie", f"{COOKIE}=; Path={COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age=0")])
         if not admin.check(self._admin_token()):
             return self._send(401, {"error": "log in to Range Control"})
+        if path == "/api/v1/admin/athletes" and method == "GET":         # the range's athletes (roster), to sign one in
+            return self._send(200, {"athletes": core.athletes.roster_athletes()})
         if path == "/api/v1/admin/targets" and method == "GET":
             view = core.admin_view()
             images = self.server.firmware.list()
@@ -807,7 +818,9 @@ class Handler(BaseHTTPRequestHandler):
         m = ADMIN_TARGET_RE.match(path)
         if m and method == "POST":
             did, what = m.groups()
-            log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what in ("mode", "face") else "")
+            log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what in ("mode", "face", "athlete") else "")
+            if what == "athlete":
+                return self._staff_athlete(did, payload)
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
@@ -944,6 +957,19 @@ class Handler(BaseHTTPRequestHandler):
         rf = RULEBOOK_FILE_RE.match(url.path)
         if rf:
             return self._rulebook_file(rf.group(1))
+        if url.path == "/qrcode.js":                   # the QR code generator for the lanes' sign-in codes (MIT, NOTICE)
+            try:
+                with open(os.path.join(WEB_DIR, "qrcode.js"), "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                return self._send(404, {"error": "not installed"})
+            self.send_response(200)
+            for k, v in (("Content-Type", "text/javascript; charset=utf-8"), ("Content-Length", str(len(data))),
+                         ("Cache-Control", "public, max-age=86400"), ("X-Content-Type-Options", "nosniff")):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if url.path in ("/deeptens-flower.png", "/deeptens-flower-dark.png"):   # deepTENS's icon, downloaded once linked (never shipped here)
             data = self.server.deeptens.mark(dark=url.path.endswith("-dark.png")) if self.server.deeptens is not None else None
             if data is None:
@@ -1034,6 +1060,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"segments": core.list_segments(m.group(1), limit)})
         self._send(404, {"error": "not found"})
 
+    def _staff_athlete(self, did: str, payload: dict):
+        """Range staff sign one of the range's athletes in at a target ({"athlete_id"}), or sign the target's athlete
+        out ({"athlete_id": null}), in a match too."""
+        core: Core = self.server.core
+        try:
+            aid = payload.get("athlete_id")
+            if aid is None:
+                return self._send(200, {"ended": core.athletes.sign_out(did, "staff", staff=True)})
+            if not isinstance(aid, int) or isinstance(aid, bool):
+                raise SigninError("athlete_id: a number, or null to sign out")
+            return self._send(200, {"athlete": core.athletes.staff_sign_in(did, aid)})
+        except SigninError as exc:
+            return self._send(400, {"error": str(exc)})
+
     def _post(self):
         url = urlparse(self.path)
         core: Core = self.server.core
@@ -1056,6 +1096,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
+        if m and m.group(2) in ("signin", "signout"):         # the lane's screen (P2): athlete number + PIN, or sign out
+            payload = self._read_json()
+            if not isinstance(payload, dict):
+                raise BadRequest("body must be an object")
+            try:
+                if m.group(2) == "signin":
+                    return self._send(200, {"athlete": core.athletes.pin_sign_in(m.group(1), payload.get("number"), payload.get("pin"))})
+                return self._send(200, {"ended": core.athletes.sign_out(m.group(1))})
+            except SigninError as exc:
+                return self._send(400, {"error": str(exc)})
         if m and m.group(2) in ("control", "control/release", "mode", "settings", "start-record", "back-to-sighters"):
             payload = self._read_json()
             if not isinstance(payload, dict):

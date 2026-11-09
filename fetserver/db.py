@@ -490,6 +490,27 @@ MIGRATIONS = [
     ALTER TABLE matches ADD COLUMN publish_deeptens INTEGER;
     ALTER TABLE competitions ADD COLUMN publish_deeptens INTEGER;
     """,
+    """
+    -- Target sign-in (P2, fetserver/athletes.py): a deepTENS athlete signed in at a target (by phone, PIN or staff) from
+    -- started_ms until ended_ms. Shots fired on the target in that time (by event time) are theirs; the session goes to
+    -- deepTENS as an outbox item "s<id>". Only one open session per target and per athlete.
+    CREATE TABLE athlete_sessions (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        device_id   TEXT NOT NULL,
+        lane        INTEGER,
+        athlete_id  INTEGER NOT NULL,
+        number      TEXT,
+        name        TEXT NOT NULL,
+        public_name TEXT NOT NULL,
+        via         TEXT NOT NULL,
+        started_ms  INTEGER NOT NULL,
+        last_ms     INTEGER NOT NULL,
+        ended_ms    INTEGER,
+        end_why     TEXT
+    );
+    CREATE INDEX athlete_sessions_target ON athlete_sessions (device_id, started_ms);
+    CREATE INDEX athlete_sessions_open ON athlete_sessions (ended_ms);
+    """,
 ]
 
 

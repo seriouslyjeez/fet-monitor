@@ -16,3 +16,8 @@ program so it can write the ESP32-S3 board.
 The deepTENS name and mark are not under the MIT License. They are the brand of deepTENS (deeptens.com), owned by
 Jake Miller, and may be used only to refer to deepTENS. FeT Monitor does not include the mark: a Pi linked to deepTENS
 downloads it from there (fetserver/deeptens.py) to show the deepTENS icon.
+
+fetserver/web/qrcode.js is "QR Code Generator for JavaScript" by Kazuhiko Arase (http://www.d-project.com/), version
+1.4.4 from npm (qrcode-generator), MIT License: Copyright (c) 2009 Kazuhiko Arase. It draws the code on each lane's
+screen that an athlete scans to sign in with deepTENS. The word "QR Code" is a registered trademark of DENSO WAVE
+INCORPORATED. Its license is the MIT License, the same text as LICENSE with its own copyright line above.

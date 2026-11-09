@@ -230,6 +230,8 @@ class Matches:
             for ln in lanes:
                 comp = ln.get("competitor")
                 comp = comp.strip()[:60] if isinstance(comp, str) and comp.strip() else None
+                if comp is None and ln.get("competitor_id") is None:      # the athlete signed in there (P2), if any
+                    comp = self.core.athletes.name_on(c, ln["device_id"])
                 lane = at[ln["device_id"]]
                 c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
                           (mid, ln["device_id"], lane, lane, comp, ln.get("competitor_id")))
@@ -438,6 +440,8 @@ class Matches:
             p, late = fmt["phases"][m["phase"]], rb.rule(rb.book_of(fmt), "late")
             fp = self.target_lane(c, device_id)
             name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
+            if name is None and competitor_id is None:
+                name = self.core.athletes.name_on(c, device_id)
             c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
                       (mid, device_id, self.new_key(c, mid, fp), fp, name, competitor_id))
             self.core.wake_in(c, device_id)

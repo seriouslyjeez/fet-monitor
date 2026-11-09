@@ -23,6 +23,7 @@ from fetcore.sightadj import suggest
 from .matches import ACTIVE_SQL, Matches, _check
 from .competitions import Competitions
 from .resultstore import ResultStore
+from .athletes import Athletes
 from .corrections import Corrections
 from .displays import Displays
 
@@ -161,6 +162,7 @@ class Core:
         self.results = ResultStore(self)
         self.displays = Displays(self)
         self.corrections = Corrections(self)
+        self.athletes = Athletes(self)        # target sign-in (P2): deepTENS athletes signed in at lanes
         self.deeptens = None                  # the link to deepTENS (fetserver/deeptens.py), set by the server when it runs
 
     # ---- target bookkeeping -------------------------------------------------
@@ -1260,6 +1262,8 @@ class Core:
                 "match": self._match_info(c, did, now),
                 "v_ref": self._v_ref(c, r),
                 "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
+                "athlete": self.athletes.on(c, did),               # who is signed in (P2), and the lane's QR to sign in by phone
+                "signin_url": self.athletes.signin_url(did, r["lane"], now) if self.athletes.on(c, did) is None else None,
             })
         return out
 

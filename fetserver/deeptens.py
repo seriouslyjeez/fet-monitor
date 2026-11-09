@@ -30,6 +30,8 @@ ROSTER_MAX_AGE_S = 30 * 86400                    # offline sign-in stops working
 SIGNIN_TTL_S = 600                               # a sign-in started on the Pi must come back within this long
 LANES_S = 2                                      # the public lane board: at most this often, and only when changed
 LANES_REFRESH_S = 30                             # ... or this often unchanged (so deepTENS knows the lanes are alive)
+SIGNINS_S = 3                                    # phones signing in at a lane (P2): deepTENS is asked this often
+ATHLETES_TICK_S = 5                              # idle sign-outs and session snapshots (fetserver/athletes.py)
 MARK_MAX = 64 * 1024                             # the deepTENS mark, downloaded once after linking: a small PNG only
 MARK_MAX_PX = 256
 BACKOFF_MIN_S, BACKOFF_MAX_S = 2, 60
@@ -77,7 +79,8 @@ def is_small_png(data: bytes, max_px: int = MARK_MAX_PX) -> bool:
     return 0 < w <= max_px and 0 < h <= max_px
 
 
-def http_post(url: str, path: str, body: dict, token: Optional[str] = None, compress: bool = False) -> Tuple[int, dict]:
+def http_post(url: str, path: str, body: dict, token: Optional[str] = None, compress: bool = False,
+              timeout: float = REQUEST_TIMEOUT_S) -> Tuple[int, dict]:
     """POST JSON; (status, JSON answer). A network failure raises OSError. Certificates are checked (system store)."""
     data = json.dumps(body, separators=(",", ":")).encode()
     headers = {"Content-Type": "application/json", "User-Agent": "FeT-Monitor"}
@@ -87,7 +90,7 @@ def http_post(url: str, path: str, body: dict, token: Optional[str] = None, comp
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(url + path, data=data, headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             status, raw = r.status, r.read(1 << 20)
     except urllib.error.HTTPError as e:
         status, raw = e.code, e.read(1 << 20)
@@ -121,6 +124,7 @@ class DeepTens:
         self.mark_dir = Path(data_dir) if data_dir is not None else None
         self.next_mark = 0.0
         self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
+        self.next_signins, self.next_tick, self.signin_acks = 0.0, 0.0, []
 
     # ---------------------------------------------------------------------------------------------- the settings file
     def _load(self) -> dict:
@@ -222,6 +226,8 @@ class DeepTens:
             self.roster = {}                            # nobody signs in through a link that is gone
             if self.roster_path is not None and self.roster_path.exists():
                 self.roster_path.unlink()
+            self.signin_acks = []
+        self.core.athletes.end_all("unlinked")          # athletes signed in through it are signed out
         with self.core.db.write() as c:                 # what was waiting belonged to that link
             c.execute("DELETE FROM deeptens_outbox")
             c.execute("DELETE FROM deeptens_revs")
@@ -310,7 +316,9 @@ class DeepTens:
             return
         if st == 200 and isinstance(r.get("members"), list):
             with self.lock:
-                self.roster = {"members": r["members"], "range": r.get("range"), "fetched_ms": int(now * 1000)}
+                self.roster = {"members": r["members"], "range": r.get("range"), "fetched_ms": int(now * 1000),
+                               "athletes": [a for a in r.get("athletes", []) if isinstance(a, dict)] if isinstance(r.get("athletes"), list) else [],
+                               "signin_idle_min": r.get("signin_idle_min")}
                 self._save_roster()
             self.next_roster = now + ROSTER_S
         else:
@@ -365,6 +373,8 @@ class DeepTens:
             lane = {"lane": t["lane"], "online": t["online"],
                     "face": {"rings": [r["dia_mm"] for r in f.get("rings", [])], "black": f.get("black_mm") or 0,
                              "proj": f.get("projectile_mm") or 4.5, "decimal": bool(f.get("decimal"))}}
+            if t.get("athlete"):                        # for their coaches (P2); deepTENS never shows it on the board
+                lane["athlete_id"] = t["athlete"]["athlete_id"]
             if mi:
                 m = c.execute("SELECT m.name, m.publish_deeptens, c.publish_deeptens AS cpub, c.name AS cname FROM matches m "
                               "LEFT JOIN competitions c ON c.id=m.competition_id WHERE m.id=?", (mi["match_id"],)).fetchone()
@@ -403,8 +413,8 @@ class DeepTens:
 
     # ---------------------------------------------------------------------------------------------------- snapshots
     def changed(self, kind: str, n: int) -> None:
-        """A match ("m") or competition ("c") changed: a new snapshot is made in the link's thread (never in the
-        request that changed it). Only while linked."""
+        """A match ("m"), competition ("c") or athlete session ("s") changed: a new snapshot is made in the link's
+        thread (never in the request that changed it). Only while linked."""
         if self.linked:
             with self.lock:
                 self.dirty.add((kind, n))
@@ -415,6 +425,8 @@ class DeepTens:
         competitions that never started are not sent; one deleted after it was sent goes as {"deleted": true}."""
         from .matches import MatchError
         c = self.core.db.conn()
+        if kind == "s":
+            return self.core.athletes.snapshot(n)
         if kind == "m":
             m = c.execute("SELECT * FROM matches WHERE id=?", (n,)).fetchone()
             if m is not None and m["competition_id"] is not None:
@@ -424,7 +436,7 @@ class DeepTens:
             elif m["state"] == "ready":
                 return None
             else:
-                res = self.core.results.get(f"m{n}", with_shots=True, hidden_too=True)
+                res = self.core.athletes.tag(self.core.results.get(f"m{n}", with_shots=True, hidden_too=True), "m", n)
                 shown = not m["results_hidden"]
                 return "match", f"m{n}", dict(res, state=m["state"], official=shown and bool(m["official_ms"]),
                                               publish=shown and m["publish_deeptens"] == 1)
@@ -434,7 +446,7 @@ class DeepTens:
         if c.execute("SELECT 1 FROM matches WHERE competition_id=? AND state!='ready' LIMIT 1", (n,)).fetchone() is None:
             return None
         try:
-            res = self.core.results.get(f"c{n}", with_shots=True, hidden_too=True)
+            res = self.core.athletes.tag(self.core.results.get(f"c{n}", with_shots=True, hidden_too=True), "c", n)
         except MatchError:
             return None
         shown = not row["results_hidden"]
@@ -465,8 +477,10 @@ class DeepTens:
         self.error = why
         return now + self.backoff
 
-    def _call(self, path: str, body: dict, compress: bool = False):
+    def _call(self, path: str, body: dict, compress: bool = False, timeout: Optional[float] = None):
         """(status, answer); a network failure raises OSError. A 401 means unlinked on deepTENS."""
+        if timeout is not None:
+            return self.post(self.conf["url"], API + path, body, self.conf["token"], compress, timeout=timeout)
         return self.post(self.conf["url"], API + path, body, self.conf["token"], compress)
 
     def step(self) -> float:
@@ -489,14 +503,46 @@ class DeepTens:
                 if not self.linked:
                     return 1.0
                 self.next_send = max(self.next_send, self.next_hb)   # deepTENS is not answering: uploads wait with it
+        if now >= self.next_tick:
+            self.next_tick = now + ATHLETES_TICK_S
+            self.core.athletes.tick()
+            if self.dirty:
+                self._snapshots(now)
         if now >= self.next_send and self.outbox_count():
             self._send(now)
-        if self.lane_board and self.linked and now >= self.next_lanes and now - self.last_ok < CONNECTED_S:
+        if self.linked and now >= self.next_signins and now - self.last_ok < CONNECTED_S:
+            self._signins(now)
+            if not self.linked:
+                return 1.0
+        live = self.lane_board or bool(self.core.athletes.open_sessions())   # coaches follow signed-in athletes
+        if live and self.linked and now >= self.next_lanes and now - self.last_ok < CONNECTED_S:
             self._send_lanes(now)
-        nxt = min(self.next_hb, self.next_send if self.outbox_count() else self.next_hb)
-        if self.lane_board:
+        nxt = min(self.next_hb, self.next_send if self.outbox_count() else self.next_hb, self.next_tick, self.next_signins)
+        if live:
             nxt = min(nxt, self.next_lanes)
         return max(0.2, min(5.0, nxt - self.clock()))
+
+    def _signins(self, now: float) -> None:
+        """Phones signing in or out at a lane (its QR code opens deepTENS): report how the last ones went, take the new."""
+        self.next_signins = now + SIGNINS_S
+        acks, self.signin_acks = self.signin_acks, []
+        try:
+            st, r = self._call("/signins", {"acks": acks})
+        except OSError:
+            self.signin_acks = acks + self.signin_acks
+            return
+        if st == 401:
+            self._forget(remotely=True)
+            return
+        if st != 200:
+            self.signin_acks = acks + self.signin_acks
+            return
+        for s in r.get("signins", []) if isinstance(r.get("signins"), list) else []:
+            if isinstance(s, dict) and isinstance(s.get("id"), int):
+                ok, why = self.core.athletes.phone(s)
+                self.signin_acks.append({"id": s["id"], "ok": ok, "why": why})
+        if self.signin_acks:
+            self.next_signins = now                      # say how it went at once (the phone is waiting)
 
     def _poll(self, now: float) -> float:
         lk = self.linking
