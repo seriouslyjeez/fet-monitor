@@ -90,13 +90,14 @@ class DashboardLogic(unittest.TestCase):
                     shoot(did, x, "0.00")
             # corrections: an override and an added shot for Ames, a penalty for Brown, Cole disqualified
             corr = core.corrections
-            ames_shots = corr.lane_shots(rid, 1)["shots"]
-            corr.add(rid, "override", 1, "md", True, ames_shots[0]["id"], {"value": 9.5, "note": "<b>gauge</b>"})
-            corr.add(rid, "added", 1, "md", True, None, {"value": 10.4, "after": 2, "note": "failed to register"})
-            corr.add(rid, "penalty", 2, "md", True, None, {"points": 2, "rule": "CMP 7.22.1", "note": "position"})
-            corr.add(rid, "dq", 3, "md", True, None, {"rule": "CMP 7.22.2", "official": "<i>J. Doe</i>"})
-            corr.add(rid, "protest", 2, "ro", False, corr.lane_shots(rid, 2)["shots"][0]["id"], {"note": "says 10.9"})
-            lane_shots = corr.lane_shots(rid, 2)
+            ln = {l["device_id"]: l["lane"] for l in core.matches.detail(rid)["lanes"]}    # their lanes: 6, 7, 8 (first seen after lane-1..5)
+            ames_shots = corr.lane_shots(rid, ln["comp-1"])["shots"]
+            corr.add(rid, "override", ln["comp-1"], "md", True, ames_shots[0]["id"], {"value": 9.5, "note": "<b>gauge</b>"})
+            corr.add(rid, "added", ln["comp-1"], "md", True, None, {"value": 10.4, "after": 2, "note": "failed to register"})
+            corr.add(rid, "penalty", ln["comp-2"], "md", True, None, {"points": 2, "rule": "CMP 7.22.1", "note": "position"})
+            corr.add(rid, "dq", ln["comp-3"], "md", True, None, {"rule": "CMP 7.22.2", "official": "<i>J. Doe</i>"})
+            corr.add(rid, "protest", ln["comp-2"], "ro", False, corr.lane_shots(rid, ln["comp-2"])["shots"][0]["id"], {"note": "says 10.9"})
+            lane_shots = corr.lane_shots(rid, ln["comp-2"])
             comp = core.results.get(f"c{cid}", with_shots=True)
             # comp-1's target fails: its shooter moves to comp-4 (time stopped), then is ready again
             hb("comp-4", "Spare <4>")

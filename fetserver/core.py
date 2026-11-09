@@ -63,6 +63,16 @@ class Forbidden(PermissionError):
     pass
 
 
+class LaneTaken(BadRequest):
+    """Range Control asked for a lane another target holds: it may take it (the other becomes a spare)."""
+    def __init__(self, lane: int, holder: str, name: str):
+        super().__init__(f"Lane {lane} is {name}'s")
+        self.lane, self.holder, self.name = lane, holder, name
+
+
+MAX_LANE = 999
+
+
 class Banned(Forbidden):
     """A target banned in Range Control: its reports are refused and nothing is stored."""
 
@@ -157,13 +167,54 @@ class Core:
         row = c.execute("SELECT banned FROM targets WHERE device_id=?", (device_id,)).fetchone()
         if row is not None and row["banned"]:
             raise Banned(f"target {device_id} is banned")
-        c.execute("INSERT OR IGNORE INTO targets (device_id, first_seen_ms, last_seen_ms) VALUES (?,?,?)",
-                  (device_id, recv_ms, recv_ms))
+        if c.execute("INSERT OR IGNORE INTO targets (device_id, first_seen_ms, last_seen_ms) VALUES (?,?,?)",
+                     (device_id, recv_ms, recv_ms)).rowcount:
+            c.execute("UPDATE targets SET lane=? WHERE device_id=?", (self.free_lane(c), device_id))   # a new target: the next lane
         fields = {k: v for k, v in fields.items() if v is not None}
         fields["last_seen_ms"] = recv_ms
         fields["removed"] = 0                       # a removed target that reports again is back
         cols = ", ".join(f"{k}=?" for k in fields)
         c.execute(f"UPDATE targets SET {cols} WHERE device_id=?", (*fields.values(), device_id))
+
+    @staticmethod
+    def free_lane(c) -> Optional[int]:
+        """The lowest lane number no target holds (None when all MAX_LANE are taken: the target is then a spare)."""
+        n = 1
+        for (lane,) in c.execute("SELECT lane FROM targets WHERE lane IS NOT NULL ORDER BY lane"):
+            if lane != n:
+                break
+            n += 1
+        return n if n <= MAX_LANE else None
+
+    def set_lane(self, device_id: str, lane, take: bool = False) -> dict:
+        """Range Control: the lane a target is on (a whole number, each used once on this range), or None for a spare.
+        A lane another target holds is refused (LaneTaken) unless take: then that target becomes a spare. Neither
+        target may be in an active match: change lanes between matches."""
+        if lane is not None and (isinstance(lane, bool) or not isinstance(lane, int) or not 1 <= lane <= MAX_LANE):
+            raise BadRequest(f"lane: a whole number from 1 to {MAX_LANE}, or none (a spare)")
+        freed = None
+        with self.db.write() as c:
+            row = c.execute("SELECT * FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone()
+            if row is None:
+                raise NotFound(f"unknown target {device_id}")
+            if row["lane"] == lane:
+                return {"device_id": device_id, "lane": lane, "freed": None}
+            locked = self.matches.lock_of(c, device_id)
+            if locked:
+                raise Forbidden(f"{row['name'] or device_id} is in the match '{locked}': change its lane after the match")
+            if lane is not None:
+                holder = c.execute("SELECT * FROM targets WHERE lane=? AND device_id!=?", (lane, device_id)).fetchone()
+                if holder is not None:
+                    if not take:
+                        raise LaneTaken(lane, holder["device_id"], holder["name"] or holder["device_id"])
+                    other = self.matches.lock_of(c, holder["device_id"])
+                    if other:
+                        raise Forbidden(f"Lane {lane}'s target is in the match '{other}': change lanes after the match")
+                    c.execute("UPDATE targets SET lane=NULL WHERE device_id=?", (holder["device_id"],))
+                    freed = holder["device_id"]
+            c.execute("UPDATE targets SET lane=? WHERE device_id=?", (lane, device_id))
+        self.hub.publish({"type": "targets", "device_id": device_id})
+        return {"device_id": device_id, "lane": lane, "freed": freed}
 
     @staticmethod
     def _register_boot(c, device_id: str, boot_count: int, boot_start_ms: int) -> None:
@@ -570,7 +621,7 @@ class Core:
                     if cur.rowcount and status == "done" and c.execute(
                             "SELECT type FROM commands WHERE id=?", (r["id"],)).fetchone()[0] == "factory_reset":
                         # the unit is erasing itself and will not report again: take it off the lists (history stays)
-                        c.execute("UPDATE targets SET removed=1 WHERE device_id=?", (device_id,))
+                        c.execute("UPDATE targets SET removed=1, lane=NULL WHERE device_id=?", (device_id,))   # its lane is free
                         c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
             rows = c.execute("""SELECT id, type, line FROM commands WHERE device_id=? AND status IN ('queued','sent')
                                 ORDER BY id LIMIT ?""", (device_id, MAX_COMMANDS_PER_HEARTBEAT)).fetchall()
@@ -1183,7 +1234,7 @@ class Core:
                 view = self._empty_view(r, KIND_OF_MODE.get(mode, "match"))
             lease = c.execute("SELECT * FROM leases WHERE device_id=?", (did,)).fetchone()
             out.append({
-                "device_id": did, "name": r["name"] or did,
+                "device_id": did, "name": r["name"] or did, "lane": r["lane"],
                 "online": (now - r["last_seen_ms"]) <= self.offline_after_ms,
                 "last_seen": iso(r["last_seen_ms"]), "last_seen_ms": r["last_seen_ms"],
                 "arduino_version": r["arduino_version"], "arduino_sn": r["arduino_sn"],
@@ -1275,7 +1326,7 @@ class Core:
             locked = self.matches.lock_of(c, device_id)
             if locked:
                 raise BadRequest(f"{device_id} is in the match '{locked}'")
-            c.execute("UPDATE targets SET removed=1 WHERE device_id=?", (device_id,))
+            c.execute("UPDATE targets SET removed=1, lane=NULL WHERE device_id=?", (device_id,))   # its lane is free again
             c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
         self.hub.publish({"type": "targets", "device_id": device_id})
 
@@ -1288,6 +1339,7 @@ class Core:
                 raise BadRequest(f"{device_id} is in the match '{locked}'")
             c.execute("UPDATE targets SET banned=?, removed=0 WHERE device_id=?", (int(bool(banned)), device_id))
             if banned:
+                c.execute("UPDATE targets SET lane=NULL WHERE device_id=?", (device_id,))
                 c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
         self.hub.publish({"type": "targets", "device_id": device_id})
 

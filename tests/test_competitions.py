@@ -222,7 +222,7 @@ class MoveBeforeStart(CompCase):
         self.assertEqual(self.seats(cid), {(1, "lane-1"): "BELL", (1, "lane-4"): "AMES", (2, "lane-3"): "COLE"})
         self.cc.move_competitor(cid, a, r2, "lane-5", "md")                      # to another relay
         self.assertEqual(self.seats(cid), {(1, "lane-1"): "BELL", (2, "lane-3"): "COLE", (2, "lane-5"): "AMES"})
-        self.assertEqual([l["lane"] for l in self.cc.detail(cid)["relays"][1]["lanes"]], [1, 2], "a new firing point at the end")
+        self.assertEqual([(l["lane"], l["fp"]) for l in self.cc.detail(cid)["relays"][1]["lanes"]], [(3, 3), (5, 5)], "each on its target's own lane")
         self.cc.move_competitor(cid, a, None, None, "md")                        # off the relays
         self.assertEqual(self.seats(cid), {(1, "lane-1"): "BELL", (2, "lane-3"): "COLE"})
         self.cc.move_competitor(cid, a, r1, "lane-6", "md")                      # and back onto one

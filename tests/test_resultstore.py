@@ -48,7 +48,7 @@ class SingleMatches(ResultStoreCase):
         self.at(10); self.shoot("lane-3", "0.00"); self.shoot("lane-4", "2.00")
         res = self.rs.get(f"m{mid}")
         rows = res["classes"][0]["individuals"]
-        self.assertEqual([(e["name"], e["place"], e["lane"]) for e in rows], [("Cole", 1, 1), ("Lane Four", 2, 2)], "no name: the target's")
+        self.assertEqual([(e["name"], e["place"], e["lane"]) for e in rows], [("Cole", 1, 3), ("Lane Four", 2, 4)], "no name: the target's; its lane")
         self.assertEqual((res["key"], res["kind"], res["classes"][0]["teams"]), (f"m{mid}", "match", []))
         self.assertIn(f"m{mid}", self.keys())
 

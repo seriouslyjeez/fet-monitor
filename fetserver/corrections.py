@@ -217,8 +217,8 @@ class Corrections:
                 shots.append({"id": r["id"], "n": r["series_no"], "stream": r["stream"], "decimal": r["tenths"] / 10.0, "ring": r["ring"],
                               "miss": bool(r["is_miss"]), "inner": not r["is_miss"] and bool(r["inner"]), "at_ms": r["event_ms"],
                               "corrections": by_shot.get(r["id"], [])})
-        others = [{"lane": l["lane"], "competitor": l["competitor"]} for l in self.matches._lanes(c, mid) if l["lane"] != lane]
-        return {"match_id": mid, "lane": lane, "competitor": ln["competitor"], "device_id": ln["device_id"], "shots": shots, "others": others,
+        others = [{"lane": l["lane"], "fp": self.matches.fp_of(l), "competitor": l["competitor"]} for l in self.matches._lanes(c, mid) if l["lane"] != lane]
+        return {"match_id": mid, "lane": lane, "fp": self.matches.fp_of(ln), "competitor": ln["competitor"], "device_id": ln["device_id"], "shots": shots, "others": others,
                 "corrections": [x for x in corr if x["shot_id"] is None or x["lane"] != lane], "tie_rules": rules_of(json.loads(m["format_json"])),
                 "rb": rb.texts(rb.book_of(json.loads(m["format_json"])))}
 

@@ -17,7 +17,7 @@ from . import __version__
 from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, Admin
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
-from .core import BadRequest, Core, Forbidden, NotFound, iso
+from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
 from fetcore import faces as F
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
 from .releases import ReleaseError, Updates, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
@@ -43,7 +43,7 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane)$")
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
@@ -199,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise NotFound("no such custom format")
                 return self._send(200, {"ok": True})
             if path == "/api/v1/match/targets" and method == "GET":
-                return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "online": t["online"],
+                return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "lane": t["lane"], "online": t["online"],
                                                      "in_match": bool(t["match"]), "lease": t["lease"], "installed_face": t["installed_face"]}
                                                     for t in core.list_targets(None)]})
             if path == "/api/v1/match/competitions" and method == "GET":
@@ -692,6 +692,11 @@ class Handler(BaseHTTPRequestHandler):
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))
+            if what == "lane":                        # the target's lane (each used once); take: from the target that holds it
+                try:
+                    return self._send(200, core.set_lane(did, payload.get("lane"), payload.get("take") is True))
+                except LaneTaken as exc:
+                    return self._send(409, {"error": str(exc), "lane": exc.lane, "holder": exc.holder, "holder_name": exc.name})
             if what == "face":                        # the mask and faceplate on the target were swapped
                 return self._send(200, core.set_face(did, payload.get("face")))
             if what == "command":                     # restart, setup portal, allowlisted serial lines: Range Control only
@@ -956,7 +961,7 @@ def results_csv(res: dict, teams: bool = False) -> str:
                             t.get("x", ""), txt("; ".join(t["counting"])), txt("; ".join(t["members"])), t.get("reason", "")])
         return out.getvalue()
     n = max(1, -(-res["record_shots"] // 10))
-    w.writerow(["Competition", "Class", "Place", "Family name", "Given name", "Team", "Relay", "Firing point", "Total", xs, "Shots"]
+    w.writerow(["Competition", "Class", "Place", "Family name", "Given name", "Team", "Relay", "Lane", "Total", xs, "Shots"]
                + [f"Series {i + 1}" for i in range(n)] + ["Tie", "Penalties"])
     for cl in res["classes"]:
         for e in cl["individuals"]:

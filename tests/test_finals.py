@@ -45,8 +45,8 @@ class StandardFinal(FinalCase):
     def test_finalists_points_and_ranking(self):
         mid = self.final(n=3)
         lanes = self.m.detail(mid)["lanes"]
-        self.assertEqual([(l["target"], l["competitor"]) for l in lanes], [("lane-5", "AMES"), ("lane-4", "BELL"), ("lane-3", "COLE")],
-                         "best qualifier on point A (10.4.1); ties by countback")
+        self.assertEqual([(l["target"], l["pos"], l["competitor"]) for l in lanes], [("lane-3", "A", "AMES"), ("lane-4", "B", "BELL"), ("lane-5", "C", "COLE")],
+                         "best qualifier on point A (10.4.1), A the lowest lane whatever order the targets were picked in; ties by countback")
         self.assertEqual(self.m.detail(mid)["clock"]["paced"], "officer")
         self.m.start(mid, "md")
         for _ in range(3):                                         # positions, sighting, the pause: each held for Next
@@ -56,7 +56,7 @@ class StandardFinal(FinalCase):
         self.clock.t += 5000; self.m.tick()
         self.assertEqual((self.m.detail(mid)["state"], self.m.detail(mid)["clock"]["label"]), ("running", "Shot 1"), "... START follows by itself")
         for k in range(10):
-            self.run_shot(mid, {"lane-5": "0.50", "lane-4": "0.50", "lane-3": "1.50"})
+            self.run_shot(mid, {"lane-3": "0.50", "lane-4": "0.50", "lane-5": "1.50"})
             if k == 0:
                 self.assertEqual(self.m.detail(mid)["clock"]["label"], "Shot 2: load", "STOP as soon as all have fired (10.4.6 c)")
         self.assertEqual(self.m.detail(mid)["state"], "done")
@@ -65,23 +65,23 @@ class StandardFinal(FinalCase):
         self.assertEqual(rows["COLE"]["shots"], 10)
         self.assertAlmostEqual(rows["COLE"]["total"], rows["COLE"]["qual"] + rows["COLE"]["final"])
         self.assertEqual((rows["AMES"]["place"], rows["BELL"]["place"], rows["AMES"]["tied"]), (1, 1, True), "a medal tie waits for a shoot-off")
-        self.assertEqual(f["shoot_off_needed"], [[1, 2]])
+        self.assertEqual(f["shoot_off_needed"], [[3, 4]], "Ames and Bell: Lanes 3 and 4")
         quals = {e["name"]: e["shots"] for cl in self.cc.results(self.cid)["classes"] for e in cl["individuals"]}
         self.assertEqual(quals["AMES"], 2, "the final does not count in the qualification")
-        # the shoot-off: firing points 1 and 2 only; COLE's shot is flagged
-        self.m.shoot_off(mid, [1, 2], "md")
+        # the shoot-off: Lanes 3 and 4 only; COLE's shot is flagged
+        self.m.shoot_off(mid, [3, 4], "md")
         self.run_shot(mid, {})
-        self.assertEqual(self.mode("lane-3"), "sighter", "not in the shoot-off: its target stays in sighting")
-        self.run_shot(mid, {"lane-5": "0.10", "lane-4": "0.90"})
+        self.assertEqual(self.mode("lane-5"), "sighter", "not in the shoot-off: its target stays in sighting")
+        self.run_shot(mid, {"lane-3": "0.10", "lane-4": "0.90"})
         self.assertEqual(self.m.detail(mid)["state"], "done", "the shoot-off shot ends when the two tied have fired")
-        self.shoot("lane-3", "0.00")
+        self.shoot("lane-5", "0.00")
         f = self.cc.results(self.cid)["finals"][0]
         rows = {r["name"]: r for r in f["rows"]}
         self.assertEqual((rows["AMES"]["place"], rows["BELL"]["place"], f["shoot_off_needed"]), (1, 2, []))
         self.assertEqual(rows["AMES"]["final"], rows["BELL"]["final"], "the shoot-off shot is not part of the final score")
-        self.assertIn("not in it", [x[3] for x in self.flags(mid) if x[0] == "lane-3"][0])
+        self.assertIn("not in it", [x[3] for x in self.flags(mid) if x[0] == "lane-5"][0])
         with self.assertRaises(MatchError):
-            self.m.shoot_off(mid, [3], "md")                     # one firing point is not a tie
+            self.m.shoot_off(mid, [5], "md")                     # one firing point is not a tie
 
     def test_errors_and_final_for_all(self):
         for bad in ({"devices": ["lane-5"], "n": 2}, {"devices": [], "n": None}, {"devices": ["lane-5", "lane-5"], "n": 1}):

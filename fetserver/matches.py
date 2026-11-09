@@ -151,9 +151,33 @@ class Matches:
                          WHERE l.device_id=? AND m.state IN """ + ACTIVE_SQL, (device_id,)).fetchone()
         return r["name"] if r else None
 
+    # ------------------------------------------------------------------------------------------- lanes
+    # A match lane's key (match_lanes.lane) is its target's lane number when it joins, and never changes: corrections,
+    # shoot-offs and the log refer to it. fp is the firing point the shooter is on now (a move can change it).
+    @staticmethod
+    def target_lane(c, device_id: str, name: str = "") -> int:
+        """The lane of a target joining a match; a spare (no lane) cannot join one."""
+        r = c.execute("SELECT lane, name FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if r is None or r["lane"] is None:
+            raise MatchError(f"{(r['name'] if r else None) or name or device_id} is a spare (no lane): give it a lane in Range Control first")
+        return r["lane"]
+
+    @staticmethod
+    def new_key(c, mid: int, lane: int) -> int:
+        """The key for a shooter joining match mid on this lane: the lane number, unless a shooter who moved away
+        from it still has it as their key."""
+        used = [r[0] for r in c.execute("SELECT lane FROM match_lanes WHERE match_id=?", (mid,))]
+        return lane if lane not in used else max(used) + 1
+
+    @staticmethod
+    def fp_of(ln) -> int:
+        """The firing point to show: fp, or for a match from before lanes its old lane number."""
+        return ln["fp"] if ln["fp"] is not None else ln["lane"]
+
     def create(self, name, fmt_id, lanes, by: str, override: Optional[dict] = None, paced: str = "spoken",
                fmt: Optional[dict] = None, competition_id: Optional[int] = None, relay: Optional[int] = None) -> int:
-        """A match in state 'ready'. lanes: [{"device_id", "competitor"}] in firing-point order. override: a full format
+        """A match in state 'ready'. lanes: [{"device_id", "competitor"}]; each target must have a lane (its firing point,
+        and the order on every screen). override: a full format
         (e.g. the standard one with a longer first sighting period, CMP 3PAR 5.3.1 d); it is marked as modified."""
         if not isinstance(name, str) or not name.strip():
             raise MatchError("the match needs a name")
@@ -175,6 +199,7 @@ class Matches:
         seen = set()
         now = self.core.now_ms()
         with self.db.write() as c:
+            at = {}
             for ln in lanes:
                 did = ln.get("device_id") if isinstance(ln, dict) else None
                 if not isinstance(did, str) or did in seen:
@@ -185,13 +210,15 @@ class Matches:
                 other = self.lock_of(c, did)
                 if other:
                     raise MatchError(f"{did} is already in the match '{other}'")
+                at[did] = self.target_lane(c, did)
             mid = c.execute("INSERT INTO matches (name, format_json, state, created_ms, created_by, paced, competition_id, relay) "
                             "VALUES (?,?,?,?,?,?,?,?)", (name.strip()[:80], json.dumps(fmt), "ready", now, by, paced, competition_id, relay)).lastrowid
-            for i, ln in enumerate(lanes, 1):
+            for ln in lanes:
                 comp = ln.get("competitor")
                 comp = comp.strip()[:60] if isinstance(comp, str) and comp.strip() else None
-                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
-                          (mid, ln["device_id"], i, comp, ln.get("competitor_id")))
+                lane = at[ln["device_id"]]
+                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
+                          (mid, ln["device_id"], lane, lane, comp, ln.get("competitor_id")))
                 self.core.wake_in(c, ln["device_id"])     # a sleeping target ignores shots: never in a match
             self._log(c, mid, now, "created", None, None, {"by": by})
         self._pub(mid)
@@ -345,7 +372,9 @@ class Matches:
 
     def move(self, mid: int, from_dev: str, to_dev: str, by: str) -> None:
         """Move a lane to another target that is in no other match. Before the start: just the target. During the
-        match: the shooter's series moves with them and their own time stands still until lane_command 'ready'."""
+        match: the shooter's series moves with them and their own time stands still until lane_command 'ready'.
+        Onto another lane's target the shooter's firing point becomes that lane; onto a spare (a replacement put on
+        the same stand) it stays."""
         now = self.core.now_ms()
         with self.db.write() as c:
             run = self._run(c, mid)
@@ -362,6 +391,9 @@ class Matches:
             if run.m["state"] != "ready":
                 self.core._move_series(c, from_dev, to_dev, ln["series_id"], now)
             self._apply(c, run)
+            to_lane = c.execute("SELECT lane FROM targets WHERE device_id=?", (to_dev,)).fetchone()["lane"]
+            if to_lane is not None:
+                c.execute("UPDATE match_lanes SET fp=? WHERE match_id=? AND device_id=? AND fp IS NOT NULL", (to_lane, mid, to_dev))
             self.core.wake_in(c, to_dev)
         self._pub(mid)
 
@@ -381,10 +413,10 @@ class Matches:
                 raise MatchError(f"that target is in the match '{other}'")
             fmt = json.loads(m["format_json"])
             p, late = fmt["phases"][m["phase"]], rb.rule(rb.book_of(fmt), "late")
-            lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (mid,)).fetchone()[0] or 0) + 1
+            fp = self.target_lane(c, device_id)
             name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
-            c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
-                      (mid, device_id, lane, name, competitor_id))
+            c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
+                      (mid, device_id, self.new_key(c, mid, fp), fp, name, competitor_id))
             self.core.wake_in(c, device_id)
             ln = self._lane(c, mid, device_id)
             sighting = p["kind"] in ("record", "stage")
@@ -574,7 +606,7 @@ class Matches:
             if ln["series_id"] is not None:
                 for r in c.execute("SELECT stream, COUNT(*) AS n FROM shots WHERE series_id=? GROUP BY stream", (ln["series_id"],)):
                     counts[r["stream"]] = r["n"]
-            lanes.append({**self.lane_clock(c, m, ln, now, run), "device_id": ln["device_id"], "lane": ln["lane"], "competitor": ln["competitor"], "pos": ln["final_pos"],
+            lanes.append({**self.lane_clock(c, m, ln, now, run), "device_id": ln["device_id"], "lane": ln["lane"], "fp": self.fp_of(ln), "competitor": ln["competitor"], "pos": ln["final_pos"],
                           "target": (t["name"] if t and t["name"] else ln["device_id"]), "series_id": ln["series_id"],
                           "online": bool(t) and now - t["last_seen_ms"] <= self.core.offline_after_ms,
                           "sighters": counts["sighter"], "record": counts["scored"],
@@ -587,6 +619,7 @@ class Matches:
                 "discharged_ms": self.discharged_at(c, m["id"]),
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
+                "fps": {str(ln["lane"]): ln["fp"] for ln in lanes},     # key -> firing point, for the flags and corrections lists
                 "move_extra_s": rb.move_extra(rb.book_of(fmt))[0], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)),
                 "interrupted": m["state"] == "paused" and bool(json.loads((c.execute("SELECT data FROM match_log WHERE match_id=? AND kind='pause' "
                                                                                      "ORDER BY id DESC LIMIT 1", (mid,)).fetchone() or {"data": "{}"})["data"] or "{}").get("interruption")),
@@ -616,11 +649,12 @@ class Matches:
         m = self._row(c, mid)
         fmt = json.loads(m["format_json"])
         lanes = self._lanes(c, mid)
-        lane_of, who_of = {}, {}
+        lane_of, who_of, fp = {}, {}, {}
         for ln in lanes:
             for d in self._lane_devs(c, mid, ln["device_id"]):
                 lane_of[d] = ln["lane"]
             who_of[ln["lane"]] = ln["competitor"] or ""
+            fp[ln["lane"]] = self.fp_of(ln)
         label = lambda i: fmt["phases"][i]["label"] if i is not None and 0 <= i < len(fmt["phases"]) else ""
         rows, later = [], rb.later_relay(rb.book_of(fmt))[1]
         for r in c.execute("SELECT * FROM match_log WHERE match_id=? ORDER BY id", (mid,)):
@@ -663,6 +697,8 @@ class Matches:
                          "what": x["kind"].replace("_", " ").capitalize() + (" · %s shot %s" % ("record" if shot["stream"] == "scored" else "sighting", shot["series_no"]) if shot else ""),
                          "detail": detail, "rule": d.get("rule") or "", "by": x["by"] or ""})
         rows.sort(key=lambda r: r["at_ms"])
+        for r in rows:
+            r["fp"] = fp.get(r["lane"], r["lane"])
         return {"match_id": mid, "name": m["name"], "format_name": fmt["name"], "rulebook": rb.BOOKS[rb.book_of(fmt)]["name"], "started_ms": m["started_ms"],
                 "ended_ms": m["ended_ms"], "official_ms": m["official_ms"], "rows": rows}
 
@@ -713,14 +749,14 @@ class Matches:
 
     def target_info(self, c, device_id: str, now: int) -> Optional[dict]:
         """What a target's own screen shows during a match (no login needed: read only)."""
-        r = c.execute("""SELECT m.*, l.lane, l.competitor FROM matches m JOIN match_lanes l ON l.match_id=m.id
+        r = c.execute("""SELECT m.*, l.lane, l.fp, l.competitor FROM matches m JOIN match_lanes l ON l.match_id=m.id
                          WHERE l.device_id=? AND m.state IN """ + ACTIVE_SQL + " ORDER BY m.id DESC LIMIT 1",
                       (device_id,)).fetchone()
         if r is None:
             return None
         run = self._run(c, r["id"])
         clock = self._clock(r, now)
-        clock.update({"match_id": r["id"], "name": r["name"], "lane": r["lane"], "competitor": r["competitor"],
+        clock.update({"match_id": r["id"], "name": r["name"], "lane": r["lane"], "fp": self.fp_of(r), "competitor": r["competitor"],
                       "in_record": run.switched(r["phase"], device_id) if r["phase"] >= 0 else False,
                       "sighters_any_time": rb.sighters_any_time(rb.book_of(json.loads(r["format_json"])))})
         ln = self._lane(c, r["id"], device_id)
@@ -775,7 +811,7 @@ class Matches:
             t = c.execute("SELECT name FROM targets WHERE device_id=?", (ln["device_id"],)).fetchone()
             name = ln["competitor"] or ""
             entries.append(dict(self.entry_view(shots, decimal), summary=ranking.summary(shots, mf.layout(fmt)), sort_name=(name.split() or [""])[-1], **x,
-                                lane=ln["lane"], device_id=ln["device_id"], competitor=name,
+                                lane=ln["lane"], fp=self.fp_of(ln), device_id=ln["device_id"], competitor=name,
                                 target=(t["name"] if t and t["name"] else ln["device_id"]),
                                 pending=sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])))
         rows = ranking.rank(entries, rules, decimal)

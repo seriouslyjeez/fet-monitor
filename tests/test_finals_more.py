@@ -184,8 +184,8 @@ class NraFinal(Drive, FinalCase):
         self.assertFalse(f["elim"])
         rows = {r["device_id"]: r for r in f["rows"]}
         self.assertEqual(rows["lane-5"]["total"], round(rows["lane-5"]["qual"] + rows["lane-5"]["final"], 1), "added (7.1.2 o)")
-        self.assertEqual(f["shoot_off_needed"], [[1, 2]])
-        self.m.shoot_off(mid, [1, 2], "md")
+        self.assertEqual(f["shoot_off_needed"], [[2, 3]], "Ames and Bell on Lanes 2 and 3 (A and B)")
+        self.m.shoot_off(mid, [2, 3], "md")
         so = [p for p in self.m.detail(mid)["format"]["phases"] if p.get("lanes")]
         self.assertEqual([(p["kind"], p["seconds"]) for p in so], [("pause", 5), ("pause", 4), ("record", 75)], "the same procedure (q)")
 

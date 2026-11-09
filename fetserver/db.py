@@ -452,6 +452,20 @@ MIGRATIONS = [
     -- access point. JSON; NULL for firmware that does not report it.
     ALTER TABLE targets ADD COLUMN link_json TEXT;
     """,
+    """
+    -- Lanes (2026-11-08): a range thinks in lanes, not targets. targets.lane: the target's lane number on this range,
+    -- each used once; NULL = a spare (no matches, never public). Targets already here are numbered in the order they
+    -- were first seen; a new target gets the lowest free number (core._touch); Range Control changes them.
+    -- match_lanes.fp: the firing point (lane number) a shooter is on now, which a move can change; match_lanes.lane
+    -- stays the shooter's key within the match (corrections and shoot-offs use it). NULL fp: a match from before
+    -- lanes, whose lane column was the order within the match.
+    ALTER TABLE targets ADD COLUMN lane INTEGER;
+    ALTER TABLE match_lanes ADD COLUMN fp INTEGER;
+    UPDATE targets SET lane = (SELECT COUNT(*) FROM targets t2 WHERE t2.removed=0 AND t2.banned=0 AND
+        (t2.first_seen_ms < targets.first_seen_ms OR (t2.first_seen_ms = targets.first_seen_ms AND t2.device_id <= targets.device_id)))
+        WHERE removed=0 AND banned=0;
+    CREATE UNIQUE INDEX targets_lane ON targets (lane) WHERE lane IS NOT NULL;
+    """,
 ]
 
 

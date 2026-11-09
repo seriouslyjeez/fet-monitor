@@ -321,6 +321,22 @@ assert(overlayView(unnamed, state(), 'Alice').includes('value="Alice – Practic
 assert.deepStrictEqual(['192.168.1.20', '10.0.0.255', 'fe80::1', '::1'].map(statusUrl), ['http://192.168.1.20/', 'http://10.0.0.255/', 'http://[fe80::1]/', 'http://[::1]/']);
 assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', null, undefined, ''].map(statusUrl), Array(8).fill(null));
 [asFree, asMine, asOther].forEach(f => assert(!overlayView(f(Object.assign({}, practiceT, {ip: '192.168.1.20'})), state(), '').includes('192.168.1.20'), 'not on the shooter\'s page (Range Control has it)'));
+// lanes (2026-11-08): every target shows its lane; spares last and never in a match
+{
+  const {byLane, laneOf, tName, fpKey, mcNew} = X;
+  assert.strictEqual(tName({lane: 3, name: 'Lane-3'}), 'Lane 3', 'a name that only repeats the lane is not shown twice');
+  assert.strictEqual(tName({lane: 3, name: 'North wall'}), 'Lane 3 · North wall');
+  assert.strictEqual(tName({lane: null, name: 'Old one'}), 'Old one (spare)');
+  assert.deepStrictEqual([{lane: null, name: 'z'}, {lane: 5, name: 'a'}, {lane: 2, name: 'b'}].sort(byLane).map(laneOf), ['Lane 2', 'Lane 5', 'Spare']);
+  assert(D.targets.every(t => Number.isInteger(t.lane)), 'the real server gives every target a lane');
+  assert(X.coachCard(Object.assign({}, T('lane-1'), {name: 'North', lane: 9})).includes('Lane 9 · North'), 'the target card shows its lane');
+  assert.strictEqual(fpKey({fps: {'1': 7}}, 1), 7, 'a moved shooter: key 1 is on Lane 7');
+  assert.strictEqual(fpKey({}, 4), 4, 'a match from before lanes keeps its numbers');
+  const nm = mcNew({targets: [{device_id: 'a', name: 'A', lane: 2, online: true}, {device_id: 'b', name: 'B', lane: null, online: true}],
+                    draft: {lanes: {b: {on: true}}}, formats: []});
+  assert(/data-mcl="a"(?![^>]*disabled)/.test(nm) && /data-mcl="b"[^>]*disabled/.test(nm) && !/data-mcl="b"[^>]*checked/.test(nm), 'a spare cannot be chosen');
+  assert(nm.includes('give it a lane in Range Control'));
+}
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));
 assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));
@@ -330,6 +346,8 @@ const rcData = {targets: D.targets.map(asOther), banned: [{device_id: 'bad-1', n
 const rcIn = s => rangeView(state({rc: Object.assign({status: {password_set: true, logged_in: true}, data: rcData}, s || {})}));
 const none = rcIn({sel: {}});
 assert.strictEqual(count(none, /data-act="rcsel"/g), D.targets.length, 'one checkbox per target');
+assert.strictEqual(count(none, /data-act="rclane"/g), D.targets.length, 'a lane button per target');
+assert(rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {lane: null})], banned: []}}})).includes('title="Change the lane">Spare</button>'), 'a spare says so');
 assert.strictEqual(count(none, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g), 6, 'bulk buttons disabled with nothing selected');
 assert(none.includes('data-act="rcunban" data-id="bad-1"') && none.includes('&lt;i&gt;Rogue') && !none.includes('<i>Rogue'));
 assert(!none.includes(D.targets.find(t => t.device_id === 'lane-2').name), 'hostile target names are escaped');
@@ -636,7 +654,7 @@ assert(kept.includes('value="Zed"') && kept.includes('id="np_details" open'), 'u
 const sheet = X.competitorSheet({comp: det, editp: {id: 5, given: 'Alan'}});
 assert(sheet.includes('data-pe="family"') && sheet.includes('value="Ames"') && sheet.includes('value="Alan"') && sheet.includes('data-act="mcpesave"') && sheet.includes('data-act="mcpdel"'));
 const onRelay = X.competitorSheet({comp: Object.assign({}, det, {competitors: [Object.assign({}, det.competitors[0], {relay: 2, lane: 4})]}), editp: {id: 5}});
-assert(onRelay.includes('On relay 2, firing point 4') && !onRelay.includes('mcpdel'), 'a competitor on a relay cannot be removed');
+assert(onRelay.includes('On relay 2, Lane 4') && !onRelay.includes('mcpdel'), 'a competitor on a relay cannot be removed');
 assert.strictEqual(X.competitorSheet({comp: det, editp: {id: 99}}), '');
 // a competitor chosen for one target is not offered for another
 const det2 = Object.assign({}, det, {competitors: [det.competitors[0], {id: 6, family: 'Brown', name: 'BROWN', relay: null}]});
@@ -772,7 +790,7 @@ console.log('OK');
   const cole = by('Cole'), brown = by('Brown'), ames = by('Ames');
   assert(cole.dq && cole.place === null && cole.dq.text.includes('two match officials'));
   const rp = resultsPage(C);
-  assert(/COLE Cy<\/td><td>Blue<\/td><td>1 · 3<\/td><td><\/td><td><\/td><td><b>DQ<\/b><\/td><td><\/td>/.test(rp), 'DQ in the total, no series, no place');
+  assert(/COLE Cy<\/td><td>Blue<\/td><td>1 · 8<\/td><td><\/td><td><\/td><td><b>DQ<\/b><\/td><td><\/td>/.test(rp), 'DQ in the total, no series, no place');
   assert(rp.includes('−2</span>') && rp.includes('<h3>Penalties</h3>') && rp.includes('CMP 7.22.1: Open rule violation'), 'penalty marked and explained');
   assert(!rp.includes('<i>J. Doe'), 'escaped');
   const card = scoreCards(C, String(ames.id));
@@ -781,14 +799,14 @@ console.log('OK');
   assert(scoreCards(C, String(cole.id)).includes('DISQUALIFIED') && scoreCards(C, String(cole.id)).includes('&lt;i&gt;J. Doe'), 'DQ on the card, escaped');
   assert(scoreCards(C, String(brown.id)).includes('<sup>P</sup>') && scoreCards(C, String(brown.id)).includes('Penalties: −2 CMP 7.22.1'));
   // the shot list: an officer can review/protest only; a director sees the tools and can settle the open protest
-  const L = D.laneShots, mcO = {status: {role: 'officer'}, shotp: {lane: 2, data: L}}, mcD = {status: {role: 'director'}, shotp: {lane: 2, data: L}};
+  const L = D.laneShots, mcO = {status: {role: 'officer'}, shotp: {lane: 7, data: L}}, mcD = {status: {role: 'director'}, shotp: {lane: 7, data: L}};   // Brown: Lane 7
   const o = shotSheet(mcO), dsh = shotSheet(mcD);
   assert(o.includes('data-k="protest"') && !o.includes('data-k="override"') && !o.includes('mcvoid') && !o.includes('data-k="dq"'), 'officer: mark only');
   assert(dsh.includes('data-k="override"') && dsh.includes('data-k="crossfire"') && dsh.includes('data-k="dq"') && dsh.includes('data-k="settle"'), 'director: all tools, settle');
-  const settle = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'settle', shot: L.shots.find(x => x.corrections.length).id, corr: L.shots.find(x => x.corrections.length).corrections[0].id, outcome: 'not_upheld'}}}));
+  const settle = shotSheet(Object.assign({}, mcD, {shotp: {lane: 7, data: L, form: {kind: 'settle', shot: L.shots.find(x => x.corrections.length).id, corr: L.shots.find(x => x.corrections.length).corrections[0].id, outcome: 'not_upheld'}}}));
   assert(settle.includes('2 points off this shot (ISSF 6.16.5.2 c)'), 'not upheld: the -2 suggested with the rule');
-  const cf = shotSheet(Object.assign({}, mcD, {shotp: {lane: 2, data: L, form: {kind: 'crossfire', shot: L.shots[0].id}}}));
-  assert(cf.includes('<option value="">unknown</option>') && cf.includes('Firing point 1') && !cf.includes('<option value="2"'), 'crossfire: the other firing points or unknown');
+  const cf = shotSheet(Object.assign({}, mcD, {shotp: {lane: 7, data: L, form: {kind: 'crossfire', shot: L.shots[0].id}}}));
+  assert(cf.includes('<option value="">unknown</option>') && cf.includes('Lane 6') && !cf.includes('<option value="7"'), 'crossfire: the other firing points or unknown');
   console.log('corrections OK');
 }
 

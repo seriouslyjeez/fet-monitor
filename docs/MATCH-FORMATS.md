@@ -416,6 +416,15 @@ a competition; the final then runs by its own book.
 
 ## How FeT Monitor does it (the same for every book; the rules above decide the numbers)
 
+### Lanes (0.7.17)
+- every target has a lane number on the range (Range Control → Targets), each used once; a target without one is a
+  spare: it cannot be entered in a match;
+- a match's firing points are its targets' lanes; a shooter keeps the lane number they joined with as their key for
+  corrections and shoot-offs, and the screens show the lane they are on now: moved onto another lane's target, that
+  lane; moved onto a spare put on the same stand, the same lane;
+- finals: position A is the lowest lane of the final, then B, C ...;
+- matches from before lanes keep their old numbers (the order within the match).
+
 ### Moving a shooter to another target (*Move…*)
 - the shooter's series goes with them to the new target, so their shots so far stay theirs; the old target leaves
   the match (a shot fired on it before the move still counts, even if it arrives later);

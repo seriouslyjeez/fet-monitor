@@ -248,14 +248,15 @@ class Competitions:
                               (*who, slot["match_id"], slot["device_id"]))
             elif cur is not None and cur["match_id"] == match_id:          # to a free target in the same relay
                 self._check_free(c, device_id)
-                c.execute("UPDATE match_lanes SET device_id=? WHERE match_id=? AND device_id=?", (device_id, match_id, cur["device_id"]))
+                fp = self.matches.target_lane(c, device_id)
+                c.execute("UPDATE match_lanes SET device_id=?, fp=? WHERE match_id=? AND device_id=?", (device_id, fp, match_id, cur["device_id"]))
             else:
                 self._check_free(c, device_id)
+                fp = self.matches.target_lane(c, device_id)
                 if cur is not None:
                     self._leave(c, cur)
-                lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (match_id,)).fetchone()[0] or 0) + 1
-                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
-                          (match_id, device_id, lane, name, competitor_id))
+                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
+                          (match_id, device_id, self.matches.new_key(c, match_id, fp), fp, name, competitor_id))
             self.matches._log(c, match_id, self.core.now_ms(), "seat", None, device_id, {"competitor_id": competitor_id, "by": by})
         self._pub(cid)
         self.matches._pub(match_id)
@@ -305,9 +306,9 @@ class Competitions:
                                      paced=comp["paced"], fmt=fmt, competition_id=comp["id"], relay=relay)
         with self.db.write() as c:
             if c.execute("SELECT 1 FROM match_lanes WHERE match_id=? AND device_id=?", (to, to_device)).fetchone() is None:
-                lane = (c.execute("SELECT MAX(lane) FROM match_lanes WHERE match_id=?", (to,)).fetchone()[0] or 0) + 1
-                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, competitor, competitor_id) VALUES (?,?,?,?,?)",
-                          (to, to_device, lane, ln["competitor"], ln["competitor_id"]))
+                fp = self.matches.target_lane(c, to_device)
+                c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
+                          (to, to_device, self.matches.new_key(c, to, fp), fp, ln["competitor"], ln["competitor_id"]))
             c.execute("UPDATE match_lanes SET start_phase=?, carry_shots=?, carry_ms=?, from_match=? WHERE match_id=? AND device_id=?",
                       (phase, fired, left, mid, to, to_device))
             c.execute("UPDATE match_lanes SET left_ms=?, to_match=?, moving_since_ms=NULL, moving_left_ms=NULL, extra_ms=0, own_phase=NULL, "
@@ -381,7 +382,7 @@ class Competitions:
             name = f"{comp['name']} - relay {r['relay']} final"
         else:
             if not isinstance(devices, list) or not devices or len(set(devices)) != len(devices):
-                raise MatchError("choose the targets for the final, in order (A, B, C ...)")
+                raise MatchError("choose the targets for the final (A is the lowest lane, then B, C ...)")
             want = min(8, len(devices)) if n is None else n
             if not isinstance(want, int) or isinstance(want, bool) or not 1 <= want <= min(8, len(devices)):
                 raise MatchError("finalists: 1 to 8, at most one per target")
@@ -396,7 +397,8 @@ class Competitions:
             if fk["draw"]:                               # firing points by random draw (AG 10.1.2, 3PAR 10.3.1, ISSF 6.17.1.2)
                 chosen = list(chosen)
                 random.SystemRandom().shuffle(chosen)
-            lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(devices, chosen)]
+            at = {d: self.matches.target_lane(c, d) for d in devices}            # position A is the lowest lane, then B ...
+            lanes = [{"device_id": d, "competitor": e["name"], "competitor_id": e["id"]} for d, e in zip(sorted(devices, key=at.get), chosen)]
             name = f"{comp['name']} - final" + (f" ({cls})" if cls else "")
         mid = self.matches.create(name, None, lanes, by, paced=paced, fmt=fmt, competition_id=cid, relay=None)
         with self.db.write() as w:
@@ -447,7 +449,7 @@ class Competitions:
                 off = [s["tenths"] for s in shots if phase_of(s["t"]) in off_phases]
                 q = qual.get(ln["competitor_id"], {})
                 ft = sum(s["tenths"] if fdec else s["ring"] * 10 for s in main) / 10.0
-                row = {"pos": ln["final_pos"], "lane": ln["lane"], "device_id": ln["device_id"], "id": ln["competitor_id"], "name": ln["competitor"] or "",
+                row = {"pos": ln["final_pos"], "lane": ln["lane"], "fp": self.matches.fp_of(ln), "device_id": ln["device_id"], "id": ln["competitor_id"], "name": ln["competitor"] or "",
                        "family": q.get("family", ""), "cls": q.get("cls", ""), "qual": q.get("total"), "final": ft, "shots": len(main),
                        "total": round((q.get("total") or 0) + ft, 1), "shoot_off": [v / 10.0 for v in off], "dq": x["dq"],
                        "counts": m["final_for"] is None or ln["competitor_id"] in top8, "summary": ranking.summary(main),
@@ -559,10 +561,10 @@ class Competitions:
         for p in c.execute("SELECT * FROM competitors WHERE competition_id=? ORDER BY family COLLATE NOCASE, given COLLATE NOCASE", (cid,)):
             ln = lanes.get(p["id"])
             people.append({"id": p["id"], "family": p["family"], "given": p["given"], "class": p["class"], "team": p["team"],
-                           "name": display_name(p), "relay": ln["relay"] if ln else None, "lane": ln["lane"] if ln else None,
+                           "name": display_name(p), "relay": ln["relay"] if ln else None, "lane": ln["lane"] if ln else None, "fp": self.matches.fp_of(ln) if ln else None,
                            "device_id": ln["device_id"] if ln else None})
         relays = [{"match_id": m["id"], "relay": m["relay"], "state": m["state"], "name": m["name"],
-                   "lanes": [{"device_id": l["device_id"], "lane": l["lane"], "competitor": l["competitor"], "competitor_id": l["competitor_id"]}
+                   "lanes": [{"device_id": l["device_id"], "lane": l["lane"], "fp": self.matches.fp_of(l), "competitor": l["competitor"], "competitor_id": l["competitor_id"]}
                              for l in c.execute("SELECT * FROM match_lanes WHERE match_id=? ORDER BY lane", (m["id"],))]}
                   for m in c.execute("SELECT * FROM matches WHERE competition_id=? AND final_kind IS NULL ORDER BY relay", (cid,)).fetchall()]
         return {"id": cid, "name": r["name"], "format": fmt, "team_size": r["team_size"], "best_count": bool(r["best_count"]),
@@ -595,7 +597,7 @@ class Competitions:
             for ln in c.execute("SELECT * FROM match_lanes WHERE match_id=?", (m["id"],)).fetchall():
                 if ln["competitor_id"] in people:
                     shots, x = self.matches.counted_row(c, m, ln, flags)
-                    part = {"shots": shots, "x": x, "relay": m["relay"], "lane": ln["lane"], "device_id": ln["device_id"],
+                    part = {"shots": shots, "x": x, "relay": m["relay"], "lane": self.matches.fp_of(ln), "device_id": ln["device_id"],
                             "pending": sum(1 for f in flags.values() if f["device_id"] == ln["device_id"] and not f["decision"])}
                     prev = found.get(ln["competitor_id"])
                     if prev is None:
