@@ -209,7 +209,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/v1/match/competitions" and method == "POST":
                 need_director()
                 cid = core.competitions.create(payload.get("name"), payload.get("format_id"), who, payload.get("override"),
-                                               payload.get("team_size"), bool(payload.get("best_count")), payload.get("paced") or "spoken")
+                                               payload.get("team_size"), bool(payload.get("best_count")), payload.get("paced") or "spoken",
+                                               publish=payload.get("publish") if isinstance(payload.get("publish"), bool) else None)
                 return self._send(200, core.competitions.detail(cid))
             cp = COMP_PUBLISH_RE.match(path)
             if cp and method == "POST":                    # the Match Director publishes (or not) on deepTENS
@@ -263,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/v1/match/matches" and method == "POST":
                 need_director()
                 mid = mc.create(payload.get("name"), payload.get("format_id"), payload.get("lanes"), who, payload.get("override"),
-                                payload.get("paced") or "spoken")
+                                payload.get("paced") or "spoken", publish=payload.get("publish") if isinstance(payload.get("publish"), bool) else None)
                 log.info("Match Control: %s created match %d", who, mid)
                 return self._send(200, mc.detail(mid))
             cr = CORR_RE.match(path)

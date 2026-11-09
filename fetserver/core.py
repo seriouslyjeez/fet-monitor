@@ -256,7 +256,19 @@ class Core:
                     acked.append([boot, seq])   # (boot_count, seq) is the event's identity
         if created:                         # after the commit, so a browser never sees an unsaved shot
             self.hub.publish({"type": "shot", "device_id": device_id})
+            self._deeptens_shot(device_id)
         return {"acked": acked, "rejected": rejected, "server_time_ms": recv_ms}
+
+    def _deeptens_shot(self, device_id: str) -> None:
+        """A shot in a match that is not official yet: deepTENS gets a new snapshot (live, shot by shot). The snapshot
+        is made in the link's own thread; here the match is only marked changed."""
+        dt = self.deeptens
+        if dt is None or not dt.linked:
+            return
+        r = self.db.conn().execute("""SELECT m.id FROM matches m JOIN match_lanes l ON l.match_id=m.id WHERE l.device_id=?
+                                      AND m.state!='ready' AND m.official_ms IS NULL ORDER BY m.id DESC LIMIT 1""", (device_id,)).fetchone()
+        if r is not None:
+            dt.changed("m", r["id"])
 
     def _store_event(self, c, device_id: str, req_boot: int, recv_ms: int, ev, req_uptime_ms: int = 0):
         if not isinstance(ev, dict):

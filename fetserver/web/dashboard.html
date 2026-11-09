@@ -1395,6 +1395,7 @@ function mcNew(mc) {
   const pc = d.paced || 'spoken';
   h += '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + ['spoken', 'officer', 'auto'].map(k =>
     '<button data-act="mcpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' + esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>';
+  if (S.dt && S.dt.linked) h += publishChoice(d, 'mcpubchoice');
   return h + '<div class="mcbar"><button class="pri" data-act="mccreate">Create match</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
 }
 function bookChoices(mc) {                       // [book id, name]: the books of the standard formats, then none
@@ -1547,7 +1548,7 @@ function mcConsole(mc) {
     (c.paced === 'spoken' && st !== 'done' && st !== 'aborted' && !ot ? (mc.speak ? '<button data-act="mcspeak" class="sel">Sound on · mute this device</button>'
       : '<button class="pri" data-act="mcspeak">Turn on sound for spoken commands</button>') : '') + '</div></div>' +
     commandsPanel(d) + finalPanel(d, director) + correctionsPanel(d, director) + officialPanel(d, director) +
-    (d.competition_id ? '' : publishPanel(d, director, S.dt && S.dt.linked, false));
+    publishPanel(d, director, S.dt && S.dt.linked, false);
   h += lanesPanel(d, mc, director);
   h += flagsPanel(d, mc, director);
   return h + '<div class="panel"><h3>Phases</h3>' + phaseTable(d.format, live ? c.phase : -1, false) + '</div>';
@@ -1763,25 +1764,33 @@ function finalPanel(d, director) {              // on a final's console: standin
     (f.shoot_off_needed.length ? '<div class="warnbox">Tied for ' + (f.tie_places === 3 ? 'a medal place' : 'a place') + ': a one-shot shoot-off, ' + esc(f.so_s) + ' seconds (' + esc(f.so_rule) + '). ' +
       (director ? f.shoot_off_needed.map(g => '<button class="pri" data-act="mcshootoff" data-lanes="' + g.join(',') + '">Shoot-off: lanes ' + g.map(k => fpKey(d, k)).join(', ') + '</button>').join(' ') : 'The match director starts it.') + '</div>' : '') + '</div>';
 }
-// deepTENS: the Match Director decides whether results go public there (P1: never without them). A single match: asked when it
-// ends, public once official, a Publish button once official, Unpublish. A competition: its finished relays show as
-// provisional, the whole as official once every relay is.
+// deepTENS: the Match Director decides whether results go public there (user, 2026-11-08). Asked when a match or competition is
+// created: published = public at once, shot by shot, provisional until official. If not, asked again when results are
+// made official. A Publish button on everything not published, and Unpublish. A relay is published with its competition.
+const PUB_TEXT = 'Published: public on deeptens.com at once, score by score, marked provisional until the results are official; names are shown as initials. ' +
+  'Not published: it still goes to your range on deepTENS privately, and you are asked again when you make the results official.';
+function publishChoice(draft, act) {            // the question on the New match / New competition forms (only while linked)
+  return '<h3 style="margin-top:12px">Publish live on deepTENS?</h3><div class="seg">' +
+    [[true, 'Yes, publish live'], [false, 'No']].map(([v, t]) => '<button data-act="' + act + '" data-v="' + (v ? 1 : 0) + '" class="' + (draft.publish === v ? 'sel' : '') + '"><b>' + t + '</b></button>').join('') +
+    '</div><p class="mut">' + PUB_TEXT + '</p>';
+}
+function askPublish(d, action, linked) {         // made official and not published: ask (a relay: its competition)
+  if (!d || !linked || !['make', 'override'].includes(action) || !d.official_ms) return null;
+  const relay = d.competition_id != null;
+  if ((relay ? d.competition_publish : d.publish_deeptens) === 1) return null;
+  return {question: 'The results are official. Publish ' + (relay ? 'this competition' : 'these results') + ' on deeptens.com?\n\nAnyone can see them there; names are shown as initials.' +
+    (relay ? ' Its other relays are published too, live while they are shot.' : ''), path: relay ? '/competitions/' + d.competition_id + '/publish' : '/matches/' + d.id + '/publish'};
+}
 function publishPanel(d, director, linked, comp) {
   if (!director || !linked) return '';
-  const p = d.publish_deeptens, id = d.id, kind = comp ? 'c' : 'm';
-  const ended = comp ? (d.relays || []).some(r => ['done', 'aborted'].includes(r.state)) : d.state === 'done';
-  const official = comp ? false : !!d.official_ms;
+  const relay = !comp && d.competition_id != null;
+  const p = comp ? d.publish_deeptens : relay ? d.competition_publish : d.publish_deeptens;
+  const id = relay ? d.competition_id : d.id, kind = comp || relay ? 'c' : 'm';
   const btn = (v, text, cls) => '<button' + (cls ? ' class="' + cls + '"' : '') + ' data-act="mcpublish" data-kind="' + kind + '" data-id="' + id + '" data-v="' + v + '">' + text + '</button>';
-  let h = '<div class="panel"><h3>deepTENS</h3>';
-  if (p === 1) h += '<p>Published on deepTENS: ' + (comp ? 'finished relays show as provisional; the results become official there when they are here.'
-      : official ? 'the results are public there.' : 'they become public there once they are official.') + '</p><div class="mcbar">' + btn(0, 'Unpublish') + '</div>';
-  else if (p == null && ended) h += '<p><b>Would you like to publish these results on deeptens.com?</b> ' +
-      (comp ? 'Finished relays show there as provisional until the results are official.' : 'They become public there once they are official.') +
-      ' Names are shown as initials.</p><div class="mcbar">' + btn(1, 'Yes, publish', 'pri') + btn(0, 'Not now') + '</div>';
-  else if (p === 0 && (official || comp)) h += '<p class="mut">Not published on deepTENS.</p><div class="mcbar">' + btn(1, 'Publish to deepTENS', 'pri') + '</div>';
-  else if (p === 0) h += '<p class="mut">Not published on deepTENS. "Publish to deepTENS" appears here once the results are official.</p>';
-  else h += '<p class="mut">You are asked whether to publish on deepTENS when the match ends.</p>';
-  return h + '</div>';
+  const what = relay ? 'This competition is' : 'This ' + (comp ? 'competition' : 'match') + ' is';
+  if (p === 1) return '<div class="panel"><h3>deepTENS</h3><p>' + what + ' <b>published live</b> on deepTENS: public, score by score, provisional until the results are official.</p>' +
+    '<div class="mcbar">' + btn(0, 'Unpublish') + '</div></div>';
+  return '<div class="panel"><h3>deepTENS</h3><p class="mut">' + what + ' not published on deepTENS' + (relay ? '' : '') + '.</p><div class="mcbar">' + btn(1, 'Publish to deepTENS', 'pri') + '</div></div>';
 }
 function officialPanel(d, director) {         // provisional -> posted (protest time) -> official
   if (d.state === 'ready') return '';
@@ -1824,6 +1833,7 @@ function mcCompNew(mc) {
     (f ? '<p class="mut">' + esc(f.edition || '') + ' · ' + esc(f.scoring) + ' scoring · ' + esc(f.book_name || '') + (f.book === 'NONE' ? ' (ties: ' + esc(f.tie_rules) + ' method)' : '') + ' · team size ' + esc(f.team_size) + '</p>' + phaseTable(f, -1, true, d.times) : '') +
     '<h3 style="margin-top:12px">Range commands</h3><div class="seg">' + PACE_KEYS.map(k => '<button data-act="mccpaced" data-v="' + k + '" class="' + (pc === k ? 'sel' : '') + '"><b>' +
       esc(PACE[k][0]) + '</b><br><span style="font-size:12px">' + esc(PACE[k][1]) + '</span></button>').join('') + '</div>' +
+    (S.dt && S.dt.linked ? publishChoice(mc.cdraft || {}, 'mccpubchoice') : '') +
     '<div class="mcbar"><button class="pri" data-act="mcccreate">Create competition</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
 }
 function mcCompPage(mc) {
@@ -2705,12 +2715,15 @@ async function matchAct(el, a) {
     if (show(res)) { mc.view = 'list'; toast('Format saved'); }
     return refresh();
   }
+  if (a === 'mcpubchoice') { mc.draft.publish = el.dataset.v === '1'; return render(true); }
+  if (a === 'mccpubchoice') { mc.cdraft.publish = el.dataset.v === '1'; return render(true); }
   if (a === 'mccreate') {
     const d = mc.draft, f = (mc.formats || []).find(x => x.id === d.format_id);
+    if (S.dt && S.dt.linked && typeof d.publish !== 'boolean') { mc.msg = 'Choose whether to publish this match live on deepTENS.'; return render(); }
     const lanes = (mc.targets || []).filter(t => (d.lanes[t.device_id] || {}).on).map(t => ({device_id: t.device_id, competitor: (d.lanes[t.device_id] || {}).competitor || ''}));
     let override;
     if (f && d.times && Object.keys(d.times).length) override = Object.assign({}, f, {phases: f.phases.map((p, i) => Object.assign({}, p, d.times[i] != null ? {seconds: d.times[i]} : {}))});
-    const res = await matchCall('/matches', {name: d.name || '', format_id: d.format_id || '', lanes: lanes, override: override, paced: d.paced || 'spoken'});
+    const res = await matchCall('/matches', {name: d.name || '', format_id: d.format_id || '', lanes: lanes, override: override, paced: d.paced || 'spoken', publish: d.publish});
     if (show(res)) { mc.view = 'console'; mc.open = res.data.id; mc.detail = res.data; }
     return refresh();
   }
@@ -2720,10 +2733,11 @@ async function matchAct(el, a) {
   if (a === 'mccopen') { mc.view = 'comp'; mc.copen = +el.dataset.id; mc.comp = null; mc.rdraft = {}; mc.msg = ''; return refresh(); }
   if (a === 'mcccreate') {
     const d = mc.cdraft, f = (mc.formats || []).find(x => x.id === d.format_id);
+    if (S.dt && S.dt.linked && typeof d.publish !== 'boolean') { mc.msg = 'Choose whether to publish this competition live on deepTENS.'; return render(); }
     let override;
     if (f && d.times && Object.keys(d.times).length) override = Object.assign({}, f, {phases: f.phases.map((p, i) => Object.assign({}, p, d.times[i] != null ? {seconds: d.times[i]} : {}))});
     const res = await matchCall('/competitions', {name: d.name || '', format_id: d.format_id || '', override: override, team_size: d.team_size != null ? +d.team_size : undefined,
-      best_count: !!d.best_count, paced: d.paced || 'spoken'});
+      best_count: !!d.best_count, paced: d.paced || 'spoken', publish: d.publish});
     if (show(res)) { mc.view = 'comp'; mc.copen = res.data.id; mc.comp = res.data; mc.rdraft = {}; }
     return refresh();
   }
@@ -2839,7 +2853,7 @@ async function matchAct(el, a) {
   }
   if (a === 'mcpublish') {
     const on = el.dataset.v === '1', what = el.dataset.kind === 'c' ? '/competitions/' : '/matches/';
-    if (on && !confirm('Publish these results on deeptens.com? Anyone can see them there' + (el.dataset.kind === 'c' ? ' (finished relays as provisional).' : ' once they are official.') + ' Names are shown as initials.')) return;
+    if (on && !confirm('Publish on deeptens.com? Anyone can see it there at once, score by score, provisional until the results are official. Names are shown as initials.')) return;
     const res = await matchCall(what + el.dataset.id + '/publish', {publish: on});
     if (res.status !== 200) mc.msg = (res.data && res.data.error) || 'error ' + res.status;
     return refresh();
@@ -2853,6 +2867,8 @@ async function matchAct(el, a) {
     if (!confirm(ask)) return;
     const res = await matchCall('/matches/' + mc.open + '/official', {action: k === 'override' ? 'make' : k, override: k === 'override'});
     if (!show(res)) toast(mc.msg); else toast({reopen: 'Results reopened', post: 'Preliminary results posted', make: 'Results are official', override: 'Results are official'}[k]);
+    const p = askPublish(res.status === 200 ? res.data : null, k, S.dt && S.dt.linked);
+    if (p && confirm(p.question)) await matchCall(p.path, {publish: true});
     return refresh();
   }
   if (a === 'mcshots') { mc.shotp = {lane: +el.dataset.lane, data: null, form: null}; mc.msg = ''; await loadShots(mc); return render(); }
@@ -3220,7 +3236,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {publishPanel, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

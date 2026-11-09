@@ -40,7 +40,8 @@ class Competitions:
             self.core.deeptens.changed("c", cid)
 
     def set_publish(self, cid: int, publish: bool, by: str) -> None:
-        """The Match Director's choice: publish this competition on deepTENS (finished relays provisional, then official)."""
+        """The Match Director's choice: publish this competition on deepTENS (live shot by shot, provisional until its
+        results are official)."""
         with self.db.write() as c:
             self._row(c, cid)
             c.execute("UPDATE competitions SET publish_deeptens=? WHERE id=?", (1 if publish else 0, cid))
@@ -53,7 +54,8 @@ class Competitions:
         return r
 
     # ------------------------------------------------------------------------------------------- settings
-    def create(self, name, fmt_id, by: str, override: Optional[dict] = None, team_size=None, best_count=False, paced="spoken") -> int:
+    def create(self, name, fmt_id, by: str, override: Optional[dict] = None, team_size=None, best_count=False, paced="spoken",
+               publish: Optional[bool] = None) -> int:
         if not isinstance(name, str) or not name.strip():
             raise MatchError("the competition needs a name")
         base = self.matches.format(fmt_id) if isinstance(fmt_id, str) else None
@@ -72,10 +74,13 @@ class Competitions:
         self._check_team(size, best_count)
         if paced not in PACING:
             raise MatchError("commands: spoken, officer or auto")
+        self.matches.check_publish_choice(publish, True)
         with self.db.write() as c:
             cid = c.execute("INSERT INTO competitions (name, format_json, team_size, best_count, paced, created_ms, created_by) "
                             "VALUES (?,?,?,?,?,?,?)", (name.strip()[:80], json.dumps(fmt), size, int(bool(best_count)), paced,
                                                        self.core.now_ms(), by)).lastrowid
+            if isinstance(publish, bool):
+                c.execute("UPDATE competitions SET publish_deeptens=? WHERE id=?", (1 if publish else 0, cid))
         self._pub(cid)
         return cid
 

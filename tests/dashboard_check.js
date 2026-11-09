@@ -353,24 +353,35 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
   assert(deeptensPanel(Object.assign({}, base, {linked: true, range: {name: 'R'}, connected: true})).includes('Connected.'));
   assert.strictEqual(deeptensPanel(null), '');
 }
-// publishing on deepTENS: the Match Director's choice
+// publishing on deepTENS (user, 2026-11-08): asked at creation; live when published; asked again at official; a button
 {
-  const {publishPanel} = X;
-  const m = o => Object.assign({id: 4, state: 'done', official_ms: null, publish_deeptens: null}, o || {});
+  const {publishPanel, publishChoice, askPublish} = X;
+  const m = o => Object.assign({id: 4, state: 'running', official_ms: null, publish_deeptens: 0, competition_id: null}, o || {});
   assert.strictEqual(publishPanel(m(), false, true, false), '', 'directors only');
   assert.strictEqual(publishPanel(m(), true, false, false), '', 'only when this Pi is linked');
-  const ask = publishPanel(m(), true, true, false);
-  assert(ask.includes('Would you like to publish these results on deeptens.com?') && ask.includes('data-v="1"') && ask.includes('Not now'), 'asked when it ends');
-  assert(!publishPanel(m({state: 'running'}), true, true, false).includes('Would you like'), 'not while it runs');
-  assert(publishPanel(m({publish_deeptens: 0}), true, true, false).includes('appears here once the results are official') &&
-         !publishPanel(m({publish_deeptens: 0}), true, true, false).includes('data-act="mcpublish"'), 'not now: the button waits for official');
-  assert(publishPanel(m({publish_deeptens: 0, official_ms: 5}), true, true, false).includes('>Publish to deepTENS</button>'), 'official: Publish to deepTENS');
-  const pub = publishPanel(m({publish_deeptens: 1}), true, true, false);
-  assert(pub.includes('once they are official') && pub.includes('>Unpublish</button>') && pub.includes('data-kind="m"'));
-  assert(publishPanel(m({publish_deeptens: 1, official_ms: 5}), true, true, false).includes('the results are public there'));
-  const comp = publishPanel({id: 2, publish_deeptens: null, relays: [{state: 'done'}, {state: 'ready'}]}, true, true, true);
-  assert(comp.includes('Would you like') && comp.includes('as provisional') && comp.includes('data-kind="c"'), 'a competition: asked after its first relay');
-  assert(!publishPanel({id: 2, publish_deeptens: null, relays: [{state: 'ready'}]}, true, true, true).includes('Would you like'));
+  const no = publishPanel(m(), true, true, false);
+  assert(no.includes('not published') && no.includes('>Publish to deepTENS</button>') && no.includes('data-kind="m"') && no.includes('data-id="4"'), 'a button on every unpublished match, even running');
+  const live = publishPanel(m({publish_deeptens: 1}), true, true, false);
+  assert(live.includes('published live') && live.includes('score by score') && live.includes('>Unpublish</button>'));
+  const relay = publishPanel(m({id: 9, competition_id: 2, competition_publish: null, publish_deeptens: null}), true, true, false);
+  assert(relay.includes('This competition is not published') && relay.includes('data-kind="c" data-id="2"'), 'a relay: its competition');
+  assert(publishPanel({id: 2, publish_deeptens: 1}, true, true, true).includes('data-kind="c" data-id="2" data-v="0"'));
+  assert(publishPanel(m({id: 9, competition_id: 2, competition_publish: 1, publish_deeptens: null}), true, true, false).includes('published live'), 'a relay of a published competition is live');
+  const ch = publishChoice({}, 'mcpubchoice');
+  assert(ch.includes('Publish live on deepTENS?') && ch.includes('data-act="mcpubchoice" data-v="1"') && !ch.includes('class="sel"'), 'a choice with nothing chosen');
+  assert(publishChoice({publish: false}, 'x').includes('data-v="0" class="sel"'));
+  assert.strictEqual(askPublish(m({official_ms: 5}), 'post', true), null, 'only when made official');
+  assert.strictEqual(askPublish(m({official_ms: 5}), 'make', false), null, 'only while linked');
+  assert.strictEqual(askPublish(m({official_ms: 5, publish_deeptens: 1}), 'make', true), null, 'not when already published');
+  assert.strictEqual(askPublish(m({official_ms: 5}), 'make', true).path, '/matches/4/publish');
+  const ar = askPublish(m({id: 9, official_ms: 5, competition_id: 2, competition_publish: 0}), 'override', true);
+  assert(ar.path === '/competitions/2/publish' && ar.question.includes('this competition'), 'each relay made official asks for its competition');
+  const prevDt = X.S.dt;
+  X.S.dt = {linked: true};
+  assert(X.mcNew({targets: [], draft: {lanes: {}}, formats: []}).includes('Publish live on deepTENS?'), 'the New match form asks while linked');
+  X.S.dt = {linked: false};
+  assert(!X.mcNew({targets: [], draft: {lanes: {}}, formats: []}).includes('Publish live on deepTENS?'), 'not when unlinked');
+  X.S.dt = prevDt;
 }
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));

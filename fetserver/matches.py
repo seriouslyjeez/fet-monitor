@@ -79,7 +79,8 @@ class Matches:
             self.core.deeptens.changed("m", match_id)
 
     def set_publish(self, mid: int, publish: bool, by: str) -> None:
-        """The Match Director's choice: publish this single match's results on deepTENS (public once official), or not."""
+        """The Match Director's choice: publish this single match on deepTENS (public at once, provisional until
+        official, shot by shot while it runs), or not."""
         with self.db.write() as c:
             m = self._row(c, mid)
             if m["competition_id"] is not None:
@@ -186,7 +187,8 @@ class Matches:
         return ln["fp"] if ln["fp"] is not None else ln["lane"]
 
     def create(self, name, fmt_id, lanes, by: str, override: Optional[dict] = None, paced: str = "spoken",
-               fmt: Optional[dict] = None, competition_id: Optional[int] = None, relay: Optional[int] = None) -> int:
+               fmt: Optional[dict] = None, competition_id: Optional[int] = None, relay: Optional[int] = None,
+               publish: Optional[bool] = None) -> int:
         """A match in state 'ready'. lanes: [{"device_id", "competitor"}]; each target must have a lane (its firing point,
         and the order on every screen). override: a full format
         (e.g. the standard one with a longer first sighting period, CMP 3PAR 5.3.1 d); it is marked as modified."""
@@ -205,6 +207,7 @@ class Matches:
                 fmt["modified"] = True
         if paced not in PACING:
             raise MatchError("commands: spoken, officer (read by the range officer) or auto (no commands)")
+        self.check_publish_choice(publish, competition_id is None)
         if not isinstance(lanes, list) or not 1 <= len(lanes) <= MAX_LANES:
             raise MatchError(f"choose 1 to {MAX_LANES} targets")
         seen = set()
@@ -231,9 +234,18 @@ class Matches:
                 c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor, competitor_id) VALUES (?,?,?,?,?,?)",
                           (mid, ln["device_id"], lane, lane, comp, ln.get("competitor_id")))
                 self.core.wake_in(c, ln["device_id"])     # a sleeping target ignores shots: never in a match
+            if competition_id is None and isinstance(publish, bool):
+                c.execute("UPDATE matches SET publish_deeptens=? WHERE id=?", (1 if publish else 0, mid))
             self._log(c, mid, now, "created", None, None, {"by": by})
         self._pub(mid)
         return mid
+
+    def check_publish_choice(self, publish, asked: bool) -> None:
+        """While this Pi is linked to deepTENS, the Match Director says when creating a match (or competition) whether
+        it is published live there (user, 2026-11-08)."""
+        dt = self.core.deeptens
+        if asked and dt is not None and dt.linked and not isinstance(publish, bool):
+            raise MatchError("choose whether to publish this live on deepTENS (yes or no)")
 
     # ------------------------------------------------------------------------------------------- running
     @staticmethod
@@ -628,6 +640,8 @@ class Matches:
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
                 "discharged_ms": self.discharged_at(c, m["id"]), "publish_deeptens": m["publish_deeptens"],
+                "competition_publish": (c.execute("SELECT publish_deeptens FROM competitions WHERE id=?", (m["competition_id"],)).fetchone() or [None])[0]
+                if m["competition_id"] is not None else None,
                 "created_ms": m["created_ms"], "started_ms": m["started_ms"], "ended_ms": m["ended_ms"],
                 "record_shots": mf.record_shots(fmt), "clock": self._clock(m, now), "lanes": lanes,
                 "fps": {str(ln["lane"]): ln["fp"] for ln in lanes},     # key -> firing point, for the flags and corrections lists

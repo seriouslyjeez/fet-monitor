@@ -282,17 +282,21 @@ for deepTENS ever blocks shooting. Each item is a whole snapshot with a key and 
 - **data**: FeT Monitor's results view of the match or competition (the same JSON as its results pages, with each
   shooter's shots), plus `"state"`, `"official"` (true once the results are official) and `"publish"` (the Match
   Director's choice, below). Names are as typed in Match Control.
-- **When**: a snapshot is queued when a match or competition changes state (started, finished, posted, official,
-  reopened), when a correction or decision changes its results, and when its Match Director publishes or unpublishes.
-  Matches that never started are not sent.
+- **When**: a snapshot is queued after every shot in a match that is not official yet, when a match or competition
+  changes state (started, finished, posted, official, reopened), when a correction or decision changes its results,
+  and when its Match Director publishes or unpublishes. Snapshots are made in the link's own thread; changes that come
+  together go as one. Matches that never started are not sent.
 - A rejected item (malformed) is kept, marked, and shown in Range Control; it is not retried.
 
 ### Publishing
-`"publish": true` is the Match Director's choice on the Pi ("Would you like to publish these results on
-deeptens.com?" when a match ends; "Publish to deepTENS" once official; "Unpublish"). deepTENS shows a match publicly
-only when publish is true and its results are official; in a competition, each finished relay shows as provisional and
-the whole becomes official only when the competition's results are. Names typed in Match Control are shown publicly
-as initials; full names only for competitors linked to a deepTENS athlete profile, by that athlete's own choice.
+`"publish": true` is the Match Director's choice on the Pi (user, 2026-11-08). While the Pi is linked, creating a
+match or a competition asks "Publish live on deepTENS?" (yes or no, nothing preselected). Published: public on
+deepTENS at once, updated shot by shot while it is shot (record shots and scores, never sighters), marked provisional
+until its results are official. Not published: it still goes to the range privately, and making its results official
+(each relay's, in a competition) asks again. A "Publish to deepTENS" button sits on everything not published, and
+"Unpublish" on everything published. A relay or final is published with its competition. Names typed in Match
+Control are shown publicly as initials; full names only for competitors linked to a deepTENS athlete profile, by
+that athlete's own choice.
 
 ### Retrying
 On a network error, a 5xx or 429, the Pi waits 2 s, then doubles up to 60 s; a success resets it. Uploads go oldest

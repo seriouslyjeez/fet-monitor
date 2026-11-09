@@ -339,7 +339,9 @@ class OverHttp(MatchHttpBase):
 
 
 class Publishing(MatchCase):
-    """What goes to deepTENS as a match runs, and the Match Director's choice to publish (P1 Q2, answers 7-9)."""
+    """What goes to deepTENS as a match runs, and the Match Director's choice to publish (user, 2026-11-08: asked when
+    the match is created; published = public at once and live shot by shot, provisional until official; if not, asked
+    again when its results are made official; a Publish button on every unpublished match)."""
     def setUp(self):
         super().setUp()
         tmp = tempfile.TemporaryDirectory()
@@ -348,7 +350,7 @@ class Publishing(MatchCase):
         self.addCleanup(self.fake.close)
         self.dt = DeepTens(self.core, tmp.name, clock=lambda: self.clock.t / 1000, name=lambda: "Club Pi")
         self.core.deeptens = self.dt
-        self.fid = self.custom([("record", 60, 2)])
+        self.fid = self.custom([("sight", 30, 0), ("record", 60, 2)])
 
     def link(self):
         self.dt.start_link(self.fake.url)
@@ -365,49 +367,69 @@ class Publishing(MatchCase):
     def sent(self, key):
         return self.fake.stored.get(key, (0, None))
 
-    def finished(self):
-        mid = self.m.create("Night", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md")
-        self.m.start(mid, "md")
-        self.shoot("lane-1"); self.shoot("lane-1")
-        self.at(61)
-        self.assertEqual(self.m.detail(mid)["state"], "done")
-        return mid
+    def shots_sent(self, key):
+        return self.sent(key)[1]["classes"][0]["individuals"][0]["shots"]
 
-    def test_nothing_goes_up_unless_linked(self):
-        self.finished()
-        self.link()
-        self.deliver()
-        self.assertEqual(self.fake.stored, {}, "matches from before the link stay on the Pi")
+    def make(self, publish):
+        return self.m.create("Night", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md", publish=publish)
 
-    def test_a_match_goes_up_private_then_public_when_published_and_official(self):
+    def test_the_choice_is_required_while_linked(self):
+        first = self.make(None)                             # not linked: no question
+        self.core.results.delete_matches([first], [], "md")
         self.link()
-        mid = self.m.create("Night", self.fid, [{"device_id": "lane-1", "competitor": "Jane Smith"}], "md")
+        with self.assertRaisesRegex(MatchError, "publish this live on deepTENS"):
+            self.make(None)
+        with self.assertRaisesRegex(MatchError, "publish this live on deepTENS"):
+            self.core.competitions.create("League", self.fid, "md")
+        no = self.make(False)
+        self.assertEqual(self.m.detail(no)["publish_deeptens"], 0)
+        self.core.results.delete_matches([no], [], "md")
+        self.assertEqual(self.m.detail(self.make(True))["publish_deeptens"], 1)
+        self.assertEqual(self.core.competitions.detail(self.core.competitions.create("Cup", self.fid, "md", publish=True))["publish_deeptens"], 1)
+
+    def test_published_at_creation_goes_live_shot_by_shot(self):
+        self.link()
+        mid = self.make(True)
         self.deliver()
-        self.assertEqual(self.fake.stored, {}, "a match that never started is not sent")
+        self.assertEqual(self.fake.stored, {}, "not before it starts")
         self.m.start(mid, "md")
-        self.shoot("lane-1"); self.shoot("lane-1")
-        self.at(61)
+        self.shoot("lane-1")                                # a sighter: never public
+        self.at(31)                                         # record
+        self.shoot("lane-1")
         self.deliver()
         rev, data = self.sent(f"m{mid}")
-        self.assertEqual((data["state"], data["publish"], data["official"]), ("done", False, False))
-        self.assertEqual(data["classes"][0]["individuals"][0]["shots"], 2)
-        self.assertIn("shot_list", data["classes"][0]["individuals"][0], "with the shots")
-        self.assertIsNone(self.m.detail(mid)["publish_deeptens"], "not asked yet")
-        self.m.set_publish(mid, True, "md")
+        self.assertEqual((data["publish"], data["official"], data["state"]), (True, False, "running"), "public at once, provisional")
+        self.assertEqual(self.shots_sent(f"m{mid}"), 1, "the record shot only, not the sighter")
+        self.assertTrue(all(x.get("stream", "scored") == "scored" for x in data["classes"][0]["individuals"][0]["shot_list"]))
+        self.shoot("lane-1")
+        self.assertTrue(self.dt.dirty, "a shot marks the match changed")
         self.deliver()
-        self.assertEqual((self.sent(f"m{mid}")[1]["publish"], self.sent(f"m{mid}")[1]["official"]), (True, False), "published: public once official")
+        self.assertEqual(self.shots_sent(f"m{mid}"), 2, "score by score")
+        self.at(91)
         self.m.post_results(mid, "md")
         self.m.make_official(mid, "md", override=True)
         self.deliver()
-        self.assertGreater(self.sent(f"m{mid}")[0], rev)
         self.assertEqual(self.sent(f"m{mid}")[1]["official"], True)
         self.m.set_publish(mid, False, "md")
         self.deliver()
         self.assertEqual(self.sent(f"m{mid}")[1]["publish"], False, "unpublished")
 
+    def test_not_published_goes_up_privately_and_can_be_published_later(self):
+        self.link()
+        mid = self.make(False)
+        self.m.start(mid, "md")
+        self.at(31)
+        self.shoot("lane-1")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1]["publish"], False, "private to the range")
+        self.m.set_publish(mid, True, "md")
+        self.deliver()
+        self.assertEqual(self.sent(f"m{mid}")[1]["publish"], True)
+
     def test_snapshots_are_made_in_the_link_thread(self):
         self.link()
-        self.finished()
+        mid = self.make(False)
+        self.m.start(mid, "md")
         self.assertEqual(self.dt.outbox_count(), 0, "the match code only marks it changed")
         self.assertTrue(self.dt.dirty)
         self.deliver()
@@ -415,8 +437,9 @@ class Publishing(MatchCase):
 
     def test_deleted_results_and_deleted_matches(self):
         self.link()
-        mid = self.finished()
-        self.m.set_publish(mid, True, "md")
+        mid = self.make(True)
+        self.m.start(mid, "md")
+        self.at(91)
         self.deliver()
         self.core.results.delete_results([f"m{mid}"], "md")
         self.deliver()
@@ -431,25 +454,27 @@ class Publishing(MatchCase):
         self.deliver()
         self.assertNotIn("m99999", self.fake.stored, "never sent: nothing to delete")
 
-    def test_a_relay_is_sent_with_its_competition(self):
+    def test_a_relay_is_sent_live_with_its_competition(self):
         self.link()
         cc = self.core.competitions
-        cid = cc.create("League", self.fid, "md")
+        cid = cc.create("League", self.fid, "md", publish=False)
         a = cc.save_competitor(cid, {"family": "Smith", "given": "Jane"})
         rid = cc.add_relay(cid, [{"device_id": "lane-1", "competitor_id": a}], "md")
+        self.assertIsNone(self.m.detail(rid)["publish_deeptens"], "a relay is not asked: its competition was")
         with self.assertRaisesRegex(MatchError, "competition"):
             self.m.set_publish(rid, True, "md")
         cc.set_publish(cid, True, "md")
+        self.assertEqual(self.m.detail(rid)["competition_publish"], 1)
         self.deliver()
         self.assertEqual(self.fake.stored, {}, "no relay started yet")
         self.m.start(rid, "md")
-        self.shoot("lane-1"); self.shoot("lane-1")
-        self.at(61)
+        self.at(31)
+        self.shoot("lane-1")
         self.deliver()
         self.assertNotIn(f"m{rid}", self.fake.stored)
         data = self.sent(f"c{cid}")[1]
-        self.assertEqual((data["publish"], data["official"]), (True, False), "published, provisional while not official")
-        self.assertEqual(cc.detail(cid)["publish_deeptens"], 1)
+        self.assertEqual((data["publish"], data["official"]), (True, False), "live, provisional")
+        self.assertEqual(self.shots_sent(f"c{cid}"), 1, "shot by shot in a relay too")
 
 
 class PublishOverHttp(MatchHttpBase):
