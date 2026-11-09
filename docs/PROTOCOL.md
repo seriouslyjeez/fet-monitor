@@ -301,3 +301,30 @@ that athlete's own choice.
 ### Retrying
 On a network error, a 5xx or 429, the Pi waits 2 s, then doubles up to 60 s; a success resets it. Uploads go oldest
 first. The heartbeat is sent even while uploads wait, so the icon tells the truth.
+
+### Signing in on the Pi through deepTENS (P1 step 3, built 2026-11-08)
+Range Control and Match Control keep their local passwords (the Pi's own way in, set only at the Pi). A linked Pi
+also lets the range's staff in through deepTENS, with an authorization-code flow shaped like OpenID Connect but
+without signed tokens: the Pi itself exchanges the code over its own authenticated link, so nothing on the Pi has
+to check a signature (Python's standard library could not).
+1. `GET /signin/deeptens/start?to=range|match` on the Pi remembers a random `state` (10 minutes, used once) and sends
+   the browser to `<deepTENS>/monitor/signin/?monitor=<id>&state=…&redirect_uri=http://<the Pi's address>/signin/deeptens/callback`.
+2. deepTENS asks for a strong sign-in, shows "signing in on <Monitor> at <range> as <roles>", and on Continue sends
+   the browser back with `?code=…&state=…`. It only sends browsers back to that callback path on a private or loopback
+   address, `localhost` or a `.local` name; a person with no staff role at the range is stopped there.
+3. The Pi checks the state and calls `POST /api/monitor/v1/signin/exchange` `{"code"}` (with its token):
+   `{"user": {"user_id", "name", "email"}, "roles": [...]}`. A code works once, within 2 minutes, and only for the
+   Monitor it was made for.
+4. Range Manager → Range Control, and Match Control as director; Match Director → Match Control as director; Range
+   Officer → Match Control as range officer. The sessions last like password sessions (2 h idle, 12 h at most).
+
+**The roster.** `POST /api/monitor/v1/roster` → `{"range", "members": [{"user_id", "name", "email", "roles",
+"passcode"}], "issued_ms"}`, fetched every 10 minutes and after each sign-in, kept in `<data dir>/deeptens-roster.json`
+(mode 600). `passcode` is the person's offline passcode as a slow hash in the Pi's own format
+(`{"alg": "pbkdf2-sha256", "iter": 310000, "salt", "hash"}`), never the passcode. A session made through deepTENS
+ends when a roster fetched after it no longer gives the role, or when the Pi is unlinked.
+
+**Offline.** `POST /api/v1/signin/offline` `{"email", "passcode"}` (from the FeT Monitor page) signs a staff member in
+when the internet is down, checked against the roster; it stops working once the roster is 30 days old. Wrong
+passcodes lock the address out like wrong passwords (5 in 10 minutes). Passcodes are set on deepTENS (at least 10
+characters, not only digits).
