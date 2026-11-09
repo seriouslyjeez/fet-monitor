@@ -30,6 +30,8 @@ ROSTER_MAX_AGE_S = 30 * 86400                    # offline sign-in stops working
 SIGNIN_TTL_S = 600                               # a sign-in started on the Pi must come back within this long
 LANES_S = 2                                      # the public lane board: at most this often, and only when changed
 LANES_REFRESH_S = 30                             # ... or this often unchanged (so deepTENS knows the lanes are alive)
+MARK_MAX = 64 * 1024                             # the deepTENS mark, downloaded once after linking: a small PNG only
+MARK_MAX_PX = 256
 BACKOFF_MIN_S, BACKOFF_MAX_S = 2, 60
 BATCH_ITEMS, BATCH_BYTES = 20, 7 << 20          # deepTENS takes 20 items, 8 MB unpacked
 REQUEST_TIMEOUT_S = 20                           # each connect and each read
@@ -55,6 +57,26 @@ def check_url(url: str) -> str:
     return u.geturl()
 
 
+def http_get_bytes(url: str, limit: int) -> bytes:
+    """GET a small file; OSError on failure or when it is larger than limit."""
+    req = urllib.request.Request(url, headers={"User-Agent": "FeT-Monitor"})
+    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_S) as r:
+        if r.status != 200:
+            raise OSError(f"HTTP {r.status}")
+        data = r.read(limit + 1)
+    if len(data) > limit:
+        raise OSError("too large")
+    return data
+
+
+def is_small_png(data: bytes, max_px: int = MARK_MAX_PX) -> bool:
+    """A PNG (its signature and first chunk, IHDR) no larger than max_px on either side."""
+    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n" or data[12:16] != b"IHDR":
+        return False
+    w, h = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    return 0 < w <= max_px and 0 < h <= max_px
+
+
 def http_post(url: str, path: str, body: dict, token: Optional[str] = None, compress: bool = False) -> Tuple[int, dict]:
     """POST JSON; (status, JSON answer). A network failure raises OSError. Certificates are checked (system store)."""
     data = json.dumps(body, separators=(",", ":")).encode()
@@ -78,8 +100,8 @@ def http_post(url: str, path: str, body: dict, token: Optional[str] = None, comp
 
 class DeepTens:
     def __init__(self, core, data_dir, post: Callable = http_post, clock: Callable[[], float] = time.time,
-                 name: Callable[[], str] = lambda: "FeT Monitor", version: str = ""):
-        self.core, self.post, self.clock, self.name, self.version = core, post, clock, name, version
+                 name: Callable[[], str] = lambda: "FeT Monitor", version: str = "", get: Callable = http_get_bytes):
+        self.core, self.post, self.clock, self.name, self.version, self.get = core, post, clock, name, version, get
         self.path = Path(data_dir) / "deeptens.json" if data_dir is not None else None
         self.lock = threading.Lock()
         self.conf = self._load()
@@ -96,6 +118,8 @@ class DeepTens:
         self.next_roster = 0.0
         self.signins = {}                               # state -> (where to, expires): sign-ins started here
         self.lane_board = False                         # the range's public lane board is on (deepTENS says, in heartbeats)
+        self.mark_path = Path(data_dir) / "deeptens-mark.png" if data_dir is not None else None
+        self.next_mark = 0.0
         self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
 
     # ---------------------------------------------------------------------------------------------- the settings file
@@ -292,6 +316,30 @@ class DeepTens:
         else:
             self.next_roster = now + 60
 
+    # ------------------------------------------------------------------------------------------------- the mark
+    def mark(self) -> Optional[bytes]:
+        """The deepTENS mark this Pi downloaded (served at /deeptens-mark.png for the icon), or None."""
+        try:
+            data = self.mark_path.read_bytes() if self.mark_path is not None and self.mark_path.exists() else None
+        except OSError:
+            return None
+        return data if data and is_small_png(data) else None
+
+    def _fetch_mark(self, now: float) -> None:
+        """Once, after linking: deepTENS's mark is its own, not part of FeT Monitor (NOTICE). Only a small PNG is kept:
+        it is shown on the Pi's own pages, where an SVG's scripts could run."""
+        self.next_mark = now + 3600
+        try:
+            data = self.get(self.conf["url"] + API + "/brand/mark.png", MARK_MAX)
+        except OSError:
+            return
+        if not is_small_png(data):
+            log.warning("deepTENS sent a mark that is not a small PNG: ignored")
+            return
+        tmp = self.mark_path.with_name("deeptens-mark.png.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, self.mark_path)
+
     # ------------------------------------------------------------------------------------------ the public lane board
     def lanes_payload(self) -> list:
         """Every target with a lane as the public board shows it (P1 Q2 answer 6). In a published match: its
@@ -420,6 +468,8 @@ class DeepTens:
             return 5.0
         if self.dirty:
             self._snapshots(now)
+        if self.mark_path is not None and now >= self.next_mark and self.mark() is None:
+            self._fetch_mark(now)
         if now >= self.next_roster:
             self._fetch_roster(now)
             if not self.linked:

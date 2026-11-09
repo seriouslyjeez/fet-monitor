@@ -604,6 +604,48 @@ class LaneBoard(MatchCase):
         self.assertEqual(len(self.fake.lane_posts), n + 1, "the current state, once deepTENS answers again")
 
 
+class Mark(LinkCase):
+    """deepTENS's mark is downloaded once linked (never part of FeT Monitor), only as a small PNG, and served by the Pi."""
+    PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x60\x00\x00\x00\x60\x08\x06\x00\x00\x00" + b"\x00" * 40
+
+    def test_downloaded_once_linked_and_checked(self):
+        calls = []
+        self.dt.get = lambda url, limit: (calls.append(url), self.PNG)[1]
+        self.dt.step()
+        self.assertEqual(calls, [], "not linked: nothing")
+        self.link()
+        self.dt.step()
+        self.assertTrue(calls[0].endswith("/api/monitor/v1/brand/mark.png"))
+        self.assertEqual(self.dt.mark(), self.PNG)
+        self.dt.step(); self.dt.step()
+        self.assertEqual(len(calls), 1, "once")
+
+    def test_only_a_small_png(self):
+        self.link()
+        for bad in (b"<svg onload=alert(1)>", self.PNG[:20], self.PNG.replace(b"\x00\x00\x00\x60\x00\x00\x00\x60", b"\x00\x00\x10\x00\x00\x00\x00\x60")):
+            self.dt.get = lambda url, limit, b=bad: b
+            self.dt.next_mark = 0
+            self.dt.step()
+            self.assertIsNone(self.dt.mark(), bad[:12])
+        def down(url, limit):
+            raise OSError("no route")
+        self.dt.get, self.dt.next_mark = down, 0
+        self.dt.step()
+        self.assertGreater(self.dt.next_mark, self.clock.t + 3000, "tried again within the hour")
+
+
+class MarkOverHttp(MatchHttpBase):
+    def test_served_by_the_pi(self):
+        self.server.deeptens = DeepTens(self.core, self.dir)
+        self.assertEqual(self.req("GET", "/deeptens-mark.png", header=False)[0], 404, "not downloaded yet")
+        (self.dir / "deeptens-mark.png").write_bytes(Mark.PNG)
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+        c.request("GET", "/deeptens-mark.png")
+        r = c.getresponse()
+        self.assertEqual((r.status, r.getheader("Content-Type"), r.read()), (200, "image/png", Mark.PNG))
+        self.assertEqual(r.getheader("Content-Security-Policy"), "default-src 'none'")
+
+
 RM = {"user_id": 1, "name": "Rita Manager", "email": "rm@example.com", "roles": ["range_manager"]}
 RO = {"user_id": 2, "name": "Otto Officer", "email": "ro@example.com", "roles": ["range_officer"]}
 

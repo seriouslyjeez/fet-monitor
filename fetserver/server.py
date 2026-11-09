@@ -944,6 +944,17 @@ class Handler(BaseHTTPRequestHandler):
         rf = RULEBOOK_FILE_RE.match(url.path)
         if rf:
             return self._rulebook_file(rf.group(1))
+        if url.path == "/deeptens-mark.png":           # the deepTENS mark, downloaded from deepTENS once linked (never shipped here)
+            data = self.server.deeptens.mark() if self.server.deeptens is not None else None
+            if data is None:
+                return self._send(404, {"error": "not downloaded"})
+            self.send_response(200)
+            for k, v in (("Content-Type", "image/png"), ("Content-Length", str(len(data))), ("Cache-Control", "public, max-age=86400"),
+                         ("X-Content-Type-Options", "nosniff"), ("Content-Security-Policy", "default-src 'none'")):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if url.path == "/api/v1/deeptens":             # public: only whether this Pi is linked and reaching deepTENS (the icon)
             st = self.server.deeptens.status() if self.server.deeptens is not None else {"linked": False, "connected": False, "roster_ok": False}
             return self._send(200, {"linked": st["linked"], "connected": st["connected"], "roster_ok": st["roster_ok"]})

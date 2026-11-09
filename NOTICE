@@ -13,6 +13,6 @@ folder) and a small launcher, all under esptool's license, GPL-2.0-or-later (fet
 Debian's esptool package leaves those stubs out; the flash station runs esptool through the launcher as a separate
 program so it can write the ESP32-S3 board.
 
-The deepTENS name and mark (the round target drawn in fetserver/web/dashboard.html as DT_MARK, shown when this Pi
-is linked to deepTENS) are not under the MIT License. They are the brand of deepTENS (deeptens.com), owned by Jake
-Miller, and may be used only to refer to deepTENS. Forks that link to another service should remove them.
+The deepTENS name and mark are not under the MIT License. They are the brand of deepTENS (deeptens.com), owned by
+Jake Miller, and may be used only to refer to deepTENS. FeT Monitor does not include the mark: a Pi linked to deepTENS
+downloads it from there (fetserver/deeptens.py) to show the deepTENS icon.

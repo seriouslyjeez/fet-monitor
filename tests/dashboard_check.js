@@ -340,7 +340,8 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
 // deepTENS: the icon and Range Control -> This Pi
 {
   const {deeptensPanel, dtIcon} = X;
-  assert(dtIcon({connected: true}).includes('class="ball on"') && dtIcon({connected: false}).includes('class="ball"') && dtIcon({}).includes('<svg'), 'the mark with a green or red ball');
+  assert(dtIcon({connected: true}).includes('class="ball on"') && dtIcon({connected: false}).includes('class="ball"') && dtIcon({}).includes('<img src="/deeptens-mark.png"'), 'the mark with a green or red ball');
+  assert(!html.includes('M58.50 0L10.20'), 'the mark itself is not in FeT Monitor: it is downloaded from deepTENS');
   const base = {linked: false, url: 'https://deeptens.com:8443', range: null, connected: false, outbox: 0, rejected: [], lane_conflicts: [], error: '', linking: null};
   const off = deeptensPanel(base);
   assert(off.includes('data-act="rcdtlink"') && off.includes('value="https://deeptens.com:8443"') && !off.includes('rcdtunlink'), 'not linked: the address and Link');
