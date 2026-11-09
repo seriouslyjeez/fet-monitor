@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import queue
+import html
 import re
 import sqlite3
 import time
@@ -14,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from . import __version__
-from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, Admin
+from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_PATH, MIN_PASSWORD, Admin, hash_password, verify_password
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
@@ -78,6 +79,89 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    STAFF = {"range_manager", "match_director", "range_officer"}
+
+    @staticmethod
+    def _session_cookies(toks: dict) -> list:
+        out = []
+        if toks.get("rc"):
+            out.append(("Set-Cookie", f"{COOKIE}={toks['rc']}; Path={COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age={ADMIN_MAX_S}"))
+        if toks.get("match"):
+            out.append(("Set-Cookie", f"{MATCH_COOKIE}={toks['match']}; Path={MATCH_COOKIE_PATH}; HttpOnly; SameSite=Strict; Max-Age={ADMIN_MAX_S}"))
+        return out
+
+    def _html(self, status: int, title: str, text: str, back: str = "/#/range") -> None:
+        body = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>%s</title>"
+                "<body style='font-family:system-ui;max-width:560px;margin:40px auto;padding:0 16px'><h1>%s</h1><p>%s</p>"
+                "<p><a href='%s'>Back to FeT Monitor</a></p>" % (html.escape(title), html.escape(title), html.escape(text), html.escape(back))).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _redirect(self, where: str, headers=()) -> None:
+        self.send_response(302)
+        self.send_header("Location", where)
+        for k, v in headers:
+            self.send_header(k, v)
+        self.send_header("Content-Length", "0")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
+    def _dt_signin(self, path: str, q: dict) -> None:
+        """Sign in with deepTENS (P1 step 3): /signin/deeptens/start?to=range|match sends the browser to deepTENS; it
+        comes back to /signin/deeptens/callback with a one-time code the Pi exchanges itself over its link."""
+        dt, admin = self.server.deeptens, self.server.admin
+        if dt is None:
+            return self._html(404, "Sign in with deepTENS", "This FeT Monitor has no deepTENS link.")
+        if path.endswith("/start"):
+            to = (q.get("to") or ["range"])[0]
+            to = to if to in ("range", "match") else "range"
+            host = self.headers.get("Host", "")
+            if not re.fullmatch(r"[A-Za-z0-9.\-]{1,100}(:[0-9]{1,5})?|\[[0-9A-Fa-f:.]{2,60}\](:[0-9]{1,5})?", host):
+                return self._html(400, "Sign in with deepTENS", "Open FeT Monitor by its address and try again.")
+            try:
+                return self._redirect(dt.start_signin(to, f"http://{host}/signin/deeptens/callback"))
+            except LinkError as exc:
+                return self._html(400, "Sign in with deepTENS", str(exc), "/#/" + to)
+        try:
+            to, user, roles = dt.finish_signin((q.get("code") or [""])[0], (q.get("state") or [""])[0])
+        except LinkError as exc:
+            return self._html(400, "Sign-in did not work", str(exc))
+        if not self.STAFF & set(roles):
+            return self._html(403, "No staff role", f"{user.get('email', '')} has no staff role at this range on deepTENS. "
+                              "Its Range Manager can give one.", "/#/" + to)
+        toks = admin.dt_sessions(user, roles, int(dt.clock() * 1000))
+        log.warning("Signed in with deepTENS from %s: %s (%s)", self.client_address[0], user.get("email"), ", ".join(roles))
+        return self._redirect("/#/" + to, self._session_cookies(toks))
+
+    def _signin_offline(self) -> None:
+        """No internet: a staff member signs in with their email and offline passcode, checked against the roster
+        (at most 30 days old)."""
+        admin, dt = self.server.admin, self.server.deeptens
+        payload = self._read_json()
+        if not isinstance(payload, dict):
+            raise BadRequest("body must be an object")
+        addr, now = self.client_address[0], admin.now()
+        wait = admin._throttled(addr, now)
+        if wait:
+            return self._send(429, {"error": "too many wrong passcodes", "retry_after": wait}, headers=[("Retry-After", str(wait))])
+        email, code = payload.get("email"), payload.get("passcode")
+        m = dt.member(email=email) if dt is not None and isinstance(email, str) else None
+        rec = m.get("passcode") if m else None
+        if not isinstance(code, str) or not rec or not verify_password(code, rec):
+            if not rec:
+                verify_password(str(code), hash_password("x" * MIN_PASSWORD))   # the same work either way: no probing for staff
+            admin._failed(addr, now)
+            log.warning("Offline sign-in refused for %r from %s", str(email)[:60], addr)
+            return self._send(401, {"error": "wrong email or passcode, or this Pi has no recent staff list from deepTENS"})
+        toks = admin.dt_sessions({"user_id": m.get("user_id"), "name": m.get("name"), "email": m.get("email")}, m.get("roles", []),
+                                 int(dt.clock() * 1000), how="offline passcode")
+        log.warning("Offline sign-in from %s: %s (%s)", addr, m.get("email"), ", ".join(m.get("roles", [])))
+        return self._send(200, {"range_control": "rc" in toks, "match_control": "match" in toks}, headers=self._session_cookies(toks))
 
     def _read_json(self):
         try:
@@ -840,6 +924,8 @@ class Handler(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         core: Core = self.server.core
         q = parse_qs(url.query)
+        if url.path in ("/signin/deeptens/start", "/signin/deeptens/callback"):
+            return self._dt_signin(url.path, q)
         if url.path in ("/", "/index.html") or DISPLAY_PAGE_RE.match(url.path):
             return self._page()
         if url.path.startswith("/api/v1/admin/"):
@@ -859,8 +945,8 @@ class Handler(BaseHTTPRequestHandler):
         if rf:
             return self._rulebook_file(rf.group(1))
         if url.path == "/api/v1/deeptens":             # public: only whether this Pi is linked and reaching deepTENS (the icon)
-            st = self.server.deeptens.status() if self.server.deeptens is not None else {"linked": False, "connected": False}
-            return self._send(200, {"linked": st["linked"], "connected": st["connected"]})
+            st = self.server.deeptens.status() if self.server.deeptens is not None else {"linked": False, "connected": False, "roster_ok": False}
+            return self._send(200, {"linked": st["linked"], "connected": st["connected"], "roster_ok": st["roster_ok"]})
         if url.path == "/api/v1/health":
             return self._send(200, {"ok": True, "version": __version__, "time": iso(core.now_ms()),
                                     "event_conflicts": core.conflict_count(), "activity": core.activity()})
@@ -945,6 +1031,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._admin(url.path, "POST")
         if url.path.startswith("/api/v1/match/"):
             return self._match(url.path, "POST")
+        if url.path == "/api/v1/signin/offline":
+            if not self._admin_request_ok():
+                self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
+                return self._send(403, {"error": "sign-in requests must come from the FeT Monitor page"})
+            return self._signin_offline()
         if url.path in ("/api/v1/events", "/api/v1/heartbeat"):
             if not self._device_auth():
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))
@@ -1028,6 +1119,8 @@ class FetHTTPServer(ThreadingHTTPServer):
                  target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None):
         super().__init__(addr, Handler)
         self.deeptens = deeptens                      # the link to deepTENS (None: not available, e.g. tests)
+        if deeptens is not None and admin is not None:
+            admin.dt_ok = deeptens.still_has          # sessions made through deepTENS last while the roster gives the role
         self.esp32_firmware = esp32_firmware if esp32_firmware is not None else Esp32FirmwareStore(None)
         self.target_firmware = target_firmware if target_firmware is not None else (
             flash.target_images if flash is not None and flash.target_images is not None else TargetFirmwareStore(None))

@@ -14,7 +14,10 @@ from pathlib import Path
 from fetserver.core import Core
 from fetserver.db import Database
 from fetserver.deeptens import DeepTens, LinkError, check_url
+from fetserver.admin import hash_password
 from fetserver.matches import MatchError
+import http.client
+from urllib.parse import parse_qs, urlparse
 from tests.test_match_http import MatchHttpBase
 from tests.test_matches import MatchCase
 
@@ -31,6 +34,8 @@ class FakeDeepTens:
         self.heartbeats = []
         self.reject_keys = set()
         self.during_items = None         # called while an items request is being answered (a race with the Pi)
+        self.members = []                # the roster: staff of the range
+        self.codes = {}                  # one-time sign-in code -> {"user", "roles"}
         fake = self
 
         class H(BaseHTTPRequestHandler):
@@ -77,6 +82,11 @@ class FakeDeepTens:
         if path == "/api/monitor/v1/heartbeat":
             self.heartbeats.append(body)
             return 200, {"ok": True, "lane_conflicts": [2] if any(x["lane"] == 2 for x in body["lanes"]) else []}
+        if path == "/api/monitor/v1/roster":
+            return 200, {"range": {"id": 3, "name": "Riverside"}, "members": self.members}
+        if path == "/api/monitor/v1/signin/exchange":
+            who = self.codes.pop(body.get("code"), None)
+            return (200, who) if who else (410, {"error": "not valid"})
         if path == "/api/monitor/v1/unlink":
             self.linked = False
             return 200, {"ok": True}
@@ -318,7 +328,7 @@ class OverHttp(MatchHttpBase):
         self.server.deeptens = DeepTens(self.core, self.dir, name=lambda: "Club Pi", version="0.7.18")
 
     def test_range_control_links_and_the_icon_is_public(self):
-        self.assertEqual(self.req("GET", "/api/v1/deeptens", header=False)[1], {"linked": False, "connected": False}, "public: just the icon's state")
+        self.assertEqual(self.req("GET", "/api/v1/deeptens", header=False)[1], {"linked": False, "connected": False, "roster_ok": False}, "public: just the icon's state")
         self.assertEqual(self.req("POST", "/api/v1/admin/deeptens/link", {"url": self.fake.url})[0], 401, "Range Control only")
         st, _, cookie = self.req("POST", "/api/v1/admin/login", {"password": "range-pass"})
         self.cookies["admin"] = cookie.split(";")[0]
@@ -333,7 +343,7 @@ class OverHttp(MatchHttpBase):
         st, body, _ = self.req("GET", "/api/v1/admin/deeptens", None, "admin")
         self.assertEqual((body["linked"], body["range"]["name"]), (True, "Riverside"))
         self.assertNotIn("token", json.dumps(body), "the token never leaves the Pi")
-        self.assertEqual(self.req("GET", "/api/v1/deeptens", header=False)[1], {"linked": True, "connected": True})
+        self.assertEqual(self.req("GET", "/api/v1/deeptens", header=False)[1], {"linked": True, "connected": True, "roster_ok": False})
         st, body, _ = self.req("POST", "/api/v1/admin/deeptens/unlink", {}, "admin")
         self.assertEqual((st, body["linked"], self.fake.linked), (200, False, False))
 
@@ -493,6 +503,108 @@ class PublishOverHttp(MatchHttpBase):
         st, body, _ = self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "md")
         self.assertEqual((st, body["publish_deeptens"]), (200, 1))
         self.assertEqual(self.req("POST", f"/api/v1/match/competitions/{cid}/publish", {"publish": True}, "ro")[0], 403)
+
+
+RM = {"user_id": 1, "name": "Rita Manager", "email": "rm@example.com", "roles": ["range_manager"]}
+RO = {"user_id": 2, "name": "Otto Officer", "email": "ro@example.com", "roles": ["range_officer"]}
+
+
+class SigningIn(MatchHttpBase):
+    """Range Control and Match Control through deepTENS (P1 step 3): online with a one-time code, offline with a
+    passcode checked against the roster; sessions end when a newer roster no longer gives the role."""
+    def setUp(self):
+        super().setUp()
+        self.fake = FakeDeepTens()
+        self.addCleanup(self.fake.close)
+        self.t = [1_800_000_000.0]
+        self.dt = DeepTens(self.core, self.dir, clock=lambda: self.t[0], name=lambda: "Club Pi")
+        self.server.deeptens = self.dt
+        self.server.admin.dt_ok = self.dt.still_has
+        pc = hash_password("range-day-42", alg="pbkdf2-sha256")
+        self.fake.members = [dict(RM, passcode=pc), dict(RO, passcode=pc)]
+        self.dt.start_link(self.fake.url)
+        self.fake.approved = True
+        self.dt.next_poll = 0
+        self.dt.step()
+        self.dt.step()                                       # fetches the roster
+
+    def raw(self, method, path, body=None, cookies=""):
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+        h = {"Content-Type": "application/json", "X-FET-Admin": "1", "Cookie": cookies}
+        c.request(method, path, body=json.dumps(body).encode() if body is not None else None, headers=h)
+        r = c.getresponse()
+        out = (r.status, r.read().decode(), r.getheader("Location"), [v.split(";")[0] for k, v in r.getheaders() if k == "Set-Cookie"])
+        c.close()
+        return out
+
+    def logged_in(self, cookies):
+        rc = json.loads(self.raw("GET", "/api/v1/admin/status", cookies=cookies)[1])["logged_in"]
+        mc = json.loads(self.raw("GET", "/api/v1/match/status", cookies=cookies)[1])
+        return rc, mc.get("role") if mc["logged_in"] else None
+
+    def test_the_roster_is_kept_privately_and_ages(self):
+        st = self.dt.status()
+        self.assertEqual((st["roster_ok"], st["staff"]), (True, 2))
+        path = self.dir / "deeptens-roster.json"
+        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
+        self.assertEqual(self.dt.member(email="RM@example.com")["user_id"], 1, "email in any case")
+        self.t[0] += 30 * 86400 + 1
+        self.assertIsNone(self.dt.member(email="rm@example.com"), "older than 30 days: no offline sign-in")
+        self.assertFalse(self.dt.status()["roster_ok"])
+
+    def test_offline_with_a_passcode(self):
+        st, _, _, cookies = self.raw("POST", "/api/v1/signin/offline", {"email": "rm@example.com", "passcode": "range-day-42"})
+        self.assertEqual(st, 200)
+        self.assertEqual(self.logged_in("; ".join(cookies)), (True, "director"), "a Range Manager: Range Control, and Match Control as director")
+        st, _, _, cookies = self.raw("POST", "/api/v1/signin/offline", {"email": "ro@example.com", "passcode": "range-day-42"})
+        self.assertEqual(self.logged_in("; ".join(cookies)), (False, "officer"), "a Range Officer: Match Control only")
+        self.assertEqual(self.raw("POST", "/api/v1/signin/offline", {"email": "ro@example.com", "passcode": "wrong-one-99"})[0], 401)
+        self.assertEqual(self.raw("POST", "/api/v1/signin/offline", {"email": "nobody@example.com", "passcode": "range-day-42"})[0], 401)
+        for _ in range(4):
+            self.raw("POST", "/api/v1/signin/offline", {"email": "ro@example.com", "passcode": "wrong-one-99"})
+        self.assertEqual(self.raw("POST", "/api/v1/signin/offline", {"email": "ro@example.com", "passcode": "range-day-42"})[0], 429, "locked out")
+
+    def test_online_with_deeptens(self):
+        st, _, where, _ = self.raw("GET", "/signin/deeptens/start?to=match")
+        self.assertEqual(st, 302)
+        u = urlparse(where)
+        q = parse_qs(u.query)
+        self.assertEqual((u.scheme + "://" + u.netloc + u.path, q["monitor"]), (self.fake.url + "/monitor/signin/", ["7"]))
+        self.assertEqual(q["redirect_uri"], ["http://127.0.0.1:%d/signin/deeptens/callback" % self.server.server_address[1]])
+        self.fake.codes["good"] = {"user": {"user_id": 1, "name": "Rita Manager", "email": "rm@example.com"}, "roles": ["range_manager"]}
+        st, _, where, cookies = self.raw("GET", "/signin/deeptens/callback?code=good&state=" + q["state"][0])
+        self.assertEqual((st, where), (302, "/#/match"))
+        self.assertEqual(self.logged_in("; ".join(cookies)), (True, "director"))
+        self.fake.codes["again"] = self.fake.codes["forged"] = {"user": {"user_id": 1, "email": "rm@example.com"}, "roles": ["range_manager"]}
+        st, body, _, cookies = self.raw("GET", "/signin/deeptens/callback?code=again&state=" + q["state"][0])
+        self.assertEqual((st, cookies), (400, []), "a state is used once, even with a good code")
+        st, _, _, cookies = self.raw("GET", "/signin/deeptens/callback?code=forged&state=forged")
+        self.assertEqual((st, cookies), (400, []), "only sign-ins started on this Pi")
+        self.assertIn("again", self.fake.codes, "refused before asking deepTENS")
+
+    def test_no_staff_role_no_session(self):
+        q = parse_qs(urlparse(self.raw("GET", "/signin/deeptens/start")[2]).query)
+        self.fake.codes["c"] = {"user": {"user_id": 9, "email": "athlete@example.com"}, "roles": []}
+        st, body, _, cookies = self.raw("GET", "/signin/deeptens/callback?code=c&state=" + q["state"][0])
+        self.assertEqual((st, cookies), (403, []))
+        self.assertIn("no staff role", body)
+
+    def test_a_role_taken_away_ends_the_session_at_the_next_roster(self):
+        _, _, _, cookies = self.raw("POST", "/api/v1/signin/offline", {"email": "rm@example.com", "passcode": "range-day-42"})
+        cookies = "; ".join(cookies)
+        self.fake.members = [m for m in self.fake.members if m["user_id"] != 1]
+        self.assertEqual(self.logged_in(cookies), (True, "director"), "until the Pi hears about it")
+        self.t[0] += 601
+        self.dt.step()
+        self.assertEqual(self.logged_in(cookies), (False, None))
+
+    def test_unlinking_ends_deeptens_sessions_and_the_roster(self):
+        _, _, _, cookies = self.raw("POST", "/api/v1/signin/offline", {"email": "rm@example.com", "passcode": "range-day-42"})
+        self.dt.unlink()
+        self.assertEqual(self.logged_in("; ".join(cookies)), (False, None))
+        self.assertFalse((self.dir / "deeptens-roster.json").exists())
+        self.assertEqual(self.dt.status()["staff"], 0, "and forgotten in memory")
+        self.assertEqual(self.raw("GET", "/signin/deeptens/start")[0], 400)
 
 
 if __name__ == "__main__":

@@ -10,13 +10,14 @@ import ipaddress
 import json
 import logging
 import os
+import secrets
 import threading
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 log = logging.getLogger("fetserver.deeptens")
 
@@ -24,6 +25,9 @@ DEFAULT_URL = "https://deeptens.com:8443"       # until deepTENS goes public (th
 API = "/api/monitor/v1"
 HEARTBEAT_S = 30
 CONNECTED_S = 90                                 # green while the last success is younger than this
+ROSTER_S = 600                                   # the staff roster is fetched again after this long
+ROSTER_MAX_AGE_S = 30 * 86400                    # offline sign-in stops working when the roster is older (P1 Q3)
+SIGNIN_TTL_S = 600                               # a sign-in started on the Pi must come back within this long
 BACKOFF_MIN_S, BACKOFF_MAX_S = 2, 60
 BATCH_ITEMS, BATCH_BYTES = 20, 7 << 20          # deepTENS takes 20 items, 8 MB unpacked
 REQUEST_TIMEOUT_S = 20                           # each connect and each read
@@ -85,6 +89,10 @@ class DeepTens:
         self.next_hb = self.next_send = self.next_poll = 0.0
         self.wake = threading.Event()
         self.dirty = set()                              # (kind, id) changed since the last snapshot: "m" match, "c" competition
+        self.roster_path = Path(data_dir) / "deeptens-roster.json" if data_dir is not None else None
+        self.roster = self._load_roster()               # {"members": [...], "fetched_ms", "range"}: who may sign in, and how
+        self.next_roster = 0.0
+        self.signins = {}                               # state -> (where to, expires): sign-ins started here
 
     # ---------------------------------------------------------------------------------------------- the settings file
     def _load(self) -> dict:
@@ -105,6 +113,23 @@ class DeepTens:
         os.chmod(tmp, 0o600)
         os.replace(tmp, self.path)
 
+    def _load_roster(self) -> dict:
+        try:
+            r = json.loads(self.roster_path.read_text()) if self.roster_path and self.roster_path.exists() else {}
+        except (OSError, ValueError):
+            r = {}
+        return r if isinstance(r, dict) and isinstance(r.get("members"), list) else {}
+
+    def _save_roster(self) -> None:
+        if self.roster_path is None:
+            return
+        tmp = self.roster_path.with_name("deeptens-roster.json.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(self.roster, f)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, self.roster_path)
+
     @property
     def linked(self) -> bool:
         return bool(self.conf.get("token"))
@@ -117,7 +142,8 @@ class DeepTens:
                     "connected": self.linked and now - self.last_ok < CONNECTED_S,
                     "last_ok_ms": int(self.last_ok * 1000) if self.last_ok else None, "error": self.error,
                     "outbox": self.outbox_count(), "rejected": self.rejected(), "lane_conflicts": self.lane_conflicts,
-                    "unlinked_remotely": bool(self.conf.get("unlinked_remotely")),
+                    "unlinked_remotely": bool(self.conf.get("unlinked_remotely")), "roster_ok": self.roster_fresh(),
+                    "roster_ms": self.roster.get("fetched_ms"), "staff": len(self.roster.get("members", [])),
                     "linking": {"user_code": lk["user_code"], "uri": lk["uri"], "uri_complete": lk["uri_complete"],
                                 "expires_ms": int(lk["until"] * 1000)} if lk else None}
 
@@ -165,6 +191,9 @@ class DeepTens:
             self._save()
             self.linking, self.last_ok, self.lane_conflicts = None, 0.0, []
             self.error = "unlinked on deepTENS" if remotely else ""
+            self.roster = {}                            # nobody signs in through a link that is gone
+            if self.roster_path is not None and self.roster_path.exists():
+                self.roster_path.unlink()
         with self.core.db.write() as c:                 # what was waiting belonged to that link
             c.execute("DELETE FROM deeptens_outbox")
             c.execute("DELETE FROM deeptens_revs")
@@ -188,6 +217,76 @@ class DeepTens:
         if c.execute("UPDATE deeptens_outbox SET rev=?, data=?, queued_ms=?, rejected=NULL WHERE key=?", (rev, blob, now_ms, key)).rowcount == 0:
             c.execute("INSERT INTO deeptens_outbox (kind, key, rev, data, queued_ms) VALUES (?,?,?,?,?)", (kind, key, rev, blob, now_ms))
         return rev
+
+    # -------------------------------------------------------------------------------------------- staff and sign-in
+    def roster_fresh(self) -> bool:
+        f = self.roster.get("fetched_ms")
+        return self.linked and isinstance(f, (int, float)) and self.clock() * 1000 - f < ROSTER_MAX_AGE_S * 1000
+
+    def member(self, user_id=None, email=None) -> Optional[dict]:
+        """A staff member from the roster, by deepTENS id or email (any case); None if not there or the roster is stale."""
+        if not self.roster_fresh():
+            return None
+        for p in self.roster.get("members", []):
+            if (user_id is not None and p.get("user_id") == user_id) or (email and str(p.get("email", "")).lower() == email.strip().lower()):
+                return p
+        return None
+
+    def still_has(self, user_id, role: str, since_ms: int) -> bool:
+        """A session made through deepTENS stays valid until a roster fetched after it no longer gives the role."""
+        f = self.roster.get("fetched_ms")
+        if not self.linked:
+            return False
+        if not isinstance(f, (int, float)) or f <= since_ms:
+            return True
+        p = self.member(user_id=user_id)
+        return bool(p) and role in p.get("roles", [])
+
+    def start_signin(self, to: str, redirect_uri: str) -> str:
+        """The deepTENS address to send a browser to for "Sign in with deepTENS" (to: range or match)."""
+        if not self.linked or not self.conf.get("monitor_id"):
+            raise LinkError("this Pi is not linked to deepTENS")
+        state = secrets.token_urlsafe(24)
+        now = self.clock()
+        with self.lock:
+            self.signins = {k: v for k, v in self.signins.items() if v[1] > now}
+            self.signins[state] = (to, now + SIGNIN_TTL_S)
+        return self.conf["url"] + "/monitor/signin/?" + urlencode({"monitor": self.conf["monitor_id"], "state": state, "redirect_uri": redirect_uri})
+
+    def finish_signin(self, code: str, state: str) -> tuple:
+        """(where to, {"user_id", "name", "email"}, roles) for a browser back from deepTENS; LinkError otherwise."""
+        with self.lock:
+            got = self.signins.pop(state, None) if isinstance(state, str) else None
+        if got is None or got[1] <= self.clock():
+            raise LinkError("this sign-in was not started here, or took too long: start again")
+        if not isinstance(code, str) or not code:
+            raise LinkError("deepTENS sent no sign-in code")
+        try:
+            st, r = self._call("/signin/exchange", {"code": code})
+        except OSError as exc:
+            raise LinkError(f"deepTENS could not be reached ({exc})")
+        if st != 200 or not isinstance(r.get("user"), dict):
+            raise LinkError(r.get("error") or f"deepTENS answered {st}")
+        self.next_roster = 0                            # and bring the roster up to date
+        self.wake.set()
+        return got[0], r["user"], [x for x in r.get("roles", []) if isinstance(x, str)]
+
+    def _fetch_roster(self, now: float) -> None:
+        try:
+            st, r = self._call("/roster", {})
+        except OSError:
+            self.next_roster = now + 60
+            return
+        if st == 401:
+            self._forget(remotely=True)
+            return
+        if st == 200 and isinstance(r.get("members"), list):
+            with self.lock:
+                self.roster = {"members": r["members"], "range": r.get("range"), "fetched_ms": int(now * 1000)}
+                self._save_roster()
+            self.next_roster = now + ROSTER_S
+        else:
+            self.next_roster = now + 60
 
     # ---------------------------------------------------------------------------------------------------- snapshots
     def changed(self, kind: str, n: int) -> None:
@@ -266,6 +365,10 @@ class DeepTens:
             return 5.0
         if self.dirty:
             self._snapshots(now)
+        if now >= self.next_roster:
+            self._fetch_roster(now)
+            if not self.linked:
+                return 1.0
         if now >= self.next_hb:
             if not self._heartbeat(now):
                 if not self.linked:

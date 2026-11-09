@@ -383,6 +383,20 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
   assert(!X.mcNew({targets: [], draft: {lanes: {}}, formats: []}).includes('Publish live on deepTENS?'), 'not when unlinked');
   X.S.dt = prevDt;
 }
+// Sign in with deepTENS (P1 step 3)
+{
+  const {dtSignin} = X, prev = X.S.dt;
+  X.S.dt = {linked: false};
+  assert.strictEqual(dtSignin('range'), '', 'not linked: the local password only');
+  X.S.dt = {linked: true, roster_ok: false};
+  const on = dtSignin('match');
+  assert(on.includes('data-act="dtsignin" data-to="match"') && !on.includes('dtoffline'), 'online sign-in; no offline form without a recent staff list');
+  X.S.dt = {linked: true, roster_ok: true};
+  const off = dtSignin('range');
+  assert(off.includes('id="dt_email_range"') && off.includes('id="dt_pc_range"') && off.includes('data-act="dtoffline" data-to="range"'), 'offline: email and passcode');
+  X.S.dt = prev;
+  assert(html.includes("if (/^dt/.test(a)) return dtAct(el, a);"), 'the sign-in buttons reach their handler');
+}
 // Range Control screen
 assert(rangeView(state({rc: null})).includes('Loading'));
 assert(rangeView(state({rc: {status: {password_set: false, logged_in: false}}})).includes('set-password --data-dir /var/lib/fet-monitor'));

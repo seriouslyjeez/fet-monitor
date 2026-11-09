@@ -1248,10 +1248,10 @@ function rangeView(S) {                          // Range Control: one tab at a 
   let h = '<div class="rc"><div class="panel"><div class="row"><span class="title">Range Control</span>' +
           (st && st.logged_in ? '<button data-act="rclogout">Log out</button>' : '') + '</div>';
   if (!st) return h + '<p class="mut">Loading…</p></div></div>';
-  if (!st.password_set) return h + '<p>Range Control has no password yet. Set one on the Pi:</p>' +
+  if (!st.password_set) return h + dtSignin('range') + '<p>Range Control has no password yet. Set one on the Pi:</p>' +
     '<p><code>cd /opt/fet-monitor &amp;&amp; sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor</code></p>' +
     '<p class="mut">or re-run the installer with <code>--reset-password</code>.</p></div></div>';
-  if (!st.logged_in) return h + '<p>Log in to change any target, remove or ban targets.</p>' +
+  if (!st.logged_in) return h + dtSignin('range') + '<p>Log in to change any target, remove or ban targets.</p>' +
     '<div class="row" style="justify-content:flex-start;gap:8px"><input id="rcpw" type="password" autocomplete="current-password" placeholder="Range Control password">' +
     '<button class="pri" data-act="rclogin">Log in</button></div>' + (rc.msg ? '<p class="bad">' + esc(rc.msg) + '</p>' : '') +
     '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div></div>';
@@ -1355,8 +1355,18 @@ function matchBanner(info, t, S) {                      // on a shooter's own sc
     (canRecord ? '<button class="pri" data-act="mcmyrecord">Start record</button>' : '') +
     (canSight ? '<button data-act="mcmysighters">Back to sighters</button>' : '') + '</div></div>';
 }
+function dtSignin(to) {                          // Sign in with deepTENS (P1 step 3), and offline with a passcode
+  const dt = S.dt;
+  if (!dt || !dt.linked) return '';
+  return '<div class="panel" style="margin:10px 0"><p><button class="pri" data-act="dtsignin" data-to="' + to + '">Sign in with deepTENS</button> ' +
+    '<span class="mut">Range staff: your role at this range on deepTENS decides what you can do here.</span></p>' +
+    (dt.roster_ok ? '<details><summary>No internet? Sign in with your offline passcode</summary><div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">' +
+      '<input id="dt_email_' + to + '" type="email" autocomplete="username" placeholder="Email on deepTENS">' +
+      '<input id="dt_pc_' + to + '" type="password" autocomplete="current-password" placeholder="Offline passcode">' +
+      '<button data-act="dtoffline" data-to="' + to + '">Sign in</button></div></details>' : '') + '</div>';
+}
 function mcLogin(mc) {
-  return '<div class="panel"><span class="title">Match Control</span><p>Log in with your Match Control user name and password. ' +
+  return '<div class="panel"><span class="title">Match Control</span>' + dtSignin('match') + '<p>Log in with your Match Control user name and password. ' +
     'The Range Control administrator can use <b>admin</b> and the Range Control password.</p>' +
     '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input id="mcuser" autocomplete="username" placeholder="User name" maxlength="32">' +
     '<input id="mcpw" type="password" autocomplete="current-password" placeholder="Password"><button class="pri" data-act="mclogin">Log in</button></div>' +
@@ -2272,6 +2282,7 @@ async function act(el) {
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
   if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
   if (a === 'rnav') return reviewMove(el.dataset.move);
+  if (/^dt/.test(a)) return dtAct(el, a);
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
   if (!id) return;
@@ -2316,6 +2327,19 @@ async function act(el) {
   }
   S.review = null; S.reviewView = null;
   refresh();
+}
+
+async function dtAct(el, a) {                    // Sign in with deepTENS (Range Control and Match Control login screens)
+  if (a === 'dtsignin') { location.href = '/signin/deeptens/start?to=' + el.dataset.to; return; }
+  if (a === 'dtoffline') {
+    const to = el.dataset.to, em = document.getElementById('dt_email_' + to), pc = document.getElementById('dt_pc_' + to);
+    const r = await fetch(API + '/signin/offline', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-FET-Admin': '1'}, credentials: 'same-origin',
+                                                    body: JSON.stringify({email: em ? em.value : '', passcode: pc ? pc.value : ''})});
+    const data = await r.json().catch(() => ({}));
+    if (r.status !== 200) toast(data.error || 'error ' + r.status);
+    if (pc) pc.value = '';
+    return refresh();
+  }
 }
 
 async function rangeAct(el, a) {
@@ -3236,7 +3260,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

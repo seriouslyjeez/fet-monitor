@@ -174,8 +174,13 @@ class Admin:
         with self._lock:
             self._expire(now)
             s = self._sessions.get(self._key(token))
-            if s is None or s["kind"] != "match":
+            if s is None or s["kind"] not in ("match", "match-dt"):
                 return None
+            if s["kind"] == "match-dt":
+                if not self._dt_valid(s):
+                    return None
+                s["last"] = now
+                return {"user": s["user"], "role": s["role"], "via": s["how"]}
             user, role, pw = s["user"], s["role"], s["pw"]
         if role == "admin":
             rec = self._record()
@@ -189,6 +194,33 @@ class Admin:
             if self._key(token) in self._sessions:
                 self._sessions[self._key(token)]["last"] = now
         return {"user": user, "role": role}
+
+    # Sign-in through deepTENS (P1 step 3; fetserver/deeptens.py): someone signed in there, or offline with their passcode
+    # checked against the range's roster. Range Manager -> Range Control (and Match Control as director); Match Director
+    # -> Match Control as director; Range Officer -> as range officer. Such a session lasts like any other, and ends when
+    # a roster fetched after it no longer gives that role (dt_ok, set by the server: DeepTens.still_has).
+    dt_ok: Optional[Callable] = None
+
+    def dt_sessions(self, user: dict, roles, since_ms: int, how: str = "deepTENS") -> dict:
+        """New sessions for someone deepTENS (or the roster) vouches for: {"rc": token?, "match": token?}."""
+        now, roles = self.now(), set(roles or ())
+        label = str(user.get("name") or user.get("email") or "?")[:60]
+        grant = "range_manager" if "range_manager" in roles else "match_director" if "match_director" in roles else \
+            "range_officer" if "range_officer" in roles else None
+        out = {}
+        with self._lock:
+            base = {"created": now, "last": now, "pw": None, "user": label, "uid": user.get("user_id"), "since_ms": since_ms, "how": how}
+            if "range_manager" in roles:
+                out["rc"] = secrets.token_urlsafe(32)
+                self._sessions[self._key(out["rc"])] = dict(base, kind="rc-dt", role="admin", dt_role="range_manager")
+            if grant:
+                out["match"] = secrets.token_urlsafe(32)
+                self._sessions[self._key(out["match"])] = dict(base, kind="match-dt", dt_role=grant,
+                                                               role="officer" if grant == "range_officer" else "director")
+        return out
+
+    def _dt_valid(self, s: dict) -> bool:
+        return self.dt_ok is not None and bool(self.dt_ok(s["uid"], s["dt_role"], s["since_ms"]))
 
     def drop_user(self, username: str) -> None:
         """End every session of a Match Control user (removed, or role changed)."""
@@ -213,6 +245,9 @@ class Admin:
         with self._lock:
             self._expire(now)
             s = self._sessions.get(self._key(token))
+            if s is not None and s["kind"] == "rc-dt" and self._dt_valid(s):
+                s["last"] = now
+                return True
             if s is None or s["kind"] != "rc" or rec is None or s["pw"] != rec.get("hash"):
                 return False
             s["last"] = now
