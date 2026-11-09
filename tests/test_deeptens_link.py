@@ -615,10 +615,10 @@ class Mark(LinkCase):
         self.assertEqual(calls, [], "not linked: nothing")
         self.link()
         self.dt.step()
-        self.assertTrue(calls[0].endswith("/api/monitor/v1/brand/mark.png"))
-        self.assertEqual(self.dt.mark(), self.PNG)
+        self.assertEqual([u.rsplit("/", 1)[1] for u in calls], ["flower.png", "flower-dark.png"], "the tens flower, light and dark")
+        self.assertEqual((self.dt.mark(), self.dt.mark(dark=True)), (self.PNG, self.PNG))
         self.dt.step(); self.dt.step()
-        self.assertEqual(len(calls), 1, "once")
+        self.assertEqual(len(calls), 2, "once")
 
     def test_only_a_small_png(self):
         self.link()
@@ -627,6 +627,7 @@ class Mark(LinkCase):
             self.dt.next_mark = 0
             self.dt.step()
             self.assertIsNone(self.dt.mark(), bad[:12])
+            self.assertIsNone(self.dt.mark(dark=True), bad[:12])
         def down(url, limit):
             raise OSError("no route")
         self.dt.get, self.dt.next_mark = down, 0
@@ -637,13 +638,15 @@ class Mark(LinkCase):
 class MarkOverHttp(MatchHttpBase):
     def test_served_by_the_pi(self):
         self.server.deeptens = DeepTens(self.core, self.dir)
-        self.assertEqual(self.req("GET", "/deeptens-mark.png", header=False)[0], 404, "not downloaded yet")
-        (self.dir / "deeptens-mark.png").write_bytes(Mark.PNG)
-        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
-        c.request("GET", "/deeptens-mark.png")
-        r = c.getresponse()
-        self.assertEqual((r.status, r.getheader("Content-Type"), r.read()), (200, "image/png", Mark.PNG))
-        self.assertEqual(r.getheader("Content-Security-Policy"), "default-src 'none'")
+        self.assertEqual(self.req("GET", "/deeptens-flower.png", header=False)[0], 404, "not downloaded yet")
+        (self.dir / "deeptens-flower.png").write_bytes(Mark.PNG)
+        (self.dir / "deeptens-flower-dark.png").write_bytes(Mark.PNG[:-1] + b"\x01")
+        for path, body in (("/deeptens-flower.png", Mark.PNG), ("/deeptens-flower-dark.png", Mark.PNG[:-1] + b"\x01")):
+            c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=5)
+            c.request("GET", path)
+            r = c.getresponse()
+            self.assertEqual((r.status, r.getheader("Content-Type"), r.read()), (200, "image/png", body), path)
+            self.assertEqual(r.getheader("Content-Security-Policy"), "default-src 'none'")
 
 
 RM = {"user_id": 1, "name": "Rita Manager", "email": "rm@example.com", "roles": ["range_manager"]}

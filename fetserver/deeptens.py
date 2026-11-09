@@ -118,7 +118,7 @@ class DeepTens:
         self.next_roster = 0.0
         self.signins = {}                               # state -> (where to, expires): sign-ins started here
         self.lane_board = False                         # the range's public lane board is on (deepTENS says, in heartbeats)
-        self.mark_path = Path(data_dir) / "deeptens-mark.png" if data_dir is not None else None
+        self.mark_dir = Path(data_dir) if data_dir is not None else None
         self.next_mark = 0.0
         self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
 
@@ -317,28 +317,38 @@ class DeepTens:
             self.next_roster = now + 60
 
     # ------------------------------------------------------------------------------------------------- the mark
-    def mark(self) -> Optional[bytes]:
-        """The deepTENS mark this Pi downloaded (served at /deeptens-mark.png for the icon), or None."""
+    def _mark_file(self, dark: bool) -> Path:
+        return self.mark_dir / ("deeptens-flower-dark.png" if dark else "deeptens-flower.png")
+
+    def mark(self, dark: bool = False) -> Optional[bytes]:
+        """deepTENS's icon, the tens flower in its light or dark version (served at /deeptens-flower[-dark].png), as
+        this Pi downloaded it; None if it has not."""
+        if self.mark_dir is None:
+            return None
         try:
-            data = self.mark_path.read_bytes() if self.mark_path is not None and self.mark_path.exists() else None
+            data = self._mark_file(dark).read_bytes() if self._mark_file(dark).exists() else None
         except OSError:
             return None
         return data if data and is_small_png(data) else None
 
     def _fetch_mark(self, now: float) -> None:
-        """Once, after linking: deepTENS's mark is its own, not part of FeT Monitor (NOTICE). Only a small PNG is kept:
-        it is shown on the Pi's own pages, where an SVG's scripts could run."""
+        """Once, after linking: deepTENS's icon is its own, not part of FeT Monitor (NOTICE). Only small PNGs are kept:
+        they are shown on the Pi's own pages, where an SVG's scripts could run."""
         self.next_mark = now + 3600
-        try:
-            data = self.get(self.conf["url"] + API + "/brand/mark.png", MARK_MAX)
-        except OSError:
-            return
-        if not is_small_png(data):
-            log.warning("deepTENS sent a mark that is not a small PNG: ignored")
-            return
-        tmp = self.mark_path.with_name("deeptens-mark.png.tmp")
-        tmp.write_bytes(data)
-        os.replace(tmp, self.mark_path)
+        for dark in (False, True):
+            if self.mark(dark) is not None:
+                continue
+            try:
+                data = self.get(self.conf["url"] + API + ("/brand/flower-dark.png" if dark else "/brand/flower.png"), MARK_MAX)
+            except OSError:
+                continue
+            if not is_small_png(data):
+                log.warning("deepTENS sent an icon that is not a small PNG: ignored")
+                continue
+            target = self._mark_file(dark)
+            tmp = target.with_name(target.name + ".tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, target)
 
     # ------------------------------------------------------------------------------------------ the public lane board
     def lanes_payload(self) -> list:
@@ -468,7 +478,7 @@ class DeepTens:
             return 5.0
         if self.dirty:
             self._snapshots(now)
-        if self.mark_path is not None and now >= self.next_mark and self.mark() is None:
+        if self.mark_dir is not None and now >= self.next_mark and (self.mark() is None or self.mark(dark=True) is None):
             self._fetch_mark(now)
         if now >= self.next_roster:
             self._fetch_roster(now)

@@ -944,8 +944,8 @@ class Handler(BaseHTTPRequestHandler):
         rf = RULEBOOK_FILE_RE.match(url.path)
         if rf:
             return self._rulebook_file(rf.group(1))
-        if url.path == "/deeptens-mark.png":           # the deepTENS mark, downloaded from deepTENS once linked (never shipped here)
-            data = self.server.deeptens.mark() if self.server.deeptens is not None else None
+        if url.path in ("/deeptens-flower.png", "/deeptens-flower-dark.png"):   # deepTENS's icon, downloaded once linked (never shipped here)
+            data = self.server.deeptens.mark(dark=url.path.endswith("-dark.png")) if self.server.deeptens is not None else None
             if data is None:
                 return self._send(404, {"error": "not downloaded"})
             self.send_response(200)

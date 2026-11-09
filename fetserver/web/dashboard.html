@@ -16,7 +16,9 @@ a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thicknes
 header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:var(--on-accent)}
 #live{margin-left:auto;font-size:12px;color:var(--mut)}
-#dt{display:inline-flex;position:relative;width:22px;height:22px;margin-left:8px}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
+#dt{display:inline-flex;position:relative;width:22px;height:22px;margin-left:8px}#dt .dt-d{display:none}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) #dt .dt-l{display:none}:root:not([data-theme=light]) #dt .dt-d{display:inline}}
+:root[data-theme=dark] #dt .dt-l{display:none}:root[data-theme=dark] #dt .dt-d{display:inline}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
 .dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
@@ -1119,7 +1121,7 @@ const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user
   network: ['sy_ssid', 'sy_psk', 'sy_ossid', 'sy_opsk', 'sy_ochan', 'sy_ip', 'sy_prefix', 'sy_gw']};
 // deepTENS (fetserver/deeptens.py): the icon on the staff pages (green ball: connected; red: not; none: not linked), and
 // Range Control -> This Pi: link this Pi to a range on deepTENS by a code, see what waits to be sent, unlink.
-const DT_MARK = '<img src="/deeptens-mark.png" alt="" width="22" height="22" style="border-radius:50%" onerror="this.style.visibility=\'hidden\'">';   // downloaded from deepTENS once linked
+const DT_MARK = '<img class="dt-l" src="/deeptens-flower.png" alt="" width="22" height="22" onerror="this.style.visibility=\'hidden\'"><img class="dt-d" src="/deeptens-flower-dark.png" alt="" width="22" height="22" onerror="this.style.visibility=\'hidden\'">';   // the tens flower, light and dark, downloaded from deepTENS once linked
 const dtIcon = st => DT_MARK + '<span class="ball' + (st.connected ? ' on' : '') + '"></span>';
 function deeptensPanel(st) {
   if (!st) return '';

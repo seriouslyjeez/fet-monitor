@@ -340,7 +340,9 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
 // deepTENS: the icon and Range Control -> This Pi
 {
   const {deeptensPanel, dtIcon} = X;
-  assert(dtIcon({connected: true}).includes('class="ball on"') && dtIcon({connected: false}).includes('class="ball"') && dtIcon({}).includes('<img src="/deeptens-mark.png"'), 'the mark with a green or red ball');
+  assert(dtIcon({connected: true}).includes('class="ball on"') && dtIcon({connected: false}).includes('class="ball"') && dtIcon({}).includes('class="dt-l" src="/deeptens-flower.png"') && dtIcon({}).includes('class="dt-d" src="/deeptens-flower-dark.png"'), 'the tens flower, light and dark, with a green or red ball');
+  assert(html.includes(':root[data-theme=dark] #dt .dt-l{display:none}') && html.includes(':root:not([data-theme=light]) #dt .dt-d{display:inline}') && html.includes('#dt .dt-d{display:none}'),
+         'the dark flower in dark mode (chosen or the system\'s), the light one otherwise');
   assert(!html.includes('M58.50 0L10.20'), 'the mark itself is not in FeT Monitor: it is downloaded from deepTENS');
   const base = {linked: false, url: 'https://deeptens.com:8443', range: null, connected: false, outbox: 0, rejected: [], lane_conflicts: [], error: '', linking: null};
   const off = deeptensPanel(base);
