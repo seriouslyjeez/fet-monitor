@@ -6,6 +6,7 @@
 #include <vector>
 #include "../core/config.h"
 #include "../core/interfaces.h"
+#include "build_config.h"
 
 namespace fetp {
 
@@ -50,6 +51,9 @@ class WifiNet : public fet::Net {
   std::string serverText() const;         // "10.0.0.5:8080" or why not
  private:
   bool postOnce(const char* path, const std::string& body, int& status, std::string& resp);
+#if FET_TLS_TEST
+  bool postTls(const char* path, const std::string& body, int& status, std::string& resp);
+#endif
   bool resolveServer(uint64_t now);
   const fet::Config& cfg_;
   RxHold& hold_;

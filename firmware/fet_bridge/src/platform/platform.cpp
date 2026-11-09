@@ -16,6 +16,12 @@
 #include <lwip/dhcp.h>
 #endif
 
+#if FET_TLS_TEST
+#include <WiFiClientSecure.h>
+#include <time.h>
+#include "tls_test_ca.h"          // FET_TLS_TEST_CA: the test CA's certificate (tools/tls_test.py certs)
+#endif
+
 namespace fetp {
 
 // ---------------------------------------------------------------- clock
@@ -157,6 +163,42 @@ void say(const char* label, const std::string& value) {
   (void)label; (void)value;
 #endif
 }
+
+#if FET_TLS_TEST
+// The HTTPS measurement build's state and measurements (P3 step 1; postTls below)
+namespace {
+BearSSL::X509List* tlsTrust = nullptr;
+BearSSL::WiFiClientSecure* tlsc = nullptr;
+bool tlsTimeAsked = false, tlsProbed = false, tlsMfln = false;
+struct TlsStats {
+  uint32_t conns = 0, reqs = 0, fails = 0, retries = 0, hsLast = 0, hsMax = 0, hsSum = 0;
+  uint32_t minHeap = 0xFFFFFFFFu, minBlock = 0xFFFFFFFFu, heapBefore = 0;
+  int lastErr = 0;
+  std::string lastErrText;
+} ts;
+uint64_t nextTlsNote = 0;
+
+std::string tlsHeader(bool fresh) {
+  return "c=" + std::to_string(ts.conns) + ";r=" + std::to_string(ts.reqs) + ";new=" + (fresh ? "1" : "0") +
+         ";hs=" + std::to_string(ts.hsLast) + ";hsmax=" + std::to_string(ts.hsMax) +
+         ";hsavg=" + std::to_string(ts.conns ? ts.hsSum / ts.conns : 0) + ";heap=" + std::to_string(ESP.getFreeHeap()) +
+         ";heap0=" + std::to_string(ts.heapBefore) + ";minheap=" + std::to_string(ts.minHeap) +
+         ";blk=" + std::to_string(ESP.getMaxFreeBlockSize()) + ";minblk=" + std::to_string(ts.minBlock) +
+         ";frag=" + std::to_string(ESP.getHeapFragmentation()) + ";fails=" + std::to_string(ts.fails) +
+         ";retries=" + std::to_string(ts.retries) + ";err=" + std::to_string(ts.lastErr) + ";mfln=" + (tlsMfln ? "1" : "0") +
+         ";mhz=" + std::to_string((int)(F_CPU / 1000000L)) + ";rssi=" + std::to_string((int)WiFi.RSSI()) +
+         ";up=" + std::to_string((unsigned long)(nowMs() / 1000));
+}
+
+void tlsSample() {
+  uint32_t h = ESP.getFreeHeap(), b = ESP.getMaxFreeBlockSize();
+  if (h < ts.minHeap) ts.minHeap = h;
+  if (b < ts.minBlock) ts.minBlock = b;
+}
+
+void tlsDrop() { if (tlsc) { tlsc->stop(); delete tlsc; tlsc = nullptr; } }
+}  // namespace
+#endif
 
 // ---------------------------------------------------------------- WiFi + HTTP
 void WifiNet::startWifi(const std::string& hostname, bool withAccessPoint) {
@@ -304,6 +346,12 @@ void WifiNet::update(uint64_t now) {
     WiFi.begin(cfg_.ssid.c_str(), cfg_.pass.c_str());
   }
   if (!up && wasUp_) { haveIp_ = false; nextResolve_ = 0; }
+#if FET_TLS_TEST
+  if (now >= nextTlsNote) {                                  // the measurements on the serial port once a minute
+    nextTlsNote = now + 60000;
+    say("TLS: ", tlsHeader(false));
+  }
+#endif
   wasUp_ = up;
   (void)now;
 }
@@ -332,7 +380,102 @@ bool WifiNet::resolveServer(uint64_t now) {
 
 bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 
+#if FET_TLS_TEST
+// ---------------------------------------------------------------- HTTPS measurement build (P3 step 1)
+
+// One report over the kept-open TLS connection; a connection the server closed meanwhile is opened again once.
+bool WifiNet::postTls(const char* path, const std::string& body, int& status, std::string& resp) {
+  if (!tlsTimeAsked) { configTime(0, 0, "pool.ntp.org", "time.nist.gov"); tlsTimeAsked = true; }
+  if (time(nullptr) < 1700000000) return false;                    // no clock yet: no certificate can be checked
+  if (!tlsTrust) tlsTrust = new BearSSL::X509List(FET_TLS_TEST_CA);
+  for (int attempt = 0; attempt < 2; attempt++) {
+    bool fresh = false;
+    if (!tlsc || !tlsc->connected()) {
+      tlsDrop();
+      if (!tlsProbed) { tlsProbed = true; tlsMfln = BearSSL::WiFiClientSecure::probeMaxFragmentLength(cfg_.host.c_str(), (uint16_t)cfg_.port, 512); }
+      ts.heapBefore = ESP.getFreeHeap();
+      tlsc = new BearSSL::WiFiClientSecure();
+      tlsc->setTrustAnchors(tlsTrust);
+      if (tlsMfln) tlsc->setBufferSizes(512, 512);
+      tlsc->setTimeout(FET_TLS_HANDSHAKE_MS);
+      uint32_t t0 = millis();
+      bool ok = tlsc->connect(cfg_.host.c_str(), (uint16_t)cfg_.port);   // by name: SNI and the name check, as in real use
+      uint32_t hs = millis() - t0;
+      hold_.pump();
+      tlsSample();
+      if (!ok) {
+        char e[100];
+        ts.lastErr = tlsc->getLastSSLError(e, sizeof e);
+        ts.lastErrText = e;
+        ts.fails++;
+        tlsDrop();
+        say("TLS connect failed: ", std::to_string(ts.lastErr) + " " + ts.lastErrText);
+        return false;
+      }
+      ts.conns++; ts.hsLast = hs; ts.hsSum += hs; if (hs > ts.hsMax) ts.hsMax = hs;
+      tlsc->setNoDelay(true);
+      fresh = true;
+    }
+    ts.reqs++;
+    std::string req = std::string("POST ") + path + " HTTP/1.1\r\nHost: " + cfg_.host + "\r\nUser-Agent: " FET_FW_ID "\r\nX-FET-Token: " +
+                      cfg_.token + "\r\nX-FET-TLS: " + tlsHeader(fresh) + "\r\nContent-Type: application/json\r\nContent-Length: " +
+                      std::to_string(body.size()) + "\r\nConnection: keep-alive\r\n\r\n" + body;
+    uint64_t t0 = nowMs();
+    size_t sent = 0;
+    bool broken = false;
+    while (sent < req.size()) {
+      size_t n = tlsc->write((const uint8_t*)req.data() + sent, req.size() - sent);
+      sent += n;
+      hold_.pump();
+      if (n == 0) {
+        if (!tlsc->connected() || nowMs() - t0 > FET_HTTP_TIMEOUT_MS) { broken = true; break; }
+        delay(1);
+      }
+    }
+    tlsSample();
+    std::string raw;
+    size_t headEnd = std::string::npos;
+    long want = -1;
+    bool done = false, closeAfter = false;
+    uint64_t limit = fresh ? FET_TLS_HANDSHAKE_MS : FET_HTTP_TIMEOUT_MS;
+    while (!broken && nowMs() - t0 < limit) {
+      hold_.pump();
+      int avail = tlsc->available();
+      if (avail > 0) {
+        char buf[256];
+        int n = tlsc->read((uint8_t*)buf, avail > (int)sizeof buf ? (int)sizeof buf : avail);
+        if (n > 0) raw.append(buf, (size_t)n);
+        if (raw.size() > FET_MAX_RESPONSE) { broken = true; break; }
+        if (headEnd == std::string::npos && (headEnd = raw.find("\r\n\r\n")) != std::string::npos) {
+          std::string lower = raw.substr(0, headEnd + 2);
+          for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+          size_t cl = lower.find("\r\ncontent-length:");
+          want = cl == std::string::npos ? -1 : atol(lower.c_str() + cl + 17);
+          closeAfter = lower.find("\r\nconnection: close") != std::string::npos;
+        }
+        if (headEnd != std::string::npos && want >= 0 && raw.size() >= headEnd + 4 + (size_t)want) { done = true; break; }
+        continue;
+      }
+      if (!tlsc->connected()) { if (headEnd != std::string::npos && want < 0) done = true; else broken = true; break; }
+      delay(1);
+    }
+    tlsSample();
+    if (done) {
+      if (closeAfter) tlsDrop();
+      return fet::parseHttpResponse(raw, status, resp);
+    }
+    tlsDrop();
+    if (fresh || !raw.empty()) { ts.fails++; return false; }     // a new connection that failed, or a half answer: give up
+    ts.retries++;                                                // the server had closed the kept connection: once more
+  }
+  return false;
+}
+#endif
+
 bool WifiNet::postOnce(const char* path, const std::string& body, int& status, std::string& resp) {
+#if FET_TLS_TEST
+  return postTls(path, body, status, resp);
+#endif
   WiFiClient c;
   c.setTimeout(FET_CONNECT_TIMEOUT_MS);
   if (!c.connect(ip_, (uint16_t)port_)) {

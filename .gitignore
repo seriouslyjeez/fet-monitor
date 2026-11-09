@@ -20,3 +20,6 @@ dist/
 docs/PLAN-*.md
 # The release unpacked by the image workflow
 image/stage-fet/00-fet/files/
+
+# P3 step 1: the HTTPS test CA certificate made on the Mac (tools/tls_test.py certs)
+firmware/fet_bridge/src/platform/tls_test_ca.h

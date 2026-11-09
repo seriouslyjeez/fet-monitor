@@ -3,7 +3,23 @@
 // "1MB (FS:64KB OTA:~470KB)" flash layout.
 #pragma once
 
+// P3 step 1 (docs/PLAN-deeptens.md): an HTTPS measurement build for the 4 MB ESP-01S. Off in every normal build.
+// Every report goes over one kept-open TLS connection to <host>:<port>, the server's certificate checked against the
+// test CA in tls_test_ca.h (made by tools/tls_test.py, not in git) and the host's name; each request carries
+// X-FET-TLS with the measurements (handshake time, free heap, largest block, failures).
+#ifndef FET_TLS_TEST
+#define FET_TLS_TEST 0
+#endif
+#if FET_TLS_TEST
+#if F_CPU == 160000000L
+#define FET_FW_VERSION "0.4.1-tls160"
+#else
+#define FET_FW_VERSION "0.4.1-tls80"
+#endif
+#define FET_TLS_HANDSHAKE_MS 10000   // a handshake (and the first answer on a new connection) may take this long
+#else
 #define FET_FW_VERSION "0.4.1"
+#endif
 // Sent as the User-Agent; the server also finds it inside an uploaded image to recognise our firmware and its version.
 #define FET_FW_ID "fet-monitor-bridge/" FET_FW_VERSION
 
