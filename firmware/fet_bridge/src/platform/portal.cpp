@@ -160,8 +160,12 @@ std::string Portal::form(const std::string& error) {
        "<label style='font-weight:400'><input type=checkbox name=open value=1 style='width:auto'> This network has no password</label>"
        "<label>Server address (the Raspberry Pi)</label><input name=host value=\"" + html(cfg_.host) + "\" maxlength=64 "
        "placeholder='empty = find it automatically' autocapitalize=off>"
-       "<label>Server port</label><input name=port type=number min=1 max=65535 value=\"" + std::to_string(cfg_.port) + "\">"
-       "<label>Server token</label><input name=token maxlength=64 autocapitalize=off placeholder=\"" +
+       "<label>Server port</label><input name=port type=number min=1 max=65535 value=\"" + std::to_string(cfg_.port) + "\">" +
+       (fet::httpsSupported ? std::string("<label style='font-weight:400'><input type=checkbox name=tls value=1 style='width:auto'") + (cfg_.tls ? " checked" : "") +
+                              "> Secure connection (HTTPS)</label><p class=note>For deepTENS at home: server devices.deeptens.com, port 443, "
+                              "secure on. Off for a FeT Monitor (Raspberry Pi) on your network.</p>" : std::string()) +
+       "<label>Server token</label>"
+       "<input name=token maxlength=64 autocapitalize=off placeholder=\"" +
        std::string(cfg_.token.empty() ? "" : "leave empty to keep the saved one") + "\">"
        "<label>Fixed IP address (optional, empty = automatic)</label><input name=ip value=\"" + html(cfg_.ip) + "\" maxlength=15 placeholder='e.g. 192.168.1.60' autocapitalize=off>"
        "<label>Router address (needed with a fixed IP)</label><input name=gw value=\"" + html(cfg_.gateway) + "\" maxlength=15 placeholder='e.g. 192.168.1.1' autocapitalize=off>"
@@ -218,6 +222,7 @@ void Portal::handleSave() {
   else if (ssid != cfg_.ssid) c.pass = "";                // a new network never inherits the old password
   c.host = server.arg("host").c_str();
   c.port = atoi(server.arg("port").c_str());
+  c.tls = fet::httpsSupported && server.arg("tls") == "1";
   std::string tok = server.arg("token").c_str();
   if (!tok.empty()) c.token = tok;
   c.name = server.arg("name").c_str();

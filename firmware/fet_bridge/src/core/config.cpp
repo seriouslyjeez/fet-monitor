@@ -39,6 +39,8 @@ static bool printable(const std::string& s, bool allowSpace) {
   return true;
 }
 
+bool httpsSupported = false;
+
 std::string validateConfig(const Config& c) {
   if (c.ssid.empty()) return "WiFi name is required";
   if (c.ssid.size() > 32) return "WiFi name is longer than 32 characters";
@@ -60,6 +62,8 @@ std::string validateConfig(const Config& c) {
     for (int i = 0; i < 4; i++) if ((a[i] & m[i]) != (g[i] & m[i])) return "The router address is not on the same network as the fixed IP";
   } else if (!c.gateway.empty() || !c.mask.empty()) return "Gateway/mask given without a fixed IP address";
   if (!validName(c.name)) return "Target name must be 1 to 32 letters, digits, - or _";
+  if (c.tls && !httpsSupported) return "A secure connection (HTTPS) needs a 4 MB module (ESP-01S) with the 4 MB firmware";
+  if (c.tls && c.host.empty()) return "A secure connection needs the server's name (devices.deeptens.com)";
   return "";
 }
 
@@ -72,7 +76,7 @@ std::string configToJson(const Config& c) {
   jescape(o, c.name); o += "\",\"ip\":\"";
   jescape(o, c.ip); o += "\",\"gw\":\"";
   jescape(o, c.gateway); o += "\",\"mask\":\"";
-  jescape(o, c.mask); o += "\"}";
+  jescape(o, c.mask); o += std::string("\",\"tls\":") + (c.tls ? "true" : "false") + "}";
   return o;
 }
 
@@ -91,6 +95,7 @@ bool configFromJson(const std::string& json, Config& out) {
   if ((x = v.get("ip")) && x->type == JVal::Str) c.ip = x->s;
   if ((x = v.get("gw")) && x->type == JVal::Str) c.gateway = x->s;
   if ((x = v.get("mask")) && x->type == JVal::Str) c.mask = x->s;
+  if ((x = v.get("tls")) && x->type == JVal::Bool) c.tls = x->b;
   out = c;
   return true;
 }

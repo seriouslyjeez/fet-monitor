@@ -721,6 +721,32 @@ class FirmwareHost(unittest.TestCase):
         self.prov(self.settings_line(dict(self.SETTINGS, merge=False)))
         self.assertEqual(json.loads(self.h.run("config").replace("\\n", "\n"))["ip"], "", '"merge": false is no merge')
 
+    def validate(self, obj):
+        return self.h.run("validate " + esc(json.dumps(obj))).rstrip("|")
+
+    def test_tls_only_where_the_build_has_https_and_with_a_name(self):
+        good = dict(self.SETTINGS, host="devices.deeptens.com", port=443, tls=True)
+        self.h.run("https 0")
+        self.assertIn("4 MB module", self.validate(good), "a 1 MB build refuses it")
+        self.assertEqual(self.validate(dict(good, tls=False)), "")
+        self.h.run("https 1")
+        self.assertEqual(self.validate(good), "")
+        self.assertIn("server's name", self.validate(dict(good, host="")))
+        self.h.run("https 0")
+
+    def test_tls_is_saved_and_merged(self):
+        self.h.run("https 1")
+        self.prov(self.settings_line())
+        self.prov(self.settings_line({"merge": True, "host": "devices.deeptens.com", "port": 443, "tls": True, "token": "dtd_x"}))
+        saved = json.loads(self.h.run("config").replace("\\n", "\n"))
+        self.assertEqual((saved["tls"], saved["host"], saved["port"], saved["ssid"]), (True, "devices.deeptens.com", 443, "club"))
+        self.prov(self.settings_line({"merge": True, "tls": False, "host": "10.0.0.5", "port": 8080}))
+        self.assertFalse(json.loads(self.h.run("config").replace("\\n", "\n"))["tls"])
+        self.h.run("https 0")
+        self.h.run("uartclear")
+        self.prov(self.settings_line({"merge": True, "tls": True, "host": "devices.deeptens.com"}))
+        self.assertIn("4 MB module", self.replies()[0], "refused over serial too on a 1 MB build")
+
     def test_prov_hex_in_either_case_and_crlf(self):
         line = self.settings_line().rstrip("\n")
         head, crc = line.rsplit(" ", 1)

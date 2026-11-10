@@ -170,6 +170,8 @@ int main() {
                               for (unsigned char c : pass) br->onByte(c, t); }
     else if (cmd == "provpass") { std::string d = unescape(rest), pass; for (unsigned char c : d) { t += 1; prov->feed(c, t, pass); }
                                   std::cout << escape(pass) << "\n"; }   // exactly what Provision hands on, bridge untouched
+    else if (cmd == "https") fet::httpsSupported = rest == "1";       // the build can do HTTPS (the 4 MB images)
+    else if (cmd == "validate") { fet::Config c; std::cout << (fet::configFromJson(unescape(rest), c) ? fet::validateConfig(c) : std::string("bad json")) << "|\n"; }
     else if (cmd == "config") { std::string v; std::cout << (fs.read("/config.json", v) ? escape(v) : std::string("none")) << "\n"; }
     else if (cmd == "uartclear") uart.log.clear();
     else if (cmd == "uart") { std::string d = unescape(rest); for (unsigned char c : d) { t += 1; br->onByte(c, t); } }

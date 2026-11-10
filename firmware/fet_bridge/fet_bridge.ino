@@ -61,6 +61,7 @@ void setup() {
 #if FET_DEBUG
   Serial.printf("[fet] filesystem: %u bytes\n", (unsigned)g_fs.totalBytes());
 #endif
+  fet::httpsSupported = FET_HTTPS;                        // the 4 MB images (build_config.h): "tls" is refused otherwise
   fet::loadConfig(g_fs, g_cfg);                           // missing/invalid -> defaults (unprovisioned)
   if (!fet::validName(g_cfg.name)) g_cfg.name = g_id;
 

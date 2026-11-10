@@ -51,7 +51,7 @@ class WifiNet : public fet::Net {
   std::string serverText() const;         // "10.0.0.5:8080" or why not
  private:
   bool postOnce(const char* path, const std::string& body, int& status, std::string& resp);
-#if FET_TLS_TEST
+#if FET_HTTPS
   bool postTls(const char* path, const std::string& body, int& status, std::string& resp);
 #endif
   bool resolveServer(uint64_t now);

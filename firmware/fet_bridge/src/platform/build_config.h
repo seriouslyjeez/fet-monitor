@@ -10,16 +10,25 @@
 #ifndef FET_TLS_TEST
 #define FET_TLS_TEST 0
 #endif
+// HTTPS (P3): built into the 4 MB images only (tools/build_firmware.py; the 1 MB ESP-01 has no room: +115 KB). Used when
+// the "tls" setting is on: one kept-open connection to <host>:<port>, the server's certificate checked against the
+// deepTENS device CA and ISRG Root X1 and against the host's name, the date from NTP, the small 512-byte buffers when
+// the server agrees (MFLN; without them a handshake leaves ~3.6 KB free), no connection while the setup portal is open.
+#ifndef FET_HTTPS
+#define FET_HTTPS 0
+#endif
 #if FET_TLS_TEST
+#undef FET_HTTPS
+#define FET_HTTPS 1
 #if F_CPU == 160000000L
-#define FET_FW_VERSION "0.4.1-tls160"
+#define FET_FW_VERSION "0.5.0-tls160"
 #else
-#define FET_FW_VERSION "0.4.1-tls80"
+#define FET_FW_VERSION "0.5.0-tls80"
+#endif
+#else
+#define FET_FW_VERSION "0.5.0"
 #endif
 #define FET_TLS_HANDSHAKE_MS 10000   // a handshake (and the first answer on a new connection) may take this long
-#else
-#define FET_FW_VERSION "0.4.1"
-#endif
 // Sent as the User-Agent; the server also finds it inside an uploaded image to recognise our firmware and its version.
 #define FET_FW_ID "fet-monitor-bridge/" FET_FW_VERSION
 

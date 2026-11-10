@@ -197,8 +197,14 @@ def configure(args) -> None:
     ("merge": the WiFi stays as stored). Start this, then power the ESP-01S up (run mode)."""
     import binascii
     import serial                                   # pyserial
+    if not (args.host or args.ip):
+        sys.exit("--host or --ip, please")
     token = (OUT / "pi" / "device_token").read_text().strip() if args.token is None else args.token
-    body = json.dumps({"merge": True, "host": host_of(args.ip), "port": args.port, "token": token}).encode()
+    host = args.host or host_of(args.ip)
+    fields = {"merge": True, "host": host, "port": args.port, "token": token}
+    if args.tls is not None:
+        fields["tls"] = args.tls == "on"                  # the real HTTPS bridge (0.5.0, 4 MB) needs it on; the test build ignores it
+    body = json.dumps(fields).encode()
     line = b"FETCFG %s %08x\n" % (body.hex().encode(), binascii.crc32(body))
     print(f"waiting up to {args.wait} s for the bridge on {args.serial}: power it up now (run mode)", flush=True)
     end, buf, said, s = time.time() + args.wait, b"", False, None
@@ -220,7 +226,7 @@ def configure(args) -> None:
             said, buf = True, b""
             s.write(line)
         if said and b"FETCFG OK" in buf:
-            print(f"saved: {host_of(args.ip)}:{args.port}; the bridge restarts with it")
+            print(f"saved: {host}:{args.port}{' (secure)' if fields.get('tls') else ''}; the bridge restarts with it")
             return
         if said and b"FETCFG ERROR" in buf:
             sys.exit(buf[buf.index(b"FETCFG ERROR"):].split(b"\n")[0].decode(errors="replace"))
@@ -273,7 +279,9 @@ def main() -> int:
     p.add_argument("--log", default=str(OUT / "log.csv"))
     g = sp.add_parser("configure")
     g.add_argument("--serial", required=True, help="the USB programmer, e.g. /dev/cu.usbserial-1130")
-    g.add_argument("--ip", required=True, help="this Mac's address (the name is <ip with dashes>.sslip.io)")
+    g.add_argument("--ip", help="this Mac's address (the name is <ip with dashes>.sslip.io)")
+    g.add_argument("--host", help="a server name instead, e.g. devices.deeptens.com")
+    g.add_argument("--tls", choices=["on", "off"], help="the secure-connection setting (FeT Bridge 0.5.0+)")
     g.add_argument("--port", type=int, default=8443)
     g.add_argument("--token", help="default: the test FeT Monitor's (dist/tls-test/pi/device_token)")
     g.add_argument("--wait", type=int, default=120)

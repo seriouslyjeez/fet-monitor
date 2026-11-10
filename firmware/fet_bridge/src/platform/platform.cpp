@@ -16,10 +16,15 @@
 #include <lwip/dhcp.h>
 #endif
 
-#if FET_TLS_TEST
+#if FET_HTTPS
 #include <WiFiClientSecure.h>
 #include <time.h>
+#if FET_TLS_TEST
 #include "tls_test_ca.h"          // FET_TLS_TEST_CA: the test CA's certificate (tools/tls_test.py certs)
+#else
+#include "device_ca.h"            // FET_DEVICE_CA: the deepTENS device CA's root (tools/device_ca.py)
+#include "isrg_root_x1.h"         // FET_ISRG_ROOT_X1: Let's Encrypt's root, the backup
+#endif
 #endif
 
 namespace fetp {
@@ -164,8 +169,8 @@ void say(const char* label, const std::string& value) {
 #endif
 }
 
-#if FET_TLS_TEST
-// The HTTPS measurement build's state and measurements (P3 step 1; postTls below)
+#if FET_HTTPS
+// HTTPS state (postTls below) and, in the measurement build (FET_TLS_TEST), its measurements
 namespace {
 BearSSL::X509List* tlsTrust = nullptr;
 BearSSL::WiFiClientSecure* tlsc = nullptr;
@@ -177,6 +182,7 @@ struct TlsStats {
   std::string lastErrText;
 } ts;
 uint64_t nextTlsNote = 0;
+int tlsState = 0;                         // 0 not tried, 1 connecting works, 2 failing: the serial port hears only changes
 
 std::string tlsHeader(bool fresh) {
   return "c=" + std::to_string(ts.conns) + ";r=" + std::to_string(ts.reqs) + ";new=" + (fresh ? "1" : "0") +
@@ -380,15 +386,22 @@ bool WifiNet::resolveServer(uint64_t now) {
 
 bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 
-#if FET_TLS_TEST
-// ---------------------------------------------------------------- HTTPS measurement build (P3 step 1)
+#if FET_HTTPS
+// ---------------------------------------------------------------- HTTPS (P3)
 
 // One report over the kept-open TLS connection; a connection the server closed meanwhile is opened again once.
 bool WifiNet::postTls(const char* path, const std::string& body, int& status, std::string& resp) {
   if (WiFi.getMode() & WIFI_AP) { tlsDrop(); return false; }      // the setup portal is open: it needs the memory a TLS connection takes
   if (!tlsTimeAsked) { configTime(0, 0, "pool.ntp.org", "time.nist.gov"); tlsTimeAsked = true; }
   if (time(nullptr) < 1700000000) return false;                    // no clock yet: no certificate can be checked
-  if (!tlsTrust) tlsTrust = new BearSSL::X509List(FET_TLS_TEST_CA);
+  if (!tlsTrust) {
+#if FET_TLS_TEST
+    tlsTrust = new BearSSL::X509List(FET_TLS_TEST_CA);
+#else
+    tlsTrust = new BearSSL::X509List(FET_DEVICE_CA);
+    tlsTrust->append(FET_ISRG_ROOT_X1);
+#endif
+  }
   for (int attempt = 0; attempt < 2; attempt++) {
     bool fresh = false;
     if (!tlsc || !tlsc->connected()) {
@@ -410,16 +423,20 @@ bool WifiNet::postTls(const char* path, const std::string& body, int& status, st
         ts.lastErrText = e;
         ts.fails++;
         tlsDrop();
-        say("TLS connect failed: ", std::to_string(ts.lastErr) + " " + ts.lastErrText);
+        if (FET_TLS_TEST || tlsState != 2) say("Secure connection failed: ", std::to_string(ts.lastErr) + " " + ts.lastErrText);
+        tlsState = 2;
         return false;
       }
+      if (tlsState != 1) say("Secure connection to ", cfg_.host + " (" + std::to_string(hs) + " ms" + (tlsMfln ? ", small buffers" : "") + ")");
+      tlsState = 1;
       ts.conns++; ts.hsLast = hs; ts.hsSum += hs; if (hs > ts.hsMax) ts.hsMax = hs;
       tlsc->setNoDelay(true);
       fresh = true;
     }
     ts.reqs++;
+    std::string extra = FET_TLS_TEST ? "X-FET-TLS: " + tlsHeader(fresh) + "\r\n" : std::string();
     std::string req = std::string("POST ") + path + " HTTP/1.1\r\nHost: " + cfg_.host + "\r\nUser-Agent: " FET_FW_ID "\r\nX-FET-Token: " +
-                      cfg_.token + "\r\nX-FET-TLS: " + tlsHeader(fresh) + "\r\nContent-Type: application/json\r\nContent-Length: " +
+                      cfg_.token + "\r\n" + extra + "Content-Type: application/json\r\nContent-Length: " +
                       std::to_string(body.size()) + "\r\nConnection: keep-alive\r\n\r\n" + body;
     uint64_t t0 = nowMs();
     size_t sent = 0;
@@ -474,8 +491,8 @@ bool WifiNet::postTls(const char* path, const std::string& body, int& status, st
 #endif
 
 bool WifiNet::postOnce(const char* path, const std::string& body, int& status, std::string& resp) {
-#if FET_TLS_TEST
-  return postTls(path, body, status, resp);
+#if FET_HTTPS
+  if (FET_TLS_TEST || cfg_.tls) return postTls(path, body, status, resp);
 #endif
   WiFiClient c;
   c.setTimeout(FET_CONNECT_TIMEOUT_MS);
@@ -523,6 +540,9 @@ uint32_t WifiNet::otaSpace() { return ESP.getFreeSketchSpace(); }
 uint32_t WifiNet::flashSize() { return ESP.getFlashChipSize(); }    // from the running image's header
 
 bool WifiNet::updateFirmware(const std::string& sha, uint32_t size, std::string& err) {
+#if FET_HTTPS
+  if (cfg_.tls) { err = "firmware updates over HTTPS are not supported yet: update by USB"; return false; }
+#endif
   fet::FwCheck chk;
   if (!chk.begin(sha, size)) { err = "bad checksum"; return false; }
   if (size > ESP.getFreeSketchSpace()) { err = "image too big for this chip"; return false; }

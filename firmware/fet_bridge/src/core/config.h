@@ -13,9 +13,13 @@ struct Config {
   std::string token;           // the server's device token
   std::string name;            // shown on the dashboard; also the network host name
   std::string ip, gateway, mask;   // fixed address; all empty = ask the router (DHCP). mask empty with ip set = 255.255.255.0
+  bool tls = false;            // HTTPS to <host>:<port> (deepTENS at home: devices.deeptens.com, 443); 4 MB builds only
   bool fixedIp() const { return !ip.empty(); }
   bool wifiConfigured() const { return !ssid.empty(); }
 };
+
+// Whether this build can do HTTPS (the platform sets it at start: FET_HTTPS, the 4 MB images); "tls" is refused otherwise.
+extern bool httpsSupported;
 
 // Why a setting was refused, or empty if it is fine.
 std::string validateConfig(const Config& c);

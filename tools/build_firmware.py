@@ -22,6 +22,7 @@ SKETCH = ROOT / "firmware" / "fet_bridge"
 CORE = "esp8266:esp8266"
 CORE_VERSION = "3.1.2"
 LAYOUTS = {"1MB": "1M128", "4MB": "4M2M"}       # Flash Size: 1MB (FS:128KB OTA:~438KB) / 4MB (FS:2MB OTA:~1019KB)
+FLAGS = {"1MB": "", "4MB": "-DFET_HTTPS=1"}     # HTTPS (deepTENS at home, P3) only where it fits: +115 KB
 FQBN = "esp8266:esp8266:generic:eesz={eesz},FlashMode=dout,xtal=80,baud=115200"
 # Over-the-air updates (core 3.1.2 Updater/getFreeSketchSpace): the running image and the new one, each rounded up to
 # 4 KB sectors, must both fit below the file system, which starts at 0xDB000 in the 1 MB layout (eagle.flash.1m128.ld).
@@ -57,7 +58,8 @@ def main() -> int:
     for name in wanted:
         with tempfile.TemporaryDirectory() as out:
             print(f"== building {name} ...", flush=True)
-            r = subprocess.run(["arduino-cli", "compile", "-b", FQBN.format(eesz=LAYOUTS[name]), "--output-dir", out, str(SKETCH)],
+            extra = ["--build-property", f"compiler.cpp.extra_flags={FLAGS[name]}", "--build-property", f"compiler.c.extra_flags={FLAGS[name]}"] if FLAGS[name] else []
+            r = subprocess.run(["arduino-cli", "compile", "-b", FQBN.format(eesz=LAYOUTS[name]), "--output-dir", out, *extra, str(SKETCH)],
                                capture_output=True, text=True)
             if r.returncode:
                 print(r.stdout[-3000:] + r.stderr[-3000:], file=sys.stderr)
