@@ -365,7 +365,7 @@ class DeepTens:
         its current shots, no name."""
         c = self.core.db.conn()
         out = []
-        for t in self.core.list_targets():
+        for t in self.core.list_targets(staff=True):     # the athlete's id for their coaches (never shown on the board)
             if t["lane"] is None:
                 continue
             v, mi = t["view"], t["match"]

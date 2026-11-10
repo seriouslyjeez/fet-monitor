@@ -61,8 +61,8 @@ class Case(MatchCase):
         self.dt.next_hb = self.dt.next_tick = self.dt.next_signins = self.dt.next_send = 0
         self.dt.step()
 
-    def target(self, did="lane-1"):
-        return next(t for t in self.core.list_targets() if t["device_id"] == did)
+    def target(self, did="lane-1"):                       # the staff view: the athlete's id and full name too
+        return next(t for t in self.core.list_targets(staff=True) if t["device_id"] == did)
 
     def sent(self, key):
         return self.fake.stored.get(key, (0, None))[1]
@@ -80,6 +80,18 @@ class Pin(Case):
         self.assertEqual(t["shooter"], "J. S.", "the series in their results name")
         self.assertIsNone(t["signin_url"], "no QR while someone is signed in")
         self.assertEqual(self.a.pin_sign_in("lane-1", "123456", "2580")["id"], s["id"], "again: the same session")
+
+    def test_only_staff_see_the_full_name_and_number(self):
+        self.a.pin_sign_in("lane-1", "123456", "2580")
+        pub = next(t for t in self.core.list_targets() if t["device_id"] == "lane-1")["athlete"]
+        self.assertEqual(set(pub), {"public_name", "via", "started_ms"}, "anyone on the network: the public name only")
+        self.assertEqual(pub["public_name"], "J. S.")
+        staff = next(t for t in self.core.list_targets(staff=True) if t["device_id"] == "lane-1")["athlete"]
+        self.assertEqual((staff["name"], staff["number"], staff["athlete_id"]), ("Jo Shot", "123456", 41))
+        rc = next(t for t in self.core.admin_view()["targets"] if t["device_id"] == "lane-1")["athlete"]
+        self.assertEqual(rc["name"], "Jo Shot", "Range Control is staff")
+        self.assertNotIn("Jo Shot", json.dumps(self.core.list_targets()), "nowhere in the public list")
+        self.assertNotIn("123456", json.dumps(self.core.list_targets()))
 
     def test_wrong_pins_lock_the_number_here_too(self):
         for _ in range(5):
@@ -326,7 +338,8 @@ class OverHttp(MatchHttpBase):
         self.assertEqual((st, body["error"]), (400, "wrong athlete number or PIN"))
         st, body, _ = self.req("POST", "/api/v1/targets/lane-1/signin", {"number": "123456", "pin": "2580"}, header=False)
         self.assertEqual((st, body["athlete"]["athlete_id"]), (200, 41))
-        self.assertEqual(self.athlete()["name"], "Jo Shot")
+        self.assertEqual(self.athlete(), {"public_name": "J. S.", "via": "pin", "started_ms": self.athlete()["started_ms"]},
+                         "the lanes' screen (anyone on the network): the public name only")
         st, body, _ = self.req("POST", "/api/v1/targets/lane-1/signout", {}, header=False)
         self.assertEqual((st, body["ended"]["end_why"]), (200, "signout"))
         self.assertIsNone(self.athlete())
@@ -347,4 +360,6 @@ class OverHttp(MatchHttpBase):
         self.assertEqual(st, 200)
         self.assertIsNone(self.athlete())
         st, body, _ = self.req("POST", "/api/v1/match/targets/lane-2/athlete", {"athlete_id": 42}, who="ro")
-        self.assertEqual(self.athlete("lane-2")["athlete_id"], 42)
+        self.assertEqual(self.athlete("lane-2")["public_name"], "Al Aim")
+        st, body, _ = self.req("GET", "/api/v1/match/targets", who="ro")
+        self.assertEqual(next(t for t in body["targets"] if t["device_id"] == "lane-2")["athlete"]["athlete_id"], 42, "Match Control is staff")

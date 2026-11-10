@@ -684,8 +684,8 @@ function qrSvg(url) {
 }
 function laneSignin(t, S, phone) {
   const a = t.athlete;
-  if (a) return '<div class="lanesign on"><span><span class="mut">Signed in</span><br><b class="who">' + esc(a.name) + '</b></span>' +
-    '<button data-act="lnout" data-name="' + esc(a.name) + '">Sign out</button></div>';
+  if (a) return '<div class="lanesign on"><span><span class="mut">Signed in</span><br><b class="who">' + esc(a.public_name) + '</b></span>' +
+    '<button data-act="lnout" data-name="' + esc(a.public_name) + '">Sign out</button></div>';
   if (!t.signin_url) return '';
   const form = S.lnpin ? '<div class="row"><input id="ln_num" inputmode="numeric" autocomplete="off" placeholder="Athlete number" maxlength="7">' +
       '<input id="ln_pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="6"><button class="pri" data-act="lnin">Sign in</button>' +

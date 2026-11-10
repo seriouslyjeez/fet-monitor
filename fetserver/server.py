@@ -296,7 +296,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"targets": [{"device_id": t["device_id"], "name": t["name"], "lane": t["lane"], "online": t["online"],
                                                      "in_match": bool(t["match"]), "lease": t["lease"], "installed_face": t["installed_face"],
                                                      "athlete": t["athlete"]}
-                                                    for t in core.list_targets(None)]})
+                                                    for t in core.list_targets(None, staff=True)]})
             if path == "/api/v1/match/competitions" and method == "GET":
                 return self._send(200, {"competitions": core.competitions.list()})
             if path == "/api/v1/match/competitions" and method == "POST":

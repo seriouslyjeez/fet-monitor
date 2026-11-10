@@ -72,6 +72,13 @@ class Athletes:
         return {"id": r["id"], "athlete_id": r["athlete_id"], "number": r["number"], "name": r["name"], "public_name": r["public_name"],
                 "via": r["via"], "started_ms": r["started_ms"], "ended_ms": r["ended_ms"], "end_why": r["end_why"]}
 
+    @staticmethod
+    def public_view(v: Optional[dict]) -> Optional[dict]:
+        """What anyone on the range network may see of a signed-in athlete: the name they chose for public pages."""
+        if v is None:
+            return None
+        return {"public_name": v["public_name"], "via": v["via"], "started_ms": v["started_ms"]}
+
     def on(self, c, device_id: str) -> Optional[dict]:
         r = c.execute("SELECT * FROM athlete_sessions WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (device_id,)).fetchone()
         return self._view(r) if r else None

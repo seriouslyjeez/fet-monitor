@@ -1230,7 +1230,7 @@ class Core:
                 "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
                 "face": F.view(F.face(t["face_id"]))}
 
-    def list_targets(self, client_id: Optional[str] = None) -> list:
+    def list_targets(self, client_id: Optional[str] = None, staff: bool = False) -> list:
         now = self.now_ms()
         c = self.db.conn()
         rows = c.execute(
@@ -1262,7 +1262,9 @@ class Core:
                 "match": self._match_info(c, did, now),
                 "v_ref": self._v_ref(c, r),
                 "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
-                "athlete": self.athletes.on(c, did),               # who is signed in (P2), and the lane's QR to sign in by phone
+                # who is signed in (P2): everyone sees the name the athlete chose for public pages; only staff (Range
+                # Control, Match Control) and the deepTENS link see their full name, number and id (user, 2026-11-10)
+                "athlete": self.athletes.on(c, did) if staff else self.athletes.public_view(self.athletes.on(c, did)),
                 "signin_url": self.athletes.signin_url(did, r["lane"], now) if self.athletes.on(c, did) is None else None,
             })
         return out
@@ -1309,7 +1311,7 @@ class Core:
         banned = [{"device_id": r["device_id"], "name": r["name"] or r["device_id"], "ip": r["last_ip"],
                    "last_seen": iso(r["last_seen_ms"]), "bridge_fw": r["bridge_fw"]}
                   for r in self.db.conn().execute("SELECT * FROM targets WHERE banned=1 ORDER BY COALESCE(name, device_id)")]
-        targets = self.list_targets(None)
+        targets = self.list_targets(None, staff=True)
         jobs = self.firmware_jobs()
         delivery = self.delivery()
         for t in targets:
