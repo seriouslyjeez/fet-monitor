@@ -39,6 +39,7 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 700 }, sessionId);
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme === "dark" ? "dark" : "light" }] }, sessionId);
   await send("Page.enable", {}, sessionId);
+  if (process.env.CDP_INIT) await send("Page.addScriptToEvaluateOnNewDocument", { source: process.env.CDP_INIT }, sessionId);   // e.g. this browser's client id
   await send("Runtime.enable", {}, sessionId);
   await send("Page.navigate", { url }, sessionId);
   await until(m => m.method === "Page.loadEventFired" && m.sessionId === sessionId);

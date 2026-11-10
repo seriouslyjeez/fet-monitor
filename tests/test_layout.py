@@ -39,12 +39,13 @@ def node():
 
 @unittest.skipIf(chrome() is None or node() is None, "no Chrome or no Node here")
 class Layout(ServerCase):
-    def look(self, path, size, scheme, script):
+    def look(self, path, size, scheme, script, init=None):
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
             f.write(LIB + script)
         self.addCleanup(os.unlink, f.name)
+        env = dict(os.environ, CDP_INIT=init) if init else None
         r = subprocess.run([node(), str(ROOT / "tests/cdp.mjs"), chrome(), self.url + path, str(size[0]), str(size[1]), scheme, f.name],
-                           capture_output=True, text=True, timeout=90)
+                           capture_output=True, text=True, timeout=90, env=env)
         self.assertTrue(r.stdout, r.stderr[-2000:])
         out = json.loads(r.stdout)
         self.assertNotIn("error", out, out)
@@ -101,6 +102,44 @@ return {tabs: shown(app.querySelector('.tabs')), sel: shown(app.querySelector('.
         self.assertFalse(p["overflow"])
         t = self.look("/", TABLET, "light", script)
         self.assertEqual((t["tabs"], t["sel"]), (True, False), "wider screens: the tabs")
+
+    def lane(self, kind="practice", shots=8):
+        from fetserver.simtarget import SimTarget
+        sim = SimTarget(self.url, "test-token", "lane-1", "Lane 1", seed=3)
+        sim.heartbeat()
+        self.core.acquire_control("lane-1", "layout-client-0001", "Alice")
+        self.core.set_mode("lane-1", "layout-client-0001", {"practice": "practice", "match": "record", "ammo": "ammo"}[kind], shooter="Alice")
+        for _ in range(shots):
+            sim.fire()
+        sim.deliver()
+        return "localStorage.setItem('fet_cid','layout-client-0001');localStorage.setItem('fet_name','Alice');"
+
+    def test_the_lane_on_a_phone_and_a_tablet(self):
+        init = self.lane()
+        script = r"""
+for (let i = 0; i < 80 && !document.querySelector('.face'); i++) await sleep(50);
+const f = document.querySelector('.facebox'), fr = f ? f.getBoundingClientRect() : null, bar = document.querySelector('.lanebar');
+const br = bar ? bar.getBoundingClientRect() : null;
+return {overflow: overflow(), small: small('.lane button, .lane a, .shoot .right button, .shoot .right a, .zseg button'),
+        square: fr ? Math.abs(fr.width - fr.height) <= 2 : null, faceW: fr ? Math.round(fr.width) : 0,
+        bar: br ? Math.round(innerHeight - br.bottom) : null, phone: !!document.querySelector('.phone.lane'), wide: !!document.querySelector('.shoot'),
+        rangemode: document.body.classList.contains('rangemode'), grid: document.querySelectorAll('.shotgrid .sg').length};"""
+        for size in (PHONE, TABLET):
+            for scheme in ("light", "dark"):
+                with self.subTest(size=size, scheme=scheme):
+                    v = self.look("/#/t/lane-1", size, scheme, script, init)
+                    self.assertFalse(v["overflow"], "no sideways scrolling")
+                    self.assertEqual(v["small"], [], "every control at least 44 px")
+                    self.assertTrue(v["square"], "the face is square")
+                    self.assertTrue(v["rangemode"], "holding the lane: only its screen")
+                    self.assertGreaterEqual(v["grid"], 8)
+                    if size == PHONE:
+                        self.assertTrue(v["phone"])
+                        self.assertGreaterEqual(v["faceW"], 340, "the face as wide as the phone")
+                        self.assertEqual(v["bar"], 0, "the actions sit at the bottom of the screen")
+                    else:
+                        self.assertTrue(v["wide"])
+                        self.assertGreaterEqual(v["faceW"], 600, "a large face on a tablet")
 
     def test_fonts_are_served_only_by_name(self):
         for name in ("archivo-latin", "archivo-latin-ext", "jetbrains-mono-latin", "jetbrains-mono-latin-ext"):

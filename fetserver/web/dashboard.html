@@ -12,9 +12,9 @@
 @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;src:url(/fonts/jetbrains-mono-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
 /* the deepTENS look (1.0; mockups canvas, boards Fm*): bone and navy, orange for the latest shot; dark follows the system
    unless the viewer chose in the menu (data-theme on <html>) */
-:root{color-scheme:light;--bg:#F4F2EE;--fg:#14202B;--mut:#4A5561;--card:#FFFFFF;--line:#E2DED6;--line2:#EEEBE5;--surface2:#F4F2EE;--accent:#14202B;--on-accent:#F4F2EE;--ok:#1A7F3C;--bad:#B42318;--warn:#8A5A00;--hi:#EEEBE5;--link:#14202B;--shot:#2F6FA8;--last:#F26A21;--last-ink:#B23A0C;--last-bg:#FDE8DA;--focus:#2B6CB0;--m-practice:#2F6FA8;--m-sighter:#C27C0E;--m-record:#2F6FA8;--m-ammo:#7C3AED;--b-practice:#DCE8F4;--bf-practice:#1F4E7A;--b-sighter:#F6E7C8;--bf-sighter:#6B4A08;--b-record:#14202B;--bf-record:#F4F2EE;--b-ammo:#EDE3F7;--bf-ammo:#5B2A8C}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}}
-:root[data-theme=dark]{color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}
+:root{color-scheme:light;--bg:#F4F2EE;--fg:#14202B;--mut:#4A5561;--card:#FFFFFF;--line:#E2DED6;--line2:#EEEBE5;--surface2:#F4F2EE;--accent:#14202B;--on-accent:#F4F2EE;--ok:#1A7F3C;--bad:#B42318;--warn:#8A5A00;--hi:#EEEBE5;--link:#14202B;--shot:#2F6FA8;--last:#F26A21;--last-ink:#B23A0C;--last-bg:#FDE8DA;--focus:#2B6CB0;--band:#14202B;--band-ink:#F4F2EE;--band-mut:#B9C2CC;--band-hot:#FF8A4C;--warn-bg:#FFF4D6;--warn-ink:#5C3D00;--warn-line:#E0A100;--m-practice:#2F6FA8;--m-sighter:#C27C0E;--m-record:#2F6FA8;--m-ammo:#7C3AED;--b-practice:#DCE8F4;--bf-practice:#1F4E7A;--b-sighter:#F6E7C8;--bf-sighter:#6B4A08;--b-record:#14202B;--bf-record:#F4F2EE;--b-ammo:#EDE3F7;--bf-ammo:#5B2A8C}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--band:#22303D;--band-ink:#F4F2EE;--band-mut:#B9C2CC;--band-hot:#FF8A4C;--warn-bg:#3A2E12;--warn-ink:#F6D58E;--warn-line:#E0A100;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--band:#22303D;--band-ink:#F4F2EE;--band-mut:#B9C2CC;--band-hot:#FF8A4C;--warn-bg:#3A2E12;--warn-ink:#F6D58E;--warn-line:#E0A100;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}
 a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thickness:2px}
 #theme{margin-left:8px}#power button{margin-left:6px}
 *{box-sizing:border-box}body{margin:0;font:15px/1.4 Archivo,system-ui,sans-serif;background:var(--bg);color:var(--fg)}
@@ -44,7 +44,7 @@ header{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 12px 0
 #dt{display:inline-flex;position:relative;width:22px;height:22px;margin-left:8px}#dt .dt-d{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) #dt .dt-l{display:none}:root:not([data-theme=light]) #dt .dt-d{display:inline}}
 :root[data-theme=dark] #dt .dt-l{display:none}:root[data-theme=dark] #dt .dt-d{display:inline}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
-.dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{padding:12px;max-width:1500px;margin:0 auto}
+.dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{--pad:12px;padding:var(--pad);max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
 .mut{color:var(--mut);font-size:13px}.num{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 .lanesign{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
@@ -70,6 +70,50 @@ button{cursor:pointer}button.pri{background:var(--accent);color:var(--on-accent)
 .grp b{display:block;font-size:13px}.grp small{display:block;color:var(--mut);font-size:10.5px}.grp.part{border-style:dashed}
 .shotrow{display:grid;gap:2px}.cell{min-width:0;text-align:center;font-size:12px;padding:3px 0;border-radius:4px;background:var(--bg);min-height:23px;font-variant-numeric:tabular-nums}
 .cell.x{background:var(--accent);color:var(--on-accent);font-weight:700}.cell.m{color:var(--bad);font-weight:700}.cell.e{opacity:.5}
+
+/* the lane (1.0: boards FmLanePhone, FmLaneMatch, FmLaneTablet, FmReview, FmLaneSignIn, FmAmmo, FmLaneLost) */
+a.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 16px;border-radius:22px;border:1px solid #C9C3B8;background:var(--card);color:var(--fg);text-decoration:none;font-weight:600}
+a.btn.pri{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}a.btn.quiet,button.quiet{border-color:transparent;background:transparent}
+.big{min-height:54px;font-size:17px;border-radius:16px}
+.lane{display:flex;flex-direction:column;gap:10px}.phone.lane{min-height:calc(100dvh - 57px - 2*var(--pad))}body.rangemode .phone.lane{min-height:calc(100dvh - 2*var(--pad))}
+.lanehead{display:flex;align-items:center;gap:10px;min-height:56px;margin:calc(-1*var(--pad)) calc(-1*var(--pad)) 0;padding:0 4px 0 16px;background:var(--card);border-bottom:1px solid var(--line)}
+.lanehead .ln{font-size:20px;font-weight:800}body:not(.rangemode) .lanehead .st{visibility:hidden}.lanehead .st,.lanetitle .meta{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--mut)}.lanehead .st{margin-left:auto}
+.sc{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px}
+.sc-main{flex:1;min-width:0;display:flex;flex-direction:column}.sc-main .mut{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-total{font-size:40px;line-height:1.1;font-weight:700;letter-spacing:-.02em}.sc-x{font-size:18px;color:var(--mut);margin-left:6px}
+.sc-last{display:flex;flex-direction:column;align-items:flex-end;background:var(--last-bg);color:var(--last-ink);border-radius:12px;padding:8px 12px;min-width:92px}
+.sc-last span{font-size:12px}.sc-last b{font-size:30px;line-height:1.1}.sc-last.none{background:var(--hi);color:var(--mut)}.sc-last .chk{font-size:12px}
+.facebox{position:relative;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}.facebox>svg.face{border-radius:0;margin:0;width:100%;height:auto;display:block}
+.ftag{position:absolute;left:10px;top:10px;font-size:12px;font-weight:600;background:rgba(255,255,255,.92);color:#14202B;border-radius:10px;padding:4px 8px}
+.zseg{display:flex;gap:6px}.zseg button{flex:1;padding:0 6px}.zseg button.sel{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.serchips{display:flex;gap:8px}.serchip{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:8px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line)}
+.serchip.cur{border:2px solid var(--fg)}.serchip b{font-size:18px}.serchips.serrows{flex-direction:column}.serchips.serrows .serchip{flex:none;flex-direction:row;align-items:center;gap:10px}.serchips.serrows .serchip>.mut:first-child{flex:1}
+.shotgrid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
+.sg{display:flex;align-items:center;justify-content:center;gap:5px;min-height:38px;border-radius:10px;background:var(--card);border:1px solid var(--line2);font-size:15px}
+.sg .n{font-size:11px;color:var(--mut)}.sg.last{background:var(--last-bg);color:var(--last-ink);border-color:var(--last-bg)}.sg.m b{color:var(--bad)}.sg.x b::after{content:"x";font-size:11px;margin-left:1px}.sg.e{border-style:dashed;background:transparent}
+.lanebar{position:sticky;bottom:0;z-index:4;display:flex;gap:4px;margin:auto calc(-1*var(--pad)) calc(-1*var(--pad));padding:6px 8px calc(8px + env(safe-area-inset-bottom,0px));background:var(--card);border-top:1px solid var(--line)}
+.lanebar button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:60px;border:0;background:transparent;border-radius:14px;font-size:13px;font-weight:600;padding:4px}
+.lanebar button.big{flex:1.3;background:var(--accent);color:var(--on-accent)}
+.lost{display:flex;flex-direction:column;gap:4px;background:var(--warn-bg);color:var(--warn-ink);border:2px solid var(--warn-line);border-radius:16px;padding:12px 14px}.lost b{font-size:16px}
+.mcbanner{background:var(--band);color:var(--band-ink);border:0;border-radius:16px;padding:12px 16px;margin-bottom:0}.mcbanner .mut{color:var(--band-mut)}
+.mcbanner .mcphase{color:var(--band-hot);font-weight:800;letter-spacing:.02em}.mcbanner .mcclock{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--band-ink)}
+.mcbanner button{background:transparent;color:var(--band-ink);border-color:var(--band-mut);margin-top:6px}.mcbanner button.pri{background:var(--last);color:#14202B;border-color:var(--last)}
+.revhead{display:flex;align-items:center;gap:10px;margin:calc(-1*var(--pad)) calc(-1*var(--pad)) 0;padding:8px 8px 8px 16px;min-height:56px;background:var(--b-sighter);color:var(--bf-sighter)}.revhead>span{flex:1;display:flex;flex-direction:column}.revhead .small{font-size:12px}
+.revshot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px}
+.revshot>div{display:flex;flex-direction:column}.revshot b{font-size:24px}.revshot b.last{color:var(--last-ink);font-size:30px}
+.revslider{display:flex;flex-direction:column;gap:4px}.revslider input{width:100%;accent-color:var(--accent)}
+.signin{display:flex;flex-direction:column;gap:12px;padding:8px 4px}.signin h1{margin:6px 0 0;font-size:26px;font-weight:800}.signin p{margin:0}
+.or{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:13px}.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
+.pinrow{display:flex;gap:10px}.pinrow label{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;font-weight:600;font-size:14px}.pinrow label.pin{flex:0 0 120px}.pinrow input{width:100%;min-width:0;font-size:19px}
+.signin-alt{display:flex;flex-direction:column;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.tile{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px}.tile b{font-size:20px}.tile small{font-size:12px;color:var(--mut)}
+.cmp{display:flex;flex-direction:column;gap:4px;padding:6px 0;border-top:1px solid var(--line2)}.cmpl{display:flex;justify-content:space-between;gap:8px;font-size:14px}.cmpl .b{font-weight:700}
+.cmpbar{height:8px;border-radius:4px;background:var(--hi)}.cmpbar span{display:block;height:8px;border-radius:4px;background:var(--mut)}.cmpbar span.cur{background:var(--m-ammo)}
+.pmenu{position:relative;z-index:5;box-shadow:0 12px 40px rgba(20,32,43,.18)}
+/* the wide screen: the face on the left, the same parts on the right */
+.lanetitle{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px}.lanetitle .title{margin-right:auto}.lanetitle .title{display:inline-flex;align-items:center;gap:8px;font-size:22px;font-weight:800}.lanetitle .meta{flex:1 0 100%;order:3;min-width:0}
+.shoot .right{gap:12px;overflow:auto}.laneacts{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}.laneacts button{display:inline-flex;align-items:center;gap:8px}
+.shoot .facebox{width:var(--face);height:var(--face)}.shoot .facebox .face{width:100%;height:100%}
 /* single target */
 /* shooter screen: the face alone on the left, as large a square as the window allows; the right column is as tall */
 .shoot{--face:min(calc(100vh - 64px),calc(min(100vw,1500px) - 380px));display:grid;grid-template-columns:var(--face) minmax(330px,1fr);gap:14px;align-items:start}
@@ -80,7 +124,7 @@ button{cursor:pointer}button.pri{background:var(--accent);color:var(--on-accent)
 .exitbar{display:flex;justify-content:flex-end;margin-top:auto}.exitbar button{padding:9px 18px}
 @media (max-width:820px){.shoot{--face:min(calc(100vw - 24px),calc(100vh - 64px));grid-template-columns:1fr}.shoot .right{height:auto;min-height:0}}
 /* holding a target: only the shooter screen */
-body.rangemode header,body.rangemode #ver{display:none}body.rangemode main{max-width:none;padding:8px}
+body.rangemode header,body.rangemode #ver{display:none}body.rangemode main{max-width:none;--pad:8px}
 body.rangemode .shoot{--face:min(calc(100vh - 16px),calc(100vw - 370px))}
 /* phone: one card, a menu for the rest */
 .phone .face{width:100%;height:auto;margin:6px 0}.phone .row{gap:8px}.menubtn{font-size:20px;padding:4px 12px;line-height:1}
@@ -113,7 +157,10 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .sheet .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}.sheet table.t td,.sheet table.t th{text-align:left}.sheet h4{margin:14px 0 4px}
 .sheet h2{margin:0 0 4px;font-size:18px}.sheet section{border-top:1px solid var(--line);padding:10px 0}.sheet section:first-of-type{border-top:0}
 /* sight adjustment */
-.sightface{max-width:300px;margin:0 auto}.advice{font-size:24px;font-weight:800;margin:4px 0}.advice div{margin:2px 0}
+.sightface{max-width:300px;margin:8px auto;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+.advice{font-size:26px;font-weight:800;margin:4px 0;background:var(--band);color:var(--band-ink);border-radius:16px;padding:12px 16px;display:flex;flex-wrap:wrap;gap:2px 20px}.advice div{margin:0}
+/* phones: sheets come up from the bottom (FmSight) */
+@media (max-width:600px){#overlay{padding:0;align-items:flex-end}#overlay .sheet{max-width:none;border-radius:22px 22px 0 0;max-height:94dvh;overflow:auto;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}}
 .cprrow{display:flex;gap:8px;align-items:center}.cprrow input{width:80px}.bad{color:var(--bad)}
 /* range control */
 .rc table.t td,.rc table.t th{text-align:left;vertical-align:middle}.rc .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}
@@ -137,7 +184,7 @@ button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#
 .mcform input[type=text],.mcform input[type=number],.mcform select{max-width:100%}.mcform .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 /* print pages (result sheets, score cards): plain, black on white, page breaks between cards */
 body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:10px auto 0;padding:0 10px}#printbar[hidden]{display:none}
-@media (max-width:600px){#live{font-size:12px}}body.print main{max-width:900px;padding:10px}
+@media (max-width:600px){#live{font-size:12px}#ver{display:none}}body.print main{max-width:900px;padding:10px}
 .sheetpage{background:#fff;color:#111}.sheetpage a{color:#1d4ed8}.sheetpage .mut{color:#555}.sheetpage h1{font-size:22px;margin:0 0 2px}.sheetpage h2{font-size:17px;margin:14px 0 4px}
 .sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
@@ -683,25 +730,172 @@ function infoPanel(t, v, mode, S) {
     '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
 }
+// ---- The lane (1.0; boards FmLanePhone, FmLaneMatch, FmLaneTablet, FmReview, FmSight, FmLaneSignIn, FmAmmo, FmLaneLost) ----
+// Phones get one column in thumb reach (actions in a bar at the bottom); tablets and computers the same parts beside a
+// large face. The actions are the ones the page always had (data-act), only their place and look are new.
+const LI = {
+  more: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>',
+  sights: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/></svg>',
+  review: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/><path d="M12 7v5l3 2"/></svg>',
+  plus: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></svg>',
+  gear: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
+  hand: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.5 1.5 0 0 1 3 0v7c0 4-2.5 7-6 7s-5-2-6.5-4.5L3 12.8a1.4 1.4 0 0 1 2.3-1.5L8 14"/></svg>',
+  first: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M18 6l-6 6 6 6M11 6l-6 6 6 6"/></svg>',
+  prev: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>',
+  next: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  last: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 6l6 6-6 6M13 6l6 6-6 6"/></svg>',
+};
+const laneTitle = t => t.lane != null ? 'Lane ' + t.lane : t.name;
+const laneMode = (t, v, reviewing) => {
+  const ammo = v.kind === 'ammo' && !!v.ammo;
+  return reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
+};
+const shotScore = (s, W) => !s ? '' : s.miss ? 'M' : (W ? String(s.ring) : dec(s.decimal));
+const hhmmss = iso => { if (!iso) return ''; const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'}); };
+function laneHead(t, mode, S) {                  // phones: the lane, its mode, live or reconnecting, the lane's own menu
+  return '<div class="lanehead"><b class="ln">' + esc(laneTitle(t)) + '</b>' + badge(mode) +
+    '<span class="st"><span class="livedot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' + (t.online ? 'Live' : 'Reconnecting') + '</span>' +
+    '<button class="iconbtn" data-act="menu" aria-label="Lane menu" aria-expanded="' + !!S.menu + '">' + LI.more + '</button></div>';
+}
+function laneLost(t) {                           // the target is silent: its shots are kept on it and arrive later (FmLaneLost)
+  if (t.online) return '';
+  const L = t.view && t.view.last_shot;
+  return '<section class="lost" role="status"><b>Your target is not reporting</b><span>Keep shooting: every shot is kept on the target and arrives ' +
+    'when it reconnects.' + (t.match ? ' Tell the Range Officer if it lasts: they can give you extra time.' : '') + '</span>' +
+    '<span class="small">Last report ' + esc(clock(t.last_seen)) + (L ? ' · last shot received: ' + esc(L.n) + (L.at ? ', fired ' + esc(hhmmss(L.at)) : '') : '') + '</span></section>';
+}
+function laneScore(t, v) {                       // the total and the last shot, side by side (FmLanePhone)
+  const W = wholeRings(v), L = v.last_shot;
+  return '<section class="sc" aria-label="Score"><div class="sc-main"><span class="mut">' + esc(v.shooter || t.shooter || 'No session yet') + ' · ' + v.count +
+    (v.count === 1 ? ' shot' : ' shots') + (v.total ? ' of ' + v.total : '') + '</span><b class="num sc-total">' + (W ? v.agg.integer : dec(v.agg.decimal)) +
+    (v.agg.x ? '<span class="sc-x">' + v.agg.x + 'x</span>' : '') + '</b></div>' +
+    (L ? '<div class="sc-last"><span>Shot ' + esc(L.n) + '</span><b class="num">' + shotScore(L, W) + (L.inner ? '<span class="xm">X</span>' : '') + '</b>' +
+        (L.check ? '<span class="chk" title="' + esc(L.check) + '">check the target</span>' : '') + '</div>'
+      : '<div class="sc-last none"><span>No shots yet</span></div>') + '</section>';
+}
+function laneFace(v, mode, S) {                  // the face, with which shots it shows
+  const ammo = v.kind === 'ammo' && !!v.ammo, dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm;
+  const half = halfFor(S.zoom, v.bull_shots, dia / 2, ammo ? 9 : undefined, v.face), b = v.bull_shots, f = b.length ? b[0].n : null, l = b.length ? b[b.length - 1].n : null;
+  const tag = ammo || !b.length ? '' : (v.bull_count > 1 ? 'Target ' + (v.bull_index + 1) + ' · ' : '') + 'shots ' + f + (l > f ? '–' + l : '');
+  return '<div class="facebox">' + faceSvg(b, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'},
+    ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + (tag ? '<span class="ftag">' + esc(tag) + '</span>' : '') + '</div>';
+}
+function laneZoom(zoom, F) {                     // Auto, the inner rings the face has, Whole (the full set stays on the wide screen)
+  const lo = lowestRing(F), ks = ['auto', '9', '8', '7', 'off'].filter(k => k === 'auto' || k === 'off' || +k >= lo);
+  return '<div class="zseg" role="group" aria-label="Zoom">' + ks.map(k => '<button data-act="zoom" data-z="' + k + '" aria-pressed="' + (zoom === k) + '"' +
+    (zoom === k ? ' class="sel"' : '') + '>' + (k === 'auto' ? 'Auto' : k === 'off' ? 'Whole' : k) + '</button>').join('') + '</div>';
+}
+function laneSeries(v, all) {                    // the aggregate groups (tens): the newest three on a phone, all on wider screens
+  if (!v.groups.length) return '';
+  const W = wholeRings(v), gs = all ? v.groups : v.groups.slice(-3), cur = v.groups[v.groups.length - 1];
+  return '<div class="serchips' + (all ? ' serrows' : '') + '">' + gs.map(g => '<span class="serchip' + (g === cur ? ' cur' : '') + '"><span class="mut">Series ' + (g.index + 1) +
+    (all ? ' · shots ' + g.first + '–' + g.last : '') + '</span><b class="num">' + (W ? g.integer : dec(g.decimal)) + '</b>' +
+    (g.x ? '<span class="mut num">' + g.x + 'x</span>' : '') + '</span>').join('') + '</div>';
+}
+function laneGrid(v) {                           // the shots on this target picture, 5 over 5, the newest marked
+  const n = v.bull_size <= 20 ? v.bull_size : v.bull_shots.length, W = wholeRings(v);
+  let c = '';
+  for (let i = 0; i < n; i++) {
+    const s = v.bull_shots[i], last = s && i === v.bull_shots.length - 1;
+    c += s ? '<span class="sg' + (last ? ' last' : '') + (s.miss ? ' m' : '') + (s.inner ? ' x' : '') + '"><span class="n">' + esc(s.n) + '</span><b class="num">' + shotScore(s, W) + '</b>' + checkMark(s) + '</span>'
+      : '<span class="sg e"></span>';
+  }
+  const un = (v.unplaced || []).length;
+  return '<div class="shotgrid">' + c + '</div>' + (un ? '<p class="chkline">' + un + ' heard, not placed: look at the target</p>' : '');
+}
+function laneModes(t, S) {                       // a match run from this lane (not by Match Control): sighters or record
+  if (S.review || t.kind !== 'match' || t.match) return '';
+  const mine = t.lease && t.lease.mine;
+  return '<div class="zseg modes2" role="group" aria-label="Sighters or record">' + ['sighter', 'record'].map(m => '<button data-act="mode" data-mode="' + m + '" class="' + (t.mode === m ? 'sel' : '') + '"' +
+    (mine ? '' : ' disabled') + '>' + MODES[m] + '</button>').join('') + '</div>' + (mine ? '' : '<p class="mut">Take control to switch.</p>');
+}
+function laneAmmo(v, S) {                        // an ammo test: the group, and the tests before it (FmAmmo)
+  const a = v.ammo, none = !a.shots, tile = (k, val) => '<div class="tile"><span class="mut">' + k + '</span><b class="num">' + val + '</b></div>';
+  return '<div class="tiles">' + tile('Group', none ? '–' : mm2(a.size_mm) + '<small> mm</small>') + tile('Spread', none ? '–' : mm2(a.spread_cc_mm) + '<small> mm</small>') +
+    tile('Mean radius', none ? '–' : mm2(a.mean_radius_mm) + '<small> mm</small>') + '</div>' +
+    '<p class="mut">' + esc(v.label || 'No label') + ' · ' + v.count + (v.count === 1 ? ' shot' : ' shots') + ' · ' + mm2(a.diameter_mm) + ' mm projectile · outside edge to outside edge' + (a.misses ? ' · ' + a.misses + ' missed' : '') + '</p>' +
+    ammoCompare(v, S);
+}
+function ammoCompare(v, S) {                      // this test beside the ones before it, by group size
+  const a = v.ammo, past = (S.seriesList || []).filter(g => g.kind === 'ammo' && g.ammo && g.ammo.shots >= 2 && g.id !== v.series_id).slice(0, 4);
+  if (!past.length || !a.shots) return '';
+  const big = Math.max(a.size_mm, ...past.map(g => g.ammo.size_mm)) || 1;
+  const bar = (label, size, cur) => '<div class="cmp"><span class="cmpl"><span' + (cur ? ' class="b"' : '') + '>' + label + '</span><b class="num">' + size.toFixed(2) + ' mm</b></span>' +
+    '<span class="cmpbar"><span style="width:' + Math.round(100 * size / big) + '%"' + (cur ? ' class="cur"' : '') + '></span></span></div>';
+  return '<section class="panel"><h3>Compared</h3>' + bar(esc(v.label || 'This test'), a.size_mm, true) + past.map(g => bar(esc(g.label || when(g.started)), g.ammo.size_mm, false)).join('') + '</section>';
+}
+function laneBar(t, S) {                         // phones: the lane's actions in thumb reach
+  const L = t.lease || {}, b = (act, icon, label, dis, title) => '<button data-act="' + act + '"' + (dis ? ' disabled' : '') + (title ? ' title="' + esc(title) + '"' : '') + '>' + LI[icon] + '<span>' + label + '</span></button>';
+  if (!L.mine) return '<nav class="lanebar" aria-label="Lane actions">' + b('menugear', 'hand', L.held_by ? 'Settings' : 'Take control') + b('menureview', 'review', 'Review') + '</nav>';
+  const ready = sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN;
+  return '<nav class="lanebar" aria-label="Lane actions">' +
+    (t.kind === 'practice' ? b('sight', 'sights', 'Sights', !ready, ready ? '' : 'Fire ' + SIGHT_MIN + ' shots on paper for a suggestion') : '') +
+    b('menureview', 'review', 'Review') + (t.match ? '' : b('newseries', 'plus', t.kind === 'ammo' ? 'New test' : 'New series')) + b('gear', 'gear', 'Settings') + '</nav>';
+}
+function laneMenu(t, S) {                        // the lane's menu (the ⋯ button): control, settings, look, the way out
+  if (!S.menu) return '';
+  const L = t.lease || {};
+  return '<div class="pmenu" role="menu">' + (L.mine ? '<button data-act="exitrange">Exit (release control)</button>' : '<button class="pri" data-act="menugear">Take control</button>') +
+    (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN ? '<button data-act="sight">Adjust sights</button>' : '') +
+    '<button data-act="menureview">Review</button><button data-act="menugear">Settings</button>' +
+    '<button data-act="theme">' + themeLabel() + ' mode</button>' + (L.mine ? '' : '<a href="#/">All lanes</a>') + '</div>';
+}
+function laneSigninScreen(t, S) {                // a free lane: who is shooting? (FmLaneSignIn)
+  const lane = esc(laneTitle(t));
+  return '<div class="signin"><h1>Who is shooting?</h1><p class="mut">Sign in and every shot goes into your deepTENS history. You can also just shoot.</p>' +
+    '<a class="btn pri big" href="' + esc(t.signin_url) + '">Sign in with deepTENS</a>' +
+    '<p class="or"><span>or with your athlete number</span></p>' +
+    '<div class="pinrow"><label>Athlete number<input id="ln_num" inputmode="numeric" autocomplete="off" placeholder="6 digits" maxlength="7"></label>' +
+    '<label class="pin">PIN<input id="ln_pin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" maxlength="6"></label></div>' +
+    '<button class="big" data-act="lnin">Shoot on ' + lane + '</button>' +
+    '<p class="mut">Works without internet: the range keeps a list of its athletes and their PINs.</p>' +
+    '<div class="signin-alt"><button data-act="lnskip">Just shoot (practice, not saved to a name)</button><a class="btn quiet" href="#/">Watch the range instead</a></div></div>';
+}
+const showSignin = (t, S) => !!(t.signin_url && !t.athlete && !(S.lnskip || {})[t.device_id] && !S.review &&
+  ((t.lease && t.lease.mine) || (!(t.lease && t.lease.held_by) && !(t.view && t.view.count))));
+function reviewDetail(v) {                       // the reviewed shot: score, total so far, where, when, signed (FmReview)
+  const s = v.last_shot, W = wholeRings(v), ammo = v.kind === 'ammo';
+  if (!s) return '';
+  const off = (val, pos, neg) => mm2(Math.abs(val)) + ' mm ' + (val > 0 ? pos : val < 0 ? neg : '');
+  const where = s.miss || s.x_mm == null ? 'missed' : ammo ? (s.n === 1 ? 'the first shot' : off(s.x_mm, 'right', 'left') + ', ' + off(s.y_mm, 'high', 'low') + ' of the first')
+    : off(s.y_mm, 'high', 'low').trim() + ', ' + off(s.x_mm, 'right', 'left').trim();
+  return '<section class="revshot" aria-label="Shot ' + esc(s.n) + '"><div><span class="mut">Shot ' + esc(s.n) + '</span><b class="num last">' + shotScore(s, W) + '</b></div>' +
+    '<div><span class="mut">Total to here</span><b class="num">' + (W ? v.agg.integer : dec(v.agg.decimal)) + '</b></div>' +
+    '<div><span class="mut">Where</span><span>' + esc(where) + '</span></div>' +
+    '<div><span class="mut">Fired</span><span class="num">' + esc(hhmmss(s.at) || '–') + '</span>' + (s.auth === 1 ? ' <span class="ok small">✓ signed</span>' : s.auth === 0 ? ' <span class="bad small">not signed</span>' : '') + '</div></section>';
+}
+function reviewBar(v, ammo) {                    // phones: step through in thumb reach, and a slider for long series
+  const k = v.count, full = v.full_count, ps = reviewPage(Object.assign({}, v, {kind: ammo ? 'ammo' : v.kind}));
+  const b = (move, icon, title, off, big) => '<button data-act="rnav" data-move="' + move + '" title="' + title + '" aria-label="' + title + '"' + (big ? ' class="big"' : '') + (off ? ' disabled' : '') + '>' + LI[icon] + '</button>';
+  return '<label class="revslider"><span class="mut">Shot ' + k + ' of ' + full + '</span><input type="range" min="1" max="' + full + '" value="' + k + '" data-revshot="1" aria-label="Shot to show"></label>' +
+    '<nav class="lanebar revbar" aria-label="Step through shots">' + b('page-', 'first', ammo ? 'Back ten shots' : 'Back one target', reviewShot(k, ps, full, 'page-') === k) +
+    b('step-', 'prev', 'Back one shot', k <= 1, true) + b('step+', 'next', 'Forward one shot', k >= full, true) +
+    b('page+', 'last', ammo ? 'Forward ten shots' : 'Forward one target', reviewShot(k, ps, full, 'page+') === k) + '</nav>';
+}
+function reviewHead(t, v, ammo) {
+  return '<div class="revhead"><span><b>Reviewing · ' + esc(laneTitle(t)) + '</b><span class="small">' + (ammo ? 'An ammo test' : 'A ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
+    '</span></span><button class="pri" data-act="rback">Back to live</button></div>' +
+    (v.kind === 'match' ? '<div class="zseg" role="group" aria-label="Record or sighters"><button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button>' +
+      '<button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button></div>' : '');
+}
 const themeLabel = () => typeof document !== 'undefined' && isDark() ? 'Light' : 'Dark';
 const exitButton = '<button class="danger" data-act="exitrange">Exit</button>';
 function shooterView(t, S) {
   if (S.phone) return phoneView(t, S);
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
-  const ammo = v.kind === 'ammo' && !!v.ammo;
-  const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
-  const dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm, pr = dia / 2, half = halfFor(S.zoom, v.bull_shots, pr, ammo ? 9 : undefined, v.face);
-  const banner = reviewing ? '<div class="banner">Reviewing ' + (ammo ? 'an ammo test' : 'a ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
-    (v.kind === 'match' ? ' · <button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button> <button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button>' : '') +
-    ' <button data-act="rback">Back to live</button></div>' : '';
-  const pager = reviewing ? reviewPager(v, ammo) : '';
-  const mb = reviewing ? '' : matchBanner(t.match, t, S);
-  const mine = t.lease && t.lease.mine;
-  return '<div class="shoot"><div class="left">' +
-    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) + '</div>' +
-    '<div class="right"><div class="topbar">' + zoomBar(S.zoom, v.face) + (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '</div>' +
-    mb + banner + pager + (reviewing ? '' : laneSignin(t, S)) + infoPanel(t, v, mode, S) + (ammo ? ammoPanel(t, v) + ammoTable(v, true) : shotsTable(v, true) + lastPanel(v)) +
-    (mine ? '<div class="exitbar">' + exitButton + '</div>' : '') + '</div></div>';
+  const ammo = v.kind === 'ammo' && !!v.ammo, mode = laneMode(t, v, reviewing), L = t.lease || {}, mine = !!L.mine;
+  const ready = sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN;
+  const act = (a, icon, label, dis) => '<button data-act="' + a + '"' + (dis ? ' disabled' : '') + '>' + LI[icon] + '<span>' + label + '</span></button>';
+  const head = '<div class="lanetitle"><span class="title"><span class="livedot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' + esc(laneTitle(t)) + '</span>' + badge(mode) +
+    '<span class="meta">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) +
+    (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</span>' +
+    (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '<button class="iconbtn" data-act="gear" title="Settings" aria-label="Settings">' + LI.gear + '</button></div>';
+  const top = reviewing ? reviewHead(t, v, ammo) + reviewPager(v, ammo) + reviewDetail(v) : laneLost(t) + matchBanner(t.match, t, S) + laneSignin(t, S) + laneModes(t, S);
+  const body = ammo ? laneZoom(S.zoom, v.face) + ammoPanel(t, v) + ammoCompare(v, S) + ammoTable(v, true) : laneScore(t, v) + laneZoom(S.zoom, v.face) + laneSeries(v, true) + laneGrid(v);
+  const acts = reviewing ? '' : '<div class="laneacts">' + (mine ? (t.kind === 'practice' ? act('sight', 'sights', 'Sights', !ready) : '') + act('menureview', 'review', 'Review') +
+      (t.match ? '' : act('newseries', 'plus', t.kind === 'ammo' ? 'New test' : 'New series')) + exitButton : act('menureview', 'review', 'Review')) + '</div>';
+  return '<div class="shoot"><div class="left">' + laneFace(v, mode, S) + '</div>' +
+    '<div class="right">' + head + top + body + acts + '</div></div>';
 }
 // Target sign-in (P2): the athlete signed in on this lane, or how to sign in with deepTENS: the lane's QR code (opens
 // deepTENS on the phone, its own data), the athlete number and PIN here, and the address of this page for a phone on
@@ -747,29 +941,14 @@ function tabStrip(items, cur, href, label) {
     '<label class="secsel"><span class="mut">' + esc(label || 'Section') + '</span><select data-secsel="1">' +
     items.map(([k, l]) => '<option value="' + href(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>';
 }
-// A phone: the card of All targets, larger, with a menu for everything else
+// A phone: the lane in one column, the actions in a bar at the bottom (FmLanePhone, FmLaneMatch, FmReview, FmLaneSignIn)
 function phoneView(t, S) {
-  const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view, L = t.lease || {};
-  const ammo = v.kind === 'ammo' && !!v.ammo;
-  const mode = reviewing ? (ammo ? 'ammo' : v.stream === 'sighter' ? 'sighter' : (v.kind === 'practice' ? 'practice' : 'record')) : t.mode;
-  const dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm, half = halfFor(S.zoom, v.bull_shots, dia / 2, ammo ? 9 : undefined, v.face);
-  const last = v.last_shot;
-  const menu = S.menu ? '<div class="pmenu">' +
-    (L.mine ? '<button data-act="exitrange">Exit (release control)</button>' : '<button class="pri" data-act="menugear">Take control</button>') +
-    (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN ? '<button data-act="sight">Adjust sights</button>' : '') +
-    '<button data-act="menureview">Review</button><button data-act="menugear">Settings</button>' + zoomBar(S.zoom, v.face) +
-    '<button data-act="theme">' + themeLabel() + ' mode</button>' + (L.mine ? '' : '<a href="#/">All targets</a>') + '</div>' : '';
-  return '<div class="phone"><div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</b><span>' + badge(mode) +
-    ' <button class="menubtn" data-act="menu" aria-label="Menu" aria-expanded="' + !!S.menu + '">☰</button></span></div>' + menu +
-    (reviewing ? '<div class="banner">Reviewing from ' + esc(when(v.started)) + ' <button data-act="rback">Back to live</button></div>' + reviewPager(v, ammo) : matchBanner(t.match, t, S) + laneSignin(t, S, true)) +
-    faceSvg(v.bull_shots, Object.assign({half: half, pellet: dia, face: v.face, color: modeColor(mode), corner: mode !== 'record' && mode !== 'ammo'}, ammo ? Object.assign({labelLast: true}, ammoMarks(v)) : {})) +
-    '<div class="who">' + esc(v.shooter || t.shooter || '–') + (L.held_by && !L.mine ? ' <span class="mut">· controlled by ' + esc(L.held_by) + '</span>' : '') + '</div>' +
-    (ammo ? '<div class="pscore"><span class="v">' + (v.ammo.shots ? v.ammo.size_mm.toFixed(2) : '–') + '</span><span class="unit">mm group</span><span class="mut">' + v.count + ' shots</span></div>'
-      : '<div class="pscore"><span class="v">' + (last ? (last.miss ? 'M' : dec(last.decimal)) : '–') + '</span>' + (last && last.inner ? '<span class="xbig">X</span>' : '') +
-        '<span class="mut">' + (last ? 'shot ' + esc(last.n) : 'no shots yet') + '</span></div>' +
-        '<div class="scorebox"><div class="tot"><div class="big num">' + (wholeRings(v) ? v.agg.integer : dec(v.agg.decimal)) + '</div>' +
-    (wholeRings(v) ? '' : '<div class="sub num">' + v.agg.integer + '</div>') + '<div class="sub num">X ' + v.agg.x + '</div></div>' +
-        '<div class="rows">' + groupsRow(v) + strip(v) + '</div></div>') + '</div>';
+  const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
+  const ammo = v.kind === 'ammo' && !!v.ammo, mode = laneMode(t, v, reviewing);
+  if (reviewing) return '<div class="phone lane">' + reviewHead(t, v, ammo) + laneFace(v, mode, S) + reviewDetail(v) + reviewBar(v, ammo) + '</div>';
+  if (showSignin(t, S)) return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneSigninScreen(t, S) + '</div>';
+  return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneLost(t) + matchBanner(t.match, t, S) + (t.athlete ? laneSignin(t, S, true) : '') + laneModes(t, S) +
+    (ammo ? '' : laneScore(t, v)) + laneFace(v, mode, S) + laneZoom(S.zoom, v.face) + (ammo ? laneAmmo(v, S) : laneSeries(v, false) + laneGrid(v)) + laneBar(t, S) + '</div>';
 }
 
 // ---- Gear overlay ----
@@ -2197,7 +2376,8 @@ async function refresh() {
         S.res = r.status === 404 ? {missing: true} : r.ok ? await r.json() : S.res;
       } else S.resList = (await get('/results')).results;
     }
-    if (t && S.gear) S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series;
+    if (t && (S.gear || (t.kind === 'ammo' && Date.now() - (S.seriesAt || 0) > 15000))) {   // the gear's list, and an ammo test's comparison
+      S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series; S.seriesAt = Date.now(); }
     render();
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; if (route().display) render(); }
   finally {
@@ -2384,6 +2564,7 @@ async function act(el) {
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
   if (!id) return;
+  if (a === 'lnskip') { S.lnskip = Object.assign({}, S.lnskip, {[route().id]: true}); return render(true); }   // this phone just shoots here
   if (a === 'lnpin') { S.lnpin = !S.lnpin; render(); const n = document.getElementById('ln_num'); if (n) n.focus(); return; }
   if (a === 'lnin') {                            // target sign-in with the athlete number and PIN (deepTENS checks it)
     const num = val('ln_num') || '', pin = val('ln_pin') || '';
@@ -3215,6 +3396,8 @@ function boot() {
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.drawer) { e.preventDefault(); openDrawer(false); } });
   document.addEventListener('change', e => { const el = e.target; if (el && el.dataset && el.dataset.secsel) location.hash = el.value; });   // the section switcher
+  document.addEventListener('change', e => { const el = e.target;                 // Review: the slider picks a shot
+    if (el && el.dataset && el.dataset.revshot && S.review && S.reviewView) { S.review.shot = Math.max(1, Math.min(S.reviewView.full_count, parseInt(el.value, 10) || 1)); refresh(); } });
   // The file input lives outside the redrawn screen (index.html), so a redraw while the file dialog is open cannot
   // swallow the choice. Whatever is chosen uploads at once, one file after another.
   const csvPick = document.getElementById('csvfile');   // competitors from a CSV file: sent once, read in memory, not kept
@@ -3411,7 +3594,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {drawerHtml, tabStrip, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

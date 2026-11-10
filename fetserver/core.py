@@ -1145,7 +1145,9 @@ class Core:
                 "inner": (not miss) and bool(r["inner"]),
                 "x_mm": None if miss else (r["ax_h"] - off[0]) / 100.0,
                 "y_mm": None if miss else (r["ay_h"] - off[1]) / 100.0,
-                "check": (checks or {}).get(r["id"])}      # may not be one clean shot (matches._check): look at the target
+                "check": (checks or {}).get(r["id"]),      # may not be one clean shot (matches._check): look at the target
+                # when it was fired, and whether its signature was checked (1), not (0) or not known (older lines): Review
+                "at": iso(r["event_ms"]) if "event_ms" in r.keys() else None, "auth": r["auth"] if "auth" in r.keys() else None}
 
     def _checks(self, c, series_id: int) -> tuple:
         """({shot id: why}, [unplaced reports]) for one series: shots too soon after another report or whose

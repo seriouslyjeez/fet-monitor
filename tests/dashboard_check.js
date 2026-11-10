@@ -92,24 +92,47 @@ const asOther = t => Object.assign({}, t, {lease: {held_by: 'Bob <b>Mallory</b>'
   assert(!hostile.test(overlayView(f(bad), state({seriesList: D.series}), '<img src=x>')), 'overlay escapes');
 });
 
-// --- 3. right-hand order: title and info, then the shots, then last shot
+// --- 3. the wide screen (1.0, board FmLaneTablet): the face alone on the left; on the right the title and info, the
+// score, the tens, the shots of this target picture, then the actions with Exit
 const page = pageOf(asMine(recordT));
-const iInfo = page.indexOf('class="title"'), iShots = page.indexOf('<h3>Shots'), iLast = page.indexOf('<h3>Last shot');
-assert(iInfo > 0 && iInfo < iShots && iShots < iLast, 'order: info, shots, last shot');
+const iInfo = page.indexOf('class="lanetitle"'), iScore = page.indexOf('class="sc"'), iSer = page.indexOf('class="serchips serrows"'), iGrid = page.indexOf('class="shotgrid"'), iActs = page.indexOf('class="laneacts"');
+assert(iInfo > 0 && iInfo < iScore && iScore < iSer && iSer < iGrid && iGrid < iActs, 'order: info, score, tens, shots, actions');
 { const left = page.slice(page.indexOf('<div class="left">') + 18, page.indexOf('<div class="right">'));
-  assert(/^<svg class="face"[\s\S]*<\/svg><\/div>$/.test(left), 'the left side is the target face and nothing else');
-  const right = page.slice(page.indexOf('<div class="right">'));
-  assert(right.indexOf('<div class="topbar"><div class="zoombar">') === 19, 'zoom buttons at the top of the right side');
-  assert(right.includes('class="panel grow"'), 'the shots table takes the spare height');
+  assert(/^<div class="facebox"><svg class="face"[\s\S]*<\/svg>(<span class="ftag">[^<]*<\/span>)?<\/div><\/div>$/.test(left), 'the left side is the target face and nothing else');
   assert(page.includes('data-act="exitrange"') && page.includes('data-act="theme"'), 'holding the target: Exit and the theme button on the screen');
   const notMine = pageOf(Object.assign({}, recordT, {lease: {held_by: null, mine: false}}));
-  assert(!notMine.includes('exitrange') && !notMine.includes('data-act="theme"'), 'not holding it: no Exit (the header has the theme button)');
-  assert(page.lastIndexOf('<div class="exitbar">') > page.indexOf('<h3>Last shot'), 'Exit at the bottom of the right side'); }
-// --- 2. zoom bar: Off, 1..9, Auto in that order
-const zb = page.match(/<div class="zoombar">([\s\S]*?)<\/div>/)[1];
-assert.deepStrictEqual([...zb.matchAll(/data-z="([^"]+)"/g)].map(m => m[1]), ['off', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'auto']);
-assert(zb.includes('class="sel">Auto'), 'the chosen zoom is highlighted');
+  assert(!notMine.includes('exitrange') && !notMine.includes('data-act="theme"') && !notMine.includes('data-act="newseries"'), 'not holding it: no Exit, no theme button (the header has it), no New series');
+  assert(page.lastIndexOf('data-act="exitrange"') > iActs, 'Exit with the actions at the bottom'); }
+// --- 2. zoom (1.0): Auto, the inner rings the face has, Whole
+const zb = page.match(/<div class="zseg" role="group" aria-label="Zoom">([\s\S]*?)<\/div>/)[1];
+assert.deepStrictEqual([...zb.matchAll(/data-z="([^"]+)"/g)].map(m => m[1]), ['auto', '9', '8', '7', 'off']);
+assert(zb.includes('class="sel">Auto') && zb.includes('aria-pressed="true" class="sel">Auto'), 'the chosen zoom is highlighted and pressed');
 assert(pageOf(recordT, {zoom: '8'}).includes('class="sel">8<'));
+assert(X.laneZoom('auto', {rings: [{value: 10, dia_mm: 1}, {value: 9, dia_mm: 2}, {value: 8, dia_mm: 3}], ring_mm: 1}).match(/data-z="([^"]+)"/g).length === 4, 'a face without a 7 ring: no 7');
+// --- the score card, the tens and the shot grid (1.0)
+{ const sc = X.laneScore(recordT, v);
+  assert(sc.includes('>' + dec(v.agg.decimal)) && sc.includes('<span>Shot ' + v.last_shot.n + '</span>') && sc.includes('Alice'), 'total, last shot, shooter');
+  assert(sc.includes(' of 60'), 'a match shows its length');
+  assert(X.laneScore(T('lane-3'), T('lane-3').view).includes('No shots yet'));
+  const gr = X.laneGrid(v);
+  assert.strictEqual(count(gr, /class="sg/g), v.bull_size, 'one cell per shot position on the picture');
+  assert.strictEqual(count(gr, /class="sg[^"]*last/g), 1, 'one newest');
+  assert.deepStrictEqual([...gr.matchAll(/<span class="n">(\d+)<\/span>/g)].map(m => +m[1]), v.bull_shots.map(s => s.n), 'numbered within the series');
+  assert.strictEqual(count(gr, /class="sg e"/g), v.bull_size - v.bull_shots.length, 'empty places keep the layout still');
+  assert(/class="sg[^"]* x"/.test(gr) && /class="sg[^"]* m"[^>]*>[\s\S]*?<b class="num">M</.test(gr), 'inner tens and misses marked');
+  const sr = X.laneSeries(v, true), sp = X.laneSeries(v, false);
+  assert.strictEqual(count(sr, /class="serchip[ "]/g), v.groups.length, 'wide: every ten');
+  assert.strictEqual(count(sp, /class="serchip[ "]/g), Math.min(3, v.groups.length), 'phone: the newest three');
+  assert.strictEqual(count(sr, /serchip cur/g), 1, 'the current ten marked');
+  v.groups.forEach(gg => assert(sr.includes('Series ' + (gg.index + 1) + ' · shots ' + gg.first + '–' + gg.last), 'every ten listed: ' + gg.index));
+  const six = Object.assign({}, v, {groups: Array.from({length: 6}, (_, i) => ({index: i, first: i * 10 + 1, last: i * 10 + 10, decimal: 100 + i, integer: 95, x: 0, complete: i < 5}))});
+  assert.strictEqual(count(X.laneSeries(six, false), /class="serchip[ "]/g), 3, 'six tens: a phone shows three');
+  assert(X.laneSeries(six, false).includes('Series 6') && !X.laneSeries(six, false).includes('Series 3<'), 'the newest three');
+  assert.strictEqual(count(X.laneSeries(six, true), /class="serchip[ "]/g), 6);
+  const newest = gr.match(/class="sg[^"]*last[^"]*"><span class="n">(\d+)</);
+  assert(newest && +newest[1] === v.bull_shots[v.bull_shots.length - 1].n, 'the marked cell is the newest shot'); }
+{ const mc = Object.assign({}, asMine(recordT), {match: {name: 'M', state: 'running', label: 'x', remaining_ms: 1}});
+  assert(!pageOf(mc).includes('data-act="mode"') && !shooterView(mc, state({phone: true})).includes('data-act="mode"'), 'Match Control switches sighters and record, not the lane'); }
 // --- 3/4. last shots table: fills from the top, numbered within the series, face and table are the current bull
 const rows = shotsTable(v).match(/<tr[ >][\s\S]*?<\/tr>/g).slice(1);
 assert.strictEqual(rows.length, v.bull_size, 'one row per shot position');
@@ -130,7 +153,8 @@ assert(lastPanel(v).includes('class="xbig">X') === !!v.last_shot.inner);
 assert(lastPanel(T('lane-3').view).includes('No shots yet'));
 // --- 6. control moved under the gear; Sighter/Record on the main screen only for a match
 assert(page.includes('data-act="gear"'));
-assert(!/data-act="(take|release|takeover|kind|newseries|savesettings)"/.test(page), 'no control buttons on the main screen');
+assert(!/data-act="(take|release|takeover|kind|savesettings)"/.test(page), 'no control buttons on the main screen');
+assert(page.includes('data-act="newseries"'), 'New series beside Review when holding the lane (1.0)');
 assert.strictEqual(count(pageOf(asMine(recordT)), /data-act="mode"/g), 2, 'sighter and record on the main screen in a match');
 assert.strictEqual(count(pageOf(asMine(practiceT)), /data-act="mode"/g), 0, 'not in practice');
 assert(/data-mode="record" class="sel"/.test(pageOf(asMine(recordT))) && /data-mode="sighter" class="sel"/.test(pageOf(asMine(sighterT))));
@@ -155,9 +179,10 @@ assert.strictEqual(count(rpage, /data-act="rnav"/g), 4, 'four review buttons');
 assert(/data-move="page-"[^>]*title="Back one target"/.test(rpage) && /data-move="step-"[^>]*title="Back one shot"/.test(rpage) && /data-move="step\+"[^>]*title="Forward one shot"/.test(rpage) && /data-move="page\+"[^>]*title="Forward one target"/.test(rpage));
 assert(rpage.indexOf('&lt;&lt;') < rpage.indexOf('&lt;</button>') && rpage.indexOf('&gt;</button>') < rpage.indexOf('&gt;&gt;'), 'order: << < shot > >>');
 assert(!/disabled/.test(rpage.slice(rpage.indexOf('class="pager"'), rpage.indexOf('class="pager"') + 900)), 'mid-series nothing is disabled');
-assert.strictEqual(count(rpage, /<tr class="[^"]*"?>?<td>(1[1-5])<\/td>|<tr><td>(1[1-5])<\/td>/g), 5, 'the picture shows shots 11-15 only: the shots fired so far on this target');
-assert(!rpage.includes('<td>16</td>'), 'no shot after the one being reviewed is shown');
-assert(rpage.includes('Shot 15 · ring'), 'last shot panel is the reviewed shot');
+assert.strictEqual(count(rpage, /<span class="n">(1[1-5])<\/span>/g), 5, 'the picture shows shots 11-15 only: the shots fired so far on this target');
+assert(!rpage.includes('<span class="n">16</span>'), 'no shot after the one being reviewed is shown');
+assert(rpage.includes('<span>Shot 15</span>') && rpage.includes('<span class="mut">Shot 15</span>'), 'score card and shot detail are the reviewed shot');
+assert(!rpage.includes('class="laneacts"'), 'no lane actions while reviewing');
 assert(!/data-act="mode"/.test(rpage), 'no mode buttons while reviewing');
 // --- v0.4 layout: red corner, 5-on-5 strip, every group beside Last shot
 assert(faceSvg([], {half: 26, corner: true}).includes('fill="#dc2626"') && !/class="corner"[^>]*fill="#000"/.test(faceSvg([], {half: 26, corner: true})), 'corner is red');
@@ -172,7 +197,7 @@ assert.strictEqual(av.kind, 'ammo'); assert(am.shots === 13 && av.count === 14 &
 const apage = shooterView(asMine(ammoT), state());
 assert(apage.includes('class="goval"') && apage.includes('class="gcenter"'), 'oval and group centre are drawn on the target');
 assert(!apage.includes('class="corner"'), 'no unscored corner in an ammo test');
-assert(!apage.includes('<h3>Last shot') && !apage.includes('data-act="mode"') && apage.includes('class="zoombar"'), 'ammo panels replace the match panels, zoom stays');
+assert(!apage.includes('class="sc"') && !apage.includes('data-act="mode"') && apage.includes('class="zseg"'), 'ammo panels replace the match panels, zoom stays');
 assert(apage.includes('<h3>Group</h3>') && apage.includes(am.size_mm.toFixed(2) + '</span><span class="unit">mm'), 'group size shown big');
 assert(apage.includes(am.ellipse.outer_major_mm.toFixed(2) + ' × ' + am.ellipse.outer_minor_mm.toFixed(2)), 'oval axes shown');
 assert(apage.includes('x ' + am.center_x_mm.toFixed(2) + ', y ' + am.center_y_mm.toFixed(2)), 'group centre shown');
@@ -219,7 +244,7 @@ assert(revList.includes('ammo test') && revList.includes('7.50 mm'), 'finished t
 assert(revList.includes('RWS &lt;b&gt;R10&lt;/b&gt; · x · 5 shots'), 'the review list shows the label and the shooter');
 assert(overlayView(asMine(recordT), state({seriesList: [{id: 9, kind: 'ammo', shooter: 'x', label: null, started: '2026-10-23T22:00:00Z', open: false, scored: {shots: 0, decimal: 0, integer: 0}, sighter: {shots: 0}, ammo: {shots: 0}}]}), '').includes('no label'));
 const arev = shooterView(ammoT, state({review: {sid: av.series_id, stream: 'scored', shot: av.count}, reviewView: Object.assign({}, av, {open: false, started: '2026-10-23T22:00:00Z', full_count: av.count})}));
-assert(arev.includes('Reviewing an ammo test') && arev.includes('<h3>Group</h3>') && !arev.includes('data-act="rstream"'));
+assert(arev.includes('An ammo test from') && arev.includes('<h3>Group</h3>') && !arev.includes('data-act="rstream"'));
 // ammo auto zoom starts one ring tighter
 assert.strictEqual(autoRing([sh(0, 0)], 2.25, 9), 9);
 assert.strictEqual(autoRing([sh(0, 0)], 2.25), 8);
@@ -832,17 +857,54 @@ console.log('OK');
   assert(!scoreCards(one, String(e.id)).includes('* inner ten'), 'no inner tens: no * legend');
 }
 
-// a phone: one card with a menu
+// a phone (1.0, boards FmLanePhone, FmLaneMatch, FmReview, FmLaneSignIn, FmAmmo, FmLaneLost): one column, the actions at the bottom
 {
   const ph = (t, extra) => shooterView(t, state(Object.assign({phone: true}, extra || {})));
   const closed = ph(recordT);
-  assert(closed.startsWith('<div class="phone">') && closed.includes('data-act="menu"') && closed.includes('<svg class="face"') && !closed.includes('class="pmenu"'));
-  assert(!closed.includes('<div class="shoot">') && !closed.includes('<h3>Shots'), 'not the desktop layout');
-  const open = ph(Object.assign({}, recordT, {lease: {held_by: null, mine: false}}), {menu: true});
-  assert(open.includes('data-act="menugear">Take control') && open.includes('data-act="menureview"') && open.includes('class="zoombar"') && open.includes('href="#/"'), 'menu: take control, review, zoom, all targets');
+  assert(closed.startsWith('<div class="phone lane"><div class="lanehead">') && closed.includes('data-act="menu"') && closed.includes('<svg class="face"') && !closed.includes('class="pmenu"'));
+  assert(!closed.includes('<div class="shoot">') && !closed.includes('<h3>Shots'), 'not the wide layout');
+  const at = c => closed.indexOf(c);
+  assert(at('class="lanehead"') < at('class="sc"') && at('class="sc"') < at('class="facebox"') && at('class="facebox"') < at('aria-label="Zoom"') &&
+    at('aria-label="Zoom"') < at('class="serchips"') && at('class="serchips"') < at('class="shotgrid"') && at('class="shotgrid"') < at('class="lanebar"'), 'top to bottom as on the board');
+  const free = Object.assign({}, recordT, {lease: {held_by: null, mine: false}}), open = ph(free, {menu: true});
+  assert(open.includes('data-act="menugear">Take control') && open.includes('data-act="menureview"') && open.includes('href="#/"'), 'menu: take control, review, all lanes');
   const mineMenu = ph(asMine(recordT), {menu: true});
   assert(mineMenu.includes('data-act="exitrange">Exit (release control)') && !mineMenu.includes('Take control') && !mineMenu.includes('href="#/"'), 'holding it: Exit, no way out but Exit');
-  assert(ph(ammoT).includes('mm group'), 'an ammo test shows the group size');
+  const bar = h => h.slice(h.indexOf('class="lanebar"'));
+  assert(bar(ph(free)).includes('Take control') && bar(ph(free)).includes('data-act="menureview"') && !bar(ph(free)).includes('newseries'), 'not holding it: take control, review');
+  const pm = bar(ph(asMine(practiceT)));
+  assert(pm.includes('data-act="sight"') && pm.includes('data-act="menureview"') && pm.includes('data-act="newseries"') && pm.includes('data-act="gear"'), 'holding a practice lane: sights, review, new series, settings');
+  assert(/data-act="sight" disabled/.test(X.laneBar(asMine(Object.assign({}, practiceT, {view: Object.assign({}, practiceT.view, {last_shot: null, count: 0})})), state())), 'sights waits for shots');
+  assert(!bar(ph(asMine(recordT))).includes('data-act="sight"'), 'no sight suggestion in a match');
+  assert(!bar(ph(asMine(Object.assign({}, recordT, {match: {name: 'M', state: 'running', label: 'Match firing', remaining_ms: 1000}})))).includes('newseries'), 'Match Control runs the series');
+  assert(ph(ammoT).includes('<span class="mut">Group</span>') && ph(ammoT).includes('mm projectile'), 'an ammo test shows the group');
+  // the target is silent
+  const silent = ph(Object.assign({}, asMine(recordT), {online: false}));
+  assert(silent.includes('Reconnecting') && silent.includes('Your target is not reporting') && silent.includes('every shot is kept on the target') && !silent.includes('Range Officer'), 'reconnecting, keep shooting');
+  assert(ph(Object.assign({}, asMine(recordT), {online: false, match: {name: 'M', state: 'running', label: 'x', remaining_ms: 1}})).includes('they can give you extra time'), 'in a match: the Range Officer can give extra time');
+  assert(!ph(asMine(recordT)).includes('class="lost"'), 'online: nothing');
+  // a free lane: who is shooting?
+  const lane = Object.assign({}, asMine(T('lane-3')), {signin_url: 'https://dt.example/t/1/3/abc', athlete: null});
+  const si = ph(lane);
+  assert(si.includes('Who is shooting?') && si.includes('href="https://dt.example/t/1/3/abc"') && si.includes('id="ln_num"') && si.includes('id="ln_pin"') && si.includes('data-act="lnin"') && si.includes('data-act="lnskip"'), 'sign-in screen');
+  assert(!si.includes('<svg class="face"'), 'no face yet');
+  assert(ph(lane, {lnskip: {[lane.device_id]: true}}).includes('<svg class="face"'), 'just shoot: the lane');
+  assert(!ph(Object.assign({}, lane, {athlete: {public_name: 'J. S.'}, signin_url: null})).includes('Who is shooting?'), 'someone signed in: the lane');
+  assert(!ph(Object.assign({}, lane, {lease: {held_by: 'Bob', mine: false}})).includes('Who is shooting?'), 'someone else holds it: the lane');
+  assert(!ph(Object.assign({}, practiceT, {signin_url: 'https://x', athlete: null, lease: {held_by: null, mine: false}})).includes('Who is shooting?') || practiceT.view.count === 0, 'a spectator on a lane with shots sees the lane');
+  // review on a phone
+  const rvp = ph(recordT, {review: {sid: rv.series_id, stream: 'scored', shot: rv.count}, reviewView: rv});
+  assert(rvp.includes('class="revhead"') && rvp.includes('data-act="rback"') && rvp.includes('Total to here') && rvp.includes('Fired'), 'review: band, back to live, the shot');
+  assert.strictEqual(count(rvp, /data-act="rnav"/g), 4, 'four steps in thumb reach');
+  assert(rvp.includes('type="range" min="1" max="' + rv.full_count + '" value="' + rv.count + '"'), 'a slider over the whole series');
+  assert(!rvp.includes('class="lanebar" aria-label="Lane actions"'), 'no lane actions while reviewing');
+  const one = Object.assign({}, rv, {last_shot: Object.assign({}, rv.last_shot, {x_mm: -1.73, y_mm: 2.1, auth: 1, at: '2026-11-10T19:14:32Z'})});
+  const rd = X.reviewDetail(one);
+  assert(rd.includes('2.10 mm high, 1.73 mm left') && rd.includes('✓ signed'), 'where it went, signed');
+  assert(X.reviewDetail(Object.assign({}, one, {last_shot: Object.assign({}, one.last_shot, {auth: 0})})).includes('not signed'));
+  assert(!X.reviewDetail(Object.assign({}, one, {last_shot: Object.assign({}, one.last_shot, {auth: null})})).includes('signed<'), 'older lines: nothing said');
+  // names escaped on the phone too
+  [asFree, asMine, asOther].forEach(f => assert(!hostile.test(ph(f(bad))), 'phone escapes'));
   console.log('phone OK');
 }
 
