@@ -21,3 +21,9 @@ fetserver/web/qrcode.js is "QR Code Generator for JavaScript" by Kazuhiko Arase 
 1.4.4 from npm (qrcode-generator), MIT License: Copyright (c) 2009 Kazuhiko Arase. It draws the code on each lane's
 screen that an athlete scans to sign in with deepTENS. The word "QR Code" is a registered trademark of DENSO WAVE
 INCORPORATED. Its license is the MIT License, the same text as LICENSE with its own copyright line above.
+
+fetserver/web/fonts/ holds two typefaces, served by the Pi so the screens need no internet: Archivo (Copyright 2020
+The Archivo Project Authors, https://github.com/Omnibus-Type/Archivo) and JetBrains Mono (Copyright 2020 The
+JetBrains Mono Project Authors, https://github.com/JetBrains/JetBrainsMono), both under the SIL Open Font License,
+Version 1.1 (the full texts: fetserver/web/fonts/OFL-Archivo.txt and OFL-JetBrainsMono.txt). The files are the
+Latin and Latin Extended subsets as Google Fonts serves them (WOFF2), unmodified.

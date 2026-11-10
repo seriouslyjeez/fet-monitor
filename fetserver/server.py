@@ -60,6 +60,7 @@ DEVICE_FW_CHUNK = 16 * 1024
 DEVICE_FW_MAX_S = 600
 FACTORY_RESET_MIN = (0, 2, 2)
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+FONT_FILES = {"/fonts/%s.woff2" % n for n in ("archivo-latin", "archivo-latin-ext", "jetbrains-mono-latin", "jetbrains-mono-latin-ext")}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -957,6 +958,19 @@ class Handler(BaseHTTPRequestHandler):
         rf = RULEBOOK_FILE_RE.match(url.path)
         if rf:
             return self._rulebook_file(rf.group(1))
+        if url.path in FONT_FILES:                      # the typefaces (SIL OFL 1.1, NOTICE): no internet needed
+            try:
+                with open(os.path.join(WEB_DIR, "fonts", url.path.rsplit("/", 1)[1]), "rb") as fh:
+                    data = fh.read()
+            except OSError:
+                return self._send(404, {"error": "not installed"})
+            self.send_response(200)
+            for k, v in (("Content-Type", "font/woff2"), ("Content-Length", str(len(data))),
+                         ("Cache-Control", "public, max-age=604800"), ("X-Content-Type-Options", "nosniff")):
+                self.send_header(k, v)
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if url.path == "/qrcode.js":                   # the QR code generator for the lanes' sign-in codes (MIT, NOTICE)
             try:
                 with open(os.path.join(WEB_DIR, "qrcode.js"), "rb") as fh:

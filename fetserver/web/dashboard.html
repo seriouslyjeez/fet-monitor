@@ -6,33 +6,60 @@
 <title>FeT Monitor</title>
 <script id="early-theme">try { const th = /^\/[A-Za-z0-9]{5}\/?$/.test(location.pathname) ? null : localStorage.getItem('fet_theme'); if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; } catch (e) {}</script>
 <style>
-:root{color-scheme:light;--bg:#f4f5f7;--fg:#15181d;--mut:#667085;--card:#fff;--line:#d9dde3;--accent:#2563eb;--ok:#16a34a;--bad:#dc2626;--hi:#e0ebff;--m-practice:#64748b;--m-sighter:#d97706;--m-record:#2563eb;--m-ammo:#9333ea;--last:#e11d48;--link:#1d4ed8;--on-accent:#fff}
-/* dark: follows the system unless the viewer chose (header toggle sets data-theme on <html>) */
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}}
-:root[data-theme=dark]{color-scheme:dark;--bg:#0f1216;--fg:#e8eaed;--mut:#98a2b3;--card:#181c22;--line:#2b313a;--accent:#60a5fa;--ok:#4ade80;--bad:#f87171;--hi:#1e2a44;--m-practice:#94a3b8;--m-sighter:#fbbf24;--m-record:#60a5fa;--m-ammo:#c084fc;--last:#fb7185;--link:#93c5fd;--on-accent:#0b1220}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400 800;font-display:swap;src:url(/fonts/archivo-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Archivo';font-style:normal;font-weight:400 800;font-display:swap;src:url(/fonts/archivo-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;src:url(/fonts/jetbrains-mono-latin.woff2) format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:500 700;font-display:swap;src:url(/fonts/jetbrains-mono-latin-ext.woff2) format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF}
+/* the deepTENS look (1.0; mockups canvas, boards Fm*): bone and navy, orange for the latest shot; dark follows the system
+   unless the viewer chose in the menu (data-theme on <html>) */
+:root{color-scheme:light;--bg:#F4F2EE;--fg:#14202B;--mut:#4A5561;--card:#FFFFFF;--line:#E2DED6;--line2:#EEEBE5;--surface2:#F4F2EE;--accent:#14202B;--on-accent:#F4F2EE;--ok:#1A7F3C;--bad:#B42318;--warn:#8A5A00;--hi:#EEEBE5;--link:#14202B;--shot:#2F6FA8;--last:#F26A21;--last-ink:#B23A0C;--last-bg:#FDE8DA;--focus:#2B6CB0;--m-practice:#2F6FA8;--m-sighter:#C27C0E;--m-record:#2F6FA8;--m-ammo:#7C3AED;--b-practice:#DCE8F4;--bf-practice:#1F4E7A;--b-sighter:#F6E7C8;--bf-sighter:#6B4A08;--b-record:#14202B;--bf-record:#F4F2EE;--b-ammo:#EDE3F7;--bf-ammo:#5B2A8C}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#0E161E;--fg:#EEF1F4;--mut:#A9B4BF;--card:#16212C;--line:#2A3846;--line2:#22303D;--surface2:#1C2936;--accent:#F4F2EE;--on-accent:#14202B;--ok:#4ADE80;--bad:#F87171;--warn:#FBBF24;--hi:#22303D;--link:#EEF1F4;--shot:#5B9BD5;--last:#FF8A4C;--last-ink:#FF9E66;--last-bg:#3A2418;--focus:#93C5FD;--m-practice:#5B9BD5;--m-sighter:#F0A93B;--m-record:#5B9BD5;--m-ammo:#B48AF0;--b-practice:#1F3550;--bf-practice:#BFD8F2;--b-sighter:#3A2E12;--bf-sighter:#F6D58E;--b-record:#F4F2EE;--bf-record:#14202B;--b-ammo:#33244A;--bf-ammo:#DCC8F7}
 a{color:var(--link)}a:visited{color:var(--link)}a:hover{text-decoration-thickness:2px}
-#theme{margin-left:8px;padding:3px 9px;font-size:13px}#power button{margin-left:6px;padding:3px 9px;font-size:13px}
-*{box-sizing:border-box}body{margin:0;font:15px/1.35 system-ui,sans-serif;background:var(--bg);color:var(--fg)}
-header{display:flex;align-items:center;gap:14px;padding:6px 14px;background:var(--card);border-bottom:1px solid var(--line)}
-header h1{font-size:15px;margin:0}header a{color:var(--fg);text-decoration:none;padding:3px 9px;border-radius:6px;font-size:14px}header a.on{background:var(--accent);color:var(--on-accent)}
-#live{margin-left:auto;font-size:12px;color:var(--mut)}
+#theme{margin-left:8px}#power button{margin-left:6px}
+*{box-sizing:border-box}body{margin:0;font:15px/1.4 Archivo,system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+header{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 12px 0 6px;background:var(--card);border-bottom:1px solid var(--line)}
+.brand{display:inline-flex;align-items:center;min-height:44px;font-size:18px;font-weight:800;letter-spacing:-.01em;color:var(--fg)!important;text-decoration:none;padding:0 6px;white-space:nowrap}
+#topnav{display:flex;align-self:stretch}#topnav a{display:flex;align-items:center;padding:0 12px;color:var(--mut);text-decoration:none;font-size:15px;border-bottom:3px solid transparent}
+#topnav a.on{color:var(--fg);font-weight:700;border-bottom-color:var(--fg)}#topnav a:hover{color:var(--fg)}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:var(--fg);border-radius:12px}
+#menubtn{display:none}
+@media (max-width:900px){#topnav,header #theme,header #power{display:none!important}#menubtn{display:inline-flex}}
+/* the menu (phones and tablets): a full-height panel over the page */
+#drawer{position:fixed;inset:0;z-index:20;display:flex}#drawer[hidden]{display:none}
+#drawer .scrim{position:absolute;inset:0;background:rgba(10,16,22,.55);border:0;border-radius:0;padding:0;min-height:0}
+#drawer nav{position:relative;width:min(318px,86vw);height:100%;overflow-y:auto;background:var(--card);display:flex;flex-direction:column;padding:8px 10px 16px}
+#drawer .dhead{display:flex;align-items:center;gap:8px;min-height:52px;padding:0 4px 0 12px}#drawer .dhead b{display:block;font-size:18px;font-weight:800}
+#drawer h2{margin:12px 12px 4px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+#drawer a.item{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 12px;border-radius:12px;color:var(--fg);text-decoration:none;font-size:17px}
+#drawer a.item.on{background:var(--hi);font-weight:700}#drawer a.item .mut{margin-left:auto}
+#drawer .dfoot{margin-top:auto;border-top:1px solid var(--line2);padding-top:8px;display:flex;flex-direction:column;gap:8px}
+#drawer .dfoot button{width:100%}
+/* a section switcher instead of a tab strip on phones (no sideways scrolling) */
+.secsel{display:none;margin:10px 0 0}.secsel select{width:100%;font-weight:700;font-size:17px}
+@media (max-width:600px){.tabs{display:none!important}.secsel{display:block}}
+#live{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--mut);white-space:nowrap}
+.livedot{width:8px;height:8px;border-radius:50%;background:var(--warn);flex:none}.livedot.on{background:var(--ok)}
 #dt{display:inline-flex;position:relative;width:22px;height:22px;margin-left:8px}#dt .dt-d{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) #dt .dt-l{display:none}:root:not([data-theme=light]) #dt .dt-d{display:inline}}
 :root[data-theme=dark] #dt .dt-l{display:none}:root[data-theme=dark] #dt .dt-d{display:inline}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
 .dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{padding:12px;max-width:1500px;margin:0 auto}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
-.mut{color:var(--mut);font-size:13px}.num{font-variant-numeric:tabular-nums}
+.mut{color:var(--mut);font-size:13px}.num{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 .lanesign{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
 .lanesign .qr{flex:none;width:118px;height:118px;border-radius:6px;overflow:hidden;background:#fff}.lanesign .qr svg{width:100%;height:100%;display:block}
 .lanesign .row{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.lanesign .row input{width:9.5em}.lanesign.on{justify-content:space-between}
 .lanesign b.who{font-size:17px}
-.badge{font-size:12px;font-weight:600;padding:1px 9px;border-radius:99px;color:var(--on-accent);white-space:nowrap}.m-practice{background:var(--m-practice)}.m-sighter{background:var(--m-sighter)}.m-record{background:var(--m-record)}.m-ammo{background:var(--m-ammo)}
-button,input,select{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.badge{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:12px;white-space:nowrap}.badge.m-practice{background:var(--b-practice);color:var(--bf-practice)}.badge.m-sighter{background:var(--b-sighter);color:var(--bf-sighter)}.badge.m-record{background:var(--b-record);color:var(--bf-record)}.badge.m-ammo{background:var(--b-ammo);color:var(--bf-ammo)}
+button,input,select,textarea{font:inherit;padding:8px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button,input:not([type=checkbox]):not([type=radio]):not([type=range]),select{min-height:44px}
+button{border-radius:22px;font-weight:600;border-color:#C9C3B8;padding:8px 16px}input[type=checkbox],input[type=radio]{width:20px;height:20px;accent-color:var(--accent)}
 button{cursor:pointer}button.pri{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button.sel{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}button:disabled{opacity:.45;cursor:default}
 .face{display:block;width:100%;height:auto;border-radius:6px}
 /* all targets */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
-.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;color:inherit;text-decoration:none}
+.card{display:block;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px;color:inherit;text-decoration:none}
 .card:hover{border-color:var(--accent)}.card.off{opacity:.55}.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .card .face{margin:8px auto;max-width:300px}.who{font-weight:600;margin:2px 0 6px;min-height:1.35em}
 .scorebox{display:flex;gap:8px;align-items:stretch}
@@ -64,7 +91,7 @@ body.rangemode .shoot{--face:min(calc(100vh - 16px),calc(100vw - 370px))}
 .zoombar button{padding:4px 9px;min-width:34px;font-size:14px}
 
 .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}.pager button{min-width:44px;font-weight:700;font-size:16px}.pager span{min-width:150px;text-align:center}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;margin-bottom:12px}
 .panel h3{margin:0 0 6px;font-size:13px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
 .gear{padding:3px 9px;font-size:18px;line-height:1}.title{font-size:20px;font-weight:700}
 .modes{display:flex;gap:6px;margin-top:8px}.modes button{flex:1;font-weight:600;padding:9px}
@@ -81,8 +108,8 @@ table.t td{font-variant-numeric:tabular-nums;height:27px}table.t tr.last td{back
 .scroll{max-height:300px;overflow:auto}.unit{font-size:20px;color:var(--mut);font-weight:600}
 table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 /* overlay */
-#overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
-#overlay.open{display:flex}.sheet{background:var(--card);border-radius:12px;max-width:520px;width:100%;padding:14px 16px}.sheet.wide{max-width:760px}
+#overlay{position:fixed;inset:0;background:rgba(10,16,22,.55);display:none;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;z-index:10}
+#overlay.open{display:flex}.sheet{background:var(--card);border-radius:20px;max-width:520px;width:100%;padding:16px 18px}.sheet.wide{max-width:760px}
 .sheet .bulk{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0}.sheet table.t td,.sheet table.t th{text-align:left}.sheet h4{margin:14px 0 4px}
 .sheet h2{margin:0 0 4px;font-size:18px}.sheet section{border-top:1px solid var(--line);padding:10px 0}.sheet section:first-of-type{border-top:0}
 /* sight adjustment */
@@ -110,7 +137,7 @@ button.big{font-size:18px;padding:12px 18px}.mcsaynow{background:#fde68a;color:#
 .mcform input[type=text],.mcform input[type=number],.mcform select{max-width:100%}.mcform .grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center}
 /* print pages (result sheets, score cards): plain, black on white, page breaks between cards */
 body.print header,body.print #ver{display:none}#printbar{max-width:900px;margin:10px auto 0;padding:0 10px}#printbar[hidden]{display:none}
-@media (max-width:600px){header{flex-wrap:wrap;gap:4px 8px;padding:6px 8px}header a{padding:3px 6px}#live{display:none}#theme{margin-left:auto}}body.print main{max-width:900px;padding:10px}
+@media (max-width:600px){#live{font-size:12px}}body.print main{max-width:900px;padding:10px}
 .sheetpage{background:#fff;color:#111}.sheetpage a{color:#1d4ed8}.sheetpage .mut{color:#555}.sheetpage h1{font-size:22px;margin:0 0 2px}.sheetpage h2{font-size:17px;margin:14px 0 4px}
 .sheetpage table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}.sheetpage th,.sheetpage td{border:1px solid #999;padding:3px 5px;text-align:left}
 .sheetpage th{background:#eee}.scard{break-after:page;page-break-after:always;padding-bottom:12px;margin-bottom:12px;border-bottom:2px dashed #bbb}
@@ -142,7 +169,8 @@ body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}
 </style>
 </head>
 <body>
-<header><h1>FeT Monitor</h1><a href="#/" id="nav-coach">All targets</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a><span id="live">connecting…</span><span id="dt" hidden></span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button><span id="power" hidden><button data-act="rcsys" data-a="restart" title="Restart the Pi">Restart</button><button class="danger" data-act="rcsys" data-a="shutdown" title="Shut the Pi down">Shut down</button></span></header>
+<header><button id="menubtn" class="iconbtn" data-act="drawer" aria-label="Menu" aria-expanded="false" aria-controls="drawer"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><a href="#/" class="brand">FeT Monitor</a><nav id="topnav" aria-label="Main"><a href="#/" id="nav-coach">Lanes</a><a href="#/results" id="nav-results">Results</a><a href="#/match" id="nav-match">Match Control</a><a href="#/range" id="nav-range">Range Control</a></nav><span id="live">connecting…</span><span id="dt" hidden></span><button id="theme" data-act="theme" aria-label="Switch between light and dark">Dark</button><span id="power" hidden><button data-act="rcsys" data-a="restart" title="Restart the Pi">Restart</button><button class="danger" data-act="rcsys" data-a="shutdown" title="Shut the Pi down">Shut down</button></span></header>
+<div id="drawer" hidden></div>
 <div id="printbar" class="noprint mcbar" hidden><button class="pri" data-act="print">Print</button><span id="printinfo" class="mut"></span></div>
 <main id="app"></main>
 <div id="overlay"></div>
@@ -219,7 +247,7 @@ function ammoMarks(v) {
 function faceSvg(shots, o) {
   o = o || {};
   const F = faceOf(o.face), u = F.ring_mm / 2.5;                   // u: this face's scale against the air rifle face
-  const mini = !!o.mini, pr = (o.pellet || F.projectile_mm) / 2, H = o.half || fullHalf(F), col = o.color || 'var(--accent)', black = F.black_mm / 2;
+  const mini = !!o.mini, pr = (o.pellet || F.projectile_mm) / 2, H = o.half || fullHalf(F), col = o.color || 'var(--shot)', black = F.black_mm / 2;
   const z = Math.max(0.35, Math.min(1, H / (14 * u)));            // outlines thin out as we zoom in
   const sw = Math.max(0.06, 0.18 * H / fullHalf(F)) * (mini ? 1.6 : 1) * u, f = z * u, fp = z * pr / 2.25;   // f: face marks; fp: a pellet's outline
   let s = '<svg class="face" viewBox="' + (-H) + ' ' + (-H) + ' ' + (2 * H) + ' ' + (2 * H) + '" role="img" aria-label="Target face: ' + esc(F.name) + '">' +
@@ -694,6 +722,30 @@ function laneSignin(t, S, phone) {
   return '<div class="lanesign">' + (phone ? '' : '<div class="qr" aria-label="Sign-in code for this lane">' + qrSvg(t.signin_url) + '</div>') +
     '<div><b>Sign in with deepTENS</b><div class="mut">' + (phone ? 'Your shots go into your deepTENS history.' : 'Scan with your phone to keep your shots in your deepTENS history.') + '</div>' +
     form + (phone ? '' : '<div class="mut">No internet on your phone? On the range WiFi open ' + esc(here) + ' and use your number and PIN.</div>') + '</div></div>';
+}
+// The menu (phones and tablets; wide screens show the same links in the header): where you shoot, what you watch, the
+// staff screens, light or dark, and the Pi's power for a logged-in Range Manager (boards FmMenu).
+function drawerHtml(targets, r, o) {
+  o = o || {};
+  const mine = (targets || []).find(t => t.lease && t.lease.mine);
+  const item = (href, label, on, meta) => '<a class="item' + (on ? ' on' : '') + '" href="' + href + '"' + (on ? ' aria-current="page"' : '') + '>' + label +
+    (meta ? '<span class="mut">' + esc(meta) + '</span>' : '') + '</a>';
+  const lanesOn = !(r.id || r.range || r.match || r.results || r.print);
+  return '<button class="scrim" data-act="drawerclose" aria-label="Close the menu" tabindex="-1"></button>' +
+    '<nav aria-label="FeT Monitor"><div class="dhead"><span style="flex:1"><b>FeT Monitor</b><span class="mut">' + esc(o.live || '') + '</span></span>' +
+    '<button class="iconbtn" data-act="drawerclose" aria-label="Close the menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
+    (mine ? '<h2>Shooting</h2>' + item('#/t/' + encodeURIComponent(mine.device_id), 'My lane', r.id === mine.device_id, mine.lane != null ? laneOf(mine) : tName(mine)) : '') +
+    '<h2>Watching</h2>' + item('#/', 'Lanes', lanesOn) + item('#/results', 'Results', !!r.results) +
+    '<h2>Range staff</h2>' + item('#/match', 'Match Control', !!r.match) + item('#/range', 'Range Control', !!r.range) +
+    '<div class="dfoot"><button id="dtheme" data-act="theme">' + (o.dark ? 'Light' : 'Dark') + '</button>' +
+    (o.power ? '<button data-act="rcsys" data-a="restart">Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown">Shut the Pi down</button>' : '') +
+    '</div></nav>';
+}
+// Tabs on wide screens, a section switcher on phones (no sideways scrolling): items [[key, label]], href(key)
+function tabStrip(items, cur, href, label) {
+  return '<nav class="tabs">' + items.map(([k, l]) => '<a href="' + href(k) + '"' + (k === cur ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav>' +
+    '<label class="secsel"><span class="mut">' + esc(label || 'Section') + '</span><select data-secsel="1">' +
+    items.map(([k, l]) => '<option value="' + href(k) + '"' + (k === cur ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select></label>';
 }
 // A phone: the card of All targets, larger, with a menu for everything else
 function phoneView(t, S) {
@@ -1282,7 +1334,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
     '<div class="row" style="justify-content:flex-start;gap:8px"><input id="rcpw" type="password" autocomplete="current-password" placeholder="Range Control password">' +
     '<button class="pri" data-act="rclogin">Log in</button></div>' + (rc.msg ? '<p class="bad">' + esc(rc.msg) + '</p>' : '') +
     '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div></div>';
-  h += '<nav class="tabs">' + RC_TABS.map(([k, l]) => '<a href="#/range' + (k === 'targets' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
+  h += tabStrip(RC_TABS, tab, k => '#/range' + (k === 'targets' ? '' : '/' + k), 'Range Control') + '</div>';
   const d = rc.data || {targets: [], banned: []};
   const body = tab === 'settings' ? targetSettingsPanel(d, rc) : tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
     : tab === 'tv' ? displaysTab(rc) : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? deeptensPanel(rc.dt) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
@@ -1977,8 +2029,8 @@ function matchView(S) {                          // Match Control: tabs; a match
   if (!mc.status.logged_in) return '<div class="mc">' + mcLogin(mc) + '</div>';
   const tab = S.mcTab || mcTab(mc), director = mcDirector(mc);
   const head = '<div class="panel"><div class="row"><span class="title">Match Control</span><span class="mut">' + esc(mc.status.user) + ' (' + esc(mc.status.role) + ') ' +
-    '<button data-act="mclogout">Log out</button></span></div><nav class="tabs">' + MC_TABS.filter(t => !t[2] || director).map(([k, l]) =>
-      '<a href="#/match' + (k === 'comps' ? '' : '/' + k) + '"' + (k === tab ? ' class="on" aria-current="page"' : '') + '>' + l + '</a>').join('') + '</nav></div>';
+    '<button data-act="mclogout">Log out</button></span></div>' + tabStrip(MC_TABS.filter(t => !t[2] || director), tab,
+      k => '#/match' + (k === 'comps' ? '' : '/' + k), 'Match Control') + '</div>';
   const body = mc.view === 'new' ? mcNew(mc) : mc.view === 'format' ? mcFormatEditor(mc) : mc.view === 'console' ? mcConsole(mc) :
     mc.view === 'cnew' ? mcCompNew(mc) : mc.view === 'comp' ? mcCompPage(mc) : tab === 'rulebooks' ? mcRulebooks(mc) : mcList(mc, tab);
   return '<div class="mc">' + head + body + '</div>';
@@ -2000,7 +2052,7 @@ let CID;
 // Light or dark: the viewer's choice (kept in this browser), else the system's
 const isDark = () => document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark'
   : !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-function themeButton() { const b = document.getElementById('theme'); if (b) b.textContent = isDark() ? 'Light' : 'Dark'; }
+function themeButton() { ['theme', 'dtheme'].forEach(id => { const b = document.getElementById(id); if (b) b.textContent = isDark() ? 'Light' : 'Dark'; }); }
 function themeChanged() { themeButton(); if (S.targets) { drawn = null; render(true); } }   // the screen's own buttons too
 function setTheme(th) { document.documentElement.dataset.theme = th; store('fet_theme', th); themeChanged(); }
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } }
@@ -2205,13 +2257,24 @@ function morphNode(o, n) {
   }
   morphChildren(o, n);
 }
+function openDrawer(on) {                   // the menu: focus moves into it, and back to the menu button when it closes
+  S.drawer = on; render(true);
+  if (on) { const f = document.querySelector('#drawer a.item, #drawer .dhead button'); if (f) f.focus(); }
+  else { const b = document.getElementById('menubtn'); if (b && document.activeElement && document.activeElement.closest && !document.activeElement.closest('header')) b.focus(); }
+}
 let pressing = false, held = false;        // no redraw between press and release (it would lose the click, or a text selection)
 function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
   document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print ? '' : 'on';
   document.getElementById('nav-range').className = r.range ? 'on' : '';
   document.getElementById('nav-match').className = r.match ? 'on' : '';
-  document.getElementById('live').textContent = S.sse ? 'live' : 'updating every 5 s';
+  ['nav-coach', 'nav-results', 'nav-match', 'nav-range'].forEach(id => { const n = document.getElementById(id); if (n.className === 'on') n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
+  const dr = document.getElementById('drawer'), mb = document.getElementById('menubtn');
+  if (S.drawer) { const h = drawerHtml(S.targets, r, {dark: isDark(), live: S.sse ? 'live' : 'updating every 5 s', power: !!(S.rc && S.rc.status && S.rc.status.logged_in)});
+    if (dr.innerHTML !== h) dr.innerHTML = h; }
+  dr.hidden = !S.drawer; mb.setAttribute('aria-expanded', S.drawer ? 'true' : 'false');
+  const lv = document.getElementById('live'), lvh = '<span class="livedot' + (S.sse ? ' on' : '') + '" aria-hidden="true"></span>' + (S.sse ? 'Live' : 'Updating every 5 s');
+  if (lv.innerHTML !== lvh) lv.innerHTML = lvh;
   document.getElementById('power').hidden = !(S.rc && S.rc.status && S.rc.status.logged_in);   // the Pi's power, for Range Control only
   const dtEl = document.getElementById('dt'), dtShow = !!((route().range || route().match) && S.dt && S.dt.linked);
   dtEl.hidden = !dtShow;
@@ -2302,6 +2365,7 @@ async function act(el) {
     S.sight = null; return render();
   }
   if (a === 'theme') return setTheme(isDark() ? 'light' : 'dark');
+  if (a === 'drawer' || a === 'drawerclose') { openDrawer(a === 'drawer' && !S.drawer); return; }
   if (a === 'menu') { S.menu = !S.menu; return render(true); }
   if (a === 'menugear' || a === 'menureview') { S.menu = false; S.gear = a === 'menureview' ? 'review' : true; return refresh(); }
   if (a === 'print') return printNow();
@@ -3149,6 +3213,8 @@ function boot() {
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.drawer) { e.preventDefault(); openDrawer(false); } });
+  document.addEventListener('change', e => { const el = e.target; if (el && el.dataset && el.dataset.secsel) location.hash = el.value; });   // the section switcher
   // The file input lives outside the redrawn screen (index.html), so a redraw while the file dialog is open cannot
   // swallow the choice. Whatever is chosen uploads at once, one file after another.
   const csvPick = document.getElementById('csvfile');   // competitors from a CSV file: sent once, read in memory, not kept
@@ -3307,7 +3373,7 @@ function boot() {
     if (m) { e.preventDefault(); reviewMove(m); }
   });
   document.addEventListener('toggle', e => { if (e.target.id === 'adv') S.adv = e.target.open; }, true);
-  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; if (route().match) { S.mc.view = 'list'; S.mc.msg = ''; } } S.printAt = null; S.menu = false; if (S.rc) S.rc.tsOpen = null; if (S.printing) endPrint(); else refresh(); });
+  window.addEventListener('hashchange', () => { S.review = null; S.reviewView = null; S.gear = false; S.sight = null; if (S.mc) { S.mc.editp = null; S.mc.movep = null; S.mc.shotp = null; S.mc.latep = null; if (route().match) { S.mc.view = 'list'; S.mc.msg = ''; } } S.printAt = null; S.menu = false; S.drawer = false; if (S.rc) S.rc.tsOpen = null; if (S.printing) endPrint(); else refresh(); });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { renew(); refresh(); } });
   openStream();
   window.addEventListener('afterprint', endPrint);
@@ -3345,7 +3411,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {drawerHtml, tabStrip, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

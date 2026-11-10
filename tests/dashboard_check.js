@@ -1302,3 +1302,25 @@ console.log('OK');
   assert.strictEqual(targetSettingsAll(tv, {tsf: {'fet-1:led_pct': '101'}}).errors.length, 1);
   console.log('target settings OK');
 }
+
+// --- 1.0 foundations: the menu and the section switcher
+{
+  const {drawerHtml, tabStrip} = X;
+  const lane = {device_id: 'fet-<1>', name: 'Lane <3>', lane: 3, lease: {mine: true}}, other = {device_id: 'fet-2', name: 'B', lane: 4, lease: {mine: false}};
+  const items = h => Array.from(h.matchAll(/<a class="item[^"]*" href="([^"]+)"[^>]*>([^<]+)/g)).map(m => m[2] + ' ' + m[1]);
+  let h = drawerHtml([other], {}, {dark: false, live: 'live'});
+  assert.deepStrictEqual(items(h), ['Lanes #/', 'Results #/results', 'Match Control #/match', 'Range Control #/range'], 'nobody holds a lane here: no Shooting section');
+  assert(!h.includes('Shooting') && h.includes('aria-current="page">Lanes') && h.includes('>Dark<') && !h.includes('rcsys'), 'Lanes current; Dark; no power');
+  h = drawerHtml([other, lane], {id: 'fet-<1>'}, {dark: true, power: true});
+  assert(h.includes('<h2>Shooting</h2>') && h.includes('href="#/t/fet-%3C1%3E"') && h.includes('aria-current="page">My lane<span class="mut">Lane 3</span>'),
+    'the lane this phone holds, current when open, its id escaped in the link');
+  assert(!/<a class="item on"[^>]*>Lanes/.test(h), 'Lanes not current on a lane');
+  assert(h.includes('>Light<') && h.includes('data-a="restart"') && h.includes('data-a="shutdown"'), 'dark now: offers Light; the power for a logged-in Range Manager');
+  assert(drawerHtml([], {range: true}, {}).includes('aria-current="page">Range Control'));
+  const esch = drawerHtml([{device_id: 'x', name: '<script>z', lease: {mine: true}}], {}, {});
+  assert(!esch.includes('<script>z') && esch.includes('&lt;script&gt;z (spare)'), 'names escaped');
+  const ts = tabStrip([['a', 'One'], ['b', 'Two & <three>']], 'b', k => '#/r/' + k, 'Range Control');
+  assert(ts.includes('<a href="#/r/b" class="on" aria-current="page">') && ts.includes('<option value="#/r/b" selected>Two &amp; &lt;three&gt;</option>') &&
+    ts.includes('<option value="#/r/a">One</option>') && ts.includes('data-secsel="1"') && ts.includes('>Range Control<'), 'tabs and the switcher, both on the current section');
+  console.log('menu OK');
+}
