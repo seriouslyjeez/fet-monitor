@@ -11,11 +11,18 @@
 #include <interfaces.h>
 #include <safetynet.h>
 
+class NetworkClientSecure;
+
 namespace fete {
 
 #define FET_HTTP_TIMEOUT_MS 2500         // a report: sent and answered within this (5-second goal: one retry fits)
 #define FET_CONNECT_TIMEOUT_MS 1000      // a report's connection
 #define FET_FW_CONNECT_MS 3000           // a firmware download's connection
+#ifndef FET_HTTPS
+#define FET_HTTPS 1                      // HTTPS to deepTENS (P3, the "tls" setting); the ESP32-S3 has the memory for it
+#endif
+#define FET_TLS_CONNECT_MS 3000          // a secure connection's TCP connect (over the internet, not the LAN)
+#define FET_TLS_HANDSHAKE_MS 10000       // its handshake (and the first answer on a new connection) may take this long
 #define FET_MAX_RESPONSE 6000
 #define FET_PORTAL_MINUTES 15
 #define FET_LOG_SEGMENT_BYTES 7000
@@ -83,6 +90,13 @@ class WifiNet : public fet::Net {
   void noteLoop(uint32_t ms) { if (ms > loopMaxMs_) loopMaxMs_ = ms; }   // one turn of the network task took this long
  private:
   bool resolveServer(uint64_t now);
+  bool postPlain(const char* path, const std::string& body, int& status, std::string& resp);
+  bool postTls(const char* path, const std::string& body, int& status, std::string& resp);
+  void tlsDrop();
+  NetworkClientSecure* tls_ = nullptr;            // HTTPS: one connection kept open between reports
+  int tlsState_ = 0;                              // 0 not tried, 1 connecting works, 2 failing, 3 waiting for the time:
+                                                  // the USB port hears only changes
+  bool timeAsked_ = false;
   const fet::Config& cfg_;
   IPAddress ip_;
   bool haveIp_ = false, wasUp_ = false, reportedFirst_ = false;
@@ -101,8 +115,8 @@ class WifiNet : public fet::Net {
   uint32_t posts_ = 0, failConnect_ = 0, failReply_ = 0, postMaxMs_ = 0;   // every request to FeT Monitor since the start
   fet::SilenceWatch silence_{FET_SILENT_REJOIN_MS, FET_REJOIN_MAX_MS};
   volatile uint32_t noWifiSinceS_ = 0;
-  std::string restartWhy_;
-  uint32_t loopMaxMs_ = 0;                        // the network task's longest turn since the last report                        // "net_stuck" / "no_wifi" when the board restarted itself, else ""
+  std::string restartWhy_;                        // "net_stuck" / "no_wifi" when the board restarted itself, else ""
+  uint32_t loopMaxMs_ = 0;                        // the network task's longest turn since the last report
 };
 
 // Commands from the server to the target: queued for the main loop, which answers through toBridge.

@@ -11,7 +11,8 @@
 // freETarget's for this board (Software/ESP32 6.4.2 drivers/gpio_define.c, gpio.c, dac.c, analog_io.c; MIT,
 // "Copyright 2020, ten-point-nine project").
 //
-// Lines go to the USB port (UART0, the board's FTDI) and to FeT Monitor over WiFi: the FeT Bridge core
+// Lines go to the USB port (UART0, the board's FTDI) and over WiFi to FeT Monitor, or to deepTENS over HTTPS (the "tls"
+// setting, 0.4.0, as FeT Bridge 0.5.0: net_esp32.cpp postTls): the FeT Bridge core
 // (firmware/fet_bridge/src/core, the fet-bridge-core library) runs here in its own task (net_esp32.*, portal_esp32.*),
 // exactly as on an ESP-01 bridge: durable at-least-once queue, heartbeats, the server's commands, the setup portal
 // (unconfigured, or 3 quick power cycles), settings over USB from the Pi's flash station (FETCFG, first minute). The
@@ -44,7 +45,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.3.2"
+#define FW_VERSION "0.4.0"
 #ifndef FET_TIMING_PCNT
 #define FET_TIMING_PCNT 0       // 0: the ESP32-S3's capture timers, 10 MHz clock off (0.3.0); 1: PCNT counting the 10 MHz clock
 #endif
@@ -458,6 +459,7 @@ static void netTask(void*) {                                               // th
 static void bridgeBegin() {
   std::string id = fete::deviceIdFromChip();
   bool fsOk = lfs.begin();
+  fet::httpsSupported = FET_HTTPS;                                         // before any settings are read or checked
   fet::loadConfig(lfs, cfg);                                                // missing/invalid -> unconfigured
   if (!fet::validName(cfg.name)) cfg.name = id;
   quick = new fet::QuickBoot(lfs);

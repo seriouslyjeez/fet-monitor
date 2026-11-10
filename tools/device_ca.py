@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CA_DIR = Path(os.environ.get("DEEPTENS_DEVICE_CA", Path.home() / ".deeptens-device-ca"))
 KEY, CERT = CA_DIR / "root.key", CA_DIR / "root.crt"
 PUBLIC = ROOT / "docs" / "deeptens-device-ca.pem"             # the root certificate is public: kept in git
-HEADER = ROOT / "firmware" / "fet_bridge" / "src" / "platform" / "device_ca.h"
+HEADER = ROOT / "firmware" / "fet_bridge" / "src" / "core" / "device_ca.h"   # shared: FeT Bridge and the ESP32 target
 ROOT_DAYS, SERVER_DAYS = 7305, 730                            # 20 years; 2 years (renewed ~60 days before)
 NAMES = ("devices.deeptens.com", "devices.staging.deeptens.com")
 

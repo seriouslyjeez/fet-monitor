@@ -22,8 +22,8 @@
 #if FET_TLS_TEST
 #include "tls_test_ca.h"          // FET_TLS_TEST_CA: the test CA's certificate (tools/tls_test.py certs)
 #else
-#include "device_ca.h"            // FET_DEVICE_CA: the deepTENS device CA's root (tools/device_ca.py)
-#include "isrg_root_x1.h"         // FET_ISRG_ROOT_X1: Let's Encrypt's root, the backup
+#include "../core/device_ca.h"    // FET_DEVICE_CA: the deepTENS device CA's root (tools/device_ca.py)
+#include "../core/isrg_root_x1.h" // FET_ISRG_ROOT_X1: Let's Encrypt's root, the backup
 #endif
 #endif
 

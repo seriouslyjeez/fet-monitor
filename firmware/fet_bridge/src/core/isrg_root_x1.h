@@ -1,4 +1,4 @@
-// ISRG Root X1 (Let's Encrypt), the backup root the bridge trusts for devices.deeptens.com (docs/PROTOCOL.md "Server
+// ISRG Root X1 (Let's Encrypt), the backup root the targets trust (FeT Bridge, ESP32 target) for devices.deeptens.com (docs/PROTOCOL.md "Server
 // address"): https://letsencrypt.org/certs/isrgrootx1.pem, SHA-256 96BCEC06264976F37460779ACF28C5A7CFE8A3C0AAE11A8FFCEE05C0BDDF08C6
 // (checked against macOS's root store 2026-11-10). Valid to 2035-06-04.
 #pragma once

@@ -9,6 +9,13 @@
 #include <map>
 #include <Update.h>
 #include <tgt_sha256.h>
+#if FET_HTTPS
+#include <NetworkClientSecure.h>
+#include <mbedtls/x509_crt.h>
+#include <time.h>
+#include <device_ca.h>                            // FET_DEVICE_CA: the deepTENS device CA's root (tools/device_ca.py)
+#include <isrg_root_x1.h>                         // FET_ISRG_ROOT_X1: Let's Encrypt's root, the backup
+#endif
 
 namespace fete {
 
@@ -308,6 +315,21 @@ bool WifiNet::ready() { return wifiUp() && resolveServer(nowMs()); }
 bool WifiNet::post(const char* path, const std::string& body, int& status, std::string& resp) {
   uint64_t began = nowMs();
   posts_++;
+#if FET_HTTPS
+  bool got = cfg_.tls ? postTls(path, body, status, resp) : postPlain(path, body, status, resp);
+#else
+  bool got = postPlain(path, body, status, resp);
+#endif
+  uint32_t took = (uint32_t)(nowMs() - began);
+  if (took > postMaxMs_) postMaxMs_ = took;
+  if (!reportedFirst_) {
+    reportedFirst_ = true;
+    say("First report to FET: ", (got && status == 200) ? "success" : "fail");
+  }
+  return got;
+}
+
+bool WifiNet::postPlain(const char* path, const std::string& body, int& status, std::string& resp) {
   WiFiClient c;
   c.setTimeout(FET_CONNECT_TIMEOUT_MS / 1000 + 1);
   bool got = false;
@@ -340,19 +362,122 @@ bool WifiNet::post(const char* path, const std::string& body, int& status, std::
     got = complete && fet::parseHttpResponse(raw, status, resp);
     if (!got) failReply_++;
   }
-  uint32_t took = (uint32_t)(nowMs() - began);
-  if (took > postMaxMs_) postMaxMs_ = took;
-  if (!reportedFirst_) {
-    reportedFirst_ = true;
-    say("First report to FET: ", (got && status == 200) ? "success" : "fail");
-  }
   return got;
 }
+
+#if FET_HTTPS
+// ---------------------------------------------------------------- HTTPS (P3), as FeT Bridge 0.5.0 (platform.cpp postTls)
+
+void WifiNet::tlsDrop() { if (tls_) { tls_->stop(); delete tls_; tls_ = nullptr; } }
+
+// This core's mbedTLS is built without MBEDTLS_HAVE_TIME_DATE: it checks the chain and the name but no dates. The
+// server's own certificate's dates are checked here instead (the roots and Let's Encrypt's intermediate are not).
+static bool certCurrent(const mbedtls_x509_crt* c, std::string& why) {
+  if (!c) { why = "no certificate"; return false; }
+  time_t t = time(nullptr);
+  struct tm u;
+  gmtime_r(&t, &u);
+  auto key = [](int y, int mo, int d, int h, int mi, int se) {
+    return ((((uint64_t)y * 13 + mo) * 32 + d) * 24 + h) * 3600 + mi * 60 + se; };
+  uint64_t now = key(u.tm_year + 1900, u.tm_mon + 1, u.tm_mday, u.tm_hour, u.tm_min, u.tm_sec);
+  const mbedtls_x509_time &f = c->valid_from, &e = c->valid_to;
+  if (now < key(f.year, f.mon, f.day, f.hour, f.min, f.sec)) { why = "the server's certificate is not valid yet"; return false; }
+  if (now > key(e.year, e.mon, e.day, e.hour, e.min, e.sec)) { why = "the server's certificate has expired"; return false; }
+  return true;
+}
+
+// One report over the kept-open connection; a connection the server closed meanwhile is opened again once.
+bool WifiNet::postTls(const char* path, const std::string& body, int& status, std::string& resp) {
+  static const std::string trust = std::string(FET_DEVICE_CA) + "\n" + FET_ISRG_ROOT_X1;
+  if (!timeAsked_) { configTime(0, 0, "pool.ntp.org", "time.nist.gov"); timeAsked_ = true; }
+  if (time(nullptr) < 1700000000) {                                  // no clock yet: no certificate can be checked
+    if (tlsState_ != 3) say("Secure connection: ", "waiting for the time (NTP)");
+    tlsState_ = 3;
+    failConnect_++;
+    return false;
+  }
+  for (int attempt = 0; attempt < 2; attempt++) {
+    bool fresh = false;
+    if (!tls_ || !tls_->connected()) {
+      tlsDrop();
+      tls_ = new NetworkClientSecure();
+      tls_->setCACert(trust.c_str());
+      tls_->setHandshakeTimeout(FET_TLS_HANDSHAKE_MS / 1000);
+      uint64_t t0 = nowMs();
+      bool ok = tls_->connect(cfg_.host.c_str(), (uint16_t)cfg_.port, FET_TLS_CONNECT_MS) == 1;   // by name: SNI and the name check
+      uint32_t hs = (uint32_t)(nowMs() - t0);
+      std::string why;
+      if (ok && !certCurrent(tls_->getPeerCertificate(), why)) ok = false;
+      if (!ok) {
+        if (why.empty()) {
+          char e[100] = "";
+          int code = tls_->lastError(e, sizeof e);
+          why = std::to_string(code) + " " + e;
+        }
+        failConnect_++;
+        tlsDrop();
+        if (++connectFails_ >= 3) { haveIp_ = false; nextResolve_ = 0; connectFails_ = 0; }   // look the name up again
+        if (tlsState_ != 2) say("Secure connection failed: ", why);
+        tlsState_ = 2;
+        return false;
+      }
+      connectFails_ = 0;
+      if (tlsState_ != 1) say("Secure connection to ", cfg_.host + " (" + std::to_string((unsigned long)hs) + " ms)");
+      tlsState_ = 1;
+      tls_->setNoDelay(true);
+      fresh = true;
+    }
+    std::string req = std::string("POST ") + path + " HTTP/1.1\r\nHost: " + cfg_.host + "\r\nUser-Agent: " + userAgent +
+                      "\r\nX-FET-Token: " + cfg_.token + "\r\nContent-Type: application/json\r\nContent-Length: " +
+                      std::to_string(body.size()) + "\r\nConnection: keep-alive\r\n\r\n" + body;
+    uint64_t t0 = nowMs();
+    bool broken = tls_->write((const uint8_t*)req.data(), req.size()) != req.size();
+    std::string raw;
+    size_t headEnd = std::string::npos;
+    long want = -1;
+    bool done = false, closeAfter = false;
+    uint64_t limit = fresh ? FET_TLS_HANDSHAKE_MS : FET_HTTP_TIMEOUT_MS;
+    while (!broken && nowMs() - t0 < limit) {
+      int avail = tls_->available();
+      if (avail > 0) {
+        char buf[256];
+        int n = tls_->read((uint8_t*)buf, avail > (int)sizeof buf ? (int)sizeof buf : avail);
+        if (n > 0) raw.append(buf, (size_t)n);
+        if (raw.size() > FET_MAX_RESPONSE) { broken = true; break; }
+        if (headEnd == std::string::npos && (headEnd = raw.find("\r\n\r\n")) != std::string::npos) {
+          std::string lower = raw.substr(0, headEnd + 2);
+          for (char& ch : lower) if (ch >= 'A' && ch <= 'Z') ch = (char)(ch - 'A' + 'a');
+          size_t cl = lower.find("\r\ncontent-length:");
+          want = cl == std::string::npos ? -1 : atol(lower.c_str() + cl + 17);
+          closeAfter = lower.find("\r\nconnection: close") != std::string::npos;
+        }
+        if (headEnd != std::string::npos && want >= 0 && raw.size() >= headEnd + 4 + (size_t)want) { done = true; break; }
+        continue;
+      }
+      if (!tls_->connected()) { if (headEnd != std::string::npos && want < 0) done = true; else broken = true; break; }
+      delay(2);
+    }
+    if (done) {
+      if (closeAfter) tlsDrop();
+      bool got = fet::parseHttpResponse(raw, status, resp);
+      if (!got) failReply_++;
+      return got;
+    }
+    tlsDrop();
+    if (fresh || !raw.empty()) { failReply_++; return false; }    // a new connection that failed, or a half answer: give up
+  }                                                                // the server had closed the kept connection: once more
+  failReply_++;
+  return false;
+}
+#endif
 
 bool WifiNet::fetchImage(const uint8_t sha[32], uint32_t size, std::string& err) {
   static const char HX[] = "0123456789abcdef";
   std::string shaHex;
   for (int i = 0; i < 32; i++) { shaHex += HX[sha[i] >> 4]; shaHex += HX[sha[i] & 15]; }
+#if FET_HTTPS
+  if (cfg_.tls) { err = "firmware updates over HTTPS are not supported yet: update by USB"; return false; }
+#endif
   if (!ready()) { err = "server not reachable"; return false; }
   WiFiClient c;
   if (!c.connect(ip_, (uint16_t)port_, FET_FW_CONNECT_MS)) { err = "could not connect to the server"; return false; }
