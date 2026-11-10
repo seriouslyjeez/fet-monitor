@@ -161,16 +161,19 @@ class Proxy:
                     headers[k.strip().lower()] = v.strip()
                 body = f.read(int(headers.get("content-length", "0") or 0))
                 b0 = time.monotonic()
-                c = http.client.HTTPConnection(*self.backend, timeout=10)
                 fwd = {k: v for k, v in headers.items() if k not in ("connection", "host", "content-length")}
-                c.request(method, path, body=body, headers=fwd)
-                r = c.getresponse()
-                data = r.read()
-                c.close()
+                try:
+                    c = http.client.HTTPConnection(*self.backend, timeout=10)
+                    c.request(method, path, body=body, headers=fwd)
+                    r = c.getresponse()
+                    st, reason, ctype, data = r.status, r.reason, r.getheader("Content-Type", "application/json"), r.read()
+                    c.close()
+                except OSError:                       # the server behind is down: say so, keep the connection (as a real front end does)
+                    st, reason, ctype, data = 502, "Bad Gateway", "application/json", b'{"error": "server unavailable"}'
                 bms = round((time.monotonic() - b0) * 1000)
-                tls.sendall(f"HTTP/1.1 {r.status} {r.reason}\r\nContent-Type: {r.getheader('Content-Type', 'application/json')}\r\n"
+                tls.sendall(f"HTTP/1.1 {st} {reason}\r\nContent-Type: {ctype}\r\n"
                             f"Content-Length: {len(data)}\r\nConnection: keep-alive\r\n\r\n".encode() + data)
-                row = dict(info, time=time.strftime("%H:%M:%S"), req_on_conn=n, path=path, status=r.status, backend_ms=bms)
+                row = dict(info, time=time.strftime("%H:%M:%S"), req_on_conn=n, path=path, status=st, backend_ms=bms)
                 for part in headers.get("x-fet-tls", "").split(";"):
                     k, _, v = part.partition("=")
                     if k in FIELDS:
@@ -197,12 +200,20 @@ def configure(args) -> None:
     token = (OUT / "pi" / "device_token").read_text().strip() if args.token is None else args.token
     body = json.dumps({"merge": True, "host": host_of(args.ip), "port": args.port, "token": token}).encode()
     line = b"FETCFG %s %08x\n" % (body.hex().encode(), binascii.crc32(body))
-    s = serial.Serial(args.serial, 115200, timeout=0.2)
     print(f"waiting up to {args.wait} s for the bridge on {args.serial}: power it up now (run mode)", flush=True)
-    end, buf, said = time.time() + args.wait, b"", False
+    end, buf, said, s = time.time() + args.wait, b"", False, None
     while time.time() < end:
-        s.write(b"FETCFG HELLO\n")
-        buf += s.read(2048)
+        try:                                        # the USB port vanishes while the programmer is unplugged
+            if s is None:
+                s = serial.Serial(args.serial, 115200, timeout=0.2)
+            s.write(b"FETCFG HELLO\n")
+            buf += s.read(2048)
+        except (serial.SerialException, OSError):
+            if s is not None:
+                s.close()
+            s, buf = None, b""
+            time.sleep(0.3)
+            continue
         if b"FETCFG HELLO " in buf and not said:
             hello = buf[buf.index(b"FETCFG HELLO "):].split(b"\n")[0].decode(errors="replace").strip()
             print(hello, "-> sending the server, port and token", flush=True)
