@@ -52,6 +52,25 @@ class SingleMatches(ResultStoreCase):
         self.assertEqual((res["key"], res["kind"], res["classes"][0]["teams"]), (f"m{mid}", "match", []))
         self.assertIn(f"m{mid}", self.keys())
 
+    def test_the_list_says_which_results_are_official(self):
+        """Spectators' results list (1.0): Live / Official / Provisional per entry, competitions and saved copies too."""
+        cid, rid = self.finished_competition()
+        mid = self.single()
+        off = lambda: {r["key"]: r["official"] for r in self.rs.listing()}
+        self.assertEqual((off()[f"c{cid}"], off()[f"m{mid}"]), (False, False))
+        for m in (rid, mid):
+            while self.m.detail(m)["state"] != "done":
+                self.m.command(m, "next", "md")
+            for f in self.m.detail(m)["flags"]:
+                if not f["decision"]:
+                    self.m.decide(m, f["shot_id"], "count", "md")
+            self.m.post_results(m, "md")
+            self.m.make_official(m, "md", override=True)
+        self.assertEqual((off()[f"c{cid}"], off()[f"m{mid}"]), (True, True), "the competition when every relay is official")
+        self.rs.delete_matches([mid], [], "md")
+        frozen = [r for r in self.rs.listing() if r["kind"] == "frozen"]
+        self.assertEqual([r["official"] for r in frozen], [True], "a saved copy keeps it")
+
     def test_keys(self):
         cid, _ = self.finished_competition()
         self.assertEqual(self.rs.get(str(cid))["key"], f"c{cid}", "a plain number is a competition (older links)")

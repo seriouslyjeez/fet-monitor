@@ -1386,3 +1386,115 @@ console.log('OK');
     ts.includes('<option value="#/r/a">One</option>') && ts.includes('data-secsel="1"') && ts.includes('>Range Control<'), 'tabs and the switcher, both on the current section');
   console.log('menu OK');
 }
+
+// --- 1.0 spectators: watching lanes (kept on the device, followed by name), density, order; the ranking, a final, results on a phone
+{
+  const {watchState, watchTargets, watchDensity, placesOf, watchView, watchPick, spectatorView, rankingTab, finalPhone, resultsList, resultsPhone, spectTabs, nameOn} = X;
+  const base = D.targets.find(t => t.view && t.view.count) || D.targets[0];
+  const mk = (id, lane, name, extra) => Object.assign(JSON.parse(JSON.stringify(base)), {device_id: id, lane: lane, name: 'Lane ' + lane, match: null, athlete: null, shooter: name || '', online: true, view: Object.assign({}, base.view, {shooter: ''})}, extra || {});
+  const store = {}; global.localStorage = {getItem: k => k in store ? store[k] : null, setItem: (k, v) => { store[k] = String(v); }};
+  // the stored choice: bad data never breaks the page
+  assert.deepStrictEqual(watchState('{bad'), {picks: [], team: [], order: 'lane'});
+  assert.deepStrictEqual(watchState(JSON.stringify({picks: [{lane: '4'}, {}, null, {name: 'Ann'}], team: ['Ann'], order: 'place'})),
+    {picks: [{lane: 4, name: ''}, {lane: null, name: 'Ann'}], team: ['Ann'], order: 'place'});
+  assert.strictEqual(watchState('{"order":"evil"}').order, 'lane');
+  // density: 1-4 panels, 5-8 two columns, 9+ compact (user, 2026-11-10)
+  assert.deepStrictEqual([1, 4, 5, 8, 9, 15].map(watchDensity), ['panels', 'panels', 'tiles', 'tiles', 'dense', 'dense']);
+  // a pick follows its athlete by name to another lane; without the name on the range it stays on its lane
+  const ts = [mk('a', 1, 'Bo'), mk('b', 2, 'Ann'), mk('c', 3, ''), mk('d', 7, 'Cy')];
+  let w = watchState(JSON.stringify({picks: [{lane: 5, name: 'Ann'}, {lane: 3, name: ''}, {lane: 9, name: 'Zed'}], team: [], order: 'lane'}));
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.device_id), ['b', 'c'], 'Ann moved from lane 5 to 2; lane 3 by lane; Zed and lane 9 not here');
+  w = watchState(JSON.stringify({picks: [{lane: 2, name: 'Cy'}], team: [], order: 'lane'}));
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.device_id), ['d'], 'by name before lane: Cy on lane 7, not whoever is on lane 2');
+  w = watchState(JSON.stringify({picks: [{lane: 2, name: 'Nobody'}], team: [], order: 'lane'}));
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.device_id), ['b'], 'name not on the range: its lane');
+  w = watchState(JSON.stringify({picks: [{lane: 1, name: 'Ann'}, {lane: 2, name: ''}], team: [], order: 'lane'}));
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.device_id), ['b'], 'each target once: Ann found on lane 2 by name; the plain lane-2 pick adds no second copy');
+  // order: lane, place, team first
+  w = watchState(JSON.stringify({picks: [{lane: 7, name: 'Cy'}, {lane: 1, name: 'Bo'}, {lane: 2, name: 'Ann'}], team: ['Cy'], order: 'lane'}));
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.lane), [1, 2, 7]);
+  w.order = 'place';
+  assert.deepStrictEqual(watchTargets(w, ts, {a: 3, b: 1, d: 2}).map(t => t.lane), [2, 7, 1]);
+  assert.deepStrictEqual(watchTargets(w, ts, {d: 1}).map(t => t.lane), [7, 1, 2], 'no place: after the placed, by lane');
+  w.order = 'team';
+  assert.deepStrictEqual(watchTargets(w, ts, {}).map(t => t.lane), [7, 1, 2], 'the team first, then by lane');
+  assert.deepStrictEqual(placesOf([{rows: [{device_id: 'a', place: 2}, {device_id: 'b', place: 1}]}, {rows: [{device_id: 'a', place: 1}]}]), {a: 2, b: 1}, 'the first match it is in');
+  assert.strictEqual(nameOn(Object.assign(mk('z', 1, 'typed'), {match: {competitor: 'Comp'}, athlete: {public_name: 'Pub'}})), 'Comp');
+  assert.strictEqual(nameOn(Object.assign(mk('z', 1, 'typed'), {athlete: {public_name: 'A. B.'}})), 'A. B.', 'the public name, not a full name');
+  // the watching page at each density
+  const S0 = {targets: [], board: []};
+  for (let i = 1; i <= 12; i++) S0.targets.push(mk('t' + i, i, i === 2 ? '<b>Ann' : 'P' + i));
+  store.fet_watch = '';
+  assert(watchView(S0, true).includes('href="#/watch/pick"') && watchView(S0, true).includes('Choose lanes to watch'), 'nothing chosen: the way to choose');
+  const watch = n => { store.fet_watch = JSON.stringify({picks: S0.targets.slice(0, n).map(t => ({lane: t.lane, name: t.shooter})), team: ['P3'], order: 'lane'}); return watchView(S0, true); };
+  let h = watch(3);
+  assert(h.includes('wgrid w-panels') && count(h, /class="wcard panel/g) === 3 && h.includes('Watching 3 lanes') && h.includes('&lt;b&gt;Ann') && !h.includes('<b>Ann'), 'panels; names escaped');
+  assert(/class="wcard panel team"/.test(h) && count(h, /class="wcard panel team"/g) === 1, 'the team outlined');
+  h = watch(8); assert(h.includes('w-tiles') && count(h, /class="wcard tiles/g) === 8 && !h.includes('wover'), 'two columns, the name under the face');
+  h = watch(12); assert(h.includes('w-dense') && count(h, /class="wcard dense/g) === 12 && count(h, /class="wover"/g) === 12, 'compact: the name over the face');
+  h = watch(1); assert(h.includes('Watching 1 lane<') && !h.includes('worder'), 'one lane: no order to choose');
+  h = watch(2); assert(h.includes('data-act="worder" data-o="lane" aria-pressed="true" class="sel"'), 'the order chosen shown');
+  store.fet_watch = JSON.stringify({picks: [{lane: 1, name: 'P1'}, {lane: 40, name: 'Gone'}], team: [], order: 'lane'});
+  assert(watchView(S0, true).includes('1 lane you chose is not reporting now'));
+  // choosing: ticks and stars, a search
+  store.fet_watch = JSON.stringify({picks: [{lane: 2, name: '<b>Ann'}], team: ['P4'], order: 'lane'});
+  h = watchPick(Object.assign({}, S0));
+  assert.strictEqual(count(h, /type="checkbox"/g), 12);
+  assert(/data-dev="t2" checked/.test(h) && !/data-dev="t3" checked/.test(h) && h.includes('Watch 1 lane<'), 'ticked by name');
+  assert(h.includes('data-name="P4" aria-pressed="true"') && h.includes('data-name="P5" aria-pressed="false"'), 'stars');
+  h = watchPick(Object.assign({}, S0, {wfilter: 'p1'}));
+  assert.deepStrictEqual(Array.from(h.matchAll(/data-dev="(t\d+)"/g)).map(m => m[1]), ['t1', 't10', 't11', 't12'], 'a search by name');
+  h = watchPick(Object.assign({}, S0, {wfilter: '7'}));
+  assert.deepStrictEqual(Array.from(h.matchAll(/data-dev="(t\d+)"/g)).map(m => m[1]), ['t7'], 'or by lane number');
+  // the tabs; home: Ranking when a match is on, else the lanes
+  assert(spectTabs('watch', 3).includes('<a href="#/watch" class="on" aria-current="page">Watching <span class="count num">3</span>'));
+  assert(spectatorView(S0, {spect: 'home'}, true).includes('href="#/lanes" class="on"'), 'no match: Lanes');
+  const row = (id, lane, place, total, name, last) => ({device_id: id, lane: lane, fp: lane, competitor: name, target: 'Lane ' + lane, place: place, total: total, x: 0, shots: 10, series: [total], last10: [last], dq: false, pending: 0});
+  const B = {id: 7, name: 'Club <match>', format_name: 'ISSF 10 m AR 60', state: 'running', record_shots: 60, scoring: 'decimal', clock: {label: 'Match', remaining_ms: 600000}, official_ms: null,
+    rows: [row('t2', 2, 1, 104.2, '<b>Ann', 10.9), row('t1', 1, 2, 101.0, 'P1', 9.8)]};
+  const S1 = Object.assign({}, S0, {board: [B]});
+  h = spectatorView(S1, {spect: 'home'}, true);
+  assert(h.includes('href="#/" class="on"') && h.includes('data-clock="tv-7"') && h.includes('Club &lt;match&gt;') && !h.includes('<match>'), 'Ranking, the band');
+  assert(h.indexOf('&lt;b&gt;Ann') < h.indexOf('>P1<') && h.includes('last <span class="num">10.9') && h.includes('10 of 60') && h.includes('Provisional'), 'in place order');
+  assert(h.includes('<h2>Also on the range</h2>') && h.includes('href="#/t/t12"') && !/Also on the range[\s\S]*href="#\/t\/t2"/.test(h), 'the other lanes, not those in the match');
+  assert(rankingTab(Object.assign({}, S1, {board: [Object.assign({}, B, {state: 'done', official_ms: 1})]})).includes('Official.'));
+  h = rankingTab(Object.assign({}, S1, {board: [Object.assign({}, B, {rows: [row('t2', 2, 1, 4, 'A', 4), Object.assign(row('t1', 1, 2, 0, 'B', 0), {shots: 0, last10: []})]})]}));
+  assert(/place first">1<\/b>/.test(h) && /class="num place"><\/b>[\s\S]*?>B</.test(h) && !h.includes('last <span class="num">0'), 'no place and no last shot before a first shot');
+  // a final: who is still in, the lowest, who is out
+  const fr = (name, place, fin, out, last) => ({name: name, place: place, tied: false, pos: 'A', last: last, final: fin, shots: 12, qual: null, total: fin, out: out, dq: false, lane: place, shoot_off: []});
+  const F = Object.assign({}, B, {final: {elim: true, title: 'Final', now: 'Elimination', shots_done: 10, shots_total: 24, next_out: {after: 14, places: [8]}, shoot_off: null,
+    rows: [fr('Ann', 1, 125.0, null, 10.4), fr('Bo', 2, 124.1, null, 9.9), fr('Cy', 3, 120.0, null, 8.7), fr('Di', 8, 100.2, 8, 9.0)]}});
+  h = finalPhone(F, new Set(['Bo']));
+  assert(h.includes('Elimination · 8th decided after shot 14'), 'the next decision');
+  assert(/class="rrow danger"[\s\S]*?Cy[\s\S]*?out after shot 14/.test(h) && count(h, /danger/g) === 1, 'the lowest still in');
+  assert(h.includes('<h3>Eliminated</h3>') && /class="rrow out"><b class="num place">8th<\/b>[\s\S]*Di/.test(h) && !/danger[^"]*"[^>]*>[\s\S]{0,80}Di/.test(h), 'Di out');
+  assert(/class="rrow team"/.test(h), 'the team');
+  assert(!finalPhone(Object.assign({}, F, {state: 'done'}), new Set()).includes('danger'), 'over: nobody in danger');
+  // results: the list by month with its state; one result on a phone
+  const L = [{key: 'c1', kind: 'competition', name: 'Winter League', at_ms: Date.UTC(2026, 10, 3, 12), format_name: 'x', active: false, official: true},
+    {key: 'm4', kind: 'match', name: 'Practice <match>', at_ms: Date.UTC(2026, 10, 9, 12), format_name: 'y', active: true, official: false},
+    {key: 'a2', kind: 'frozen', name: 'Old', at_ms: Date.UTC(2026, 8, 9, 12), format_name: 'z', active: false, official: false}];
+  h = resultsList(L, {});
+  assert(count(h, /class="month"/g) === 2 && h.includes('Official</span>') && h.includes('Live</span>') && h.includes('Saved copy') && h.includes('Practice &lt;match&gt;'));
+  assert(!resultsList(L, {resKind: 'comp'}).includes('Practice') && resultsList(L, {resKind: 'single'}).includes('Practice') && !resultsList(L, {resKind: 'single'}).includes('Winter'));
+  assert(resultsList(L, {resQ: 'wint'}).includes('Winter') && !resultsList(L, {resQ: 'wint'}).includes('Old') && resultsList(L, {resQ: 'qqq'}).includes('No results match'));
+  const ent = (name, place, total, cls) => ({name: name, place: place, tied: false, fired: true, dq: false, total: total, x: 3, series: [50.1, 51.2], team: '', relay: 1, lane: 2});
+  const R = {key: 'c1', name: 'Winter', format_name: 'f', scoring: 'decimal', book_name: 'ISSF', tie_rules: 'issf', state: 'done', official_ms: 1,
+    classes: [{name: 'Junior', individuals: [ent('<i>Jo', 1, 101.3)]}, {name: 'Open', individuals: [ent('Al', 1, 103.0), ent('Bea', 2, 100.0)]}], teams: []};
+  try {
+    h = resultsPhone(R, {});
+    assert(count(h, /<details class="rres">/g) === 3 && h.includes('&lt;i&gt;Jo') && h.includes('>Junior</h2>') && h.includes('data-act="rescls" data-c="Open"'), 'every class, by class');
+    h = resultsPhone(R, {resClass: 'Open'});
+    assert(count(h, /<details class="rres">/g) === 2 && !h.includes('Jo') && h.includes('S2</span><b class="num">51.2'), 'one class; the series open');
+    assert(!h.includes('3x') && resultsPhone(Object.assign({}, R, {scoring: 'integer'}), {}).includes('3x</span>'), 'the X count for whole-ring scoring only');
+  } catch (e) { if (!(e instanceof assert.AssertionError)) throw new Error('resultsPhone with sample data: ' + e.stack); throw e; }
+  // against the real server's results (field names checked, not only sample data)
+  h = resultsPhone(D.comp, {});
+  const indiv = D.comp.classes.reduce((n, cl) => n + cl.individuals.length, 0);
+  assert(indiv > 0 && count(h, /<details class="rres">/g) === indiv && !/undefined|NaN/.test(h), 'a row per competitor from real results');
+  h = resultsList(D.listing, {});
+  assert(D.listing.length && count(h, /class="rlist"/g) === D.listing.length && !/undefined|NaN|Invalid Date/.test(h) && h.includes('Saved copy'), 'the real listing');
+  assert(D.listing.every(c => typeof c.official === 'boolean'), 'the server says whether each is official');
+  delete global.localStorage;
+  console.log('spectators OK');
+}

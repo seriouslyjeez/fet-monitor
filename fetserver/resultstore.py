@@ -99,16 +99,18 @@ class ResultStore:
             if comp["results_hidden"] and not hidden_too:
                 continue
             out.append({"key": f"c{comp['id']}", "kind": "competition", "name": comp["name"], "format_name": comp["format_name"],
-                        "active": comp["active"], "hidden": bool(comp["results_hidden"]), "at_ms": comp["created_ms"]})
+                        "active": comp["active"], "hidden": bool(comp["results_hidden"]), "at_ms": comp["created_ms"],
+                        "official": bool(self.competitions._official(c, comp["id"]))})
         for m in c.execute("SELECT * FROM matches WHERE competition_id IS NULL AND state!='ready' ORDER BY id DESC LIMIT 200"):
             if m["results_hidden"] and not hidden_too:
                 continue
             out.append({"key": f"m{m['id']}", "kind": "match", "name": m["name"], "format_name": json.loads(m["format_json"])["name"],
-                        "active": m["state"] in LIVE or m["state"] == "overtime", "hidden": bool(m["results_hidden"]), "at_ms": m["created_ms"]})
+                        "active": m["state"] in LIVE or m["state"] == "overtime", "hidden": bool(m["results_hidden"]), "at_ms": m["created_ms"],
+                        "official": bool(m["official_ms"])})
         for r in c.execute("SELECT id, kind, name, json, created_ms FROM results_archive ORDER BY id DESC LIMIT 500"):
             res = json.loads(r["json"])
             out.append({"key": f"a{r['id']}", "kind": "frozen", "name": r["name"], "format_name": res["format_name"],
-                        "active": False, "hidden": False, "at_ms": res.get("at_ms", r["created_ms"])})
+                        "active": False, "hidden": False, "at_ms": res.get("at_ms", r["created_ms"]), "official": bool(res.get("official_ms"))})
         return sorted(out, key=lambda x: -x["at_ms"])
 
     # ------------------------------------------------------------------------------------------- deleting

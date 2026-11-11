@@ -141,6 +141,74 @@ return {overflow: overflow(), small: small('.lane button, .lane a, .shoot .right
                         self.assertTrue(v["wide"])
                         self.assertGreaterEqual(v["faceW"], 600, "a large face on a tablet")
 
+    def range_of(self, n):
+        """n lanes with a named shooter and shots each, as the spectators see them."""
+        from fetserver.simtarget import SimTarget
+        for i in range(1, n + 1):
+            sim = SimTarget(self.url, "test-token", "lane-%d" % i, "Lane %d" % i, seed=i)
+            sim.heartbeat()
+            self.core.set_lane("lane-%d" % i, i)
+            self.core.acquire_control("lane-%d" % i, "shooter-client-%04d" % i, "S%d" % i)
+            self.core.set_mode("lane-%d" % i, "shooter-client-%04d" % i, "practice", shooter="Shooter number %d" % i)
+            for _ in range(6):
+                sim.fire()
+            sim.deliver()
+
+    def test_watching_lanes_on_a_phone_and_a_tablet(self):
+        self.range_of(12)
+        script = r"""
+for (let i = 0; i < 80 && !document.querySelector('.wgrid, .wempty'); i++) await sleep(50);
+await sleep(100);
+const cards = Array.from(document.querySelectorAll('.wcard')), last = cards[cards.length - 1];
+return {overflow: overflow(), small: small('.sptabs a, .whead a, .worder button, .wcard'), n: cards.length,
+        cls: (document.querySelector('.wgrid') || {}).className, cols: new Set(cards.map(c => Math.round(c.getBoundingClientRect().left))).size,
+        fits: last ? last.getBoundingClientRect().bottom <= innerHeight : null, team: document.querySelectorAll('.wcard.team').length};"""
+        for n, cls in ((3, "w-panels"), (8, "w-tiles"), (12, "w-dense")):
+            picks = json.dumps({"picks": [{"lane": i, "name": "Shooter number %d" % i} for i in range(1, n + 1)], "team": ["Shooter number 2"], "order": "lane"})
+            init = "localStorage.setItem('fet_watch', %s);" % json.dumps(picks)
+            for size in (PHONE, TABLET):
+                for scheme in ("light", "dark"):
+                    with self.subTest(n=n, size=size, scheme=scheme):
+                        v = self.look("/#/watch", size, scheme, script, init)
+                        self.assertEqual(v["n"], n)
+                        self.assertIn(cls, v["cls"])
+                        self.assertFalse(v["overflow"], "no sideways scrolling")
+                        self.assertEqual(v["small"], [], "every control at least 44 px")
+                        self.assertEqual(v["team"], 1)
+                        if size == PHONE:
+                            self.assertEqual(v["cols"], {"w-panels": 1, "w-tiles": 2, "w-dense": 3}[cls])
+                            if cls == "w-tiles":
+                                self.assertTrue(v["fits"], "5-8 lanes on a phone: no scrolling")
+                        else:
+                            self.assertTrue(v["fits"], "a tablet shows even 12 lanes without scrolling")
+
+    def test_choosing_lanes_and_the_ranking_and_results_tabs(self):
+        self.range_of(4)
+        pick = self.look("/#/watch/pick", PHONE, "light", r"""
+for (let i = 0; i < 80 && !document.querySelector('.wpick'); i++) await sleep(50);
+document.querySelector('.wpick input[data-dev="lane-3"]').click(); await sleep(50);
+document.querySelector('.wpick button[data-name="Shooter number 3"]').click(); await sleep(50);
+const done = document.querySelector('.wdone a').getBoundingClientRect();
+return {rows: document.querySelectorAll('.wpick').length, small: small('.wpick label, .wpick button, .wdone a'), overflow: overflow(),
+        stored: JSON.parse(localStorage.getItem('fet_watch')), done: Math.round(innerHeight - done.bottom), label: document.querySelector('.wdone a').textContent};""")
+        self.assertEqual(pick["rows"], 4)
+        self.assertEqual(pick["small"], [])
+        self.assertFalse(pick["overflow"])
+        self.assertEqual(pick["stored"], {"picks": [{"lane": 3, "name": "Shooter number 3"}], "team": ["Shooter number 3"], "order": "lane"})
+        self.assertEqual(pick["label"], "Watch 1 lane")
+        self.assertGreaterEqual(pick["done"], 0)
+        for path in ("/#/", "/#/lanes", "/#/results"):
+            for scheme in ("light", "dark"):
+                with self.subTest(path=path, scheme=scheme):
+                    v = self.look(path, PHONE, scheme, r"""
+for (let i = 0; i < 80 && !document.querySelector('.sptabs'); i++) await sleep(50);
+return {tabs: Array.from(document.querySelectorAll('.sptabs a')).map(a => a.textContent), on: (document.querySelector('.sptabs a.on') || {}).textContent,
+        small: small('.sptabs a, .zseg button, .rrow, .rlist'), overflow: overflow()};""")
+                    self.assertEqual(v["tabs"], ["Ranking", "Lanes", "Watching", "Results"])
+                    self.assertEqual(v["on"], {"/#/": "Lanes", "/#/lanes": "Lanes", "/#/results": "Results"}[path], "no match on: home is the lanes")
+                    self.assertEqual(v["small"], [])
+                    self.assertFalse(v["overflow"])
+
     def test_fonts_are_served_only_by_name(self):
         for name in ("archivo-latin", "archivo-latin-ext", "jetbrains-mono-latin", "jetbrains-mono-latin-ext"):
             with urllib.request.urlopen(self.url + "/fonts/%s.woff2" % name, timeout=5) as r:
@@ -172,7 +240,8 @@ def ratio(a: str, b: str) -> float:
 
 PAIRS = [("fg", "bg"), ("fg", "card"), ("mut", "bg"), ("mut", "card"), ("link", "card"), ("on-accent", "accent"), ("bad", "card"),
          ("ok", "card"), ("warn", "card"), ("last-ink", "last-bg"), ("last-ink", "card"), ("fg", "hi"), ("mut", "hi"),
-         ("bf-practice", "b-practice"), ("bf-sighter", "b-sighter"), ("bf-record", "b-record"), ("bf-ammo", "b-ammo")]
+         ("bf-practice", "b-practice"), ("bf-sighter", "b-sighter"), ("bf-record", "b-record"), ("bf-ammo", "b-ammo"),
+         ("band-ink", "band"), ("band-mut", "band"), ("warn-ink", "warn-bg"), ("fg", "surface2"), ("mut", "surface2"), ("fg", "warn-bg")]
 
 
 class Contrast(unittest.TestCase):

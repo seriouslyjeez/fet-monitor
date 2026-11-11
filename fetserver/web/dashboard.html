@@ -213,6 +213,57 @@ body.display #app{pointer-events:none;user-select:none;-webkit-user-select:none}
 .seg{display:flex;gap:6px}.seg button{flex:1}.fields{display:grid;grid-template-columns:1fr 90px;gap:6px 10px;align-items:center}.fields input{width:100%}
 .rev{display:block;width:100%;text-align:left;margin-bottom:5px}details>summary{cursor:pointer;font-weight:600}
 #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:8px 14px;border-radius:8px;display:none;z-index:20}
+/* spectators (1.0): the range live in four tabs, lanes watched, results on a phone */
+.spect{max-width:1180px;margin:0 auto}
+.sptabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin:0 0 12px;border-bottom:1px solid var(--line)}
+.sptabs a{display:flex;align-items:center;justify-content:center;gap:4px;min-height:44px;color:var(--mut);text-decoration:none;font-weight:600;font-size:15px;border-bottom:3px solid transparent;white-space:nowrap}
+.sptabs a.on{color:var(--fg);border-bottom-color:var(--fg)}.sptabs .count{font-size:12px;background:var(--surface2);color:var(--fg);border-radius:9px;padding:0 6px}
+.liveband{display:flex;align-items:center;gap:10px;background:var(--band);color:var(--band-ink);border-radius:14px;padding:10px 14px;margin:0 0 12px}
+.liveband .lb-name{display:flex;flex-direction:column;flex:1;min-width:0}.liveband .lb-name span{font-size:13px;color:var(--band-mut)}.liveband .lb-name b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.liveband .mcclock{font-size:30px;color:var(--band-ink)}
+.rankb{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:6px 12px 2px;margin:0 0 12px}.rankb h2{font-size:17px;margin:8px 0}.rankb h3{font-size:14px;color:var(--mut);margin:12px 0 4px}
+.rrow{display:flex;align-items:center;gap:10px;min-height:56px;padding:6px 0;border-top:1px solid var(--line2);color:var(--fg);text-decoration:none}
+.rrow .place{width:28px;text-align:center;font-size:18px}.rrow .place.first{color:var(--last-ink)}.rrow .rtot{font-size:20px;margin-left:auto}
+.rrow .rmain{display:flex;flex-direction:column;min-width:0;flex:1}.rrow .rmain b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rrow .rmain .mut{font-size:13px}
+.rrow.team{box-shadow:inset 3px 0 0 var(--last)}.rrow.danger{background:var(--warn-bg)}.rrow.out{opacity:.75}
+.finhead{margin:0 0 6px;font-weight:600}.bad{color:var(--warn-ink)}
+.mface{display:inline-block;width:44px;height:44px;flex:none;border-radius:50%;overflow:hidden;background:var(--surface2)}.mface svg{width:100%;height:100%;display:block;margin:0}
+.lastchip{display:inline-flex;align-items:center;gap:4px;background:var(--last-bg);color:var(--last-ink);border-radius:10px;padding:2px 8px;font-weight:700;font-size:14px;width:max-content}
+.whead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 10px}.whead b{font-size:18px}
+.worder{margin:0 0 12px}
+.wempty{text-align:center;padding:24px 8px}.wempty p{color:var(--mut);max-width:420px;margin:0 auto 16px}
+.wgrid{display:grid;gap:10px;margin:0 0 10px}
+.wcard{display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);border-radius:16px;color:var(--fg);text-decoration:none;overflow:hidden;min-width:0}
+.wcard.team{border:2px solid var(--last)}
+.w-panels{grid-template-columns:1fr}.wcard.panel{flex-direction:row;align-items:center;gap:12px;padding:10px}
+.wcard.panel .mface{width:min(38vw,150px);height:min(38vw,150px)}
+.wmain{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}.wmain .wl{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.wmain .wname{font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wmain .wtot{font-size:30px;line-height:1.1}.wmain .mut{font-size:13px}
+.w-tiles{grid-template-columns:1fr 1fr}.w-dense{grid-template-columns:repeat(3,1fr);gap:6px}
+.wface{position:relative;display:flex;justify-content:center;background:var(--surface2)}.wface .mface{width:var(--face,100%);height:var(--face,auto);aspect-ratio:1;border-radius:0;display:block}
+.wlane{position:absolute;left:6px;top:6px;background:var(--band);color:var(--band-ink);border-radius:8px;padding:0 6px;font-weight:700;font-size:14px}
+.wlast{position:absolute;right:6px;top:6px;background:var(--last);color:#14202B;border-radius:8px;padding:0 6px;font-weight:800;font-size:14px}
+.wover{position:absolute;left:0;right:0;bottom:0;background:rgba(20,32,43,.72);color:#fff;font-size:12px;font-weight:600;padding:2px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wfoot .wname{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.wfoot{display:flex;align-items:baseline;justify-content:space-between;gap:6px;padding:4px 8px 6px}.wfoot b{font-size:18px}.wfoot .mut{font-size:12px}
+.w-dense .wfoot{padding:2px 6px 4px}.w-dense .wfoot b{font-size:15px}
+@media (min-width:601px){.w-panels{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}.wcard.panel{flex-direction:column;align-items:stretch}.wcard.panel .mface{width:100%;height:auto;aspect-ratio:1;max-width:320px;margin:0 auto}
+  .w-tiles{grid-template-columns:repeat(4,1fr)}.w-dense{grid-template-columns:repeat(5,1fr)}}
+#wfilter,#resq{width:100%;margin:0 0 8px}
+.wpicks{display:flex;flex-direction:column;margin:0 0 84px}
+.wpick{display:flex;align-items:center;gap:6px;border-top:1px solid var(--line2)}.wpick label{display:flex;align-items:center;gap:10px;flex:1;min-height:52px;min-width:0;cursor:pointer}
+.wpick input{width:24px;height:24px;min-height:24px;flex:none;accent-color:var(--accent)}.wpick .wl{width:64px;flex:none}.wpick .wn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wpick.on{background:var(--surface2)}
+.wdone{position:fixed;left:0;right:0;bottom:0;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:center}.wdone .btn{width:100%;max-width:480px}
+h2.month{font-size:14px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin:16px 0 6px}
+.rlist{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:56px;padding:8px 12px;background:var(--card);border:1px solid var(--line);border-radius:14px;margin:0 0 6px;color:var(--fg);text-decoration:none}
+.rlist>span:first-child{display:flex;flex-direction:column;min-width:0}.rlist .mut{font-size:13px}
+.rchip{flex:none;font-size:12px;font-weight:700;border-radius:9px;padding:2px 8px;background:var(--surface2);color:var(--fg)}.rchip.live{background:var(--last-bg);color:var(--last-ink)}.rchip.off{background:var(--b-record);color:var(--bf-record)}.rchip.prov{background:var(--warn-bg);color:var(--warn-ink)}
+.resph h1{font-size:22px;margin:6px 0 2px}.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chips button.sel{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+details.rres{border-top:1px solid var(--line2)}details.rres summary{display:flex;align-items:center;gap:10px;min-height:56px;list-style:none;cursor:pointer}details.rres summary::-webkit-details-marker{display:none}
+details.rres .place{width:28px;text-align:center;font-size:18px}details.rres .place.first{color:var(--last-ink)}details.rres .rmain{display:flex;flex-direction:column;flex:1;min-width:0}
+details.rres .rt{display:flex;flex-direction:column;align-items:flex-end}details.rres .rt b{font-size:19px}
+.rser{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;padding:0 0 10px 38px}.rser span{display:flex;flex-direction:column;background:var(--surface2);border-radius:8px;padding:4px 8px}.rser .mut{font-size:11px}
 </style>
 </head>
 <body>
@@ -648,6 +699,172 @@ function tvBoard(boards, comps) {
         '<td class="l10">' + (r.dq ? '' : r.last10.map(fmt).join(' ')) + '</td><td>' + (r.dq ? '' : r.shots + ' / ' + b.record_shots) + '</td></tr>').join('') + '</table>' +
       (b.provisional_ranking ? '<div class="mut">Provisional: ties are split by inner tens, then 10-shot series from the last one. * = shots waiting for the match director.</div>' : '') + '</div>';
   }).join('');
+}
+
+// ---- Spectators (1.0; boards FmSpectator, FmWatchPick, FmWatchMulti, FmWatch8, FmWatch10, FmWatchTablet, FmWatchTablet10,
+// FmFinal, FmResultsList, FmResultsPhone). The range live in four tabs; the lanes someone watches are kept on their device and
+// followed by the shooter's name, so a parent keeps their athlete across lanes and relays.
+const nameOn = t => (t.match && t.match.competitor) || (t.athlete && t.athlete.public_name) || (t.view && t.view.shooter) || t.shooter || '';
+function watchState(raw) {                       // what this device watches: [{lane, name}], team names, the order
+  let w = {};
+  try { w = JSON.parse(raw || '{}') || {}; } catch (e) { w = {}; }
+  const picks = Array.isArray(w.picks) ? w.picks.filter(p => p && (p.lane != null || p.name)).map(p => ({lane: p.lane == null ? null : +p.lane, name: String(p.name || '')})) : [];
+  return {picks: picks.slice(0, 40), team: Array.isArray(w.team) ? w.team.map(String).slice(0, 40) : [], order: ['lane', 'place', 'team'].includes(w.order) ? w.order : 'lane'};
+}
+// The targets for the picks: a pick follows its shooter's name wherever they shoot now; without a name (or nobody of that
+// name shooting) it stays on its lane. Each target once.
+function watchTargets(w, targets, places) {
+  const used = new Set(), out = [];
+  w.picks.forEach(p => {
+    let t = p.name ? targets.find(x => !used.has(x.device_id) && nameOn(x) === p.name) : null;
+    if (!t && p.lane != null) t = targets.find(x => !used.has(x.device_id) && x.lane === p.lane);
+    if (t) { used.add(t.device_id); out.push(t); }
+  });
+  const team = new Set(w.team), place = t => (places || {})[t.device_id] || 999, byL = (a, b) => (a.lane == null ? 999 : a.lane) - (b.lane == null ? 999 : b.lane);
+  if (w.order === 'place') out.sort((a, b) => place(a) - place(b) || byL(a, b));
+  else if (w.order === 'team') out.sort((a, b) => (team.has(nameOn(b)) - team.has(nameOn(a))) || byL(a, b));
+  else out.sort(byL);
+  return out;
+}
+const watchDensity = n => n <= 4 ? 'panels' : n <= 8 ? 'tiles' : 'dense';    // 1-4 big, 5-8 two columns, 9+ compact (user)
+function placesOf(boards) {                      // device -> place in the matches running now
+  const m = {};
+  (boards || []).forEach(b => (b.rows || []).forEach(r => { if (r.device_id && r.place && !(r.device_id in m)) m[r.device_id] = r.place; }));
+  return m;
+}
+const STAR = on => '<svg width="20" height="20" viewBox="0 0 24 24" fill="' + (on ? 'var(--last)' : 'none') + '" stroke="' + (on ? 'var(--last)' : 'currentColor') + '" stroke-width="1.6" aria-hidden="true"><path d="M12 2l3 6.9 7.5.7-5.7 5 1.7 7.4L12 18.3 5.5 22l1.7-7.4-5.7-5 7.5-.7z"/></svg>';
+function liveBand(boards) {                      // the match being shot now, compact (its clock ticks in place)
+  const b = (boards || []).find(x => ['running', 'paused', 'holding'].includes(x.state)) || (boards || []).find(x => x.state === 'ready');
+  if (!b) return '';
+  const live = ['running', 'paused', 'holding'].includes(b.state), c = b.clock || {};
+  const label = b.state === 'ready' ? 'Starting soon' : (b.state === 'paused' ? 'Paused · ' : b.state === 'holding' ? 'Waiting for START · ' : '') + (c.label || '');
+  return '<section class="liveband" aria-label="The match now"><span class="livedot on" aria-hidden="true"></span><span class="lb-name"><span>' + esc(label) + '</span><b>' + esc(b.name) + '</b></span>' +
+    '<b class="num mcclock" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</b></section>';
+}
+function spectTabs(cur, n) {                     // four tabs that fit a phone (no sideways scrolling)
+  const tab = (k, href, label) => '<a href="' + href + '"' + (k === cur ? ' class="on" aria-current="page"' : '') + '>' + label + '</a>';
+  return '<nav class="sptabs" aria-label="The range">' + tab('rank', '#/', 'Ranking') + tab('lanes', '#/lanes', 'Lanes') +
+    tab('watch', '#/watch', 'Watching' + (n ? ' <span class="count num">' + n + '</span>' : '')) + tab('results', '#/results', 'Results') + '</nav>';
+}
+function miniFace(t) {                           // a lane's current target picture, small (no numbers)
+  if (!t) return '<span class="mface"></span>';
+  const v = t.view, ammo = v.kind === 'ammo' && !!v.ammo, dia = ammo ? v.ammo.diameter_mm : faceOf(v.face).projectile_mm;
+  return '<span class="mface">' + faceSvg(v.bull_shots, Object.assign({mini: true, half: halfFor('auto', v.bull_shots, dia / 2, ammo ? 9 : undefined, v.face), pellet: dia, face: v.face,
+    color: modeColor(t.mode)}, ammo ? ammoMarks(v) : {})) + '</span>';
+}
+function rankingTab(S) {                         // the matches being shot: their ranking, or a final (FmSpectator, FmFinal)
+  const boards = (S.board || []).filter(b => b.state !== 'aborted'), team = new Set(watchState(store('fet_watch')).team);
+  const byDev = id => (S.targets || []).find(t => t.device_id === id);
+  if (!boards.length) return '<p class="empty">No match on the range right now. <a href="#/lanes">See the lanes</a>.</p>';
+  const inMatch = new Set();
+  const out = boards.map(b => {
+    if (b.final) return finalPhone(b, team);
+    const fmt = v => b.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
+    return '<section class="rankb"><h2>' + esc(b.name) + ' <span class="mut">' + esc(b.format_name) + '</span></h2>' + b.rows.map(r => {
+      inMatch.add(r.device_id);
+      const t = byDev(r.device_id), last = r.last10 && r.last10.length ? r.last10[r.last10.length - 1] : null, nm = r.competitor || r.target;
+      return '<a class="rrow' + (team.has(nm) ? ' team' : '') + '" href="#/t/' + encodeURIComponent(r.device_id) + '"><b class="num place' + (r.place === 1 && r.shots ? ' first' : '') + '">' + (r.dq || !r.shots ? '' : esc(r.place)) + '</b>' + miniFace(t) +
+        '<span class="rmain"><b>' + esc(nm) + (team.has(nm) ? ' ' + STAR(true) : '') + '</b><span class="mut">Lane ' + esc(FP(r)) + ' · ' + r.shots + ' of ' + b.record_shots + (last != null ? ' · last <span class="num">' + fmt(last) + '</span>' : '') + '</span></span>' +
+        '<b class="num rtot">' + (r.dq ? 'DQ' : fmt(r.total)) + '</b></a>';
+    }).join('') + '<p class="mut">' + (b.state === 'done' ? (b.official_ms ? 'Official.' : 'Finished: provisional until the Match Director makes it official.') : 'Provisional: the Match Director makes the results official.') + '</p></section>';
+  }).join('');
+  const others = (S.targets || []).filter(t => !inMatch.has(t.device_id) && t.view && t.view.count && t.online);
+  return out + (others.length ? '<section class="rankb"><h2>Also on the range</h2>' + others.map(t => '<a class="rrow" href="#/t/' + encodeURIComponent(t.device_id) + '">' + miniFace(t) +
+    '<span class="rmain"><b>' + esc(laneTitle(t)) + ' · ' + esc(MODES[t.mode] || t.mode) + '</b><span class="mut">' + esc(nameOn(t) || '–') + ' · ' + t.view.count + ' shots</span></span>' +
+    '<b class="num rtot">' + (wholeRings(t.view) ? t.view.agg.integer : dec(t.view.agg.decimal)) + '</b></a>').join('') + '</section>' : '');
+}
+function finalPhone(b, team) {                   // a final, live: who is still in, the next decision, who is out (FmFinal)
+  const f = b.final, done = b.state === 'done', inn = f.rows.filter(r => !(f.elim && r.out != null && r.out > 3 && !done)), out = f.rows.filter(r => f.elim && r.out != null && r.out > 3 && !done);
+  const low = f.elim && !done && f.next_out && inn.length > 1 ? inn.filter(r => !r.dq && !(r.out != null)).slice(-1)[0] || null : null;
+  const head = [f.now || (done ? 'Final over' : ''), f.next_out && !done ? f.next_out.places.map(ORD).join(' and ') + ' decided after shot ' + f.next_out.after : ''].filter(Boolean).join(' · ');
+  return '<section class="rankb"><h2>' + esc(f.title || f.name) + '</h2>' + (head ? '<p class="finhead">' + esc(head) + '</p>' : '') + inn.map((r, i) =>
+    '<div class="rrow' + (r === low ? ' danger' : '') + (team.has(r.name) ? ' team' : '') + '"><b class="num place' + (i === 0 ? ' first' : '') + '">' + (r.dq ? 'DQ' : esc((r.place || '') + (r.tied ? '=' : ''))) + '</b>' +
+      '<span class="rmain"><b>' + esc(r.name) + '</b><span class="mut">' + (r === low ? '<span class="bad">lowest now: out after shot ' + f.next_out.after + ' if still lowest</span>' : 'Position ' + esc(r.pos || '–')) + '</span></span>' +
+      (r.last != null ? '<span class="lastchip num">' + r.last.toFixed(1) + '</span>' : '') + '<b class="num rtot">' + (r.dq ? '' : (f.elim ? r.final : r.total).toFixed(1)) + '</b></div>').join('') +
+    (out.length ? '<h3>Eliminated</h3>' + out.map(r => '<div class="rrow out"><b class="num place">' + ORD(r.out) + '</b><span class="rmain"><b>' + esc(r.name) + '</b></span><b class="num rtot">' + r.final.toFixed(1) + '</b></div>').join('') : '') +
+    (so => so.length ? '<p class="bad">Shoot-off: ' + f.rows.filter(r => so.includes(r.lane)).map(r => esc(r.name)).join(' and ') + '</p>' : '')(f.shoot_off || []) + '</section>';
+}
+function watchView(S, phone) {                   // the lanes this device watches (FmWatchMulti, FmWatch8, FmWatch10, FmWatchTablet, FmWatchTablet10)
+  const w = watchState(store('fet_watch')), places = placesOf(S.board), ts = watchTargets(w, S.targets || [], places), team = new Set(w.team);
+  if (!w.picks.length) return '<div class="wempty"><p>Choose the lanes you want to follow: your athletes, your team, the leaders. They stay on this ' + (phone ? 'phone' : 'device') +
+    ', and follow each athlete by name to another lane or relay.</p><a class="btn pri big" href="#/watch/pick">Choose lanes to watch</a></div>';
+  const d = watchDensity(ts.length), seg = (k, l) => '<button data-act="worder" data-o="' + k + '" aria-pressed="' + (w.order === k) + '"' + (w.order === k ? ' class="sel"' : '') + '>' + l + '</button>';
+  const head = '<div class="whead"><b>Watching ' + ts.length + (ts.length === 1 ? ' lane' : ' lanes') + '</b><a class="btn" href="#/watch/pick">Edit</a></div>' +
+    (ts.length > 1 ? '<div class="zseg worder" role="group" aria-label="Order">' + seg('lane', 'By lane') + seg('place', 'By place') + seg('team', 'Team first') + '</div>' : '');
+  const lost = w.picks.length - ts.length;
+  return head + liveBand(S.board) + '<div class="wgrid w-' + d + '">' + ts.map(t => watchCard(t, d, team.has(nameOn(t)), places[t.device_id])).join('') + '</div>' +
+    (lost > 0 ? '<p class="mut">' + lost + (lost === 1 ? ' lane you chose is' : ' lanes you chose are') + ' not reporting now.</p>' : '') +
+    (d === 'panels' ? '<p class="mut">Tap a lane to see it full screen, shot by shot.</p>' : '<p class="mut">Orange outline: your team. The orange number is the last shot.</p>');
+}
+function watchCard(t, d, team, place) {
+  const v = t.view, W = wholeRings(v), L = v.last_shot, nm = nameOn(t), tot = W ? String(v.agg.integer) : dec(v.agg.decimal);
+  const href = '#/t/' + encodeURIComponent(t.device_id), lastS = L ? (L.miss ? 'M' : W ? String(L.ring) : dec(L.decimal)) : '–';
+  const of = v.total ? v.count + ' of ' + v.total : v.count + (v.count === 1 ? ' shot' : ' shots');
+  if (d === 'panels') return '<a class="wcard panel' + (team ? ' team' : '') + '" href="' + href + '">' + miniFace(t) + '<span class="wmain"><span class="wl"><b>' + esc(laneTitle(t)) + '</b>' + badge(t.mode) + '</span>' +
+    '<b class="wname">' + esc(nm || '–') + (team ? ' ' + STAR(true) : '') + '</b><b class="num wtot">' + tot + '</b><span class="mut">' + of + (place ? ' · ' + ORD(place) + ' place' : '') + '</span>' +
+    (L ? '<span class="lastchip">Last <span class="num">' + lastS + '</span></span>' : '') + (t.online ? '' : '<span class="small" style="color:var(--warn)">Reconnecting</span>') + '</span></a>';
+  return '<a class="wcard ' + d + (team ? ' team' : '') + '" href="' + href + '"><span class="wface">' + miniFace(t) + '<span class="wlane">' + esc(t.lane != null ? t.lane : laneTitle(t)) + '</span>' +
+    (L ? '<span class="wlast num">' + lastS + '</span>' : '') + (d === 'dense' ? '<span class="wover">' + esc(nm || '–') + '</span>' : '') + '</span>' +
+    (d === 'tiles' ? '<span class="wfoot"><span class="wname">' + esc(nm || '–') + '</span><b class="num">' + tot + '</b></span>'
+      : '<span class="wfoot"><b class="num">' + tot + '</b><span class="mut num">' + (v.total ? v.count + '/' + v.total : v.count) + '</span></span>') + '</a>';
+}
+function fitWatch() {                           // the faces as large as the screen's height allows; never below 72 px (then it scrolls)
+  const g = document.querySelector('.wgrid.w-tiles, .wgrid.w-dense');
+  if (!g || !g.children.length) return;
+  const cols = getComputedStyle(g).gridTemplateColumns.split(' ').length, rows = Math.ceil(g.children.length / cols), gap = parseFloat(getComputedStyle(g).rowGap) || 0;
+  const first = g.children[0], face = first.querySelector('.wface'), foot = first.offsetHeight - (face ? face.offsetHeight : 0);
+  const colW = (g.clientWidth - (cols - 1) * (parseFloat(getComputedStyle(g).columnGap) || 0)) / cols;
+  const top = g.getBoundingClientRect().top + window.scrollY, avail = window.innerHeight - top - 8;
+  const px = Math.floor(Math.max(72, Math.min(colW, (avail - (rows - 1) * gap) / rows - foot)));
+  if (g.style.getPropertyValue('--face') !== px + 'px') g.style.setProperty('--face', px + 'px');
+}
+function watchPick(S) {                          // choose the lanes, star the team (FmWatchPick)
+  const w = watchState(store('fet_watch')), q = (S.wfilter || '').trim().toLowerCase(), team = new Set(w.team);
+  const picked = t => w.picks.some(p => (p.name && p.name === nameOn(t)) || (!p.name && p.lane === t.lane));
+  const list = (S.targets || []).filter(t => t.lane != null || t.view.count).slice().sort(byLane)
+    .filter(t => !q || nameOn(t).toLowerCase().includes(q) || laneTitle(t).toLowerCase().includes(q));
+  return '<div class="whead"><b>Lanes to watch</b><span class="mut">' + w.picks.length + ' chosen</span></div>' +
+    '<input id="wfilter" data-wfilter="1" aria-label="Find a name or lane" placeholder="Find a name or lane" value="' + esc(S.wfilter || '') + '" autocomplete="off">' +
+    '<p class="mut">Tick lanes to watch; tap the star for your team (shown first, outlined). Kept on this device, and followed by name across lanes and relays.</p>' +
+    '<div class="wpicks">' + list.map(t => { const on = picked(t), nm = nameOn(t), st = !!nm && team.has(nm);
+      return '<div class="wpick' + (on ? ' on' : '') + '"><label><input type="checkbox" data-act="wpick" data-dev="' + esc(t.device_id) + '"' + (on ? ' checked' : '') + '>' +
+        '<b class="wl">' + esc(laneTitle(t)) + '</b><span class="wn">' + esc(nm || (t.online ? 'Free' : 'Not reporting')) + '</span>' +
+        '<b class="num">' + (t.view.count ? (wholeRings(t.view) ? t.view.agg.integer : dec(t.view.agg.decimal)) : '') + '</b></label>' +
+        (nm ? '<button class="iconbtn" data-act="wteam" data-name="' + esc(nm) + '" aria-pressed="' + st + '" aria-label="' + esc(nm) + ' on your team">' + STAR(st) + '</button>' : '') + '</div>'; }).join('') +
+    (list.length ? '' : '<p class="empty">No lanes match.</p>') + '</div>' +
+    '<div class="wdone"><a class="btn pri big" href="#/watch">' + (w.picks.length ? 'Watch ' + w.picks.length + (w.picks.length === 1 ? ' lane' : ' lanes') : 'Done') + '</a></div>';
+}
+function spectatorView(S, r, phone) {            // Ranking, Lanes, Watching, Results
+  const boards = (S.board || []).filter(b => b.state !== 'aborted');
+  const cur = r.spect === 'home' ? (boards.length ? 'rank' : 'lanes') : r.spect, n = watchState(store('fet_watch')).picks.length;
+  const body = cur === 'rank' ? liveBand(S.board) + rankingTab(S) : cur === 'lanes' ? liveBand(S.board) + coachView(S.targets, S) : cur === 'pick' ? watchPick(S) : watchView(S, phone);
+  return '<div class="spect">' + (cur === 'pick' ? '' : spectTabs(cur === 'pick' ? 'watch' : cur, n)) + body + '</div>';
+}
+// Results on a phone: the list by month with what state each is in, and one result as expandable rows (FmResultsList, FmResultsPhone)
+function resultsList(list, S) {
+  const f = S.resKind || 'all', q = (S.resQ || '').trim().toLowerCase();
+  const items = (list || []).filter(c => (f === 'all' || (f === 'comp' ? c.kind === 'competition' : c.kind !== 'competition')) && (!q || c.name.toLowerCase().includes(q)));
+  const month = ms => new Date(ms).toLocaleDateString([], {month: 'long', year: 'numeric'});
+  const chip = c => c.active ? '<span class="rchip live">Live</span>' : c.official ? '<span class="rchip off">Official</span>' : c.kind === 'frozen' ? '<span class="rchip">Saved copy</span>' : '<span class="rchip prov">Provisional</span>';
+  const seg = (k, l) => '<button data-act="reskind" data-k="' + k + '" aria-pressed="' + (f === k) + '"' + (f === k ? ' class="sel"' : '') + '>' + l + '</button>';
+  let h = '<input id="resq" data-resq="1" aria-label="Find a match" placeholder="Find a match" value="' + esc(S.resQ || '') + '" autocomplete="off">' +
+    '<div class="zseg" role="group" aria-label="Show">' + seg('all', 'All') + seg('comp', 'Competitions') + seg('single', 'Single') + '</div>', last = '';
+  items.forEach(c => { const m = month(c.at_ms); if (m !== last) { h += '<h2 class="month">' + esc(m) + '</h2>'; last = m; }
+    h += '<a class="rlist" href="#/results/' + esc(c.key) + '"><span><b>' + esc(c.name) + '</b><span class="mut">' + esc(fmtDay(c.at_ms)) + ' · ' + esc(c.format_name) + '</span></span>' + chip(c) + '</a>'; });
+  return h + (items.length ? '' : '<p class="empty">No results' + (q || f !== 'all' ? ' match' : ' yet') + '.</p>');
+}
+function resultsPhone(res, S) {                  // one result: classes as a filter, a row per competitor that opens to its series
+  if (!res || res.missing) return resultsPage(res);
+  const cls = res.classes, pick = cls.length > 1 ? (S.resClass || '') : '', k = esc(res.key);
+  const chips = cls.length > 1 ? '<div class="chips" role="group" aria-label="Class"><button data-act="rescls" data-c="" aria-pressed="' + (!pick) + '"' + (!pick ? ' class="sel"' : '') + '>All</button>' +
+    cls.map(cl => '<button data-act="rescls" data-c="' + esc(cl.name || '') + '" aria-pressed="' + (pick === (cl.name || '')) + '"' + (pick === (cl.name || '') ? ' class="sel"' : '') + '>' + esc(cl.name || 'No class') + '</button>').join('') + '</div>' : '';
+  const rows = cls.filter(cl => !pick || (cl.name || '') === pick).map(cl => (cls.length > 1 && !pick ? '<h2 class="month">' + esc(cl.name || 'No class') + '</h2>' : '') + cl.individuals.map(e =>
+    '<details class="rres"><summary><b class="num place' + (e.place === 1 && e.fired ? ' first' : '') + '">' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</b><span class="rmain"><b>' + esc(e.name) + penMark(e) + '</b><span class="mut">' +
+      esc([e.team, e.relay ? 'relay ' + e.relay + ' · ' + e.lane : ''].filter(Boolean).join(' · ')) + '</span></span><span class="rt"><b class="num">' + (e.dq ? 'DQ' : e.fired ? fmtScore(res, e.total) : '') + '</b>' +
+      (e.fired && !e.dq && res.scoring !== 'decimal' ? '<span class="mut num">' + e.x + 'x</span>' : '') + '</span></summary>' +
+      '<div class="rser">' + e.series.map((v, i) => '<span><span class="mut">S' + (i + 1) + '</span><b class="num">' + fmtScore(res, v) + '</b></span>').join('') + '</div></details>').join('')).join('');
+  return '<div class="resph"><p class="mut" style="margin:0"><a href="#/results">All results</a></p><h1>' + esc(res.name) + '</h1>' + statusLine(res) + '<p class="mut">' + esc(res.format_name) + '</p>' + chips + rows +
+    ruleNotes(res) + '<p class="mut">Ties broken by the ' + esc(res.book_name && res.book_name !== 'No rulebook' ? res.book_name : res.tie_rules) + ' rules. <a href="#/print/cards/' + k + '" target="_blank" rel="noopener">Score cards</a> · <a href="' + API + '/results/' + k + '.csv">CSV</a></p></div>';
 }
 
 // ---- Single target ----
@@ -2264,7 +2481,10 @@ const route = () => {
   if (pr) return {print: pr[1], cid: pr[2], p: pr[3] || null};
   const rs = location.hash.match(/^#\/results(?:\/([cma]?\d+))?$/);
   if (rs) return {results: true, cid: rs[1] || null};
-  if (/^#\/range\b/.test(location.hash)) return {range: true, tab: rcTab()}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/); return m ? {id: m[1]} : {}; };
+  if (/^#\/range\b/.test(location.hash)) return {range: true, tab: rcTab()}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/);
+  if (m) return {id: m[1]};
+  const sp = location.hash.match(/^#\/(lanes|watch\/pick|watch)\/?$/);    // the spectator tabs (1.0)
+  return {spect: sp ? (sp[1] === 'watch/pick' ? 'pick' : sp[1]) : 'home'}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
 
 async function refresh() {
@@ -2360,6 +2580,10 @@ async function refresh() {
     }
     if (t && t.match) S.offset = t.match.server_time_ms - Date.now();
     const rr = route();
+    if (rr.spect && rr.spect !== 'pick') {       // the spectators' pages: the matches being shot
+      const b = await get('/board');
+      S.board = b.matches; S.boardComps = b.competitions || []; S.boardOffset = b.server_time_ms - Date.now();
+    }
     if (rr.tv) {                                   // the older TV pages (#/tv/...): read only too
       const q = [];
       if (rr.params.m) q.push('m=' + encodeURIComponent(rr.params.m));
@@ -2484,9 +2708,11 @@ function render(force) {                  // force: a structural change (e.g. an
     document.getElementById('printinfo').textContent = n != null ? ' ' + n + ' score card' + (n === '1' ? '' : 's') : '';
     return;
   }
-  if (r.results) { setApp(app, r.cid ? resultsPage(S.res) : resultsIndex(S.resList)); return; }
+  if (r.results) { setApp(app, S.phone ? (r.cid ? resultsPhone(S.res, S) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsList(S.resList, S) + '</div>')
+    : r.cid ? resultsPage(S.res) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsIndex(S.resList) + '</div>'); return; }
   if (r.tv) { setApp(app, readOnly(r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params))); return; }
-  setApp(app, r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : coachView(S.targets, S));
+  setApp(app, r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : spectatorView(S, r, S.phone));
+  if (r.spect) fitWatch();
   renderOverlay(t);
 }
 function renderOverlay(t) {
@@ -2560,6 +2786,19 @@ async function act(el) {
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
   if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
   if (a === 'rnav') return reviewMove(el.dataset.move);
+  if (a === 'wpick' || a === 'wteam' || a === 'worder') {     // watching: kept on this device only
+    const w = watchState(store('fet_watch'));
+    if (a === 'worder') w.order = el.dataset.o;
+    if (a === 'wteam') { const n = el.dataset.name; w.team = w.team.includes(n) ? w.team.filter(x => x !== n) : w.team.concat([n]); }
+    if (a === 'wpick') {
+      const x = (S.targets || []).find(y => y.device_id === el.dataset.dev);
+      if (x) { const nm = nameOn(x), hit = p => (p.name && p.name === nm) || (!p.name && p.lane === x.lane);
+        w.picks = w.picks.some(hit) ? w.picks.filter(p => !hit(p)) : w.picks.concat([{lane: x.lane, name: nm}]); }
+    }
+    store('fet_watch', JSON.stringify(w)); return render(true);
+  }
+  if (a === 'reskind') { S.resKind = el.dataset.k; return render(true); }
+  if (a === 'rescls') { S.resClass = el.dataset.c; return render(true); }
   if (/^dt/.test(a)) return dtAct(el, a);
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
@@ -3390,12 +3629,15 @@ function boot() {
   themeButton();
   try { window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeChanged); } catch (e) {}
   try { window.matchMedia('(max-width: 600px)').addEventListener('change', () => { drawn = null; render(true); }); } catch (e) {}
+  window.addEventListener('resize', () => { if (route().spect) fitWatch(); });
   S.zoom = store('fet_zoom') || 'auto';
   S.cpr = store('fet_cpr') || CPR_DEFAULT;
   try { const m = JSON.parse(store('fet_sight_marks') || '{}'); if (m && typeof m === 'object') S.marks = m; } catch (e) { S.marks = {}; }
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'rcpw') rangeAct(e.target, 'rclogin'); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && S.drawer) { e.preventDefault(); openDrawer(false); } });
   document.addEventListener('change', e => { const el = e.target; if (el && el.dataset && el.dataset.secsel) location.hash = el.value; });   // the section switcher
+  document.addEventListener('input', e => { const el = e.target; if (!el || !el.dataset) return;    // spectators: find a lane, find a result
+    if (el.dataset.wfilter) { S.wfilter = el.value; render(true); } else if (el.dataset.resq) { S.resQ = el.value; render(true); } });
   document.addEventListener('change', e => { const el = e.target;                 // Review: the slider picks a shot
     if (el && el.dataset && el.dataset.revshot && S.review && S.reviewView) { S.review.shot = Math.max(1, Math.min(S.reviewView.full_count, parseInt(el.value, 10) || 1)); refresh(); } });
   // The file input lives outside the redrawn screen (index.html), so a redraw while the file dialog is open cannot
@@ -3594,7 +3836,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, guideRow, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, guideRow, flagsPanel, corrText, ruleNotes, placeSection, lanesPanel, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
