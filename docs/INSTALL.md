@@ -108,8 +108,8 @@ For each target (its WiFi bridge must already have FeT Monitor firmware; see `fi
 ## 7a. Flashing FeT Bridge from the Pi
 
 A new FeT Bridge (an ESP-01 or ESP-01S) can get its firmware from the Pi itself: put it on a USB programmer (if the
-programmer has a switch, set it to PROG or UART), plug it into a USB port of the Pi, open **Range Control → Flash a
-device**, press **Identify**, then **Install FeT Bridge**. The Pi uses the newest FeT Bridge image it has for that
+programmer has a switch, set it to PROG or UART), plug it into a USB port of the Pi, open **Range Control → Flash
+station**, press **Identify**, then **Install FeT Bridge**. The Pi uses the newest FeT Bridge image it has for that
 module's flash size (*Check GitHub for FeT Bridge firmware* first if it has none). The first time, the module's
 original firmware is saved (you can download it from the same page) and the chip is erased. Target boards (the
 Arduino Mega and the ESP32 board) get their firmware here too: see 7b.

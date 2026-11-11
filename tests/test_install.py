@@ -413,9 +413,10 @@ class Installer(InstallerBase):
             names = t.getnames()
             top = names[0].split("/")[0]
             for need in ("install.sh", "fetserver/core.py", "deploy/fet-monitor.service", "deploy/migrate-from-freetarget.sh",
-                         "LICENSE", "NOTICE", "docs/INSTALL.md"):
+                         "LICENSE", "NOTICE", "docs/INSTALL.md", "fetserver/web/fonts/archivo-latin.woff2", "fetserver/web/fonts/OFL-Archivo.txt",
+                         "fetserver/web/qrcode.js"):
                 self.assertIn(f"{top}/{need}", names)
-            self.assertFalse([n for n in names if "__pycache__" in n or n.endswith(".pyc") or n.split("/")[1:2] in (["tests"], ["firmware"], ["dist"])])
+            self.assertFalse([n for n in names if "__pycache__" in n or n.endswith(".pyc") or ".egg-info" in n or n.split("/")[1:2] in (["tests"], ["firmware"], ["dist"])])
             self.assertEqual(t.getmember(f"{top}/install.sh").mode, 0o755)
             self.assertTrue(all(m.uid == 0 and m.gid == 0 for m in t.getmembers()))
             unpack = Path(self.tmp.name) / "unpack"

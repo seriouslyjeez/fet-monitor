@@ -1,37 +1,49 @@
-# FeT Monitor (v0.6.30)
+# FeT Monitor 1.0
 
-- Match Control (beta): competitions, corrections and official results
-- Finals by the rulebook (ISSF, CMP Air Gun, CMP 3PAR, NRA) and a finals TV board
-- TV displays: saved read-only views at a 5-character address that follow a competition from relay to relay and into its final
-- One rulebook per match; rulebooks stored on the Pi
-- Signed updates from GitHub
-- Firmware updates from the Pi
-- Range Control
-- Scoring screens, phone layout, dark mode
-- Ammo test, sight adjustment
-- ESP-01 firmware included
+Electronic scoring for your range, on your own Raspberry Pi: lanes, matches, finals and results, with no internet
+needed. Shooters use their own phones at the lane; spectators watch on theirs; Range Officers and Match Directors run
+matches from a phone or tablet; TVs show the board.
+
+- **Shooters**: the lane on a phone or tablet (practice, sighters and record, review, sight correction, ammo tests)
+- **Spectators**: the range live (ranking, lanes, results) and *Watching*: follow 1 to 15+ chosen lanes, team stars
+- **Range Officers and Match Directors**: the console on a phone (clock, next command, the lanes that need a look
+  first, flagged shots), competitions with relays, classes and teams, finals by the rulebook, official results,
+  score cards and CSV
+- **Rulebooks**: ISSF, USA Shooting, CMP Air Gun, CMP 3PAR, NRA Precision Air Rifle and NRA Smallbore
+  ([docs/MATCH-FORMATS.md](docs/MATCH-FORMATS.md)), or design your own match
+- **TV displays**: dark, large boards at a 5-character address that follow a competition from relay to final
+- **Range Control**: targets, firmware updates from the Pi, the USB flash station, the Pi itself, signed updates
+  from GitHub
+- **deepTENS** (optional): link the Pi to [deeptens.com](https://deeptens.com) for staff sign-in, published
+  results and athletes' histories; the range keeps working without internet
+- Light and dark, phone first; the Archivo and JetBrains Mono typefaces are served by the Pi
 
 FeT Monitor is an independent, standalone companion project for electronic targets running the
 [freETarget](https://github.com/ten-point-nine/freETarget) Arduino firmware. It is not part of, affiliated with or
 endorsed by the freETarget project; "freETarget" is used here only to say what it works with.
 
 Receives shots and status from freETarget-compatible targets over the club LAN, stores them
-durably in SQLite, scores them (ISSF 10 m air rifle, exact arithmetic) and serves a JSON API
+durably in SQLite, scores them (exact arithmetic, on the face of the match: ISSF, NRA and CMP faces) and serves a JSON API
 and a web dashboard. Standard library only: Python 3.9 or newer, nothing to install.
 
 Open `http://<pi-address>:8080/` in any browser (phone, tablet, PC).
 
-**All targets (coach view).** One card per target: name and online dot, a target picture that
-auto-zooms, the shooter, then a score box. The big number on the left is the total in decimal with
-the integer score and X count under it. To its right, the top row lists the aggregate of each group
-of 10 shots and the bottom row shows the shots on the current target picture. Click a card to open it.
+**The range live** (`#/`, for everyone): *Ranking* while a match is on (place, a small target picture, name, lane,
+shots so far and the last shot; a final shows who is still in and who goes out next), *Lanes* (every lane: its target,
+name, total, shots and last shot; a free lane says how to start shooting there), *Watching* and *Results*.
 
-**Single target (shooter view).** The target is the focus. Above it is the zoom bar:
-*Off* (whole target), *1-9* (zoom to that ring and stay there), *Auto* (starts on the 8 ring, then
-widens one ring at a time so the worst shot is always fully in view). Your choice is remembered per
-browser. On the right: target name and info, the shots on the current picture (filled from the top),
-then Last shot with the decimal and integer aggregate of the current group and of the whole series.
-Inner tens (10.2 and above) show an **X** and are totalled.
+**Watching** (`#/watch`): choose the lanes you want to follow (by name or lane, with stars for your team); the choice
+stays on that phone and follows each athlete by name to another lane or relay. 1-4 lanes show as large panels, 5-8 in
+two columns, 9 or more as compact tiles with the lane, name and last shot over the target, sized to fit the screen.
+Order by lane, by place or team first.
+
+**The lane** (open a lane; on a phone its own screen with the actions in a bar at the bottom, on a tablet beside a large
+target): the target with the newest shot in orange, the total beside the last shot, zoom (*Auto* widens one ring at a
+time so the worst shot stays in view; *9*, *8*, *7* or *Whole*), the newest tens, and the shots of this target picture.
+In a match run by Match Control its command and clock show in a dark band. *Review* steps through any series shot by
+shot (a slider and the steps, or the arrow keys). A target that goes silent shows *Reconnecting*: keep shooting, its
+shots arrive when it is back. On a Pi linked to deepTENS a free lane asks who is shooting (deepTENS, number and PIN, or
+just shoot).
 
 **Practice and sighter shots are not scored**, so the target's top-right corner is red (black vanished when zoomed in).
 
@@ -51,10 +63,13 @@ such as 3.5 or 3,5 accepted; one ring = 2.5 mm) is remembered by that browser. O
 target** (a new practice series) or **keep the shots**, after which only newer shots count; a new series (including the
 automatic one after 20 shots) starts the count afresh.
 
-**Match Control** (header link; beta, 10 m air rifle): runs a match's clock over chosen targets. Standard formats are
+**Match Control** (header link): runs a match's clock over chosen targets. Standard formats are
 transcribed from the rulebooks with their rule numbers ([docs/MATCH-FORMATS.md](docs/MATCH-FORMATS.md)): ISSF / USA
-Shooting 60 shots (qualification), CMP Air Gun AR60, CMP National Standard 3x10, 3x20, 3x20 standing and 60 standing,
-NRA Precision 3x10, 3x20, 3x40, 40 and 60 standing; plus *Design your own match*, which names its rulebook (or none).
+Shooting 10 m air rifle and air pistol, 50 m rifle three positions and prone; CMP Air Gun (AR60, AP60); CMP National
+Standard 3x10, 3x20, 3x20 standing and 60 standing; NRA Precision 3x10, 3x20, 3x40, 40 and 60 standing; NRA smallbore
+courses; plus *Design your own match*, which names its rulebook (or none). On a phone the console puts the clock and the
+next command first, then the lanes that need a look (an undecided flagged shot, a shooter moving or interrupted, a
+target not reporting); a lane's actions and each flagged shot's decision open in a sheet.
 Each format follows one rulebook only: its procedures, rule references, tie-breaks and finals. *Rulebooks* keeps a
 copy of each book on the server (downloaded from the publisher, or uploaded), so it opens without internet. The server owns the clock: it starts each phase
 (set-up, preparation and sighting, the pause while targets switch to record, record, changeover), switches the targets
@@ -75,15 +90,15 @@ against other mode changes.
 **TV displays** (Range Control → *TV displays*): saved views, each at its own 5-character address
 (`http://<pi>/<code>`, e.g. `192.168.1.20:8080/K7M3Q`; not case sensitive; random from letters and digits that cannot
 be mixed up, or one of your own) that is easy to type into a TV's browser. A view shows *targets and match clock* (a
-match's countdown over its targets, or a chosen list) or the *scoreboard* (everyone in place order with total, inner
-tens / X, 10-shot aggregates, the last 10 shots and shots fired; it scrolls by itself when it does not fit). It follows
+match's countdown over its targets, or a chosen list) or the *scoreboard* (dark, in TV type: everyone in place order with
+each 10-shot series, the last shot and the total with inner tens / X, the leaders' targets beside it; up to about 16
+lanes fit one screen, more scroll by themselves). It follows
 *the range* (the match under way, all of them if several; else the next one to start; else the one that finished last,
 up to 6 h), *a competition* (the relay under way, then the next relay, then its final as soon as it is set up: the TV's
 address never changes between relays and finals), *one match*, or no match (targets only). A display is read only: no
-header, menus, links, buttons or light/dark switch, nothing a TV remote can focus; its light or dark look is part of
-the view. It reloads itself after a server update. The older `#/tv/targets` and `#/tv/board` addresses still work,
-read only too. The ranking is
-provisional (total, inner tens, then 10-shot series from the last) until each rulebook's tie-break rules are built.
+header, menus, links, buttons or light/dark switch, nothing a TV remote can focus; it is dark unless the view chooses
+light. It reloads itself after a server update. The older `#/tv/targets` and `#/tv/board` addresses still work,
+read only too.
 **Competitions** (Match Control → *New competition*): a format, competitors (family name, given name, optional class
 and team; add one by one, paste a list, or upload a CSV file, which is read in memory and never stored; edit with the
 pencil button, and a new name also shows on the targets and the shooter screens) and one or more relays; each relay is a match with its own clock and
@@ -119,12 +134,14 @@ good). A running match must be stopped first. Single matches have a Results page
 
 Users and roles (match director: formats, matches, decisions; range officer: the clock) are managed in Range Control
 or on the Pi: `cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver match-user add NAME --role director
---data-dir /var/lib/fet-monitor` (also `list`, `passwd`, `role`, `remove`). Results lists, teams, printing, finals and
-the public displays come next.
+--data-dir /var/lib/fet-monitor` (also `list`, `passwd`, `role`, `remove`). On a Pi linked to deepTENS, staff can also
+sign in with deepTENS (their role at the range decides what they can do), or offline with their passcode.
 
 **Range Control** (header link; needs the Range Control password, set on the Pi by the installer or with
-`cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor`):
-select targets and set their mode (Practice / Match / Ammo test) or start a new series without taking control
+`cd /opt/fet-monitor && sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor`;
+sections Targets, Firmware, Flash station, TV displays, This Pi and Staff): *Needs attention* lists lanes not reporting,
+targets this Pi has no key for and slow shot delivery; each target opens a sheet with what it reports, its lane, face,
+mode, settings and actions. Several targets at once: tick them and set their mode (Practice / Match / Ammo test) or start a new series without taking control
 (whoever holds control keeps it); **Remove** a dead target (hidden, history kept, back automatically when it reports
 again); **Ban** a rogue one (everything it sends is refused with 403 and not stored; it keeps its queue) and unban it.
 **FeT Bridge firmware updates** (Range Control; FeT Bridge firmware 0.2.0 or newer on the target): upload the `.bin`
@@ -151,7 +168,7 @@ The login lasts 2 hours idle, 12 hours at most, and ends when the password chang
 passwords from one address lock it for 10 minutes. The LAN is plain HTTP, so the password can be overheard there:
 use one that is not used anywhere else.
 
-**The gear icon** holds everything that is not scoring:
+**Settings** (the lane's *Settings*; everything that is not scoring):
 * *Control*: take, take over or release. Viewing never needs it. The claim lasts 60 s, renews itself while the
   page is open, and frees itself when the page closes.
 * *Mode*: Practice, Match or Ammo test. In Match the **Sighter** and **Record** buttons appear on the main screen
@@ -190,8 +207,7 @@ the right series. Misses are listed as M, count as 0 and take a shot number.
 * The raw coordinates (`x_mm`, `y_mm` in /shots) stay in the target's own frame; only the dashboard views and
   the stored ring/decimal scores are relative to the first shot.
 
-Not built yet: relabelling or excluding shots after the fact, user accounts, OTA firmware hosting, CSV export,
-match rules (when sighters are allowed, etc.).
+Not built yet: backups (planned as a deepTENS feature), each finalist's single shots on the finals TV board.
 
 ## Try it (any computer)
 

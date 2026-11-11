@@ -1,2 +1,2 @@
 """FeT Monitor server for freETarget-compatible targets: durable shot ingest, exact ISSF scoring, live status."""
-__version__ = "0.7.22"
+__version__ = "1.0.0"

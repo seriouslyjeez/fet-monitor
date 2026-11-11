@@ -36,7 +36,8 @@ def collect() -> list:
     for tree in TREES:
         for p in sorted((ROOT / tree).rglob("*")):
             rel = p.relative_to(ROOT).as_posix()
-            if p.is_file() and "__pycache__" not in p.parts and not p.name.endswith((".pyc", ".db", ".db-wal", ".db-shm")) \
+            if p.is_file() and "__pycache__" not in p.parts and not any(x.endswith(".egg-info") for x in p.parts) \
+                    and not p.name.endswith((".pyc", ".db", ".db-wal", ".db-shm")) \
                     and p.name != ".DS_Store":
                 out.append(rel)
     for rel in out:

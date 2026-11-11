@@ -52,7 +52,7 @@ docs/INSTALL.md links to).
    `dist/target-firmware/fet-target-esp32-<version>.bin`.
 3. `python3 tools/release.py esp32 <version> --notes notes.md [--publish]` (checks the image like the Pi does).
 
-Range Control's *Check GitHub for ESP32 firmware* downloads it; targets then update over WiFi (Target settings →
+Range Control's *Check GitHub for ESP32 firmware* downloads it; targets then update over WiFi (Firmware →
 Update), signed by the Pi with each target's own key.
 
 ## Rules

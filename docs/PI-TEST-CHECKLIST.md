@@ -131,3 +131,32 @@ Keeping the Pi's software up to date:
 - [ ] The target's Mega by USB: the label shows its freETarget version (start-up message or {"VERSION":0} answer);
       note the exact text it printed.
 - [ ] A FeT Bridge 0.3.0 in a real target: the Arduino's output in the first minute still arrives complete.
+
+## FeT Monitor 1.0: the screens on real devices
+
+The 1.0 screens were checked in headless Chrome at phone (390x844), tablet (1180x820) and TV (1920x1080) sizes, light
+and dark, against a server on a Mac with simulated targets. None of it has been seen on a real phone, tablet, TV or
+with real targets. Try them on the range, with a match running and people shooting.
+
+Phones of different sizes (a small one, a large one, iPhone and Android) and a tablet:
+
+- [ ] The menu (top left) opens and closes; nothing scrolls sideways on any page.
+- [ ] The fonts are Archivo and JetBrains Mono (served by the Pi; no internet needed). Dark mode follows the phone;
+      the menu's Light/Dark switch overrides it.
+- [ ] **A lane** (open a lane on a phone): the target fills the width, the total beside the last shot, the actions in
+      the bar at the bottom (Sights, Review, New series, Settings). Shots appear within about a second.
+- [ ] Review: the slider and the steps reach every shot; Back to live returns.
+- [ ] Unplug a target's power while a lane is open: *Reconnecting* appears; shots fired meanwhile arrive when it is back.
+- [ ] Sight correction comes up from the bottom and its clicks match the sight.
+- [ ] On a Pi linked to deepTENS: a free lane asks who is shooting; scanning its code with a phone signs in.
+- [ ] **Spectators**: the Ranking during a match, the Lanes, Results; *Watching* with 3, 8 and 12 lanes chosen (8 fit
+      a phone without scrolling); a team star; an athlete followed to another lane by name.
+- [ ] **Range Officer console** on a phone: the clock, the next-step button, the lanes that need a look first; a
+      flagged shot decided from its sheet; a lane's actions (interruption, malfunction, +1 min, move) from its sheet.
+- [ ] Spoken commands: *Turn on sound* on the phone used as the console; the commands are heard.
+- [ ] A new match on a tablet (two columns) and on a phone; a competition with relays; a printed score card.
+- [ ] **Range Control** on a phone: Needs attention, a target's sheet (lane, face, mode, settings, restart), Firmware
+      cards, the flash station with a device plugged in, This Pi.
+- [ ] Linking to deepTENS: the code and its QR scan on a phone and link the Pi.
+- [ ] **TV**: a saved display on the range TV (dark): twelve or more lanes on one screen, readable from the back of
+      the range; a final shows who goes out next.
