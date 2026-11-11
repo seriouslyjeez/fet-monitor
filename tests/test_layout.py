@@ -270,6 +270,44 @@ return out;"""
         self.assertEqual(d["format"]["phases"][3]["seconds"], 3600, "a changed time is kept")
         self.assertTrue(d["format"].get("modified"), "and marked as modified")
 
+    def test_match_control_pages_on_a_phone_and_a_tablet(self):
+        mid, cookie = self.match_range(4)
+        m, cc = self.core.matches, self.core.competitions
+        fid = m.save_format({"name": "Club 20", "book": "ISSF", "scoring": "decimal", "phases": [{"kind": "record", "label": "Match", "seconds": 3000, "shots": 20}]}, "md")["id"]
+        cid = cc.create("Riverside Open", fid, "md")
+        for f, g in (("Taylor", "R."), ("Park", "S."), ("Novak", "E.")):
+            cc.save_competitor(cid, {"family": f, "given": g, "class": "Open"})
+        pages = {"/#/match": "", "/#/match/singles": "", "/#/match/results": "", "/#/match/formats": "",
+                 "/#/match?comp": "document.querySelector('[data-act=mccopen]').click(); for (let i = 0; i < 80 && !document.querySelector('.comp .relays'); i++) await sleep(50);",
+                 "/#/match/formats?new": "document.querySelector('[data-act=mcfnew]').click(); await sleep(300);"}
+        for path, step in pages.items():
+            for size in (PHONE, TABLET):
+                with self.subTest(path=path, size=size):
+                    v = self.look(path.split("?")[0], size, "light", "await sleep(800);" + step + r"""await sleep(300);
+return {overflow: overflow(), small: small('.mc button, .mc a:not(.rotitle a):not(p a), .mc select, .mc input:not([type=checkbox]), .mc summary, .mc label.tick')};""", cookie=cookie)
+                    self.assertFalse(v["overflow"], "no sideways scrolling")
+                    self.assertEqual(v["small"], [], "every control at least 44 px")
+
+    def test_your_own_match_phases_reordered_and_saved(self):
+        self.range_of(1)
+        cookie = self.director()
+        v = self.look("/#/match/formats", PHONE, "light", r"""
+await sleep(700); document.querySelector('[data-act=mcfnew]').click(); await sleep(300);
+const set = (sel, v) => { const e = document.querySelector(sel); e.value = v; e.dispatchEvent(new Event('input', {bubbles: true})); e.dispatchEvent(new Event('change', {bubbles: true})); };
+set('[data-mcf=name]', 'Swap test'); set('[data-mcf=book]', 'ISSF');
+while (document.querySelectorAll('.phcards li').length < 2) { document.querySelector('[data-act=mcpadd]').click(); await sleep(100); }
+set('[data-mcp="0:kind"]', 'record'); set('[data-mcp="0:shots"]', '10'); set('[data-mcp="0:label"]', 'First'); set('[data-mcp="1:kind"]', 'sight'); set('[data-mcp="1:label"]', 'Second');
+await sleep(100);
+document.querySelector('[data-act=mcpmove][data-i="1"][data-d="-1"]').click(); await sleep(200);
+const labels = [...document.querySelectorAll('[data-mcp$=":label"]')].map(e => e.value);
+document.querySelector('[data-act=mcfsave]').click(); await sleep(800);
+return {labels, overflow: overflow(), msg: (document.querySelector('.fmted .bad') || {}).textContent || ''};""", cookie=cookie)
+        self.assertEqual(v["msg"], "")
+        self.assertEqual(v["labels"][:2], ["Second", "First"], "moved up")
+        mine = [f for f in self.core.matches.formats() if f["name"] == "Swap test"]
+        self.assertEqual(len(mine), 1, "saved")
+        self.assertEqual([p["label"] for p in mine[0]["phases"]][:2], ["Second", "First"], "in the new order")
+
     def test_all_lanes_on_a_tablet(self):
         self.range_of(6)
         v = self.look("/#/lanes", TABLET, "dark", r"""

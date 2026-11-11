@@ -749,7 +749,7 @@ assert(cpD.includes('data-act="mcpedit" data-id="5"') && !cpD.includes('data-pe=
 const cpO = mcCompPage({comp: det, status: {role: 'officer'}, targets: []});
 assert(!cpO.includes('mcpedit') && !cpO.includes('mcrcreate') && !cpO.includes('mcpimport'), 'officers see, directors change');
 const kept = mcCompPage({comp: det, status: {role: 'director'}, targets: [], np: {family: 'Zed'}, npOpen: true});
-assert(kept.includes('value="Zed"') && kept.includes('id="np_details" open'), 'unsaved input and the open paste section survive a redraw');
+assert(kept.includes('value="Zed"') && kept.includes('id="np_details" class="rodet" open'), 'unsaved input and the open paste section survive a redraw');
 const sheet = X.competitorSheet({comp: det, editp: {id: 5, given: 'Alan'}});
 assert(sheet.includes('data-pe="family"') && sheet.includes('value="Ames"') && sheet.includes('value="Alan"') && sheet.includes('data-act="mcpesave"') && sheet.includes('data-act="mcpdel"'));
 const onRelay = X.competitorSheet({comp: Object.assign({}, det, {competitors: [Object.assign({}, det.competitors[0], {relay: 2, lane: 4})]}), editp: {id: 5}});
@@ -816,7 +816,7 @@ console.log('OK');
   const home = (m) => mcList(m, 'comps') + mcList(m, 'singles');
   const hm = home({status: {user: 'md', role: 'director'}, comps: [{id: 1, name: 'L', format_name: 'F', competitors: 3, active: true, relays: [{id: 7, relay: 1, state: 'running'}]}],
     matches: [{id: 7, name: 'L - relay 1', format_name: 'F', state: 'running', competition_id: 1, relay: 1, clock: {}}, {id: 8, name: 'Solo', format_name: 'F', state: 'ready', competition_id: null, clock: {}}], formats: []});
-  assert(hm.includes('data-act="mcopen" data-id="7"') && hm.includes('Relay 1: running') && hm.includes('Competitors &amp; relays'));
+  assert(hm.includes('data-act="mcopen" data-id="7"') && hm.includes('Relay 1: Shooting') && hm.includes('Competitors &amp; relays'));
   assert.strictEqual(count(hm, /L - relay 1/g), 0, 'the relay is not repeated as a single match');
   assert(hm.includes('Solo'));
   assert(mcList({status: {user: 'md', role: 'director'}, compsErr: 'boom', matches: []}).includes('Could not load the competitions: boom'));
@@ -985,7 +985,7 @@ console.log('OK');
   const {moveSheet} = X;
   const one = JSON.parse(JSON.stringify(C)), e = one.classes[0].individuals[0];
   e.moved_from = {relay: 1, lane: 3}; e.relay = 2; e.lane = 1;
-  assert(resultsPage(one).includes('1 · 3 → 2 · 1') && scoreCards(one, String(e.id)).includes('firing point 3, then'));
+  assert(resultsPage(one).includes('1 · 3 → 2 · 1') && scoreCards(one, String(e.id)).includes('<dd>1 · 3, then 2 · 1</dd>'));
   const d = Object.assign({}, D.ready, {competition_id: 5, relay: 1, rb: {later_relay: 'CMP 3PAR 7.18, 7.18.3', later_relay_text: 'CMP 3PAR 7.18, 7.18.3: their shots so far stay'}});
   const comps = [{id: 5, relays: [{id: 1, relay: 1, state: 'running'}, {id: 9, relay: 2, state: 'ready'}, {id: 10, relay: 3, state: 'running'}]}];
   const base = {detail: d, targets: D.mtargets, comps: comps};
@@ -1067,10 +1067,10 @@ console.log('OK');
     {kind: 'standard', name: 'CMP Standard Final (CMP 3PAR 10.4)', draw: false, elim: false, relay: true},
     {kind: 'sfz_3p', name: 'CMP Three-Position Start-from-Zero Final (CMP 3PAR 10.3)', draw: true, elim: true, relay: false}]});
   const p3 = finalsPanel(par, {targets: [], fin: {kind: 'sfz_3p'}}, true);
-  assert(p3.includes('10 kneeling in 400 s') && p3.includes('data-v="sfz_3p" class="sel"') && !p3.includes('mcfinalrelay'), 'the 3P Start-from-Zero final: chosen, explained, no relay finals');
+  assert(p3.includes('10 kneeling in 400 s') && p3.includes('data-v="sfz_3p" aria-pressed="true"') && !p3.includes('mcfinalrelay'), 'the 3P Start-from-Zero final: chosen, explained, no relay finals');
   const ps = finalsPanel(par, {targets: [{device_id: 't1', name: 'Lane 1', in_match: false}], fin: {kind: 'airgun'}}, true);
   assert(ps.includes('data-act="mcfinalrelay" data-id="4"') && !ps.includes('data-id="5"'), 'Standard: a final for a finished relay only');
-  assert(!ps.includes('data-v="airgun"') && ps.includes('CMP Standard Final (CMP 3PAR 10.4)') && ps.includes('data-v="standard" class="sel"'), 'only what the server allows; an unknown choice falls back to the first');
+  assert(!ps.includes('data-v="airgun"') && ps.includes('CMP Standard Final (CMP 3PAR 10.4)') && ps.includes('data-v="standard" aria-pressed="true"'), 'only what the server allows; an unknown choice falls back to the first');
   assert(!finalsPanel(comp, {targets: []}, false).includes('mcfinal'), 'officers see the list only');
   const f = {name: 'L - final', shoot_off_needed: [[1, 2]], rows: [
     {place: 1, tied: true, pos: 'A', name: '<i>AMES</i>', qual: 208.4, final: 104.1, shots: 10, total: 312.5, shoot_off: [], dq: null, counts: true},
@@ -1590,4 +1590,43 @@ console.log('OK');
   X.S.mc = keep;
   assert.strictEqual(liveBand([{id: 1, name: 'x', state: 'done', clock: {}}]), '', 'nothing being shot: no band');
   console.log('new match OK');
+}
+
+// --- 1.0 a competition, the lists, your own match, the score card
+{
+  const {compQual, mcCompPage, mcFormatEditor, mcList, scoreCards} = X;
+  const ent = (name, place, total, o) => Object.assign({name: name, place: place, tied: false, fired: true, dq: null, total: total, team: '', relay: 1}, o || {});
+  const res = {scoring: 'decimal', classes: [{name: 'Open', individuals: Array.from({length: 10}, (_, i) => ent('P' + (i + 1), i + 1, 600 - i)).concat([ent('Late', 11, 0, {fired: false})])}]};
+  const c = {id: 5, finals_allowed: [{kind: 'issf'}], relays: [{state: 'running'}]};
+  let h = compQual(c, res);
+  assert(h.indexOf('>P8<') < h.indexOf('Final line: top 8') && h.indexOf('Final line: top 8') < h.indexOf('>P9<'), 'the final line after the 8th');
+  assert(!h.includes('>Late<') && h.includes('provisional'), 'only those who fired; relays still shooting said');
+  assert(!compQual(Object.assign({}, c, {finals_allowed: []}), res).includes('Final line'), 'no final: no line');
+  assert.strictEqual(compQual(c, null), '');
+  assert(compQual(c, {scoring: 'decimal', classes: [{name: 'A', individuals: [ent('Q', 1, 1, {dq: {rule: 'x'}})]}, {name: 'B', individuals: [ent('R', 1, 2)]}]}).includes('<h4>A</h4>'), 'each class its own list');
+  // the competition: relay cards with their state, competitors by relay
+  const det = {id: 5, name: '<b>Open</b>', format: {name: 'F'}, record_shots: 60, rb: {}, team_size: 4, paced: 'spoken', finals_allowed: [], finals: [],
+    relays: [{match_id: 11, relay: 1, state: 'running', lanes: [{competitor_id: 1}, {competitor_id: null, competitor: ''}]}, {match_id: 12, relay: 2, state: 'done', lanes: []}],
+    competitors: [{id: 1, name: 'AMES Al', family: 'Ames', relay: 1, lane: 3, fp: 3, class: 'J'}, {id: 2, name: 'BELL <i>', family: 'Bell', relay: null}]};
+  h = mcCompPage({comp: det, status: {role: 'director'}, targets: []});
+  assert(h.includes('&lt;b&gt;Open') && /class="relaycard running" data-act="mcopen" data-id="11"><span><b>Relay 1<\/b><span class="mut">1 on the line/.test(h) && h.includes('>Shooting<') && h.includes('>Finished<'), 'relays: state and who is on the line');
+  assert(h.indexOf('<h4>Relay 1') < h.indexOf('AMES Al') && h.indexOf('Not on a relay') < h.indexOf('BELL &lt;i&gt;'), 'competitors under their relay');
+  assert(h.includes('data-act="mcpedit" data-id="2"') && h.includes('aria-label="Edit BELL &lt;i&gt;"'));
+  // your own match: a card per phase, up/down where it can move
+  const fe = mcFormatEditor({fdraft: {name: 'X', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'S', minutes: 10}, {kind: 'record', label: 'R', minutes: 30, shots: 20}]}});
+  assert(/data-act="mcpmove" data-i="0" data-d="-1"[^>]*disabled/.test(fe) && !/data-act="mcpmove" data-i="0" data-d="1"[^>]*disabled/.test(fe) && /data-act="mcpmove" data-i="1" data-d="1"[^>]*disabled/.test(fe), 'the ends cannot move further');
+  assert(fe.includes('About 40 minutes on the range · 20 record shots') && /data-mcp="0:shots" value=""disabled|data-mcp="0:shots" value="" disabled/.test(fe), 'the total; shots only where shots are fired');
+  assert(mcFormatEditor({fdraft: {name: 'X', scoring: 'decimal', team_size: 4, phases: [{kind: 'sight', label: 'S', minutes: 10, shots: 5}, {kind: 'record', label: 'R', minutes: 30, shots: 20}]}}).includes('· 20 record shots'), 'shots typed on a sighting phase are not record shots');
+  // lists as cards
+  const lst = mcList({status: {role: 'director'}, matches: [{id: 3, name: 'N', state: 'running', format_name: 'F', clock: {label: 'Match'}}], msel: {}}, 'singles');
+  assert(lst.includes('<ul class="mclist">') && lst.includes('Shooting · Match') && /data-msel="m3" disabled/.test(lst), 'a running match: listed, not deletable');
+  // the score card: the facts, the total, official or not
+  const card = scoreCards(Object.assign({}, D.comp, {official_ms: 1}), null);
+  assert(card.includes('<dt>Place</dt>') && card.includes('class="sctot"') && card.includes('>Official'), 'facts, total, official');
+  assert(scoreCards(Object.assign({}, D.comp, {official_ms: null}), null).includes('>Provisional'));
+  const ofn = JSON.parse(JSON.stringify(D.comp)), cl0 = ofn.classes.find(x => x.individuals.length > 1);
+  const ranked = cl0.individuals.filter(x => x.fired && !x.dq).length;
+  cl0.individuals.push(Object.assign({}, cl0.individuals[0], {id: 999, fired: false, dq: null, name: 'Nobody'}));
+  assert(scoreCards(ofn, String(cl0.individuals[0].id)).includes(' of ' + ranked + '</dd>'), 'place of those ranked, not of everyone entered');
+  console.log('competition OK');
 }

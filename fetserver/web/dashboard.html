@@ -167,9 +167,9 @@ table.t.kvt td{height:auto}table.t.kvt td:last-child{white-space:nowrap}
 .rc .scroll{max-height:none;overflow-x:auto}#rcfacepick{max-width:16em}.facts{display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:8px 0}.facts dt{color:var(--mut)}.facts dd{margin:0}
 .dev{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}.dev .bulk{margin:6px 0}.dev p{margin:6px 0}
 .tabs{display:flex;flex-wrap:wrap;gap:2px 4px;border-bottom:1px solid var(--line);margin:8px -12px -10px;padding:0 8px}
-.tabs a{padding:7px 12px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;text-decoration:none;color:var(--mut);margin-bottom:-1px}
+.tabs a{display:inline-flex;align-items:center;min-height:44px;padding:0 12px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;text-decoration:none;color:var(--mut);margin-bottom:-1px}
 .tabs a:visited{color:var(--mut)}.tabs a.on{border-color:var(--line);background:var(--bg);color:var(--fg);font-weight:600}
-@media (max-width:600px){.tabs a{padding:6px 8px;font-size:14px}}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
+@media (max-width:600px){.tabs a{padding:0 8px;font-size:14px}}.rc .warnbox{border:1px solid var(--bad);border-radius:8px;padding:8px 10px;margin:8px 0}
 .rc input[type=password]{width:220px;max-width:100%}.danger{color:var(--bad);border-color:var(--bad)}code{font-size:13px;word-break:break-all}
 #ver{position:fixed;right:8px;bottom:6px;font-size:11px;color:var(--mut);background:var(--card);border:1px solid var(--line);border-radius:6px;padding:1px 7px;opacity:.85;z-index:5;text-decoration:none}
 .notes{white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font:13px/1.45 ui-monospace,Menlo,monospace}
@@ -318,6 +318,34 @@ a.tlink{display:inline-flex;align-items:center;min-height:44px}
 .phtime{display:flex;align-items:center;gap:4px;flex:none}.phtime input{width:72px;background:transparent;color:inherit;border-color:var(--band-mut)}.phtime span{font-size:13px;color:var(--band-mut)}
 .nmcreate{width:100%}
 .lbgo{background:var(--band-ink);color:var(--band);border-color:var(--band-ink);flex:none}
+/* a competition (FmCompetition, FmCompetitors) */
+.comp{display:flex;flex-direction:column;gap:10px}.comp>.panel{margin:0}.comp h2{margin:0;font-size:24px}.comp h4{margin:12px 0 4px;font-size:14px}
+.chiplink{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border-radius:22px;border:1px solid var(--line);background:var(--card);color:var(--fg);text-decoration:none;font-weight:600;font-size:14px}
+.relays{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.relaycard{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:64px;text-align:left;padding:10px 14px;border-radius:16px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.relaycard>span:first-child{display:flex;flex-direction:column}.relaycard .mut{font-size:13px;font-weight:400}
+.rstate{font-size:12px;font-weight:700;border-radius:10px;padding:3px 9px;background:var(--surface2);white-space:nowrap}
+.relaycard.running .rstate,.relaycard.paused .rstate,.relaycard.holding .rstate,.relaycard.overtime .rstate{background:var(--last-bg);color:var(--last-ink)}
+.relaycard.done .rstate{background:var(--b-record);color:var(--bf-record)}.relaycard.running,.relaycard.paused,.relaycard.holding{border:2px solid var(--last)}
+.qual,.plist{list-style:none;margin:0;padding:0}.qual li,.plist li{display:flex;align-items:center;gap:10px;min-height:48px;border-top:1px solid var(--line2)}
+.qual .place,.cfp{width:30px;text-align:center;flex:none}.qual .place.first{color:var(--last-ink)}.qual li>b:last-child{margin-left:auto}
+.qual li.fline{min-height:0;border-top:2px dashed var(--last);padding:2px 0}.qual li.fline span{font-size:12px;color:var(--last-ink);font-weight:700}
+.npgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.rlnew{display:flex;align-items:center;gap:8px;min-width:110px;flex:none}.plist select{flex:1;min-width:0}
+label.tick{display:inline-flex;align-items:center;gap:8px;min-height:44px}label.tick input{width:22px;height:22px;min-height:22px}.fintgts{display:flex;flex-wrap:wrap;gap:4px 16px}
+.plist .rmain,.qual .rmain{display:flex;flex-direction:column;flex:1;min-width:0}.plist .rmain .mut,.qual .rmain .mut{font-size:13px}
+.comp .mcbar{flex-wrap:wrap}.comp .mcbar label{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:100%}.comp select{max-width:100%}
+.fmted{display:flex;flex-direction:column;gap:12px}.phcards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.phcards li{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px 12px 12px}.phtop{display:flex;align-items:center;gap:6px;margin-bottom:6px}.phtop b{width:24px}.phtop select{flex:1;min-width:0}
+/* the Match Control lists as cards (phones first) */
+.mclist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.mclist>li{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.mclist .lmain{display:flex;flex-direction:column;flex:1;min-width:160px}.mclist .lmain .mut{font-size:13px}.mclist .lacts{display:flex;flex-wrap:wrap;gap:6px;flex-basis:100%}
+.mclist .lacts a{display:inline-flex;align-items:center;min-height:44px;padding:0 6px}.mclist label.tick{min-width:44px;justify-content:center}
+.schead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.sctot{display:flex;flex-direction:column;align-items:flex-end;border:2px solid #111;border-radius:10px;padding:6px 14px;min-width:120px}
+.sctot span{font-size:12px;color:#555}.sctot b{font-size:30px;font-family:'JetBrains Mono',ui-monospace,monospace}
+.scfacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 16px;margin:10px 0}.scfacts div{border-bottom:1px solid #ccc;padding:2px 0}.scfacts dt{font-size:11px;color:#555}.scfacts dd{margin:0;font-weight:700}
+.scard figure{margin:0}.scard figcaption{font-size:12px;color:#333;text-align:center}.scfoot{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:#555;margin-top:10px}
 </style>
 </head>
 <body>
@@ -595,15 +623,21 @@ function scoreCards(res, only) {
     const extra = (e.dq ? '<div class="dqbox"><b>DISQUALIFIED</b> · ' + esc(e.dq.rule) + (e.dq.text ? ': ' + esc(e.dq.text) : '') + ' · decided by ' + esc(e.dq.by || '') + ' and ' + esc(e.dq.official) + '</div>' : '') +
       ((e.removed || []).length ? '<div class="mut">Not counted: ' + e.removed.map(r => 'shot ' + r.n + ' (' + esc(r.why) + ')').join(', ') + '</div>' : '') +
       ((e.penalties || []).length ? '<div class="mut">Penalties: ' + e.penalties.map(p => '−' + p.points + ' ' + esc(p.rule) + (p.text ? ' (' + esc(p.text) + ')' : '') + (p.note ? ' · ' + esc(p.note) : '')).join('; ') + '</div>' : '');
-    return '<div class="scard"><h1>' + esc(e.name) + '</h1><div>' + esc(res.name) + ' · ' + esc(res.format_name) + (cl.name ? ' · class ' + esc(cl.name) : '') + (e.team ? ' · team ' + esc(e.team) : '') +
-      (e.moved_from ? ' · relay ' + esc(e.moved_from.relay) + ', firing point ' + esc(e.moved_from.lane) + ', then' : '') +
-      (e.relay ? ' · relay ' + esc(e.relay) + ', firing point ' + esc(e.lane) : '') + '</div>' +
-      '<div style="margin:6px 0"><b>Total ' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b> · ' + (res.scoring === 'decimal' ? 'inner tens ' : 'X ') + (e.dq ? '–' : e.x) + ' · place ' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '–') + ' · ' + e.shots + ' / ' + res.record_shots + ' shots</div>' + extra +
+    const ofN = cl.individuals.filter(x => x.fired && !x.dq).length, faceOpt = g => ({half: halfFor('auto', g.filter(s => s.x_mm != null), faceOf(res.face).projectile_mm / 2, undefined, res.face), face: res.face, color: '#2F6FA8', noLast: true});
+    const facts = [['Athlete', esc(e.name)], cl.name ? ['Class', esc(cl.name)] : null, e.team ? ['Team', esc(e.team)] : null,
+      e.relay ? ['Relay · firing point', (e.moved_from ? esc(e.moved_from.relay) + ' · ' + esc(e.moved_from.lane) + ', then ' : '') + esc(e.relay) + ' · ' + esc(e.lane)] : null,
+      ['Place', e.fired && !e.dq ? ORD(e.place) + (e.tied ? '=' : '') + ' of ' + ofN : '–'], ['Shots', e.shots + ' of ' + res.record_shots]].filter(Boolean);
+    return '<div class="scard"><div class="schead"><div><div class="mut">Score card · ' + esc(res.name) + '</div><h1>' + esc(e.name) + '</h1>' +
+      '<div class="mut">' + esc([res.format_name, res.book_name && res.book_name !== 'No rulebook' ? res.book_name : ''].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<div class="sctot"><span>Total</span><b>' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b><span>' + (e.dq ? '' : e.x + (res.scoring === 'decimal' ? ' inner tens' : ' X')) + '</span></div></div>' +
+      '<dl class="scfacts">' + facts.map(([k, v]) => '<div><dt>' + k + '</dt><dd>' + v + '</dd></div>').join('') + '</dl>' + extra +
+      '<div class="faces">' + groups.map((g, gi) => '<figure>' + faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), faceOpt(g)) +
+        '<figcaption>Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + ' · <b>' + fmtScore(res, e.series[gi]) + '</b></figcaption></figure>').join('') + '</div>' +
       '<table><tr><th>Series</th>' + Array.from({length: 10}, (_, i) => '<th>' + (i + 1) + '</th>').join('') + '<th>Total</th></tr>' +
       groups.map((g, gi) => '<tr><td>' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</td>' + Array.from({length: 10}, (_, i) => '<td>' + (g[i] ? val(g[i]) : '') + '</td>').join('') + '<td><b>' + fmtScore(res, e.series[gi]) + '</b></td></tr>').join('') + '</table>' +
-      '<div class="faces">' + groups.map((g, gi) => '<div><div class="mut">Shots ' + (gi * 10 + 1) + '–' + (gi * 10 + g.length) + '</div>' +
-        faceSvg(g.filter(s => s.x_mm != null).map((s, i) => ({n: gi * 10 + i + 1, miss: false, x_mm: s.x_mm, y_mm: s.y_mm})), {half: halfFor('auto', g.filter(s => s.x_mm != null), faceOf(res.face).projectile_mm / 2, undefined, res.face), face: res.face, color: '#2563eb', noLast: true}) + '</div>').join('') + '</div>' +
-      (notes.length ? '<div class="mut">' + notes.join(' · ') + '</div>' : '') + '<div class="sign"><div>Competitor</div><div>Scorer / match director</div></div></div>';
+      (notes.length ? '<div class="mut">' + notes.join(' · ') + '</div>' : '') + '<div class="sign"><div>Competitor</div><div>Scorer / match director</div></div>' +
+      '<div class="scfoot"><span>FeT Monitor' + (S.version ? ' ' + esc(S.version) : '') + ' · compatible with freETarget targets</span><span>' + (res.official_ms ? 'Official' : 'Provisional') +
+        (S.printAt ? ' · printed ' + esc(S.printAt.toLocaleString()) : '') + '</span></div></div>';
   }).join('') + '</div>';
 }
 
@@ -1006,6 +1040,7 @@ function infoPanel(t, v, mode, S) {
 // Phones get one column in thumb reach (actions in a bar at the bottom); tablets and computers the same parts beside a
 // large face. The actions are the ones the page always had (data-act), only their place and look are new.
 const LI = {
+  edit: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>',
   back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
   close: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   pause: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -1977,30 +2012,37 @@ function mcRulebooks(mc) {                       // the rulebooks: local copies 
     r.repositories.map(x => '<li><a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.name) + '</a></li>').join('') + '</ul>';
   return h + '</div>';
 }
-function mcFormatEditor(mc) {
+function mcFormatEditor(mc) {                    // design your own match (FmFormat): the settings, the phases as cards in order, how it will run
   const f = mc.fdraft || {name: '', scoring: 'decimal', team_size: 4, phases: []};
   const kinds = ['setup', 'sight', 'pause', 'record', 'stage', 'changeover'], positions = ['', 'standing', 'prone', 'kneeling', 'sitting'];
-  return '<div class="panel mcform"><div class="row"><span class="title">Design your own match</span><button data-act="mcback">Back</button></div><div class="grid">' +
-    '<label>Name</label><input type="text" data-mcf="name" maxlength="80" value="' + esc(f.name) + '">' +
-    '<label>Target face</label><select data-mcf="face">' + (S.faces || [AR10]).map(x => '<option value="' + esc(x.id) + '"' + ((f.face || AR10.id) === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' +
-    '<label>Scoring</label><select data-mcf="scoring">' + ['decimal', 'integer'].map(x => '<option' + (f.scoring === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' +
-    '<label>Team size</label><input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '">' +
-    '<label>Rulebook</label><select data-mcf="book"><option value="">Choose…</option>' + bookChoices(mc).map(([k, n]) => '<option value="' + esc(k) + '"' + (f.book === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>' +
-    (f.book === 'NONE' ? '<label>Ties broken like</label><select data-mcf="tie_rules">' + ['ISSF', 'CMP', 'NRA'].map(x => '<option' + ((f.tie_rules || 'ISSF') === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>' : '') + '</div>' +
+  const fld = (label, ctl) => '<label class="fld">' + label + ctl + '</label>';
+  const total = f.phases.reduce((n, p) => n + (parseFloat(p.minutes) || 0), 0), shots = f.phases.reduce((n, p) => n + (p.kind === 'record' || p.kind === 'stage' ? (+p.shots || 0) : 0), 0);
+  return '<div class="fmted"><div class="nmhead"><button class="iconbtn" data-act="mcback" aria-label="Back">' + LI.back + '</button><h2>Design your own match</h2></div>' +
+    '<div class="npgrid">' + fld('Name', '<input type="text" data-mcf="name" maxlength="80" value="' + esc(f.name) + '">') +
+    fld('Target face', '<select data-mcf="face">' + (S.faces || [AR10]).map(x => '<option value="' + esc(x.id) + '"' + ((f.face || AR10.id) === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>') +
+    fld('Scoring', '<select data-mcf="scoring">' + [['decimal', 'Decimal'], ['integer', 'Whole rings']].map(([v, t]) => '<option value="' + v + '"' + (f.scoring === v ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>') +
+    fld('Team size', '<input type="number" min="1" max="10" data-mcf="team_size" value="' + esc(f.team_size) + '">') +
+    fld('Rulebook', '<select data-mcf="book"><option value="">Choose…</option>' + bookChoices(mc).map(([k, n]) => '<option value="' + esc(k) + '"' + (f.book === k ? ' selected' : '') + '>' + esc(n) + '</option>').join('') + '</select>') +
+    (f.book === 'NONE' ? fld('Ties broken like', '<select data-mcf="tie_rules">' + ['ISSF', 'CMP', 'NRA'].map(x => '<option' + ((f.tie_rules || 'ISSF') === x ? ' selected' : '') + '>' + x + '</option>').join('') + '</select>') : '') + '</div>' +
     '<p class="mut">' + (f.book === 'NONE' ? 'No rulebook: no rule is cited, nothing is suggested, and the match director decides every irregularity, extra time and protest time.'
       : 'The match follows this rulebook only: its procedures, rule references, tie-breaks and finals.') + '</p>' +
-    '<table class="t phlist" style="margin-top:8px"><tr><th>#</th><th>Kind</th><th>Label</th><th>Min</th><th>Shots</th><th>Position</th><th>Warnings (min before end)</th><th></th></tr>' +
-    f.phases.map((p, i) => '<tr><td>' + (i + 1) + '</td><td><select data-mcp="' + i + ':kind">' + kinds.map(k => '<option value="' + k + '"' + (p.kind === k ? ' selected' : '') + '>' + esc(PHASE_KIND[k]) + '</option>').join('') + '</select></td>' +
-      '<td><input type="text" maxlength="80" data-mcp="' + i + ':label" value="' + esc(p.label || '') + '"></td>' +
-      '<td><input type="number" min="0.5" step="0.5" max="240" style="width:64px" data-mcp="' + i + ':minutes" value="' + esc(p.minutes != null ? p.minutes : '') + '"></td>' +
-      '<td><input type="number" min="0" max="200" style="width:56px" data-mcp="' + i + ':shots" value="' + esc(p.shots || '') + '"' + (p.kind === 'record' || p.kind === 'stage' ? '' : ' disabled') + '></td>' +
-      '<td><select data-mcp="' + i + ':position">' + positions.map(x => '<option value="' + x + '"' + ((p.position || '') === x ? ' selected' : '') + '>' + (x || '–') + '</option>').join('') + '</select></td>' +
-      '<td><input type="text" maxlength="40" style="width:110px" data-mcp="' + i + ':warn" value="' + esc(p.warn || '') + '" placeholder="e.g. 5, 2"></td>' +
-      '<td><button data-act="mcprm" data-i="' + i + '" aria-label="Remove phase">✕</button></td></tr>').join('') + '</table>' +
-    '<div class="mcbar"><button data-act="mcpadd">Add phase</button><button class="pri" data-act="mcfsave">Save format</button></div>' +
+    '<h3 class="rosec">Phases, in order</h3><ol class="phcards">' + f.phases.map((p, i) => '<li><div class="phtop"><b class="num">' + (i + 1) + '</b>' +
+      '<select data-mcp="' + i + ':kind" aria-label="Phase ' + (i + 1) + ': kind">' + kinds.map(k => '<option value="' + k + '"' + (p.kind === k ? ' selected' : '') + '>' + esc(PHASE_KIND[k]) + '</option>').join('') + '</select>' +
+      '<button class="iconbtn" data-act="mcpmove" data-i="' + i + '" data-d="-1" aria-label="Move phase ' + (i + 1) + ' up"' + (i ? '' : ' disabled') + '>↑</button>' +
+      '<button class="iconbtn" data-act="mcpmove" data-i="' + i + '" data-d="1" aria-label="Move phase ' + (i + 1) + ' down"' + (i < f.phases.length - 1 ? '' : ' disabled') + '>↓</button>' +
+      '<button class="iconbtn" data-act="mcprm" data-i="' + i + '" aria-label="Remove phase ' + (i + 1) + '">' + LI.close + '</button></div><div class="npgrid">' +
+      fld('Name', '<input type="text" maxlength="80" data-mcp="' + i + ':label" value="' + esc(p.label || '') + '">') +
+      fld('Minutes', '<input type="number" min="0.5" step="0.5" max="240" data-mcp="' + i + ':minutes" value="' + esc(p.minutes != null ? p.minutes : '') + '">') +
+      fld('Shots', '<input type="number" min="0" max="200" data-mcp="' + i + ':shots" value="' + esc(p.shots || '') + '"' + (p.kind === 'record' || p.kind === 'stage' ? '' : ' disabled') + '>') +
+      fld('Position', '<select data-mcp="' + i + ':position">' + positions.map(x => '<option value="' + x + '"' + ((p.position || '') === x ? ' selected' : '') + '>' + (x || '–') + '</option>').join('') + '</select>') +
+      fld('Warnings (min before end)', '<input type="text" maxlength="40" data-mcp="' + i + ':warn" value="' + esc(p.warn || '') + '" placeholder="e.g. 5, 2">') + '</div></li>').join('') + '</ol>' +
+    '<button class="btn" data-act="mcpadd">+ Add a phase</button>' +
+    '<section class="howrun"><h3>How it will run</h3><p>' + (f.phases.length ? f.phases.map(p => esc((p.label || PHASE_KIND[p.kind] || p.kind) + ' ' + mins((parseFloat(p.minutes) || 0) * 60))).join(' · ') : 'No phases yet.') + '</p>' +
+      '<p>About ' + Math.round(total) + ' minutes on the range' + (shots ? ' · ' + shots + ' record shots' : '') + '</p></section>' +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
     '<p class="mut">Sighting, Record and Changeover follow each other like the rulebooks: add a Pause between Sighting and Record if the targets need a moment to switch. ' +
-    '"Sighting + record" is NRA style: one clock, the shooter starts record. No target-change time is needed with electronic targets.</p></div>';
+    '"Sighting + record" is NRA style: one clock, the shooter starts record. No target-change time is needed with electronic targets. Saved on this Pi; a change never touches matches already shot.</p>' +
+    '<button class="btn pri big" data-act="mcfsave">Save format</button></div>';
 }
 const RUNNING = ['running', 'paused', 'holding', 'overtime'];
 function deletable(mc, kind) {                  // ticked competitions ('c') or single matches ('m') that can be deleted now (not running)
@@ -2014,27 +2056,29 @@ const mcTab = mc => {                            // #/match/<tab>; Competitions 
   const m = typeof location !== 'undefined' && location.hash.match(/^#\/match\/(\w+)/), t = m && MC_TABS.find(x => x[0] === m[1]);
   return t && (!t[2] || mcDirector(mc)) ? t[0] : 'comps';
 };
-function mcList(mc, tab) {                       // one Match Control tab (the lists; a match or competition opens over it)
+function mcList(mc, tab) {                       // one Match Control tab (the lists; a match or competition opens over it), as cards
   const director = mcDirector(mc), sel = mc.msel || {}, rsel = mc.rsel || {};
   const singles = (mc.matches || []).filter(m => m.competition_id == null || mc.compsErr);   // relays are listed with their competition
-  const tick = (key, busy, what) => director ? '<td><input type="checkbox" data-msel="' + key + '"' + (sel[key] && !busy ? ' checked' : '') + (busy ? ' disabled title="Running: stop it first"' : '') +
-    ' aria-label="Select ' + esc(what) + '"></td>' : '';
+  const tick = (key, busy, what) => director ? '<label class="tick"><input type="checkbox" data-msel="' + key + '"' + (sel[key] && !busy ? ' checked' : '') + (busy ? ' disabled title="Running: stop it first"' : '') +
+    ' aria-label="Select ' + esc(what) + '"></label>' : '';
   const delBar = (kind, n, what) => director && n ? '<div class="mcbar"><button class="danger" data-act="mcdelsel" data-kind="' + kind + '"' + (deletable(mc, kind).length ? '' : ' disabled') + '>Delete selected' +
     (deletable(mc, kind).length ? ' (' + deletable(mc, kind).length + ')' : '') + '</button><span class="mut">' + what + ' Their results stay on the Results page as a saved copy (unless you deleted ' +
     'the results already). Shots stay in each target\'s history. A running match must be stopped first.</span></div>' : '';
   const msg = mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '';
+  const st = m => esc(RELAY_STATE[m.state] || m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '');
   if (tab === 'singles') return '<div class="panel"><h3>Single matches</h3>' +
     (director ? '<div class="mcbar"><button class="pri" data-act="mcnew">New single match</button><span class="mut">A match on its own, without a competitor list.</span></div>' : '') +
-    (singles.length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Match</th><th>Format</th><th>State</th><th></th></tr>' + singles.map(m =>
-      '<tr>' + tick('m' + m.id, RUNNING.includes(m.state), m.name) + '<td>' + esc(m.name) + (m.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(m.format_name) + '</td><td>' + esc(m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '') + '</td>' +
-      '<td><button data-act="mcopen" data-id="' + m.id + '">Open</button>' + (m.state !== 'ready' && !m.results_hidden ? ' <a href="#/results/m' + m.id + '">Results</a>' : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No single matches. A competition\'s relays are on Competitions.</p>') +
+    (singles.length ? '<ul class="mclist">' + singles.map(m => '<li>' + tick('m' + m.id, RUNNING.includes(m.state), m.name) +
+      '<span class="lmain"><b>' + esc(m.name) + (m.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</b><span class="mut">' + esc(m.format_name) + ' · ' + st(m) + '</span></span>' +
+      '<span class="lacts"><button class="' + (RUNNING.includes(m.state) || m.state === 'ready' ? 'pri' : '') + '" data-act="mcopen" data-id="' + m.id + '">Open</button>' +
+      (m.state !== 'ready' && !m.results_hidden ? '<a href="#/results/m' + m.id + '">Results</a>' : '') + '</span></li>').join('') + '</ul>' : '<p class="mut">No single matches. A competition\'s relays are on Competitions.</p>') +
     delBar('m', singles.length, '') + msg + '</div>';
   if (tab === 'results' && director) {
     const res = mc.results || [], nrsel = Object.keys(rsel).filter(k => rsel[k]).length;
-    return '<div class="panel"><h3>Results</h3><p class="mut">What the public Results page, the TV and the print-outs show.</p>' + (res.length ? '<table class="t"><tr><th></th><th>Name</th><th>Kind</th><th>Date</th><th>On the Results page</th></tr>' + res.map(r =>
-      '<tr><td>' + (r.hidden ? '' : '<input type="checkbox" data-rsel="' + esc(r.key) + '"' + (rsel[r.key] ? ' checked' : '') + ' aria-label="Select the results of ' + esc(r.name) + '">') + '</td>' +
-      '<td>' + (r.hidden ? esc(r.name) : '<a href="#/results/' + esc(r.key) + '">' + esc(r.name) + '</a>') + '</td><td class="mut">' + esc(RES_KIND[r.kind] || '') + '</td><td class="mut">' + esc(fmtDay(r.at_ms)) + '</td>' +
-      '<td>' + (r.hidden ? 'deleted <button data-act="mcresshow" data-key="' + esc(r.key) + '">Show again</button>' : 'yes') + '</td></tr>').join('') + '</table>' +
+    return '<div class="panel"><h3>Results</h3><p class="mut">What the public Results page, the TV and the print-outs show.</p>' + (res.length ? '<ul class="mclist">' + res.map(r =>
+      '<li>' + (r.hidden ? '' : '<label class="tick"><input type="checkbox" data-rsel="' + esc(r.key) + '"' + (rsel[r.key] ? ' checked' : '') + ' aria-label="Select the results of ' + esc(r.name) + '"></label>') +
+      '<span class="lmain"><b>' + esc(r.name) + '</b><span class="mut">' + esc(RES_KIND[r.kind] || '') + ' · ' + esc(fmtDay(r.at_ms)) + (r.hidden ? ' · deleted from the Results page' : '') + '</span></span>' +
+      '<span class="lacts">' + (r.hidden ? '<button data-act="mcresshow" data-key="' + esc(r.key) + '">Show again</button>' : '<a href="#/results/' + esc(r.key) + '">Open the results</a>') + '</span></li>').join('') + '</ul>' +
       '<div class="mcbar"><button class="danger" data-act="mcresdel"' + (nrsel ? '' : ' disabled') + '>Delete selected results' + (nrsel ? ' (' + nrsel + ')' : '') + '</button>' +
       '<span class="mut">Off the Results page, TV, print-outs and CSV. The matches stay in Match Control, and their results can be shown again; a saved copy is deleted for good.</span></div>'
       : '<p class="mut">No results yet.</p>') + msg + '</div>';
@@ -2043,17 +2087,19 @@ function mcList(mc, tab) {                       // one Match Control tab (the l
     const custom = (mc.formats || []).filter(f => !f.builtin);
     return '<div class="panel"><h3>Formats</h3><div class="mcbar"><button class="pri" data-act="mcfnew">Design your own match</button>' +
       '<span class="mut">The rulebook formats are built in; your own appear here.</span></div>' +
-      (custom.length ? '<table class="t">' + custom.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + f.phases.length + ' phases</td>' +
-        '<td><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button> <button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></td></tr>').join('') + '</table>'
+      (custom.length ? '<ul class="mclist">' + custom.map(f => '<li><span class="lmain"><b>' + esc(f.name) + '</b><span class="mut">' + f.phases.length + ' phases</span></span>' +
+        '<span class="lacts"><button data-act="mcfedit" data-id="' + esc(f.id) + '">Edit</button><button class="danger" data-act="mcfdel" data-id="' + esc(f.id) + '">Delete</button></span></li>').join('') + '</ul>'
         : '<p class="mut">None of your own yet.</p>') + msg + '</div>';
   }
   return '<div class="panel"><h3>Competitions</h3>' +
     (director ? '<div class="mcbar"><button class="pri" data-act="mccnew">New competition</button><span class="mut">Competitors, classes, teams and relays, with results and score cards.</span></div>'
       : '<p class="mut">Range officers run matches a match director has created: open a relay.</p>') +
-    (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<table class="t"><tr>' + (director ? '<th></th>' : '') + '<th>Competition</th><th>Format</th><th>Competitors</th><th>Relays</th><th></th></tr>' + mc.comps.map(c =>
-      '<tr>' + tick('c' + c.id, c.busy, c.name) + '<td>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</td><td class="mut">' + esc(c.format_name) + '</td><td>' + c.competitors + '</td><td>' +
-      c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(r.state) + '</button>').join(' ') + '</td>' +
-      '<td><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' + (c.results_hidden ? '' : ' <a href="#/results/c' + c.id + '">Results</a>') + '</td></tr>').join('') + '</table>' : '<p class="mut">No competitions yet.</p>') +
+    (mc.compsErr ? '<p class="bad">Could not load the competitions: ' + esc(mc.compsErr) + '</p>' : (mc.comps || []).length ? '<ul class="mclist">' + mc.comps.map(c =>
+      '<li>' + tick('c' + c.id, c.busy, c.name) + '<span class="lmain"><b>' + esc(c.name) + (c.active ? ' <span class="mut">(in progress)</span>' : '') + (c.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</b>' +
+      '<span class="mut">' + esc(c.format_name) + ' · ' + c.competitors + ' competitors</span></span>' +
+      '<span class="lacts"><button class="pri" data-act="mccopen" data-id="' + c.id + '">Competitors &amp; relays</button>' +
+      c.relays.map(r => '<button data-act="mcopen" data-id="' + r.id + '" title="Open the console of relay ' + esc(r.relay) + '">Relay ' + esc(r.relay) + ': ' + esc(RELAY_STATE[r.state] || r.state) + '</button>').join('') +
+      (c.results_hidden ? '' : '<a href="#/results/c' + c.id + '">Results</a>') + '</span></li>').join('') + '</ul>' : '<p class="mut">No competitions yet.</p>') +
     delBar('c', (mc.comps || []).length, 'Competitions go with their relays and competitor lists.') + msg + '</div>';
 }
 function faceWarning(d) {                        // lanes whose target has another face installed (Range Control sets it)
@@ -2449,38 +2495,66 @@ function mcCompNew(mc) {
     (S.dt && S.dt.linked ? publishChoice(mc.cdraft || {}, 'mccpubchoice') : '') +
     '<div class="mcbar"><button class="pri" data-act="mcccreate">Create competition</button></div>' + (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
 }
-function mcCompPage(mc) {
+const RELAY_STATE = {ready: 'Ready', running: 'Shooting', paused: 'Paused', holding: 'Waiting for START', overtime: 'Finishing', done: 'Finished', aborted: 'Stopped'};
+function compQual(c, res) {                      // the qualification so far, each class, with the final line (FmCompetition)
+  if (!res || !res.classes) return '';
+  const finalN = (c.finals_allowed || []).length ? 8 : 0, running = c.relays.some(r => r.state !== 'done' && r.state !== 'aborted' && r.state !== 'ready');
+  const rows = res.classes.map(cl => {
+    const fired = cl.individuals.filter(e => e.fired);
+    if (!fired.length) return '';
+    return (res.classes.length > 1 ? '<h4>' + esc(cl.name || 'No class') + '</h4>' : '') + '<ol class="qual">' + fired.slice(0, 12).map((e, i) =>
+      (finalN && i === finalN ? '<li class="fline" aria-hidden="true"><span>Final line: top ' + finalN + '</span></li>' : '') +
+      '<li><b class="num place' + (e.place === 1 ? ' first' : '') + '">' + (e.dq ? '' : e.place + (e.tied ? '=' : '')) + '</b><span class="rmain"><b>' + esc(e.name) + '</b><span class="mut">' +
+      esc([e.team, e.relay ? 'relay ' + e.relay : ''].filter(Boolean).join(' · ')) + '</span></span><b class="num">' + (e.dq ? 'DQ' : fmtScore(res, e.total)) + '</b></li>').join('') + '</ol>' +
+      (fired.length > 12 ? '<p class="mut">and ' + (fired.length - 12) + ' more on the <a href="#/results/c' + c.id + '">results</a></p>' : '');
+  }).join('');
+  return rows ? '<section class="panel"><h3>Qualification so far <span class="mut">' + (running ? 'relays still shooting are included, provisional' : 'every class') + '</span></h3>' + rows + '</section>' : '';
+}
+function mcCompPage(mc) {                        // a competition (FmCompetition, FmCompetitors): relays and finals, the ranking, competitors by relay
   const c = mc.comp;
   if (!c) return '<div class="panel"><p class="mut">Loading…</p></div>';
   const director = mc.status && (mc.status.role === 'director' || mc.status.role === 'admin');
   const free = c.competitors.filter(p => !p.relay), rd = mc.rdraft || {};
-  let h = '<div class="panel mcform"><div class="row"><span class="title">' + esc(c.name) + '</span><button data-act="mcback">All matches</button></div>' +
-    '<div class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ' + (bookLink(mc, c.rb) || esc((c.rb || {}).name || '') + ' rules') + ' · teams of ' + c.team_size +
-    (c.best_count ? ' (best ' + c.team_size + ' count)' : '') + ' · commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</div>' +
-    '<div class="mcbar"><a href="#/results/' + c.id + '">Results</a> · <a href="#/print/results/' + c.id + '" target="_blank" rel="noopener">Print results</a> · ' +
-    '<a href="#/print/cards/' + c.id + '" target="_blank" rel="noopener">Print score cards</a> · <a href="' + API + '/results/' + c.id + '.csv">CSV</a> · <a href="' + API + '/results/' + c.id + '-teams.csv">Teams CSV</a></div>' +
-    (director ? '<div class="mcbar"><label>Team size <input type="number" min="1" max="10" style="width:60px" id="cteam" value="' + c.team_size + '"></label>' +
-      '<label><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label>' +
-      ((c.rb || {}).challenge ? '<label title="' + esc(c.rb.protest_time) + '">Challenge time <input type="number" min="1" max="1440" style="width:70px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
-      '<button data-act="mccsave">Save settings</button></div>' : '') + '</div>';
+  const chip = (href, text, blank) => '<a class="chiplink" href="' + href + '"' + (blank ? ' target="_blank" rel="noopener"' : '') + '>' + text + '</a>';
+  let h = '<div class="nmhead"><button class="iconbtn" data-act="mcback" aria-label="All matches">' + LI.back + '</button><span class="rotitle"><span class="mut">Competition</span><h2>' + esc(c.name) + '</h2></span></div>' +
+    '<p class="mut">' + esc(c.format.name) + (c.format.modified ? ' <b>(times modified)</b>' : '') + ' · ' + c.record_shots + ' record shots · ' + (bookLink(mc, c.rb) || esc((c.rb || {}).name || '') + ' rules') + ' · teams of ' + c.team_size +
+    (c.best_count ? ' (best ' + c.team_size + ' count)' : '') + ' · commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</p>' +
+    '<div class="chips">' + chip('#/results/' + c.id, 'Results') + chip('#/print/results/' + c.id, 'Print results', true) + chip('#/print/cards/' + c.id, 'Print score cards', true) +
+      chip(API + '/results/' + c.id + '.csv', 'CSV') + chip(API + '/results/' + c.id + '-teams.csv', 'Teams CSV') + '</div>';
+  const per = r => (r.lanes || []).filter(l => l.competitor_id != null || l.competitor).length;
+  h += '<h3 class="rosec">' + c.competitors.length + ' competitors · ' + c.relays.length + (c.relays.length === 1 ? ' relay' : ' relays') + '</h3><div class="relays">' +
+    c.relays.map(r => '<button class="relaycard ' + esc(r.state) + '" data-act="mcopen" data-id="' + r.match_id + '"><span><b>Relay ' + esc(r.relay) + '</b><span class="mut">' + per(r) + ' on the line</span></span>' +
+      '<span class="rstate">' + esc(RELAY_STATE[r.state] || r.state) + '</span></button>').join('') +
+    (c.finals || []).map(f => '<button class="relaycard final ' + esc(f.state) + '" data-act="mcopen" data-id="' + f.match_id + '"><span><b>' + esc(f.name) + '</b><span class="mut">Final' + (f.cls ? ' · ' + esc(f.cls) : '') + '</span></span>' +
+      '<span class="rstate">' + esc(RELAY_STATE[f.state] || f.state) + '</span></button>').join('') +
+    (c.relays.length || (c.finals || []).length ? '' : '<p class="mut">No relays yet: put competitors on targets below.</p>') + '</div>';
+  h += compQual(c, mc.compRes);
   h += publishPanel(c, director, S.dt && S.dt.linked, true);
-  h += '<div class="panel mcform"><h3>Competitors (' + c.competitors.length + ')</h3><table class="t"><tr><th>Family name</th><th>Given name</th><th>Class</th><th>Team</th><th>Relay · FP</th><th></th></tr>' +
-    c.competitors.map(p => '<tr>' + ['family', 'given', 'class', 'team'].map(k => '<td>' + esc(p[k] || '') + '</td>').join('') +
-      '<td>' + (p.relay ? esc(p.relay) + ' · ' + esc(FP(p)) : '–') + '</td><td>' + (director ? '<button data-act="mcpedit" data-id="' + p.id + '" title="Edit ' + esc(p.name) + '" aria-label="Edit ' + esc(p.name) + '">✎</button>' : '') + '</td></tr>').join('') + '</table>' +
-    (director ? '<div class="mcbar">' + [['family', 'Family name', 60], ['given', 'Given name', 60], ['class', 'Class (optional)', 40], ['team', 'Team (optional)', 60]].map(([k, ph, n]) =>
-      '<input id="np_' + k + '" data-np="' + k + '" placeholder="' + ph + '" maxlength="' + n + '" value="' + esc((mc.np || {})[k] || '') + '">').join('') + '<button data-act="mcpadd2">Add competitor</button></div>' +
-      '<div class="mcbar"><button data-act="mcpimport">Upload a CSV file…</button><span class="mut">Columns Family, Given, Class, Team (or a header row naming them); ' +
-      'comma, semicolon or tab separated. The file is read and discarded: only the competitors are kept. If any line has a problem, nothing is added.</span></div>' +
-      '<details id="np_details"' + (mc.npOpen ? ' open' : '') + '><summary>Or paste a list</summary><p class="mut">One competitor per line: Family, Given, Class, Team (comma or tab separated; only the family name is needed).</p>' +
-      '<textarea id="np_paste" data-np="paste" rows="6" style="width:100%">' + esc((mc.np || {}).paste || '') + '</textarea><div class="mcbar"><button data-act="mcppaste">Add these competitors</button></div></details>' : '') +
-    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</div>';
-  h += '<div class="panel mcform"><h3>Relays</h3>' + (c.relays.length ? '<table class="t">' + c.relays.map(r => '<tr><td>Relay ' + esc(r.relay) + '</td><td>' + esc(r.state) + '</td><td><button data-act="mcopen" data-id="' + r.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No relays yet.</p>') +
-    (director ? (free.length ? '<h4>New relay: who shoots on which target</h4><table class="t">' + (mc.targets || []).filter(t => !t.in_match).map(t =>
-      '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td><td><select data-rl="' + esc(t.device_id) + '"><option value="">– empty –</option>' +
+  // competitors, grouped by relay (FmCompetitors)
+  const groups = c.relays.map(r => ({title: 'Relay ' + r.relay, sub: RELAY_STATE[r.state] || r.state, people: c.competitors.filter(p => p.relay === r.relay).sort((x, y) => (FP(x) || 0) - (FP(y) || 0))}))
+    .concat([{title: 'Not on a relay', sub: '', people: free}]).filter(g => g.people.length);
+  const prow = p => '<li><b class="num cfp">' + (p.relay ? esc(FP(p)) : '–') + '</b><span class="rmain"><b>' + esc(p.name) + '</b><span class="mut">' + esc([p.class, p.team].filter(Boolean).join(' · ') || '–') + '</span></span>' +
+    (director ? '<button class="iconbtn" data-act="mcpedit" data-id="' + p.id + '" aria-label="Edit ' + esc(p.name) + '">' + LI.edit + '</button>' : '') + '</li>';
+  h += '<section class="panel"><h3>Competitors (' + c.competitors.length + ')</h3>' + (groups.length ? groups.map(g => '<h4>' + esc(g.title) + (g.sub ? ' <span class="mut">' + esc(g.sub) + '</span>' : '') + '</h4><ul class="plist">' + g.people.map(prow).join('') + '</ul>').join('') : '<p class="mut">None yet.</p>') +
+    (director ? '<h4>Add a competitor</h4><div class="npgrid">' + [['family', 'Family name', 60], ['given', 'Given name', 60], ['class', 'Class (optional)', 40], ['team', 'Team (optional)', 60]].map(([k, ph, n]) =>
+      '<input id="np_' + k + '" data-np="' + k + '" placeholder="' + ph + '" aria-label="' + ph + '" maxlength="' + n + '" value="' + esc((mc.np || {})[k] || '') + '">').join('') + '</div>' +
+      '<div class="mcbar"><button class="pri" data-act="mcpadd2">Add competitor</button><button data-act="mcpimport">Upload a CSV file…</button></div>' +
+      '<p class="mut">CSV columns Family, Given, Class, Team (or a header row naming them); comma, semicolon or tab separated. The file is read and discarded: only the competitors are kept. If any line has a problem, nothing is added.</p>' +
+      '<details id="np_details" class="rodet"' + (mc.npOpen ? ' open' : '') + '><summary><b>Or paste a list</b></summary><p class="mut">One competitor per line: Family, Given, Class, Team (comma or tab separated; only the family name is needed).</p>' +
+      '<textarea id="np_paste" data-np="paste" rows="6" style="width:100%" aria-label="Competitors, one per line">' + esc((mc.np || {}).paste || '') + '</textarea><div class="mcbar"><button data-act="mcppaste">Add these competitors</button></div></details>' : '') +
+    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</section>';
+  if (director) h += '<section class="panel"><h3>New relay</h3>' + (free.length ? '<p class="mut">Who shoots on which target. Each competitor on one target.</p><ul class="plist">' + (mc.targets || []).filter(t => !t.in_match).slice().sort(byLane).map(t =>
+      '<li><span class="rlnew"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' + esc(tName(t)) + '</span><select data-rl="' + esc(t.device_id) + '" aria-label="Competitor on ' + esc(tName(t)) + '"><option value="">– empty –</option>' +
         free.filter(p => +rd[t.device_id] === p.id || !Object.keys(rd).some(k => k !== t.device_id && +rd[k] === p.id))   // each competitor on one target
-          .map(p => '<option value="' + p.id + '"' + (+rd[t.device_id] === p.id ? ' selected' : '') + '>' + esc(p.name) + (p.class ? ' (' + esc(p.class) + ')' : '') + '</option>').join('') + '</select></td></tr>').join('') + '</table>' +
-      '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') : '') + '</div>';
-  return h + finalsPanel(c, mc, director);
+          .map(p => '<option value="' + p.id + '"' + (+rd[t.device_id] === p.id ? ' selected' : '') + '>' + esc(p.name) + (p.class ? ' (' + esc(p.class) + ')' : '') + '</option>').join('') + '</select></li>').join('') + '</ul>' +
+      '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') + '</section>';
+  h += finalsPanel(c, mc, director);
+  if (director) h += '<details class="panel rodet"><summary><b>Settings</b> <span class="mut">teams' + ((c.rb || {}).challenge ? ', challenge time' : '') + '</span></summary><div class="mcbar">' +
+    '<label>Team size <input type="number" min="1" max="10" style="width:70px" id="cteam" value="' + c.team_size + '"></label>' +
+    '<label class="tick"><input type="checkbox" id="cbest"' + (c.best_count ? ' checked' : '') + '> best count</label>' +
+    ((c.rb || {}).challenge ? '<label title="' + esc(c.rb.protest_time) + '">Challenge time <input type="number" min="1" max="1440" style="width:80px" id="cchal" value="' + esc(c.challenge_min) + '"> min</label>' : '') +
+    '<button data-act="mccsave">Save settings</button></div></details>';
+  return '<div class="comp">' + h + '</div>';
 }
 const FINAL_TEXT = {                             // what each final is, for the match director choosing one
   standard: '10 shots standing, each on command (LOAD, 5 s, START, 50 s or until all have fired), added to the qualification score. Ties for 1st-3rd are shot off. The best qualifier is on the first target (point A).',
@@ -2494,20 +2568,19 @@ function finalsPanel(c, mc, director) {         // the finals of the competition
   const classes = [...new Set(c.competitors.map(p => p.class || ''))].sort();
   const done = c.relays.filter(r => r.state === 'done' && !(c.finals || []).some(f => f.for_relay === r.match_id && f.state !== 'aborted'));
   const n = fin.n != null ? fin.n : Math.min(8, picked.length);
-  let h = '<div class="panel mcform"><h3>Finals</h3>' + ((c.finals || []).length ? '<table class="t">' + c.finals.map(f => '<tr><td>' + esc(f.name) + '</td><td class="mut">' + esc(f.state) + '</td>' +
-    '<td><button data-act="mcopen" data-id="' + f.match_id + '">Open console</button></td></tr>').join('') + '</table>' : '<p class="mut">No final yet.</p>');
+  let h = '<div class="panel mcform"><h3>Finals</h3>' + ((c.finals || []).length ? '' : '<p class="mut">No final yet.</p>');
   const allowed = c.finals_allowed || [], kinds = allowed.map(x => x.kind);
   if (!kinds.length) return h + '<p class="mut">No final of the ' + esc((c.rb || {}).name || '') + ' rules is built for this event yet.</p></div>';
   if (!director) return h + '</div>';
   const kind = kinds.includes(fin.kind) ? fin.kind : kinds[0], fk = allowed.find(x => x.kind === kind);
-  h += '<h4>New final</h4>' + (c.rb && c.rb.book === 'NONE' ? '<p class="mut">No rulebook: each final follows its own rulebook.</p>' : '') + '<div class="seg">' +
-    allowed.map(x => '<button data-act="mcfinkind" data-v="' + esc(x.kind) + '" class="' + (kind === x.kind ? 'sel' : '') + '">' + esc(x.name) + '</button>').join('') + '</div>' +
+  h += '<h4>New final</h4>' + (c.rb && c.rb.book === 'NONE' ? '<p class="mut">No rulebook: each final follows its own rulebook.</p>' : '') + '<div class="flopts">' +
+    allowed.map(x => '<button class="nmopt' + (kind === x.kind ? ' sel' : '') + '" data-act="mcfinkind" data-v="' + esc(x.kind) + '" aria-pressed="' + (kind === x.kind) + '"><b>' + esc(x.name) + '</b></button>').join('') + '</div>' +
     '<p class="mut">' + esc(FINAL_TEXT[kind] || '') + '</p>' +
     '<div class="mcbar">' + (classes.length > 1 || classes[0] ? '<label>Class <select data-fin="cls">' + classes.map(k => '<option value="' + esc(k) + '"' + ((fin.cls || classes[0]) === k ? ' selected' : '') + '>' + esc(k || 'no class') + '</option>').join('') + '</select></label>' : '') +
     '<label>Finalists <input type="number" min="1" max="8" style="width:60px" data-fin="n" value="' + esc(n) + '"></label>' +
     '<label>Commands <select data-fin="paced"><option value="officer"' + (fin.paced !== 'spoken' ? ' selected' : '') + '>Range officer reads them (Next for each LOAD)</option>' +
       '<option value="spoken"' + (fin.paced === 'spoken' ? ' selected' : '') + '>Spoken by the console (20 s for scores before each LOAD)</option></select></label></div>' +
-    '<div>Targets, in order A, B, C …: ' + (free.length ? free.map(t => '<label style="margin-right:10px"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('')
+    '<div><p class="mut">Targets, in order A, B, C …</p>' + (free.length ? '<div class="fintgts">' + free.map(t => '<label class="tick"><input type="checkbox" data-fintgt="' + esc(t.device_id) + '"' + ((fin.devs || {})[t.device_id] ? ' checked' : '') + '> ' + esc(t.name) + '</label>').join('') + '</div>'
       : '<span class="bad">no free target</span>') + '</div>' +
     '<div class="mcbar"><button class="pri" data-act="mcfinal"' + (picked.length ? '' : ' disabled') + '>Create the final</button></div>' +
     (done.length && fk.relay ? '<h4>Final for all athletes (CMP 3PAR 10.1.2 a)</h4><p class="mut">Everyone on a finished relay fires the Standard Final on their own target; only the top 8 qualifiers of each class count.</p><div class="mcbar">' +
@@ -2693,6 +2766,8 @@ async function refresh() {
         if (mc.view === 'comp' && mc.copen) {
           const cd = await matchCall('/competitions/' + mc.copen);
           if (cd.status === 200) mc.comp = cd.data;
+          const cr = await fetch(API + '/results/c' + mc.copen).catch(() => null);
+          mc.compRes = cr && cr.ok ? await cr.json() : null;
         }
         if (mc.view === 'console' && mc.open) {
           await loadShots(mc);
@@ -3425,6 +3500,11 @@ async function matchAct(el, a) {
   if (a === 'mcfdel') { if (confirm('Delete this format?')) await matchCall('/formats/' + el.dataset.id + '/delete', {}); return refresh(); }
   if (a === 'mcpadd') { mc.fdraft.phases.push({kind: 'record', label: 'Record', minutes: 10, shots: 10}); return render(); }
   if (a === 'mcprm') { mc.fdraft.phases.splice(+el.dataset.i, 1); return render(); }
+  if (a === 'mcpmove') {                         // a phase one place up or down
+    const i = +el.dataset.i, j = i + +el.dataset.d, ph = mc.fdraft.phases;
+    if (j >= 0 && j < ph.length) { const t = ph[i]; ph[i] = ph[j]; ph[j] = t; }
+    return render();
+  }
   if (a === 'mcfsave') {
     const f = mc.fdraft, phases = f.phases.map(p => ({kind: p.kind, label: p.label || PHASE_KIND[p.kind], seconds: Math.round((+p.minutes || 0) * 60),
       shots: p.kind === 'record' || p.kind === 'stage' ? (+p.shots || 0) : 0, position: p.position || '',
@@ -3974,7 +4054,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
