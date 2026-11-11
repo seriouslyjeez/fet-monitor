@@ -12,7 +12,7 @@ has it. Targets on the ESP32 board have WiFi built in and need no ESP-01.
 | ESP-01, 1 MB (the original) | 1 MB | yes, while the firmware fits | no: no room for HTTPS |
 
 Buy 4 MB modules for new targets: they cost a few dollars more and leave room for the features to come. Range Control
-→ Flash a device → **Identify** shows a module's memory.
+→ Flash station → **Identify** shows a module's memory.
 
 ## How long the 1 MB ESP-01 is supported
 

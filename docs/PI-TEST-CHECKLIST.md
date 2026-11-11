@@ -108,7 +108,7 @@ Keeping the Pi's software up to date:
       update (or "skipped tonight: ..." if a match ran); `journalctl -u fet-os-update` has the details; the Pi
       restarted only if an update needed it.
 
-## Flash station (Range Control → Flash a device)
+## Flash station (Range Control → Flash station)
 - [ ] `groups fet-monitor` lists `dialout` after installing; `esptool version` and `avrdude -?` work (apt install
       esptool avrdude on a manual install; the image has them).
 - [ ] An ESP-01S on its USB programmer (PROG / UART position if it has a switch): the port appears within ~5 s;

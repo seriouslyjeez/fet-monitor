@@ -86,7 +86,7 @@ document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', bubbles: tru
 return {before, open, expanded, items, focusIn, small: sm, overflow: ov, navW, closed: dr.hidden, back: document.activeElement === mb,
         expanded2: mb.getAttribute('aria-expanded')};""")
                 self.assertEqual((v["before"], v["open"], v["expanded"]), (True, True, "true"))
-                self.assertEqual(v["items"], ["Lanes", "Results", "Match Control", "Range Control"])
+                self.assertEqual(v["items"], ["Lanes", "Results", "Match Control", "Range Control", "About"])
                 self.assertTrue(v["focusIn"], "focus moves into the menu")
                 self.assertEqual(v["small"], [])
                 self.assertFalse(v["overflow"])
@@ -236,6 +236,15 @@ return {id, before, after, closed: !document.getElementById('overlay').classList
         with urllib.request.urlopen(req, timeout=5) as r:
             return r.headers["Set-Cookie"].split(";")[0]
 
+    def range_manager(self):
+        """Range Control logged in: the session cookie."""
+        from fetserver.admin import write_password
+        write_password(Path(self.tmp.name), "range-pass-1")
+        req = urllib.request.Request(self.url + "/api/v1/admin/login", data=json.dumps({"password": "range-pass-1"}).encode(),
+                                     headers={"Content-Type": "application/json", "X-FET-Admin": "1"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.headers["Set-Cookie"].split(";")[0]
+
     def test_a_new_match_made_on_a_phone_and_a_tablet(self):
         self.range_of(5)
         cookie = self.director()
@@ -307,6 +316,38 @@ return {labels, overflow: overflow(), msg: (document.querySelector('.fmted .bad'
         mine = [f for f in self.core.matches.formats() if f["name"] == "Swap test"]
         self.assertEqual(len(mine), 1, "saved")
         self.assertEqual([p["label"] for p in mine[0]["phases"]][:2], ["Second", "First"], "in the new order")
+
+    RC_SMALL = r"""return {overflow: overflow(), small: small('.rc button, .rc a:not(p a):not(.fact a), .rc select, .rc input:not([type=checkbox]):not([type=radio]), .rc summary, #overlay .sheet button, #overlay .sheet select, .about a.tlink, .signin button, .signin input')};"""
+
+    def test_range_control_on_a_phone_and_a_tablet(self):
+        self.range_of(3)
+        cookie = self.range_manager()
+        pages = [("/#/range/" + t, "") for t in ("targets", "firmware", "flash", "tv", "pi", "users")] + [
+            ("/#/range", "document.querySelector('[data-act=rctopen]').click(); await sleep(400);"), ("/#/about", "")]
+        for path, step in pages:
+            for size in (PHONE, TABLET):
+                with self.subTest(path=path, step=bool(step), size=size):
+                    v = self.look(path, size, "dark" if size == TABLET else "light", "await sleep(1000);" + step + self.RC_SMALL, cookie=cookie)
+                    self.assertFalse(v["overflow"], "no sideways scrolling")
+                    self.assertEqual(v["small"], [], "every control at least 44 px")
+        for path in ("/#/range", "/#/match"):
+            with self.subTest(signin=path):
+                v = self.look(path, PHONE, "light", "await sleep(800);" + self.RC_SMALL)
+                self.assertFalse(v["overflow"])
+                self.assertEqual(v["small"], [])
+
+    def test_one_target_changed_from_its_sheet(self):
+        self.range_of(2)
+        cookie = self.range_manager()
+        v = self.look("/#/range", PHONE, "light", r"""
+await sleep(1000);
+document.querySelector('[data-act=rctopen][data-id="lane-2"]').click(); await sleep(400);
+const sheet = document.querySelector('#overlay .sheet');
+document.querySelector('#overlay [data-act=rcmode][data-mode=ammo]').click(); await sleep(800);
+return {open: !!sheet, title: sheet.querySelector('h2').textContent};""", cookie=cookie)
+        self.assertIn("Lane 2", v["title"])
+        modes = {t["device_id"]: t["mode"] for t in self.core.list_targets(None, staff=True)}
+        self.assertEqual((modes["lane-2"], modes["lane-1"]), ("ammo", "practice"), "only that target changed")
 
     def test_all_lanes_on_a_tablet(self):
         self.range_of(6)

@@ -346,6 +346,33 @@ label.tick{display:inline-flex;align-items:center;gap:8px;min-height:44px}label.
 .sctot span{font-size:12px;color:#555}.sctot b{font-size:30px;font-family:'JetBrains Mono',ui-monospace,monospace}
 .scfacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 16px;margin:10px 0}.scfacts div{border-bottom:1px solid #ccc;padding:2px 0}.scfacts dt{font-size:11px;color:#555}.scfacts dd{margin:0;font-weight:700}
 .scard figure{margin:0}.scard figcaption{font-size:12px;color:#333;text-align:center}.scfoot{display:flex;justify-content:space-between;gap:12px;font-size:11px;color:#555;margin-top:10px}
+/* Range Control (1.0: FmRangePhone, FmTargetSheet) */
+.attn{border:2px solid var(--last)}.attrow{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;gap:2px;padding:8px 0;min-height:52px;border:0;border-top:1px solid var(--line2);border-radius:0;background:transparent;color:var(--fg)}.attrow .mut{font-weight:400;font-size:13px}
+.rlisthead{display:flex;justify-content:space-between;align-items:baseline;padding:6px 4px 4px}
+.tlist{list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:6px}
+.trow{display:flex;align-items:center;gap:12px;width:100%;min-height:64px;padding:8px 6px 8px 14px;text-align:left;border:1px solid var(--line);border-radius:16px;background:var(--card);color:var(--fg)}
+.trow.off{opacity:.85}.tmain{display:flex;flex-direction:column;flex:1;min-width:0}.tmain b{font-size:16px}.tmain .mut{font-size:13px;font-weight:400}
+.tnums{display:flex;flex-direction:column;align-items:flex-end;font-size:13px;color:var(--mut);font-weight:400}.chev{width:24px;text-align:center;color:var(--mut);font-size:22px}
+.tpick{display:flex;flex-wrap:wrap;gap:0 16px}
+.tsec{border-top:1px solid var(--line);padding-top:6px;margin-top:10px}.tsec h3{margin:4px 0;font-size:15px}
+.fact{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:40px;padding:4px 0;border-top:1px solid var(--line2);font-size:14px}.fact>span:first-child{color:var(--mut)}.fact>span:last-child{text-align:right}
+.trow2{display:flex;gap:6px;align-items:center}.trow2 select{max-width:200px}.ok{color:var(--ok)}
+.fwintro{padding:0 4px 6px}.fwcard{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;margin:0 0 8px}
+.fwtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.fwtop .num{font-weight:700}.fwcard .mut{font-size:13px}.fwcard .ok,.fwcard .bad{font-size:14px;font-weight:600}
+.pihead{display:flex;justify-content:space-between;align-items:center;gap:8px}.pihead h3{margin:0}
+.stchip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--mut)}.stchip.ok{color:var(--ok)}.stchip.bad{color:var(--bad)}
+.dtgrid{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between}.dtcode{font-size:34px;font-weight:700;letter-spacing:.08em;margin:4px 0}
+.dtqr{display:block;width:180px;height:180px;background:#fff;border-radius:12px;padding:6px}.dtqr svg{width:100%;height:100%;display:block}
+.steps{margin:8px 0;padding-left:22px}.steps li{margin:6px 0}
+.signin{max-width:480px;margin:12px auto;display:flex;flex-direction:column;gap:10px}.signin h2{margin:0;font-size:24px}.signbtn{width:100%}
+.signform{display:flex;flex-direction:column;gap:10px;margin-top:8px}.signform button{align-self:flex-start}
+.dvcards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.dvcards>li{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
+.dvtop{display:flex;align-items:center;gap:10px}.dvtop .lmain{display:flex;flex-direction:column;flex:1;min-width:0}.dvtop .mut{font-size:13px}
+.dvtv{width:64px;height:36px;border-radius:6px;background:#0E161E;flex:none;display:flex;align-items:center;justify-content:center}.dvtv span{width:44px;height:3px;background:#FF8A4C;border-radius:2px}
+.about{max-width:720px;margin:0 auto}.about h2{margin:2px 0 6px;font-size:26px}
+.flashjob{background:var(--band);color:var(--band-ink);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.flashjob .mut{color:var(--band-mut)}.flashjob b{font-size:19px}
+.flashjob.failed{border:2px solid var(--bad)}.fjbar{height:10px;border-radius:5px;background:rgba(255,255,255,.15)}.fjbar>div{height:10px;border-radius:5px;background:var(--last)}
+.stchip .dot{background:var(--mut)}.stchip.ok .dot{background:var(--ok)}.stchip.bad .dot{background:var(--bad)}.signform input{width:100%}
 </style>
 </head>
 <body>
@@ -669,11 +696,13 @@ function displaysTab(rc) {                        // Range Control → TV displa
   if (!D) return '';
   const list = D.displays || [];
   let h = '<div class="panel"><div class="row"><h3>Saved views</h3>' + (rc.dv ? '' : '<button class="pri" data-act="rcdvnew">New view</button>') + '</div>' +
-    (list.length ? '<table class="t dvlist"><tr><th>Name</th><th>Address</th><th>Shows</th><th>Follows</th><th>Showing now</th><th></th></tr>' + list.map(v =>
-      '<tr><td>' + esc(v.name) + '</td><td><a class="dvcode" href="/' + esc(v.code) + '" target="_blank" rel="noopener">' + esc(v.code) + '</a><div class="mut">' + esc(displayAddress(v.code)) + '</div></td>' +
-      '<td>' + esc(DV_SHOW[v.show]) + '</td><td>' + esc(displayFollows(v, D)) + (v.targets && v.targets.length ? '<div class="mut">' + v.targets.length + ' target' + (v.targets.length === 1 ? '' : 's') + ' chosen</div>' : '') + '</td>' +
-      '<td>' + (v.now.length ? v.now.map(m => esc(m.name) + ' <span class="mut">(' + esc(m.state) + ')</span>').join('<br>') : '<span class="mut">' + (v.follow === 'none' ? 'targets' : 'nothing yet') + '</span>') + '</td>' +
-      '<td><button data-act="rcdvedit" data-code="' + esc(v.code) + '">Edit</button> <button class="danger" data-act="rcdvdel" data-code="' + esc(v.code) + '">Delete</button></td></tr>').join('') + '</table>'
+    (list.length ? '<ul class="dvcards">' + list.map(v =>
+      '<li><div class="dvtop"><span class="dvtv" aria-hidden="true"><span></span></span><span class="lmain"><b>' + esc(v.name) + '</b><span class="mut">' + esc(DV_SHOW[v.show]) + ' · ' + esc(displayFollows(v, D)) +
+        (v.targets && v.targets.length ? ' · ' + v.targets.length + ' target' + (v.targets.length === 1 ? '' : 's') + ' chosen' : '') + '</span></span>' +
+        '<button data-act="rcdvedit" data-code="' + esc(v.code) + '">Edit</button></div>' +
+      '<div class="fact"><span>Showing now</span><span>' + (v.now.length ? v.now.map(m => esc(m.name) + ' <span class="mut">(' + esc(m.state) + ')</span>').join('<br>') : '<span class="mut">' + (v.follow === 'none' ? 'targets' : 'nothing yet') + '</span>') + '</span></div>' +
+      '<div class="fact"><span>On the TV, open</span><span><a class="dvcode num" href="/' + esc(v.code) + '" target="_blank" rel="noopener">' + esc(displayAddress(v.code)) + '</a></span></div>' +
+      '<div class="bulk"><button class="danger" data-act="rcdvdel" data-code="' + esc(v.code) + '">Delete</button></div></li>').join('') + '</ul>'
       : '<p class="mut">No saved views yet. A view is what one TV shows; each has a 5-character address to type into the TV\'s browser.</p>') +
     '<p class="mut">On the TV, open <b>' + esc(displayAddress('XXXXX')) + '</b> with the view\'s address. A display is read only: no menus, nothing to click. ' +
     'A view that follows a competition moves to the next relay when one is finished, and to the final when it is set up: the TV\'s address never changes.</p></div>';
@@ -1238,13 +1267,13 @@ function drawerHtml(targets, r, o) {
   const mine = (targets || []).find(t => t.lease && t.lease.mine);
   const item = (href, label, on, meta) => '<a class="item' + (on ? ' on' : '') + '" href="' + href + '"' + (on ? ' aria-current="page"' : '') + '>' + label +
     (meta ? '<span class="mut">' + esc(meta) + '</span>' : '') + '</a>';
-  const lanesOn = !(r.id || r.range || r.match || r.results || r.print);
+  const lanesOn = !(r.id || r.range || r.match || r.results || r.print || r.about);
   return '<button class="scrim" data-act="drawerclose" aria-label="Close the menu" tabindex="-1"></button>' +
     '<nav aria-label="FeT Monitor"><div class="dhead"><span style="flex:1"><b>FeT Monitor</b><span class="mut">' + esc(o.live || '') + '</span></span>' +
     '<button class="iconbtn" data-act="drawerclose" aria-label="Close the menu"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>' +
     (mine ? '<h2>Shooting</h2>' + item('#/t/' + encodeURIComponent(mine.device_id), 'My lane', r.id === mine.device_id, mine.lane != null ? laneOf(mine) : tName(mine)) : '') +
     '<h2>Watching</h2>' + item('#/', 'Lanes', lanesOn) + item('#/results', 'Results', !!r.results) +
-    '<h2>Range staff</h2>' + item('#/match', 'Match Control', !!r.match) + item('#/range', 'Range Control', !!r.range) +
+    '<h2>Range staff</h2>' + item('#/match', 'Match Control', !!r.match) + item('#/range', 'Range Control', !!r.range) + item('#/about', 'About', !!r.about) +
     '<div class="dfoot"><button id="dtheme" data-act="theme">' + (o.dark ? 'Light' : 'Dark') + '</button>' +
     (o.power ? '<button data-act="rcsys" data-a="restart">Restart the Pi</button><button class="danger" data-act="rcsys" data-a="shutdown">Shut the Pi down</button>' : '') +
     '</div></nav>';
@@ -1370,24 +1399,24 @@ function sightView(t, S) {
 // Logged-in range officers can change any target's mode (no control claim needed), remove dead targets and ban rogue ones.
 // Server updates: check GitHub, read the notes, install; the root helper reports its progress in status.
 const UPDATE_STATE = {running: 'Updating', done: 'Updated', failed: 'Update failed', rolled_back: 'Update rolled back'};
-function updatesPanel(u) {
+function updatesPanel(u) {                       // This Pi → FeT Monitor itself (FmThisPi): the version, updates signed from GitHub
   if (!u) return '';
-  const lc = u.last_check, st = u.status, L = lc && lc.latest;
-  let h = '<div class="panel"><h3>FeT Monitor updates</h3><p>Running <b>v' + esc(u.current) + '</b>.' +
-    (lc ? (lc.available ? '' : L ? ' This is the newest release (v' + esc(L.version) + ').' : ' No releases found.') : '') + '</p>';
+  const lc = u.last_check, st = u.status, L = lc && lc.latest, avail = !!(lc && lc.available && L);
+  let h = '<section class="panel"><div class="pihead"><h3>FeT Monitor ' + esc(u.current) + '</h3>' +
+    chipOk(lc ? !avail : null, avail ? 'Update available' : lc ? (L ? 'Up to date' : 'No releases found') : 'Not checked yet') + '</div>' +
+    '<div class="fact"><span>Updates</span><span>' + (avail ? 'v' + esc(L.version) + ' waiting' : L ? 'none waiting · newest is v' + esc(L.version) : '–') + '</span></div>' +
+    '<div class="fact"><span>From</span><span>signed releases on GitHub</span></div>';
   if (st) h += '<p class="' + (st.state === 'failed' || st.state === 'rolled_back' ? 'bad' : 'mut') + '">' + esc(UPDATE_STATE[st.state] || st.state) +
     (st.version ? ' (v' + esc(st.version) + ')' : '') + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>';
   if (u.pending) h += '<p class="mut">Update requested; waiting for the update service…</p>';
   if (!u.helper_installed) h += '<p class="bad">The update service is not installed on this Pi: re-run install.sh from a newer release once.</p>';
-  if (lc && lc.available && L) {
-    h += '<p><b>v' + esc(L.version) + '</b> is available' + (L.published ? ' (published ' + esc(when(L.published)) + ')' : '') + '. Release notes:</p>' +
-      '<div class="notes">' + esc(L.notes || '(no notes)') + '</div>' +
-      '<div class="bulk"><button class="pri" data-act="rcupinstall" data-v="' + esc(L.version) + '"' + (u.helper_installed && !u.pending ? '' : ' disabled') +
-      '>Install v' + esc(L.version) + '</button></div>';
+  if (avail) {
+    h += '<details class="rodet"><summary><b>Release notes</b> <span class="mut">v' + esc(L.version) + (L.published ? ', published ' + esc(when(L.published)) : '') + '</span></summary><div class="notes">' + esc(L.notes || '(no notes)') + '</div></details>' +
+      '<div class="bulk"><button class="pri" data-act="rcupinstall" data-v="' + esc(L.version) + '"' + (u.helper_installed && !u.pending ? '' : ' disabled') + '>Install v' + esc(L.version) + '</button></div>';
   }
   return h + '<div class="bulk"><button data-act="rcupcheck">Check for updates</button>' + (u.msg ? '<span class="bad">' + esc(u.msg) + '</span>' : '') +
     '</div><p class="mut">Only releases signed with the FeT Monitor release key are installed. The database is backed up first; ' +
-    'if the new version does not start, the previous version and its database come back by themselves.</p></div>';
+    'if the new version does not start, the previous version and its database come back by themselves.</p></section>';
 }
 const FLASH_FIELDS = ['fs_ssid', 'fs_pass', 'fs_name', 'fs_host', 'fs_ip', 'fs_gw'];
 function flashSettings(rc, f) {                 // the settings form's values (typed values survive redraws), or null without a WiFi name
@@ -1408,7 +1437,7 @@ function devCard(p, title, body, buttons) {      // one device plugged into the 
 const ownBackups = (f, p, pr) => (f.backups || []).filter(b => pr && pr.mac && pr.device !== 'mega' ? b.name.startsWith(pr.mac.replace(/:/g, ''))
   : pr && pr.device === 'mega' ? b.name.startsWith('mega-' + String(p.serial || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 20) + '-') : false);
 const backupLinks = bs => bs.map(b => '<a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' + Math.round(b.size / 1024) + ' KB</span>').join('<br>');
-function flashPanel(f, rc) {                    // Range Control → Flash a device: what is plugged into the Pi, and what it can get
+function flashPanel(f, rc) {                    // Range Control → Flash station: what is plugged into the Pi, and what it can get
   if (!f) return '';
   const job = f.job, running = job && job.state === 'running', kept = rc.flashf || {};
   const val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));
@@ -1435,10 +1464,10 @@ function flashPanel(f, rc) {                    // Range Control → Flash a dev
       idBtn(p) + (canCfg ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
   };
   const cards = f.ports.map(card).join('');
-  let h = '<div class="panel"><h3>Flash a device (USB)</h3>' +
-    (job ? '<div class="' + (job.state === 'failed' ? 'warnbox' : 'box') + '"><b>' + esc(job.port) + ' · ' + esc(job.what || ('FeT Bridge ' + job.version)) + ':</b> ' +
-      (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' ' + esc(job.percent) + ' %') : esc(job.message || job.state)) +
-      (running && job.kind !== 'configure' ? '<div style="height:6px;background:var(--line);border-radius:3px"><div style="height:6px;width:' + (+job.percent || 0) + '%;background:var(--accent);border-radius:3px"></div></div>' : '') + '</div>' : '') +
+  let h = (job ? '<section class="flashjob' + (job.state === 'failed' ? ' failed' : '') + '"><span class="mut">' + (running ? 'Running now' : job.state === 'failed' ? 'Failed' : 'Last job') + ' · ' + esc(job.port) + '</span>' +
+      '<b>' + esc(job.what || ('FeT Bridge ' + job.version)) + '</b><span>' + (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' · <span class="num">' + esc(job.percent) + ' %</span>') : esc(job.message || job.state)) + '</span>' +
+      (running && job.kind !== 'configure' ? '<div class="fjbar"><div style="width:' + (+job.percent || 0) + '%"></div></div><span class="mut">Keep it plugged in.</span>' : '') + '</section>' : '') +
+    '<div class="panel"><h3>Flash station</h3>' +
     (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
     (f.ports.length ? cards : '<p><b>Nothing is plugged in.</b></p><ul class="mut">' +
       '<li><b>FeT Bridge</b> (the target\'s WiFi module, an ESP-01 or ESP-01S): on a USB programmer, into a USB port of this Pi.</li>' +
@@ -1446,10 +1475,10 @@ function flashPanel(f, rc) {                    // Range Control → Flash a dev
       '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li></ul>' +
       '<p class="mut">Then press Identify. The firmware it gets comes from the Firmware tab.</p>') + '</div>';
   if (wantsForm) h += '<div class="panel"><h3>WiFi settings for the device</h3>' +
-    '<div class="bulk"><label>WiFi <input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label> <label>Password <input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
-    ' <label>Target name <input id="fs_name" maxlength="32" size="10" placeholder="Lane-1" value="' + val('fs_name') + '"></label></div>' +
-    '<div class="bulk"><label>This Pi\'s address <input id="fs_host" size="14" value="' + val('fs_host', f.server_host) + '"></label>' +
-    ' <label>Fixed IP <input id="fs_ip" size="13" placeholder="optional" value="' + val('fs_ip') + '"></label> <label>router <input id="fs_gw" size="13" value="' + val('fs_gw') + '"></label></div>' +
+    '<div class="npgrid"><label class="fld">WiFi<input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label><label class="fld">Password<input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
+    '<label class="fld">Target name<input id="fs_name" maxlength="32" placeholder="Lane-1" value="' + val('fs_name') + '"></label>' +
+    '<label class="fld">This Pi\'s address<input id="fs_host" value="' + val('fs_host', f.server_host) + '"></label>' +
+    '<label class="fld">Fixed IP<input id="fs_ip" placeholder="optional" value="' + val('fs_ip') + '"></label><label class="fld">Router<input id="fs_gw" value="' + val('fs_gw') + '"></label></div>' +
     '<p class="mut">With a WiFi name filled in, Install also configures the device, and Configure sends these settings to one that is already installed ' +
     '(FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware). It reports to this Pi (its port and token are added). Use the Pi\'s IP address: ' +
     'names ending in .local do not work for targets. The device checks the settings like its own setup page, keeps them, and restarts.</p>' +
@@ -1521,29 +1550,6 @@ const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No 
   ['face', 'Face sensor fitted', 'yesno', 0, 1, 'Only if a face-plate sensor is wired to the board: it tells a hit on the faceplate (a miss) from a shot.'],
   ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'A faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).', 'face'],
   ['vref_mv', 'Microphone threshold', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone. Lower is more sensitive. (ESP32 boards; on the Mega the trimmer RV1 sets it.)', 'esp32']];
-function targetSettingsPanel(d, rc) {          // Range Control → Target settings: the FeT targets; one opens in a sheet
-  const ts = (d.targets || []).filter(t => t.fet_target);
-  if (!ts.length) {                              // no target heard yet: say why (user testing, 2026-11-02)
-    const old = (d.targets || []).filter(t => /^\d+\.\d+\.\d+$/.test(t.bridge_fw || '') && !verAtLeast(t.bridge_fw, '0.4.0'));   // not esp32/...
-    return '<div class="panel"><h3>Target settings</h3><p class="mut">No target with FeT target firmware has reported yet. ' +
-      'Paper, lights and the other target settings appear here once one does. After installing it on a target\'s Arduino Mega (Flash a device): ' +
-      'the target\'s WiFi module needs <b>FeT Bridge 0.4.0</b> or newer to carry its messages; then switch the target off and on.</p>' +
-      (old.length ? '<p class="bad">Older FeT Bridge on: ' + old.map(t => esc(t.name) + ' (' + esc(t.bridge_fw) + ')').join(', ') + '. Update them under Firmware.</p>' : '') + '</div>';
-  }
-  const last = ft => ft.commands.length ? ft.commands[0] : null;
-  return '<div class="panel"><h3>Target settings</h3>' +
-    '<p class="mut">What each target itself does: paper, lights, timing. Press a target to see and change its settings. Where the microphones are ' +
-    '(calibration) is kept on this Pi, not in the target. Every change is signed for that target and refused while it is in a match.</p>' +
-    '<div class="scroll"><table class="t"><tr><th>Target</th><th>Board</th><th>Lights</th><th>Paper</th><th>Last command</th><th></th></tr>' + ts.map(t => {
-      const ft = t.fet_target, cur = ft.settings || {}, c = last(ft);
-      return '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span><b>' + esc(t.name) + '</b><div class="mut">' + esc(t.device_id) + '</div></td>' +
-        '<td>' + (ft.esp32 ? 'ESP32' : 'Arduino Mega') + ' · ' + esc(ft.version || '?') + (ft.key_fp ? '' : '<div class="bad">no key on this Pi</div>') + '</td>' +
-        '<td>' + (ft.asleep ? 'asleep' : cur.led_pct != null ? esc(cur.led_pct) + ' %' : '–') + '</td>' +
-        '<td>' + (cur.paper_ms != null ? esc(cur.paper_ms) + ' ms' + (cur.paper_eco_mm ? ', inside ' + esc(cur.paper_eco_mm) + ' mm' : '') : '–') + '</td>' +
-        '<td>' + (c ? esc(c.verb) + ': <span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(c.reply || c.status) + '</span>' : '–') + '</td>' +
-        '<td><button class="pri" data-act="rctopen" data-id="' + esc(t.device_id) + '">Settings…</button></td></tr>';
-    }).join('') + '</table></div></div>';
-}
 const dur = ms => { const s = Math.round(ms / 1000); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.floor(s / 3600) + ' h ' + Math.round(s % 3600 / 60) + ' min'; };
 function linkLines(t) {                          // the WiFi link: signal; for ESP32 boards (0.2.2+) why it started and its drops
   const L = t.link, out = [];
@@ -1575,82 +1581,118 @@ function deviceSection(t) {                    // the target as a device: trip p
     '<p class="mut">Setup portal opens the target\'s own setup WiFi (FeTMonitor-xxxxxx) for 15 minutes; shots keep flowing. Factory reset erases its ' +
     'WiFi settings, server address and stored shots, for selling or disposing of a target.</p>';
 }
-function targetSettingsSheet(t, d, rc) {       // one target's settings (the overlay sheet over Target settings)
-  const kept = rc.tsf || {}, ft = t.fet_target, cur = ft.settings || {}, id = t.device_id;
+function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): now, on the range, its settings, the device, actions
+  const kept = rc.tsf || {}, ft = t.fet_target, cur = (ft && ft.settings) || {}, id = t.device_id, eid = esc(id);
   const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
   const others = sleepers(d).filter(o => o.device_id !== id), apply = rc.tsApply || {}, napply = others.filter(o => apply[o.device_id]).length;
-  return '<div class="sheet wide"><div class="row"><h2>' + esc(t.name) + '</h2><button data-act="rctclose">Close</button></div>' +
-    '<p class="mut">' + esc(id) + ' · ' + (ft.esp32 ? 'ESP32 board' : 'Arduino Mega') + ' · FeT target ' + esc(ft.version || '?') + ' · key ' + esc(ft.key_fp || 'none') +
-    ' · start ' + esc(ft.boot == null ? '?' : ft.boot) + (ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + (ft.asleep ? ' · <b>asleep</b>' : '') + '</p>' +
-    (ft.key_fp ? '' : '<p class="bad">' + noKeyReason(ft) + '</p>') +
-    '<div class="tsgrid">' + TARGET_SETTINGS.filter(r => r[6] === 'esp32' ? !!ft.esp32 : !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
-      ? '<select id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
+  const fact = (k, v) => '<div class="fact"><span>' + k + '</span><span>' + v + '</span></div>';
+  const su = statusUrl(t.ip);
+  const now = '<section class="tsec"><h3>Now</h3>' +
+    fact('Firmware', esc(fwOf(t))) +
+    (ft ? fact('Signing key', ft.key_fp ? '<span class="num">' + esc(ft.key_fp) + '</span> <span class="ok">✓</span>' : '<span class="bad">none on this Pi</span>') : '') +
+    (t.rssi ? fact('WiFi signal', esc(t.rssi) + ' dBm' + (t.rssi < -70 ? ' <span class="bad">weak</span>' : '') + (t.link && t.link.ch ? ' · channel ' + esc(t.link.ch) : '')) : '') +
+    fact('Shot delivery', deliveryCell(t.delivery)) +
+    fact('Last report', esc(ago(t.last_seen)) + ' ago') +
+    fact('Address', su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') +
+    (ft && ft.asleep ? fact('Lights', '<b>asleep</b>') : '') + '</section>' + (ft && !ft.key_fp ? '<p class="bad">' + noKeyReason(ft) + '</p>' : '');
+  const range = '<section class="tsec"><h3>On the range</h3>' +
+    fact('Lane', '<button data-act="rclane" data-id="' + eid + '" title="Change the lane">' + esc(t.lane != null ? 'Lane ' + t.lane : 'Spare') + '</button>') +
+    '<div class="fact"><span>Face</span><span class="trow2"><select id="tsface" aria-label="Face on ' + esc(t.name) + '">' + (S.faces || [AR10]).map(f => '<option value="' + esc(f.id) + '"' + (f.id === (t.installed_face || AR10.id) ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select>' +
+      '<button data-act="rcface" data-id="' + eid + '">Set</button></span></div>' +
+    fact('Mode', badge(t.mode) + (t.shooter ? ' · ' + esc(t.shooter) : '')) +
+    fact('Athlete', t.athlete ? esc(t.athlete.name) + ' <button data-act="rcathout" data-id="' + eid + '">Sign out</button>'
+      : (rc.athletes && rc.athletes.length && t.lane != null ? '<button data-act="rcathin" data-id="' + eid + '">Sign in…</button>' : '–')) +
+    fact('Control', esc((t.lease && t.lease.held_by) || 'nobody')) +
+    '<div class="bulk">' + RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '" data-id="' + eid + '">' + m[1] + '</button>').join('') + '<button data-act="rcnew" data-id="' + eid + '">New series</button></div></section>';
+  const settings = ft ? '<section class="tsec"><h3>Settings</h3><div class="tsgrid">' + TARGET_SETTINGS.filter(r => r[6] === 'esp32' ? !!ft.esp32 : !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
+      ? '<select id="ts_' + eid + '_' + k + '" data-ts="' + eid + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
           '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
-      : '<input id="ts_' + esc(id) + '_' + k + '" data-ts="' + esc(id) + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
+      : '<input id="ts_' + eid + '_' + k + '" data-ts="' + eid + ':' + k + '" type="number" min="' + lo + '" max="' + hi + '" step="1" size="6" value="' + esc(val(k)) +
         '"> <span class="mut">' + esc(unit) + '</span>') + '</label>').join('') + '</div>' +
-    '<div class="bulk"><button class="pri" data-act="rctset" data-id="' + esc(id) + '">Save to target</button>' +
-    '<button data-act="rctget" data-id="' + esc(id) + '">Read from target</button>' +
-    '<button data-act="rctpaper" data-id="' + esc(id) + '">Advance paper</button></div>' +
+    '<div class="bulk"><button class="pri" data-act="rctset" data-id="' + eid + '">Save to target</button>' +
+    '<button data-act="rctget" data-id="' + eid + '">Read from target</button>' +
+    '<button data-act="rctpaper" data-id="' + eid + '">Advance paper</button></div>' +
     (rc.tsMsg ? '<p class="bad">' + esc(rc.tsMsg) + '</p>' : '') +
-    deviceSection(t) +
-    (others.length ? '<h4>Copy to other targets</h4><div class="bulk">' + others.map(o => '<label><input type="checkbox" data-act="rctapply" data-id="' + esc(o.device_id) + '"' +
+    (others.length ? '<details class="rodet"><summary><b>Copy these settings to other targets</b></summary><div class="tpick">' + others.map(o => '<label class="tick"><input type="checkbox" data-act="rctapply" data-id="' + esc(o.device_id) + '"' +
         (apply[o.device_id] ? ' checked' : '') + '> ' + esc(o.name) + '</label>').join('') + '</div>' +
-      '<div class="bulk"><button data-act="rctcopy" data-id="' + esc(id) + '"' + (napply ? '' : ' disabled') + '>Copy these settings to ' + napply + ' target' + (napply === 1 ? '' : 's') + '</button></div>' +
-      '<p class="mut">All the settings above as shown, except the microphone threshold (it belongs to each board). Each target gets them signed for itself.</p>' : '') +
-    (ft.commands.length ? '<h4>Commands</h4><table class="t"><tr><th>Command</th><th>Sent</th><th>Target says</th></tr>' + ft.commands.map(c =>
-      '<tr><td>' + esc(c.verb) + '</td><td>' + esc(c.status) + '</td><td class="' + (c.reply && c.reply !== 'ok' ? 'bad' : '') + '">' + esc(c.reply || '–') + '</td></tr>').join('') + '</table>' : '') +
-    '</div>';
+      '<div class="bulk"><button data-act="rctcopy" data-id="' + eid + '"' + (napply ? '' : ' disabled') + '>Copy these settings to ' + napply + ' target' + (napply === 1 ? '' : 's') + '</button></div>' +
+      '<p class="mut">All the settings above as shown, except the microphone threshold (it belongs to each board). Each target gets them signed for itself.</p></details>' : '') + '</section>' : '';
+  const device = ft ? '<section class="tsec">' + deviceSection(t) + '</section>'
+    : '<p class="mut">Paper, lights and the other target settings appear here once the target runs FeT target firmware (Flash station). Its WiFi module then needs <b>FeT Bridge 0.4.0</b> or newer to carry its messages' +
+      (isBridge(t) && !verAtLeast(t.bridge_fw, '0.4.0') ? ': <span class="bad">this one has ' + esc(t.bridge_fw) + ', update it under Firmware</span>' : '') + '.</p>';
+  const acts = '<section class="tsec"><h3>Actions</h3><div class="bulk">' +
+    (ft && ft.key_fp ? (ft.asleep ? '<button data-act="rcsleepsel" data-v="wake" data-id="' + eid + '">Wake</button>' : '<button data-act="rcsleepsel" data-v="sleep" data-id="' + eid + '">Sleep</button>') : '') +
+    '<button data-act="rccmd" data-type="reboot" data-id="' + eid + '">Restart</button>' +
+    '<button class="danger" data-act="rcremove" data-id="' + eid + '">Remove from this range</button><button class="danger" data-act="rcban" data-id="' + eid + '">Ban</button></div></section>';
+  const cmds = ft && ft.commands.length ? '<details class="rodet"><summary><b>Commands sent</b> <span class="mut">' + ft.commands.length + '</span></summary><ul class="flist">' + ft.commands.map(c =>
+      '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(c.reply || '–') + '</span></span></li>').join('') + '</ul></details>' : '';
+  return '<div class="sheet wide"><div class="shhead"><span><span class="mut">' + (boardOf(t) ? esc(boardOf(t)) + ' · ' : '') + eid + (ft && ft.boot != null ? ' · start ' + esc(ft.boot) : '') + (ft && ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span>' +
+    '<h2><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span> ' + esc(laneTitle(t)) + (t.online ? '' : ' <span class="bad">not reporting</span>') + '</h2></span>' +
+    '<button class="iconbtn" data-act="rctclose" aria-label="Close">' + LI.close + '</button></div>' + now + range + settings + device + acts + cmds + '</div>';
 }
 function noKeyReason(ft) {                       // why this Pi cannot sign for the target yet, and what to do
   const where = ft.esp32 ? 'its ESP32 board' : 'its Arduino Mega';
   if (ft.hello_key_fp && ft.hello_key_fp !== 'none')
     return 'This target signs with key ' + esc(ft.hello_key_fp) + ', which this Pi does not know (set by another Pi?). Plug ' + where +
-      ' into this Pi\'s flash station (Flash a device) and press New key.';
+      ' into this Pi\'s flash station (Flash station) and press New key.';
   if (ft.hello_key_fp === 'none')
-    return 'This target has no key yet: plug ' + where + ' into this Pi\'s flash station (Flash a device) and press New key.';
+    return 'This target has no key yet: plug ' + where + ' into this Pi\'s flash station (Flash station) and press New key.';
   return 'Its shots arrive, but its hello has not: switch the target off and on (FeT target 0.1.3 and newer repeat it), or give it a key ' +
     'with the flash station (New key).';
 }
 const isBridge = t => /^\d+\.\d+\.\d+$/.test(t.bridge_fw || '');   // an ESP-01 with FeT Bridge (an ESP32 board says esp32/...)
-function firmwareTab(d, rc) {                    // Range Control → Firmware: the images on this Pi and who runs what (its own lists)
-  const ts = d.targets || [], fsel = rc.fwSel || {};
+const newestImg = list => (list || []).reduce((b, m) => !b || (verAtLeast(m.version, b.version) && m.version !== b.version) ? m : b, null);
+function fwSummary(ts, newest, ver) {           // who runs what, against the newest image on this Pi: [behind, line]
+  const on = ts.filter(t => t.online), off = ts.length - on.length;
+  if (!ts.length) return [[], 'None has reported'];
+  if (!newest) return [[], on.length + ' reporting · no image on this Pi yet'];
+  const behind = on.filter(t => ver(t) && verAtLeast(newest.version, ver(t)) && ver(t) !== newest.version);
+  const names = l => l.map(t => laneTitle(t)).join(', ');
+  return [behind, (behind.length ? names(behind) + ' on an older version' : on.length ? 'All ' + on.length + ' reporting are up to date' : 'None reporting now') + (off ? ' · ' + off + ' not reporting' : '')];
+}
+function firmwareTab(d, rc) {                    // Range Control → Firmware (FmFirmware): one card per firmware, then the details
+  const ts = (d.targets || []).slice().sort(byLane), fsel = rc.fwSel || {};
   const bridges = ts.filter(isBridge), megas = ts.filter(t => t.fet_target && !t.fet_target.esp32), e32 = ts.filter(t => t.fet_target && t.fet_target.esp32);
   const nsel = bridges.filter(t => fsel[t.device_id]).length, all = bridges.length > 0 && nsel === bridges.length;
   const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
-  const newest = list => (list || []).reduce((b, m) => !b || (verAtLeast(m.version, b.version) && m.version !== b.version) ? m : b, null);
-  const nm = newest(rc.timages);
-  let h = '<div class="panel"><h3>FeT Bridge (the targets\' WiFi modules)</h3>' +
-    (bridges.length ? '<div class="bulk"><span>' + nsel + ' selected</span><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' to the best image</button>' +
+  const nb = newestImg(imgs), nm = newestImg(rc.timages), ne = newestImg(rc.e32images);
+  const [bBehind, bLine] = fwSummary(bridges, nb, t => t.bridge_fw), [mBehind, mLine] = fwSummary(megas, nm, t => t.fet_target.version), [, eLine] = fwSummary(e32, ne, t => t.fet_target.version);
+  const card = (name, img, line, behind, btn) => '<section class="fwcard"><div class="fwtop"><b>' + name + '</b><span class="num">' + esc(img ? img.version : '–') + '</span></div>' +
+    '<span class="mut">' + (img ? 'Newest on this Pi' : 'No image on this Pi yet') + '</span><span class="' + (behind.length ? 'bad' : /up to date/.test(line) ? 'ok' : 'mut') + '">' + esc(line) + '</span>' + (btn || '') + '</section>';
+  let h = '<div class="fwintro"><span class="mut">Signed releases from GitHub, checked on this Pi. A target keeps its old firmware if an update fails; nothing updates during a match.</span></div>' +
+    card('FeT Bridge (ESP-01 WiFi module)', nb, bLine, bBehind, bBehind.length && nb ? '<button class="pri" data-act="rcbestall">Update ' + esc(bBehind.map(t => laneTitle(t)).join(', ')) + '</button>' : '') +
+    card('FeT target (Arduino Mega)', nm, mLine, mBehind, mBehind.length ? '<span class="mut">A Mega updates by USB: plug it into this Pi (Flash station).</span>' : '') +
+    card('FeT target (ESP32 board)', ne, eLine, [], '');
+  h += '<details class="panel rodet"' + (rc.fwOpen === 'b' ? ' open' : '') + '><summary><b>FeT Bridge</b> <span class="mut">targets, images, upload</span></summary>' +
+    (bridges.length ? '<label class="tick"><input type="checkbox" data-act="rcfwall"' + (all ? ' checked' : '') + '> All (' + nsel + ' ticked)</label><ul class="mclist">' +
+      bridges.map(t => '<li><label class="tick"><input type="checkbox" data-act="rcfwsel" data-id="' + esc(t.device_id) + '"' + (fsel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></label>' +
+        '<span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT Bridge ' + esc(t.bridge_fw) + (t.flash_size ? ' · ' + esc(Math.round(t.flash_size / 1048576) + ' MB') : '') + '</span>' +
+        (fwJobText(t, imgs) ? '<span>' + fwJobText(t, imgs) + '</span>' : '') + '</span></li>').join('') + '</ul>' +
+      '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' to the best image</button>' +
       '<button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' + esc((imgs.find(m => m.sha256 === pick) || {}).version || '–') + ')</button></div>' +
-      '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcfwall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th><th>Target</th><th>FeT Bridge</th><th>Flash</th><th>Update</th></tr>' +
-      bridges.map(t => '<tr><td><input type="checkbox" data-act="rcfwsel" data-id="' + esc(t.device_id) + '"' + (fsel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
-        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td><td>' + esc(t.bridge_fw) + '</td>' +
-        '<td>' + (t.flash_size ? esc(Math.round(t.flash_size / 1048576) + ' MB') : '–') + '</td><td>' + (fwJobText(t, imgs) || '<span class="mut">–</span>') + '</td></tr>').join('') + '</table></div>' +
-      '<p class="mut"><b>Best</b> gives each selected target the newest image built for its flash size that fits it; targets that are up to date or have no ' +
+      '<p class="mut"><b>Best</b> gives each ticked target the newest image built for its flash size that fits it; targets that are up to date or have no ' +
       'suitable image are skipped with the reason. <b>Install the chosen image</b> (below) is for going back to an older version. Targets on firmware ' +
-      'older than 0.2.0 need one update by USB first (Flash a device).</p>' : '<p class="mut">No target with FeT Bridge has reported.</p>') +
+      'older than 0.2.0 need one update by USB first (Flash station).</p>' : '<p class="mut">No target with FeT Bridge has reported.</p>') +
     (rc.fwMsg ? '<p class="' + (rc.fwMsgBad ? 'bad' : 'mut') + '">' + esc(rc.fwMsg) + '</p>' : '') +
     '<h4>Images on this Pi</h4>' +
-    (imgs.length ? '<table class="t"><tr><th></th><th>Version</th><th>Flash</th><th>Size</th><th>SHA-256</th><th>Uploaded</th><th></th></tr>' + imgs.map(m =>
-      '<tr><td><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Choose ' + esc(m.version) + '"></td>' +
-      '<td><b>' + esc(m.version) + '</b></td><td>' + esc(Math.round(m.flash_size / 1048576) + ' MB') + '</td><td>' + esc(Math.round(m.size / 1024) + ' KB') + '</td>' +
-      '<td><code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code></td><td>' + esc(when(new Date(m.uploaded).toISOString())) + '</td>' +
-      '<td><button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></td></tr>').join('') + '</table>' : '<p class="mut">None yet.</p>') +
+    (imgs.length ? '<ul class="mclist">' + imgs.map(m => '<li><label class="tick"><input type="radio" name="fwpick" data-act="rcpick" data-sha="' + esc(m.sha256) + '"' + (m.sha256 === pick ? ' checked' : '') + ' aria-label="Choose ' + esc(m.version) + '"></label>' +
+      '<span class="lmain"><b>' + esc(m.version) + '</b><span class="mut">' + esc(Math.round(m.flash_size / 1048576) + ' MB flash · ' + Math.round(m.size / 1024) + ' KB · ') + '<code title="' + esc(m.sha256) + '">' + esc(m.sha256.slice(0, 12)) + '…</code> · ' + esc(when(new Date(m.uploaded).toISOString())) + '</span></span>' +
+      '<button class="danger" data-act="rcfwdel" data-sha="' + esc(m.sha256) + '">Delete</button></li>').join('') + '</ul>' : '<p class="mut">None yet.</p>') +
     '<div class="bulk"><button data-act="rcfwgh">Check GitHub for FeT Bridge firmware</button><button data-act="rcpickfiles"' + (rc.uploading ? ' disabled' : '') + '>' +
     (rc.uploading ? 'Uploading…' : 'Upload .bin files…') + '</button></div>' +
     (rc.fwResults && rc.fwResults.length ? '<ul class="fwres">' + rc.fwResults.map(r => '<li class="' + (r.ok ? 'mut' : 'bad') + '"><b>' + esc(r.name) + '</b>: ' + esc(r.text) + '</li>').join('') + '</ul>' : '') +
-    '<p class="mut">From Arduino: Sketch &gt; Export Compiled Binary (Flash Mode DOUT), one file per flash size. Only FeT Bridge 0.2.0 or newer is accepted.</p></div>';
-  h += '<div class="panel"><h3>FeT target firmware: ESP32 boards</h3>' +
-    (e32.length ? '<table class="t"><tr><th>Target</th><th>Firmware</th><th></th></tr>' + e32.map(t => '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td>' +
-      '<td>' + esc(t.fet_target.version || '?') + '</td><td>' + esp32Update(t, rc) + '</td></tr>').join('') + '</table>' +
+    '<p class="mut">From Arduino: Sketch &gt; Export Compiled Binary (Flash Mode DOUT), one file per flash size. Only FeT Bridge 0.2.0 or newer is accepted.</p></details>';
+  h += '<details class="panel rodet"' + (rc.fwOpen === 'e' ? ' open' : '') + '><summary><b>FeT target, ESP32 boards</b> <span class="mut">targets, images</span></summary>' +
+    (e32.length ? '<ul class="mclist">' + e32.map(t => '<li><span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') + '</span></span>' +
+      '<span class="lacts">' + esp32Update(t, rc) + '</span></li>').join('') + '</ul>' +
       '<p class="mut">Over WiFi: the target fetches the image from this Pi and installs it only if it is the one this Pi signed for it; if the new firmware ' +
       'does not reach FeT Monitor, its next start goes back to the old one. Not during a match.</p>' : '<p class="mut">No ESP32 target has reported.</p>') +
-    '<h4>Images on this Pi</h4>' + esp32Images(rc) + '</div>';
-  h += '<div class="panel"><h3>FeT target firmware: Arduino Mega</h3>' +
-    (megas.length ? '<table class="t"><tr><th>Target</th><th>Firmware</th><th></th></tr>' + megas.map(t => '<tr><td><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</td>' +
-      '<td>' + esc(t.fet_target.version || '?') + '</td><td class="mut">' + (nm ? (t.fet_target.version === nm.version ? 'the newest on this Pi' : nm.version + ' on this Pi') : '') + '</td></tr>').join('') + '</table>' : '<p class="mut">No Mega target has reported.</p>') +
-    '<p class="mut">A Mega is installed by USB: plug it into this Pi and use Flash a device.</p>' +
-    '<h4>Images on this Pi</h4>' + targetImages(rc) + '</div>';
+    '<h4>Images on this Pi</h4>' + esp32Images(rc) + '</details>';
+  h += '<details class="panel rodet"' + (rc.fwOpen === 'm' ? ' open' : '') + '><summary><b>FeT target, Arduino Mega</b> <span class="mut">targets, images</span></summary>' +
+    (megas.length ? '<ul class="mclist">' + megas.map(t => '<li><span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') +
+      (nm ? (t.fet_target.version === nm.version ? ' · the newest on this Pi' : ' · ' + esc(nm.version) + ' on this Pi') : '') + '</span></span></li>').join('') + '</ul>' : '<p class="mut">No Mega target has reported.</p>') +
+    '<p class="mut">A Mega is installed by USB: plug it into this Pi and use the Flash station.</p>' +
+    '<h4>Images on this Pi</h4>' + targetImages(rc) + '</details>';
   return h;
 }
 function esp32Update(t, rc) {                     // an ESP32 target: signed update over WiFi to the newest image here
@@ -1693,30 +1735,34 @@ const SYS_FIELDS = {hostname: ['sy_host'], timezone: ['sy_tz'], admin: ['sy_user
 // Range Control -> This Pi: link this Pi to a range on deepTENS by a code, see what waits to be sent, unlink.
 const DT_MARK = '<img class="dt-l" src="/deeptens-flower.png" alt="" width="22" height="22" onerror="this.style.visibility=\'hidden\'"><img class="dt-d" src="/deeptens-flower-dark.png" alt="" width="22" height="22" onerror="this.style.visibility=\'hidden\'">';   // the tens flower, light and dark, downloaded from deepTENS once linked
 const dtIcon = st => DT_MARK + '<span class="ball' + (st.connected ? ' on' : '') + '"></span>';
-function deeptensPanel(st) {
+const chipOk = (ok, text) => '<span class="stchip' + (ok ? ' ok' : ok === false ? ' bad' : '') + '"><span class="dot' + (ok ? ' on' : '') + '" aria-hidden="true"></span>' + esc(text) + '</span>';
+const DT_GIVES = 'Staff sign-in with deepTENS · results published when you choose · athletes\' histories · the public lane board. Everything still works with no internet.';
+function deeptensPanel(st, nowMs) {             // This Pi → deepTENS (FmThisPi, FmLink): linked, linking (code and QR), or not
   if (!st) return '';
-  let h = '<div class="panel"><h3>deepTENS</h3>';
-  if (st.linked) {
-    h += '<p>Linked to <b>' + esc((st.range || {}).name || '?') + '</b> on ' + esc(st.url) + '. ' +
-      (st.connected ? '<span class="ok">Connected.</span>' : '<span class="bad">Not connected' + (st.last_ok_ms ? ' since ' + esc(clock(new Date(st.last_ok_ms).toISOString())) : '') + '.</span>') +
-      ' ' + (st.outbox ? esc(st.outbox) + ' waiting to be sent.' : 'Nothing waiting.') + '</p>' +
-      (st.error ? '<p class="mut">' + esc(st.error) + '</p>' : '') +
-      (st.lane_conflicts.length ? '<p class="bad">Another FeT Monitor of this range also has lane ' + st.lane_conflicts.map(esc).join(', ') + ': each lane number is used once per range.</p>' : '') +
-      (st.rejected.length ? '<p class="bad">Refused by deepTENS (not sent again): ' + st.rejected.map(x => esc(x.key) + ' (' + esc(x.why) + ')').join(', ') + '</p>' : '') +
-      '<div class="bulk"><button class="danger" data-act="rcdtunlink">Unlink</button></div>';
-  } else if (st.linking) {
-    h += '<p>On a phone or computer, open <a href="' + esc(st.linking.uri_complete) + '" target="_blank" rel="noopener">' + esc(st.linking.uri) + '</a>, ' +
-      'sign in as the range\'s Range Manager (with a passkey or two steps), and enter this code:</p><p class="dtcode">' + esc(st.linking.user_code) + '</p>' +
-      '<p class="mut">The code lasts 15 minutes. This page shows the link as soon as it is approved.</p>' +
-      '<div class="bulk"><button data-act="rcdtcancel">Cancel</button></div>';
-  } else {
-    h += '<p>Link this Pi to your range on deepTENS: matches go up there, and their Match Directors can publish results. ' +
-      'Shooting never waits for deepTENS: what is for it waits here while the internet is down.</p>' +
-      (st.unlinked_remotely ? '<p class="bad">This Pi was unlinked on deepTENS.</p>' : st.error ? '<p class="bad">' + esc(st.error) + '</p>' : '') +
-      '<div class="bulk"><label>deepTENS address <input type="url" id="dt_url" size="28" value="' + esc(st.url) + '"></label>' +
-      '<button class="pri" data-act="rcdtlink">Link to deepTENS</button></div>';
+  const fact = (k, v) => '<div class="fact"><span>' + k + '</span><span>' + v + '</span></div>';
+  if (st.linked) return '<section class="panel"><div class="pihead"><h3>deepTENS</h3>' + chipOk(st.connected, st.connected ? 'Linked' : 'Not connected') + '</div>' +
+    fact('Range', esc((st.range || {}).name || '?')) + fact('Address', esc(st.url)) +
+    fact('Waiting to send', st.outbox ? esc(st.outbox) : 'nothing · all delivered') +
+    (!st.connected && st.last_ok_ms ? fact('Last reached', esc(clock(new Date(st.last_ok_ms).toISOString()))) : '') +
+    (st.error ? '<p class="mut">' + esc(st.error) + '</p>' : '') +
+    (st.lane_conflicts.length ? '<p class="bad">Another FeT Monitor of this range also has lane ' + st.lane_conflicts.map(esc).join(', ') + ': each lane number is used once per range.</p>' : '') +
+    (st.rejected.length ? '<p class="bad">Refused by deepTENS (not sent again): ' + st.rejected.map(x => esc(x.key) + ' (' + esc(x.why) + ')').join(', ') + '</p>' : '') +
+    '<p class="mut">Shooting never waits for deepTENS: what is for it waits here while the internet is down.</p>' +
+    '<div class="bulk"><button class="danger" data-act="rcdtunlink">Unlink from deepTENS…</button></div></section>';
+  if (st.linking) {
+    const L = st.linking, left = L.expires_ms ? Math.max(0, Math.ceil((L.expires_ms - (nowMs || Date.now())) / 60000)) : null;
+    return '<section class="panel dtlink"><h3>Link to deepTENS</h3><div class="dtgrid"><div><span class="mut">This range\'s link code</span><p class="dtcode num">' + esc(L.user_code) + '</p>' +
+      '<p class="mut">' + (left === 0 ? '<span class="bad">The code has run out: cancel and start again.</span>' : 'Waiting for deepTENS' + (left != null ? ' · code valid ' + left + ' more minute' + (left === 1 ? '' : 's') : '')) + '</p></div>' +
+      (qrSvg(L.uri_complete) ? '<span class="dtqr" role="img" aria-label="QR code to open ' + esc(L.uri) + ' with the code">' + qrSvg(L.uri_complete) + '</span>' : '') + '</div>' +
+      '<ol class="steps"><li>On a phone or computer with internet, open <a href="' + esc(L.uri_complete) + '" target="_blank" rel="noopener">' + esc(L.uri) + '</a> (or scan the code).</li>' +
+      '<li>Sign in as the range\'s Range Manager (with a passkey or two steps) and choose your range, or create it.</li><li>Enter the code. This page says Linked as soon as it is approved.</li></ol>' +
+      '<p class="mut"><b>Linked, your range gets</b> ' + DT_GIVES + '</p><div class="bulk"><button data-act="rcdtcancel">Cancel</button></div></section>';
   }
-  return h + '</div>';
+  return '<section class="panel"><div class="pihead"><h3>deepTENS</h3>' + chipOk(null, 'Not linked') + '</div>' +
+    '<p>Link this Pi to your range on deepTENS: matches go up there, and their Match Directors can publish results.</p><p class="mut">' + DT_GIVES + '</p>' +
+    (st.unlinked_remotely ? '<p class="bad">This Pi was unlinked on deepTENS.</p>' : st.error ? '<p class="bad">' + esc(st.error) + '</p>' : '') +
+    '<label class="fld">deepTENS address<input type="url" id="dt_url" value="' + esc(st.url) + '"></label>' +
+    '<div class="bulk"><button class="pri" data-act="rcdtlink">Link to deepTENS</button></div></section>';
 }
 function systemPanel(v, rc) {                   // Range Control → This Pi (fetserver/appliance.py, root helper fetsetup/sysreq.py)
   if (!v) return '';
@@ -1809,11 +1855,13 @@ const RC_NEEDS = {                              // what each tab asks the Pi for
   targets: ['/targets', '/athletes', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
   firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
   users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
-const RC_TABS = [['targets', 'Targets'], ['settings', 'Target settings'], ['tv', 'TV displays'], ['flash', 'Flash a device'], ['firmware', 'Firmware'],
-  ['updates', 'Updates'], ['pi', 'This Pi'], ['users', 'Users']];
-const rcTab = () => {                           // #/range/<tab>; Targets when none (or an unknown one) is named
-  const m = typeof location !== 'undefined' && location.hash.match(/^#\/range\/(\w+)/);
-  return m && RC_TABS.some(t => t[0] === m[1]) ? m[1] : 'targets';
+const RC_TABS = [['targets', 'Targets'], ['firmware', 'Firmware'], ['flash', 'Flash station'], ['tv', 'TV displays'], ['pi', 'This Pi'], ['users', 'Staff']];
+const RC_OLD = {settings: 'targets', updates: 'pi'};   // older addresses still open the right tab
+const rcTab = hash => {                         // #/range/<tab>; Targets when none (or an unknown one) is named
+  if (hash == null) hash = typeof location !== 'undefined' ? location.hash : '';
+  const m = hash.match(/^#\/range\/(\w+)/);
+  const k = m ? (RC_OLD[m[1]] || m[1]) : '';
+  return RC_TABS.some(t => t[0] === k) ? k : 'targets';
 };
 function rangeView(S) {                          // Range Control: one tab at a time; each tab keeps its own choices
   const rc = S.rc || {}, st = rc.status, tab = S.rcTab || rcTab();
@@ -1823,14 +1871,12 @@ function rangeView(S) {                          // Range Control: one tab at a 
   if (!st.password_set) return h + dtSignin('range') + '<p>Range Control has no password yet. Set one on the Pi:</p>' +
     '<p><code>cd /opt/fet-monitor &amp;&amp; sudo -u fet-monitor python3 -m fetserver set-password --data-dir /var/lib/fet-monitor</code></p>' +
     '<p class="mut">or re-run the installer with <code>--reset-password</code>.</p></div></div>';
-  if (!st.logged_in) return h + dtSignin('range') + '<p>Log in to change any target, remove or ban targets.</p>' +
-    '<div class="row" style="justify-content:flex-start;gap:8px"><input id="rcpw" type="password" autocomplete="current-password" placeholder="Range Control password">' +
-    '<button class="pri" data-act="rclogin">Log in</button></div>' + (rc.msg ? '<p class="bad">' + esc(rc.msg) + '</p>' : '') +
-    '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div></div>';
+  if (!st.logged_in) return '<div class="rc">' + staffSignIn('Range Control', 'range', '<div class="signform"><label class="fld">Range Control password<input id="rcpw" type="password" autocomplete="current-password"></label>' +
+    '<button class="pri" data-act="rclogin">Log in</button></div>', rc.msg) + '</div>';
   h += tabStrip(RC_TABS, tab, k => '#/range' + (k === 'targets' ? '' : '/' + k), 'Range Control') + '</div>';
   const d = rc.data || {targets: [], banned: []};
-  const body = tab === 'settings' ? targetSettingsPanel(d, rc) : tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
-    : tab === 'tv' ? displaysTab(rc) : tab === 'updates' ? updatesPanel(rc.updates) : tab === 'pi' ? deeptensPanel(rc.dt) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+  const body = tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
+    : tab === 'tv' ? displaysTab(rc) : tab === 'pi' ? updatesPanel(rc.updates) + deeptensPanel(rc.dt) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
@@ -1843,49 +1889,47 @@ function deliveryCell(D) {                       // the 5-second goal: worst and
 }
 const faceName = id => ((S.faces || [AR10]).find(f => f.id === (id || AR10.id)) || {name: id}).name;
 const sleepers = d => (d.targets || []).filter(t => t.fet_target && t.fet_target.key_fp);   // targets that can be put to sleep
-function targetsTab(d, rc) {                     // the targets: mode, session, sleep, restart, remove, ban
-  const sel = rc.sel || {}, ids = d.targets.map(t => t.device_id);
+const boardOf = t => t.fet_target ? (t.fet_target.esp32 ? 'ESP32 board' : 'Arduino Mega' + (isBridge(t) ? ' + ESP-01' : '')) : isBridge(t) ? 'ESP-01 (FeT Bridge)' : '';
+const fwOf = t => { const ft = t.fet_target; return [ft && ft.version ? 'FeT target ' + ft.version : '', isBridge(t) ? 'Bridge ' + t.bridge_fw : !ft && t.bridge_fw ? t.bridge_fw : ''].filter(Boolean).join(' · ') || 'firmware unknown'; };
+function rcAttention(d) {                        // what needs the Range Manager's eye (FmRangePhone "Needs attention")
+  const out = [];
+  (d.targets || []).forEach(t => {
+    if (!t.online && t.lane != null) out.push([esc(laneTitle(t)) + ' is not reporting', 'Last report ' + esc(ago(t.last_seen)) + ' ago. Check its power and WiFi.', t.device_id]);
+    else if (t.fet_target && !t.fet_target.key_fp) out.push([esc(laneTitle(t)) + ': this Pi has no key for it', 'Its settings cannot be changed until it has one (Flash station, New key).', t.device_id]);
+    if (t.online && t.delivery && t.delivery.over_goal) out.push([esc(laneTitle(t)) + ': slow shots', t.delivery.over_goal + ' shot(s) took over 5 s in the last 24 h. Check its WiFi signal.', t.device_id]);
+  });
+  return out;
+}
+function targetsTab(d, rc) {                     // Range Control → Targets (FmRangePhone): what needs attention, every target, several at once
+  const sel = rc.sel || {}, ts = (d.targets || []).slice().sort(byLane), ids = ts.map(t => t.device_id);
   const nsel = ids.filter(i => sel[i]).length, all = ids.length > 0 && nsel === ids.length, dis = nsel ? '' : ' disabled';
-  const sl = sleepers(d), asleep = sl.filter(t => t.fet_target.asleep).length;
-  let h = '<div class="panel"><div class="row"><h3>Sleep</h3><span class="mut">' + (sl.length ? asleep + ' of ' + sl.length + ' asleep' : 'no target can sleep yet') + '</span></div>' +
-    '<div class="bulk"><button class="pri" data-act="rcsleep" data-v="sleep"' + (sl.length ? '' : ' disabled') + '>Sleep all</button>' +
-    '<button data-act="rcsleep" data-v="wake"' + (sl.length ? '' : ' disabled') + '>Wake all</button>' + (rc.sleepMsg ? '<span class="bad">' + esc(rc.sleepMsg) + '</span>' : '') + '</div>' +
-    '<p class="mut">A sleeping target has its lights out and ignores shots (no record, no paper). It wakes with Wake, its lights button, ' +
-    'when a shooter takes control of it, when it is put into a match, or when it restarts. A target in a match cannot be put to sleep.</p></div>';
-  h += '<div class="panel"><h3>Targets</h3><p class="mut">These apply to the selected targets at once and do not need control of them; whoever is in control keeps it.</p>' +
-    '<div class="bulk"><span>' + nsel + ' selected</span>' +
-    RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + dis + '>' + m[1] + '</button>').join('') +
-    '<button data-act="rcnew"' + dis + '>New series</button>' +
-    '<button data-act="rcsleepsel" data-v="sleep"' + dis + '>Sleep</button><button data-act="rcsleepsel" data-v="wake"' + dis + '>Wake</button>' +
-    '<select id="rcfacepick" aria-label="Target face">' + (S.faces || [AR10]).map(f => '<option value="' + esc(f.id) + '"' + (f.id === rc.facePick ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select>' +
-    '<button data-act="rcface"' + dis + '>Set face</button>' +
-    '<button data-act="rccmd" data-type="reboot"' + dis + '>Restart</button>' +
-    '<button class="danger" data-act="rcremove"' + dis + '>Remove</button>' +
-    '<button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
-    '<div class="scroll"><table class="t"><tr><th><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + ' aria-label="Select all"></th>' +
-    '<th title="Each lane number is used once. A target without one is a spare: no matches, never shown publicly.">Lane</th>' +
-    '<th>Target</th><th>Mode</th><th>Session</th><th title="The deepTENS athlete signed in on the lane">Athlete</th><th>Control</th><th>Face</th><th>Lights</th><th>Address</th><th>Firmware</th><th>Last report</th>' +
-    '<th title="How long shots took from the target to this Pi, last 24 h (goal: under 5 s)">Shot delivery</th></tr>' +
-    (d.targets.length ? d.targets.map(t => {
-      const su = statusUrl(t.ip), ft = t.fet_target;
-      return '<tr><td><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></td>' +
-        '<td><button data-act="rclane" data-id="' + esc(t.device_id) + '" title="Change the lane">' + esc(laneOf(t)) + '</button></td>' +
-        '<td><span class="dot ' + (t.online ? 'on' : '') + '"></span><a href="#/t/' + encodeURIComponent(t.device_id) + '">' + esc(t.name) + '</a><div class="mut">' + esc(t.device_id) + '</div></td>' +
-        '<td>' + badge(t.mode) + '</td><td>' + esc(t.shooter || '–') + '</td>' +
-        '<td>' + (t.athlete ? esc(t.athlete.name) + ' <button data-act="rcathout" data-id="' + esc(t.device_id) + '">Sign out</button>'
-          : (rc.athletes && rc.athletes.length && t.lane != null ? '<button data-act="rcathin" data-id="' + esc(t.device_id) + '">Sign in…</button>' : '–')) + '</td>' +
-        '<td>' + esc(t.lease.held_by || '–') + '</td>' +
-        '<td>' + esc(faceName(t.installed_face)) + '</td>' +
-        '<td>' + (ft && ft.key_fp ? (ft.asleep ? '<b>asleep</b>' : 'on') : '–') + '</td>' +
-        '<td>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') + '</td>' +
-        '<td>' + esc(ft && ft.version ? 'FeT target ' + ft.version : t.bridge_fw || '–') + '</td><td>' + esc(ago(t.last_seen)) + ' ago</td>' +
-        '<td>' + deliveryCell(t.delivery) + '</td></tr>';
-    }).join('') : '<tr><td colspan="13" class="mut">No targets.</td></tr>') + '</table></div>' +
-    '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. ' +
-    'Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></div>';
-  return h + '<div class="panel"><h3>Banned</h3>' + (d.banned.length ? '<table class="t">' + d.banned.map(b =>
-    '<tr><td>' + esc(b.name) + '<div class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + '</div></td><td>last report ' + esc(ago(b.last_seen)) + ' ago</td>' +
-    '<td><button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></td></tr>').join('') + '</table>' : '<p class="mut">None.</p>') + '</div>';
+  const sl = sleepers(d), asleep = sl.filter(t => t.fet_target.asleep).length, att = rcAttention(d);
+  let h = att.length ? '<section class="panel attn"><h3>Needs attention</h3>' + att.map(([t, x, id]) => '<button class="attrow" data-act="rctopen" data-id="' + esc(id) + '"><b>' + t + '</b><span class="mut">' + x + '</span></button>').join('') + '</section>' : '';
+  h += '<div class="rlisthead"><b>' + ts.length + (ts.length === 1 ? ' target' : ' targets') + '</b><span class="mut">Signal · shot delivery</span></div><ul class="tlist">' + (ts.length ? ts.map(t => {
+    const D = t.delivery, med = D && D.shots ? (D.median_ms / 1000).toFixed(1) + ' s' : '–', ft = t.fet_target;
+    return '<li><button class="trow' + (t.online ? '' : ' off') + '" data-act="rctopen" data-id="' + esc(t.device_id) + '"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' +
+      '<span class="tmain"><b>' + esc(laneTitle(t)) + (boardOf(t) ? ' <span class="mut">· ' + esc(boardOf(t)) + '</span>' : '') + '</b><span class="mut">' +
+      (t.online ? esc(fwOf(t)) + (ft && ft.asleep ? ' · asleep' : '') + (t.lane == null ? ' · spare' : '') : 'Not reporting since ' + esc(clock(t.last_seen))) + '</span></span>' +
+      '<span class="tnums"><span>' + (t.online && t.rssi ? esc(t.rssi) + ' dBm' : '–') + '</span><span class="num' + (D && D.over_goal ? ' bad' : '') + '">' + med + '</span></span>' +
+      '<span class="chev" aria-hidden="true">›</span></button></li>';
+  }).join('') : '<li class="mut">No targets yet. Power one on and check its WiFi setup.</li>') + '</ul>';
+  h += '<details class="panel rodet"' + (rc.bulkOpen ? ' open' : '') + ' data-bulk="1"><summary><b>Several targets at once</b> <span class="mut">mode, face, sleep, restart, remove</span></summary>' +
+    '<p class="mut">These apply to the ticked targets at once and do not need control of them; whoever is in control keeps it.</p>' +
+    '<label class="tick"><input type="checkbox" data-act="rcall"' + (all ? ' checked' : '') + '> All (' + nsel + ' ticked)</label>' +
+    '<div class="tpick">' + ts.map(t => '<label class="tick"><input type="checkbox" data-act="rcsel" data-id="' + esc(t.device_id) + '"' + (sel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"> ' + esc(laneTitle(t)) + '</label>').join('') + '</div>' +
+    '<div class="bulk">' + RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '"' + dis + '>' + m[1] + '</button>').join('') +
+    '<button data-act="rcnew"' + dis + '>New series</button><button data-act="rcsleepsel" data-v="sleep"' + dis + '>Sleep</button><button data-act="rcsleepsel" data-v="wake"' + dis + '>Wake</button>' +
+    '<button data-act="rccmd" data-type="reboot"' + dis + '>Restart</button><button class="danger" data-act="rcremove"' + dis + '>Remove</button><button class="danger" data-act="rcban"' + dis + '>Ban</button></div>' +
+    '<div class="bulk"><select id="rcfacepick" aria-label="Target face">' + (S.faces || [AR10]).map(f => '<option value="' + esc(f.id) + '"' + (f.id === rc.facePick ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select>' +
+    '<button data-act="rcface"' + dis + '>Set face</button></div>' +
+    '<h4>The whole range</h4><p class="mut">' + (sl.length ? asleep + ' of ' + sl.length + ' asleep' : 'No target can sleep yet') + '. A sleeping target has its lights out and ignores shots (no record, no paper). ' +
+    'It wakes with Wake, its lights button, when a shooter takes control of it, when it is put into a match, or when it restarts. A target in a match cannot be put to sleep.</p>' +
+    '<div class="bulk"><button data-act="rcsleep" data-v="sleep"' + (sl.length ? '' : ' disabled') + '>Sleep all</button><button data-act="rcsleep" data-v="wake"' + (sl.length ? '' : ' disabled') + '>Wake all</button>' +
+    (rc.sleepMsg ? '<span class="bad">' + esc(rc.sleepMsg) + '</span>' : '') + '</div>' +
+    '<p class="mut">Remove hides a dead target; its history stays, and it comes back by itself if it ever reports again. Ban refuses everything a target sends until it is unbanned (it keeps its shots queued meanwhile).</p></details>';
+  return h + (d.banned.length ? '<section class="panel"><h3>Banned</h3><ul class="mclist">' + d.banned.map(b =>
+    '<li><span class="lmain"><b>' + esc(b.name) + '</b><span class="mut">' + esc(b.device_id) + (b.ip ? ' · ' + esc(b.ip) : '') + ' · last report ' + esc(ago(b.last_seen)) + ' ago</span></span>' +
+    '<button data-act="rcunban" data-id="' + esc(b.device_id) + '">Unban</button></li>').join('') + '</ul></section>' : '');
 }
 
 // ---- Match Control ----
@@ -1930,24 +1974,30 @@ function matchBanner(info, t, S) {                      // on a shooter's own sc
     (canRecord ? '<button class="pri" data-act="mcmyrecord">Start record</button>' : '') +
     (canSight ? '<button data-act="mcmysighters">Back to sighters</button>' : '') + '</div></div>';
 }
-function dtSignin(to) {                          // Sign in with deepTENS (P1 step 3), and offline with a passcode
+function dtSignin(to) {                          // Sign in with deepTENS (P1 step 3), and offline with a passcode (FmStaffSignIn)
   const dt = S.dt;
   if (!dt || !dt.linked) return '';
-  return '<div class="panel" style="margin:10px 0"><p><button class="pri" data-act="dtsignin" data-to="' + to + '">Sign in with deepTENS</button> ' +
-    '<span class="mut">Range staff: your role at this range on deepTENS decides what you can do here.</span></p>' +
-    (dt.roster_ok ? '<details><summary>No internet? Sign in with your offline passcode</summary><div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">' +
-      '<input id="dt_email_' + to + '" type="email" autocomplete="username" placeholder="Email on deepTENS">' +
-      '<input id="dt_pc_' + to + '" type="password" autocomplete="current-password" placeholder="Offline passcode">' +
-      '<button data-act="dtoffline" data-to="' + to + '">Sign in</button></div></details>' : '') + '</div>';
+  return '<button class="btn pri big signbtn" data-act="dtsignin" data-to="' + to + '">Sign in with deepTENS</button>' +
+    '<p class="mut">Range staff: your role at this range on deepTENS decides what you can do here. With your passkey or two-step sign-in.</p>' +
+    (dt.roster_ok ? '<details class="rodet"><summary><b>No internet at the range?</b> <span class="mut">your offline passcode</span></summary><div class="signform">' +
+      '<label class="fld">Email on deepTENS<input id="dt_email_' + to + '" type="email" autocomplete="username"></label>' +
+      '<label class="fld">Offline passcode<input id="dt_pc_' + to + '" type="password" autocomplete="current-password"></label>' +
+      '<button data-act="dtoffline" data-to="' + to + '">Sign in offline</button></div></details>' : '');
+}
+function staffSignIn(what, to, local, msg) {      // the sign-in screen for range staff: deepTENS when linked, the Pi's own password always
+  const linked = !!(S.dt && S.dt.linked), rn = linked && S.dt.range && S.dt.range.name;
+  return '<section class="signin"><span class="mut">Range staff' + (rn ? ' · ' + esc(rn) : '') + '</span><h2>Sign in to ' + esc(what) + '</h2>' +
+    '<p class="mut">' + (to === 'range' ? 'Range Managers: targets, firmware, TV displays and this Pi.' : 'Range Officers and Match Directors: matches, competitions and results.') + '</p>' +
+    dtSignin(to) + (linked ? '<details class="rodet"' + (msg ? ' open' : '') + '><summary><b>This Pi\'s own ' + (to === 'range' ? 'password' : 'users') + '</b></summary>' + local + '</details>' : local) +
+    (msg ? '<p class="bad">' + esc(msg) + '</p>' : '') +
+    '<p class="mut">Shooters and spectators never need to sign in here. The club network is not encrypted: use a password you do not use anywhere else.</p></section>';
 }
 function mcLogin(mc) {
-  return '<div class="panel"><span class="title">Match Control</span>' + dtSignin('match') + '<p>Log in with your Match Control user name and password. ' +
-    'The Range Control administrator can use <b>admin</b> and the Range Control password.</p>' +
-    '<div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap"><input id="mcuser" autocomplete="username" placeholder="User name" maxlength="32">' +
-    '<input id="mcpw" type="password" autocomplete="current-password" placeholder="Password"><button class="pri" data-act="mclogin">Log in</button></div>' +
-    (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
-    (mc.status && !mc.status.users_defined ? '<p class="mut">No Match Control users yet: add them in Range Control (Match Control users), or on the Pi with <code>python3 -m fetserver match-user add NAME --role director</code>.</p>' : '') +
-    '<p class="mut">The club network is not encrypted: use a password you do not use anywhere else.</p></div>';
+  const local = '<div class="signform"><label class="fld">User name<input id="mcuser" autocomplete="username" maxlength="32"></label>' +
+    '<label class="fld">Password<input id="mcpw" type="password" autocomplete="current-password"></label><button class="pri" data-act="mclogin">Log in</button>' +
+    '<p class="mut">The Range Control administrator can use <b>admin</b> and the Range Control password.</p></div>' +
+    (mc.status && !mc.status.users_defined ? '<p class="mut">No Match Control users yet: add them in Range Control (Staff), or on the Pi with <code>python3 -m fetserver match-user add NAME --role director</code>.</p>' : '');
+  return staffSignIn('Match Control', 'match', local, mc.msg);
 }
 const fmtLine = f => esc(f.name) + (f.builtin ? '' : ' <span class="mut">(custom)</span>');
 function mcNew(mc) {                             // a new single match (FmMatchNew): name and format, commands, publishing | lanes, how it will run, create
@@ -2668,6 +2718,19 @@ async function post(p, body) {
   return {status: r.status, data: await r.json().catch(() => ({}))};
 }
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(t._h); t._h = setTimeout(() => t.style.display = 'none', 3500); }
+function aboutView(S) {                          // About (FmAbout): what FeT Monitor is, its licence, source, the rulebooks, thanks
+  const books = [...new Set(((S.aboutBooks || {}).docs || []).map(d => d.publisher.replace(/ \(.*\)$/, '')))];
+  const fact = (k, v) => '<div class="fact"><span>' + k + '</span><span>' + v + '</span></div>';
+  return '<div class="about"><section class="panel"><span class="mut">Electronic scoring for your range</span><h2>FeT Monitor</h2>' +
+    '<p>Lanes, matches, finals and results on your own Raspberry Pi. Works with no internet; links to deepTENS when you want it to.</p>' +
+    fact('Version', esc(S.version || '…')) + fact('Licence', 'MIT, free and open source') +
+    fact('Source', '<a class="tlink" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener">github.com/seriouslyjeez/fet-monitor</a>') +
+    fact('Targets', 'Compatible with freETarget targets') + fact('Rulebooks', books.length ? esc(books.join(' · ')) : '…') +
+    '<p><a class="tlink" href="https://github.com/seriouslyjeez/fet-monitor/releases" target="_blank" rel="noopener">What is new (release notes)</a></p></section>' +
+    '<section class="panel"><h3>Thanks</h3><p>FeT target firmware builds on freETarget by the ten-point-nine project (MIT). freETarget is their name; FeT Monitor is an independent project that works with their targets, and is not part of or endorsed by it.</p>' +
+    '<p class="mut">Also inside: QR Code Generator for JavaScript by Kazuhiko Arase (MIT); the Archivo and JetBrains Mono typefaces (SIL Open Font License 1.1); esptool\'s stub flashers by Espressif (GPL-2.0-or-later, used as a separate program). ' +
+    'The full credits are in the NOTICE file of the source.</p></section></div>';
+}
 const route = () => {
   const dp = location.pathname.match(DISPLAY_RE);              // a TV display: its own address, read only
   if (dp) return {display: dp[1].toUpperCase()};
@@ -2679,6 +2742,7 @@ const route = () => {
   if (rs) return {results: true, cid: rs[1] || null};
   if (/^#\/range\b/.test(location.hash)) return {range: true, tab: rcTab()}; if (/^#\/match\b/.test(location.hash)) return {match: true}; const m = location.hash.match(/^#\/t\/([\w-]+)/);
   if (m) return {id: m[1]};
+  if (/^#\/about\/?$/.test(location.hash)) return {about: true};
   const sp = location.hash.match(/^#\/(lanes|watch\/pick|watch)\/?$/);    // the spectator tabs (1.0)
   return {spect: sp ? (sp[1] === 'watch/pick' ? 'pick' : sp[1]) : 'home'}; };
 const current = () => { const r = route(); return r.id && S.targets.find(x => x.device_id === r.id); };
@@ -2781,6 +2845,7 @@ async function refresh() {
     }
     if (t && t.match) S.offset = t.match.server_time_ms - Date.now();
     const rr = route();
+    if (rr.about && !S.aboutBooks) S.aboutBooks = await get('/rulebooks').catch(() => null);
     if (rr.spect && rr.spect !== 'pick') {       // the spectators' pages: the matches being shot
       const b = await get('/board');
       S.board = b.matches; S.boardComps = b.competitions || []; S.boardOffset = b.server_time_ms - Date.now();
@@ -2870,7 +2935,7 @@ function openDrawer(on) {                   // the menu: focus moves into it, an
 let pressing = false, held = false;        // no redraw between press and release (it would lose the click, or a text selection)
 function render(force) {                  // force: a structural change (e.g. another format chosen) redraws even under typing
   const app = document.getElementById('app'), t = current(), r = route();
-  document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print ? '' : 'on';
+  document.getElementById('nav-coach').className = r.id || r.range || r.match || r.results || r.print || r.about ? '' : 'on';
   document.getElementById('nav-range').className = r.range ? 'on' : '';
   document.getElementById('nav-match').className = r.match ? 'on' : '';
   ['nav-coach', 'nav-results', 'nav-match', 'nav-range'].forEach(id => { const n = document.getElementById(id); if (n.className === 'on') n.setAttribute('aria-current', 'page'); else n.removeAttribute('aria-current'); });
@@ -2912,7 +2977,7 @@ function render(force) {                  // force: a structural change (e.g. an
   if (r.results) { setApp(app, S.phone ? (r.cid ? resultsPhone(S.res, S) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsList(S.resList, S) + '</div>')
     : r.cid ? resultsPage(S.res) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsIndex(S.resList) + '</div>'); return; }
   if (r.tv) { setApp(app, readOnly(r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params))); return; }
-  setApp(app, r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : spectatorView(S, r, S.phone));
+  setApp(app, r.about ? aboutView(S) : r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : spectatorView(S, r, S.phone));
   if (r.spect) fitWatch();
   renderOverlay(t);
 }
@@ -2925,7 +2990,7 @@ function renderOverlay(t) {
     patchOverlay(o, S.mc.latep ? lateSheet(S.mc) : S.mc.shotp ? shotSheet(S.mc) : S.mc.movep ? moveSheet(S.mc) : S.mc.flagp ? flagSheet(S.mc) : S.mc.lanep ? laneSheet(S.mc) : competitorSheet(S.mc));
     return;
   }
-  const rct = route().range && S.rc && S.rc.tsOpen && ((S.rc.data || {}).targets || []).find(x => x.device_id === S.rc.tsOpen && x.fet_target);
+  const rct = route().range && S.rc && S.rc.tsOpen && ((S.rc.data || {}).targets || []).find(x => x.device_id === S.rc.tsOpen);
   if (rct) {                                      // Range Control → Target settings: one target's sheet
     o.className = 'open';
     const ae = document.activeElement;
@@ -3080,8 +3145,8 @@ async function dtAct(el, a) {                    // Sign in with deepTENS (Range
 async function rangeAct(el, a) {
   const rc = S.rc = S.rc || {sel: {}}, sel = rc.sel = rc.sel || {};
   const chosen = () => ((rc.data || {}).targets || []).map(t => t.device_id).filter(i => sel[i]);
-  if (a === 'rcsel') { sel[el.dataset.id] = el.checked; return render(); }
-  if (a === 'rcall') { ((rc.data || {}).targets || []).forEach(t => { sel[t.device_id] = el.checked; }); return render(); }
+  if (a === 'rcsel') { sel[el.dataset.id] = el.checked; rc.bulkOpen = true; return render(); }
+  if (a === 'rcall') { rc.bulkOpen = true; ((rc.data || {}).targets || []).forEach(t => { sel[t.device_id] = el.checked; }); return render(); }
   if (a === 'rclogin') {
     const pw = (document.getElementById('rcpw') || {}).value || '';
     if (!pw) return;
@@ -3130,15 +3195,16 @@ async function rangeAct(el, a) {
   }
   if (a === 'rcfwsel') { (rc.fwSel = rc.fwSel || {})[el.dataset.id] = el.checked; return render(); }
   if (a === 'rcfwall') { rc.fwSel = {}; ((rc.data || {}).targets || []).filter(isBridge).forEach(t => { rc.fwSel[t.device_id] = el.checked; }); return render(); }
-  if (a === 'rcflash' || a === 'rcbest') {
-    const ids = ((rc.data || {}).targets || []).filter(isBridge).map(t => t.device_id).filter(i => (rc.fwSel || {})[i]), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
+  if (a === 'rcflash' || a === 'rcbest' || a === 'rcbestall') {   // rcbestall: every reporting FeT Bridge older than the newest image (the Firmware card)
+    const nb = newestImg(rc.images), bridges = ((rc.data || {}).targets || []).filter(isBridge);
+    const ids = a === 'rcbestall' ? fwSummary(bridges, nb, t => t.bridge_fw)[0].map(t => t.device_id) : bridges.map(t => t.device_id).filter(i => (rc.fwSel || {})[i]), img = (rc.images || []).find(m => m.sha256 === el.dataset.sha);
     if (!ids.length || (a === 'rcflash' && !img)) return;
-    if (!confirm(a === 'rcbest' ? 'Update ' + ids.length + ' target(s) to the best FeT Bridge firmware for each?\nEach one downloads it, checks it and restarts (about a minute).'
+    if (!confirm(a !== 'rcflash' ? 'Update ' + ids.length + ' target(s) to the best FeT Bridge firmware for each?\nEach one downloads it, checks it and restarts (about a minute).'
                                 : 'Install FeT Bridge firmware ' + img.version + ' on ' + ids.length + ' target(s)?\nEach one downloads it, checks it and restarts (about a minute).')) return;
     const errs = [];
     let sent = 0;
     for (const id of ids) {
-      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/firmware', {sha256: a === 'rcbest' ? 'best' : img.sha256});
+      const res = await adminCall('/targets/' + encodeURIComponent(id) + '/firmware', {sha256: a !== 'rcflash' ? 'best' : img.sha256});
       if (res.status === 200) sent++;
       if (res.status === 401) { toast('Logged out: log in again'); break; }
       if (res.status !== 200) errs.push(res.data.error || ('error ' + res.status));
@@ -3333,8 +3399,8 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rcface') {                         // the mask and faceplate were swapped: score on that face from now on
-    const ids = chosen(), fid = (document.getElementById('rcfacepick') || {}).value, name = faceName(fid);
-    rc.facePick = fid;
+    const ids = el.dataset.id ? [el.dataset.id] : chosen(), fid = (document.getElementById(el.dataset.id ? 'tsface' : 'rcfacepick') || {}).value, name = faceName(fid);
+    if (!el.dataset.id) rc.facePick = fid;
     if (!ids.length || !fid) return;
     if (!confirm('Set the face of ' + ids.length + ' target(s) to ' + name + '?\n\nSwap the target mask and faceplate on each of them to the ' + name +
                  ' before anyone shoots: FeT Monitor cannot see them. A series with shots ends, and a new one starts on this face.')) return;
@@ -3349,7 +3415,7 @@ async function rangeAct(el, a) {
   }
   if (a === 'rcsleep' || a === 'rcsleepsel') {  // lights out (shots ignored) or on: FeT targets with a key; each signed for itself
     const all = sleepers(rc.data || {targets: []}), v = el.dataset.v;
-    const ts = a === 'rcsleep' ? all : all.filter(t => sel[t.device_id]);
+    const ts = a === 'rcsleep' ? all : all.filter(t => el.dataset.id ? t.device_id === el.dataset.id : sel[t.device_id]);
     if (!ts.length) { rc.sleepMsg = a === 'rcsleep' ? '' : 'None of the selected targets can sleep (FeT target firmware with a key only).'; return render(true); }
     if (v === 'sleep' && !confirm('Put ' + ts.length + ' target(s) to sleep?\nLights out; shots fired at them are ignored until they wake.')) return;
     const errs = [];
@@ -4054,7 +4120,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

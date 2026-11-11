@@ -135,7 +135,7 @@ WiFi, so it looks fine, but its lights, paper drive and microphone circuits are 
 LED for 12 V (the first of the three) is red when the 12 V is missing. Keep the 12 V connected while the board is on
 USB, too.
 
-The board's own firmware is installed from **Range Control → Flash a device**: plug the board's USB into the Pi,
+The board's own firmware is installed from **Range Control → Flash station**: plug the board's USB into the Pi,
 press **Identify**, then install. The first install saves the board's original firmware (it can be put back from the
 same page) and gives the board its key. Fill in *Settings for the target* (WiFi name and password, the target's name)
 to set up its WiFi over USB at the same time. Later updates go over WiFi from **Range Control → Firmware**.
@@ -357,7 +357,7 @@ backups, token and password (re-running the installer brings everything back).
 `sudo ./install.sh --uninstall --purge` also deletes all data, after asking you to type `DELETE`.
 
 **An ESP32 target keeps going offline, or its reports fail.** Check that its 12 V supply is connected (the first
-status LED is green; 7b). Range Control → Target settings → the target → *Device* shows its WiFi signal, how many of
+status LED is green; 7b). Range Control → Targets → the target → *Device* shows its WiFi signal, how many of
 its reports failed and how, and why it last started.
 
 **The setup network `FeTMonitor-Setup-XXXX` does not appear.** Wait 3 minutes after power-on. It appears on the

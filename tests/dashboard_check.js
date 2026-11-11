@@ -380,12 +380,15 @@ assert.deepStrictEqual(['256.1.1.1', '1.2.3', 'evil.com', '1.2.3.4/x', '"><b>', 
   const off = deeptensPanel(base);
   assert(off.includes('data-act="rcdtlink"') && off.includes('value="https://deeptens.com:8443"') && !off.includes('rcdtunlink'), 'not linked: the address and Link');
   assert(deeptensPanel(Object.assign({}, base, {unlinked_remotely: true})).includes('unlinked on deepTENS'));
-  const ing = deeptensPanel(Object.assign({}, base, {linking: {user_code: 'KQ7-M4P', uri: 'https://d/link/', uri_complete: 'https://d/link/?code=KQ7M4P', expires_ms: 0}}));
-  assert(ing.includes('<p class="dtcode">KQ7-M4P</p>') && ing.includes('href="https://d/link/?code=KQ7M4P"') && ing.includes('data-act="rcdtcancel"'), 'linking: the code and where to type it');
+  const ing = deeptensPanel(Object.assign({}, base, {linking: {user_code: 'KQ7-M4P', uri: 'https://d/link/', uri_complete: 'https://d/link/?code=KQ7M4P', expires_ms: 1}}));
+  assert(ing.includes('<p class="dtcode num">KQ7-M4P</p>') && ing.includes('href="https://d/link/?code=KQ7M4P"') && ing.includes('data-act="rcdtcancel"'), 'linking: the code and where to type it');
+  assert(ing.includes('The code has run out') && !ing.includes('Backups'), 'expired: say so; backups are not offered (held, user 2026-11-10)');
+  const ing2 = deeptensPanel(Object.assign({}, base, {linking: {user_code: 'K', uri: 'u', uri_complete: 'u?c', expires_ms: 1000 + 14 * 60000 + 1}}), 1000);
+  assert(ing2.includes('code valid 15 more minutes'), 'minutes left, rounded up');
   const on = deeptensPanel(Object.assign({}, base, {linked: true, range: {name: '<b>Riverside</b>'}, connected: false, last_ok_ms: 1, outbox: 3,
                                                    lane_conflicts: [2], rejected: [{key: 'm9', why: 'bad'}]}));
-  assert(on.includes('&lt;b&gt;Riverside') && on.includes('Not connected') && on.includes('3 waiting') && on.includes('also has lane 2') && on.includes('m9 (bad)') && on.includes('rcdtunlink'), 'linked: state, waiting, conflicts, refusals');
-  assert(deeptensPanel(Object.assign({}, base, {linked: true, range: {name: 'R'}, connected: true})).includes('Connected.'));
+  assert(on.includes('&lt;b&gt;Riverside') && on.includes('Not connected') && on.includes('Waiting to send</span><span>3<') && on.includes('also has lane 2') && on.includes('m9 (bad)') && on.includes('rcdtunlink'), 'linked: state, waiting, conflicts, refusals');
+  assert(deeptensPanel(Object.assign({}, base, {linked: true, range: {name: 'R'}, connected: true})).includes('class="stchip ok"><span class="dot on" aria-hidden="true"></span>Linked'));
   assert.strictEqual(deeptensPanel(null), '');
 }
 // publishing on deepTENS (user, 2026-11-08): asked at creation; live when published; asked again at official; a button
@@ -441,8 +444,9 @@ const rcData = {targets: D.targets.map(asOther), banned: [{device_id: 'bad-1', n
 const rcIn = s => rangeView(state({rc: Object.assign({status: {password_set: true, logged_in: true}, data: rcData}, s || {})}));
 const none = rcIn({sel: {}});
 assert.strictEqual(count(none, /data-act="rcsel"/g), D.targets.length, 'one checkbox per target');
-assert.strictEqual(count(none, /data-act="rclane"/g), D.targets.length, 'a lane button per target');
-assert(rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {lane: null})], banned: []}}})).includes('title="Change the lane">Spare</button>'), 'a spare says so');
+assert.strictEqual(count(none, /class="trow[^"]*" data-act="rctopen"/g), D.targets.length, 'a row per target, opening its sheet');
+assert(X.targetSettingsSheet(Object.assign({}, rcData.targets[0], {lane: null}), rcData, {}).includes('title="Change the lane">Spare</button>'), 'its lane in the sheet; a spare says so');
+assert(none.includes(' · spare') === rcData.targets.some(t => t.lane == null && t.online), 'a spare is marked in the list');
 assert.strictEqual(count(none, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g), 6, 'bulk buttons disabled with nothing selected');
 assert(none.includes('data-act="rcunban" data-id="bad-1"') && none.includes('&lt;i&gt;Rogue') && !none.includes('<i>Rogue'));
 assert(!none.includes(D.targets.find(t => t.device_id === 'lane-2').name), 'hostile target names are escaped');
@@ -466,10 +470,10 @@ assert(!rangeView(state({rc: {status: {password_set: true, logged_in: true}, dat
   assert(code.includes("getElementById('power').hidden = !(S.rc && S.rc.status && S.rc.status.logged_in)"));
 }
 const one = rcIn({sel: {'lane-1': true}});
-assert(one.includes('1 selected') && count(one, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g) === 0);
+assert(one.includes('1 ticked') && count(one, /data-act="rc(mode|new|remove|ban)"[^>]*disabled/g) === 0);
 const every = {}; D.targets.forEach(t => { every[t.device_id] = true; });
 assert(/data-act="rcall" checked/.test(rcIn({sel: every})), 'select-all shows checked when all are selected');
-assert(rcIn({sel: {}, data: {targets: [], banned: []}}).includes('No targets.'));
+assert(rcIn({sel: {}, data: {targets: [], banned: []}}).includes('No targets yet.'));
 // firmware updates in Range Control
 const IMG = {sha256: 'ab'.repeat(32), version: '0.2.1', size: 430000, flash_size: 1048576, uploaded: 1793000000000};
 const fwT = (job, fw) => ({bridge_fw: fw || '0.2.0', fw_job: job});
@@ -483,7 +487,7 @@ assert(fwJobText(fwT({status: 'sent', sha256: IMG.sha256}), []).includes('ababab
 // the Firmware tab: its own lists and selection (never the Targets tab's)
 const fwData = {targets: rcData.targets.map(t => Object.assign({}, t, {bridge_fw: '0.2.0', flash_size: 1048576})), banned: []};
 const fwPanel = s => rangeView(state({rcTab: 'firmware', rc: Object.assign({status: {password_set: true, logged_in: true}, data: fwData, fwSel: {'lane-1': true}, images: [IMG]}, s || {})}));
-assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1)') && fwPanel().includes('1 selected'));
+assert(fwPanel().includes('data-act="rcflash" data-sha="' + IMG.sha256 + '"') && fwPanel().includes('Install the chosen image (0.2.1)') && fwPanel().includes('(1 ticked)'));
 assert(count(fwPanel(), /data-act="rcfwsel"/g) === fwData.targets.length && !fwPanel().includes('data-act="rcsel"'), 'its own checkboxes');
 assert(/data-act="rcflash"[^>]*disabled/.test(fwPanel({fwSel: {}, sel: {'lane-1': true}})), 'the Targets tab\'s selection does not count here');
 assert(fwPanel({images: []}).includes('None yet.'));
@@ -492,19 +496,29 @@ assert(/data-act="rcpickfiles" disabled>Uploading/.test(fwPanel({uploading: true
 const res2 = fwPanel({fwResults: [{name: '<a>.bin', ok: true, text: 'stored 0.2.1'}, {name: 'b.bin', ok: false, text: 'not accepted: <x>'}]});
 assert(res2.includes('<li class="mut"><b>&lt;a&gt;.bin</b>: stored 0.2.1') && res2.includes('<li class="bad"><b>b.bin</b>: not accepted: &lt;x&gt;'));
 assert(fwPanel({fwMsg: '<i>no</i>', fwMsgBad: true}).includes('class="bad">&lt;i&gt;no'));
-assert(fwPanel().includes('FeT target firmware: ESP32 boards') && fwPanel().includes('FeT target firmware: Arduino Mega'));
+assert(fwPanel().includes('FeT target, ESP32 boards') && fwPanel().includes('FeT target, Arduino Mega'));
+// the cards: the newest image, who is behind, one button for the WiFi modules behind it
+assert(fwPanel().includes('data-act="rcbestall"') && /class="bad">[^<]*on an older version/.test(fwPanel()), 'targets on 0.2.0, 0.2.1 here: behind, Update');
+const upto = fwPanel({data: {targets: fwData.targets.map(t => Object.assign({}, t, {bridge_fw: '0.2.1'})), banned: []}});
+assert(!upto.includes('data-act="rcbestall"') && /up to date/.test(upto), 'all on the newest: no button');
+{ const {fwSummary} = X, T = (v, on) => ({device_id: v + on, name: 'x', online: on, bridge_fw: v});
+  assert.deepStrictEqual(fwSummary([T('0.2.0', true), T('0.3.0', true), T('0.1.0', false)], {version: '0.3.0'}, t => t.bridge_fw)[0].map(t => t.bridge_fw), ['0.2.0'], 'only those reporting, older than the newest');
+  assert.deepStrictEqual(fwSummary([T('0.4.0', true)], {version: '0.3.0'}, t => t.bridge_fw)[0], [], 'newer than the Pi has: not behind');
+  assert(fwSummary([T('0.1.0', false)], {version: '0.3.0'}, t => t.bridge_fw)[1].includes('1 not reporting'));
+  assert.strictEqual(fwSummary([], {version: '1'}, t => t.bridge_fw)[1], 'None has reported'); }
 // best image hint, restart / setup portal
 assert(fwJobText(Object.assign(fwT(null), {fw_best: {version: '0.2.4'}}), [IMG]).includes('0.2.4 available'));
 assert(!fwJobText(Object.assign(fwT({status: 'sent', sha256: IMG.sha256}), {fw_best: {version: '0.2.4'}}), [IMG]).includes('available'), 'not while updating');
 assert(fwPanel().includes('data-act="rcbest"') && fwPanel().includes('Update 1 to the best image'));
 assert(/data-act="rcbest"[^>]*disabled/.test(fwPanel({images: []})), 'no images: disabled');
 assert(one.includes('data-act="rccmd" data-type="reboot"') && !one.includes('data-type="wifi_portal"') && !one.includes('data-act="rcreset"'), 'setup portal and factory reset: in the target\'s settings');
-assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)'), 'the Targets tab shows only targets');
+assert(!one.includes('data-act="rcbest"') && !one.includes('Flash station</h3>'), 'the Targets tab shows only targets');
 // tabs
 {
   const tabs = rcIn({sel: {}});
   assert(/<nav class="tabs"><a href="#\/range" class="on" aria-current="page">Targets<\/a>/.test(tabs), 'Targets is the default tab');
-  assert(['#/range/settings', '#/range/flash', '#/range/firmware', '#/range/updates', '#/range/pi', '#/range/users'].every(u => tabs.includes('href="' + u + '"')));
+  assert(['#/range/firmware', '#/range/flash', '#/range/tv', '#/range/pi', '#/range/users'].every(u => tabs.includes('href="' + u + '"')) && !tabs.includes('#/range/settings') && !tabs.includes('#/range/updates'),
+    'Target settings is each target\'s sheet now; Updates is on This Pi');
   assert(rangeView(state({rcTab: 'pi', rc: {status: {password_set: true, logged_in: true}}})).includes('Loading'), 'a tab whose data has not come yet');
 }
 // sleep: FeT targets with a key
@@ -514,7 +528,9 @@ assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)
     Object.assign({}, rcData.targets[2] || rcData.targets[0], {device_id: 'nokey', fet_target: ft({key_fp: null})})], banned: []};
   const v = rcIn({sel: {}, data: sd});
   assert(v.includes('1 of 2 asleep') && v.includes('data-act="rcsleep" data-v="sleep"') && v.includes('data-act="rcsleep" data-v="wake"'), 'Sleep all / Wake all');
-  assert(v.includes('<td><b>asleep</b></td>') && v.includes('<td>on</td>'), 'each target\'s lights');
+  assert(count(v, /· asleep</g) === 1, 'an asleep target says so in the list');
+  assert(X.targetSettingsSheet(sd.targets[0], sd, {}).includes('data-act="rcsleepsel" data-v="wake" data-id="' + sd.targets[0].device_id + '"') &&
+    X.targetSettingsSheet(sd.targets[1], sd, {}).includes('data-v="sleep" data-id="' + sd.targets[1].device_id + '"') && !X.targetSettingsSheet(sd.targets[2], sd, {}).includes('rcsleepsel'), 'the sheet: Wake, Sleep, or neither without a key');
   assert(/data-act="rcsleep" data-v="sleep" disabled/.test(rcIn({sel: {}})), 'no target can sleep: disabled');
   assert.strictEqual(sleepers(sd).length, 2, 'only targets with a key');
 }
@@ -523,13 +539,13 @@ assert(!one.includes('data-act="rcbest"') && !one.includes('Flash a device (USB)
 // server updates panel
 const U = (o) => Object.assign({current: '0.6.24', helper_installed: true, pending: false, status: null, last_check: null}, o || {});
 assert.strictEqual(updatesPanel(null), '');
-assert(updatesPanel(U()).includes('Running <b>v0.6.24</b>') && updatesPanel(U()).includes('data-act="rcupcheck"') && !updatesPanel(U()).includes('rcupinstall'));
+assert(updatesPanel(U()).includes('<h3>FeT Monitor 0.6.24</h3>') && updatesPanel(U()).includes('data-act="rcupcheck"') && !updatesPanel(U()).includes('rcupinstall'));
 const avail = U({last_check: {available: true, latest: {version: '0.6.25', notes: '<script>x</script>\nline 2', published: '2026-10-26T10:00:00Z'}}});
 assert(updatesPanel(avail).includes('data-act="rcupinstall" data-v="0.6.25">Install v0.6.25'));
 assert(updatesPanel(avail).includes('&lt;script&gt;x&lt;/script&gt;') && !updatesPanel(avail).includes('<script>x'), 'release notes are escaped');
 assert(/rcupinstall[^>]*disabled/.test(updatesPanel(Object.assign({}, avail, {helper_installed: false}))) && updatesPanel(Object.assign({}, avail, {helper_installed: false})).includes('not installed'));
 assert(/rcupinstall[^>]*disabled/.test(updatesPanel(Object.assign({}, avail, {pending: true}))));
-assert(updatesPanel(U({last_check: {available: false, latest: {version: '0.6.24'}}})).includes('This is the newest release'));
+assert(updatesPanel(U({last_check: {available: false, latest: {version: '0.6.24'}}})).includes('Up to date') && updatesPanel(U()).includes('Not checked yet'));
 assert(updatesPanel(U({status: {state: 'rolled_back', version: '0.6.25', message: 'did not start', time: 1793000000000}})).includes('class="bad">Update rolled back (v0.6.25): did not start'));
 assert(fwPanel().includes('data-act="rcfwgh"'));
 // Match Control
@@ -1206,9 +1222,9 @@ console.log('OK');
   assert(h.includes('not offered &lt;yet&gt;') && count(h, /rcflashgo/g) === 1, 'the Mega: identified, nothing to install');
   assert(h.includes('data-name="84f3eb123456-20261028-120000.bin"') && h.includes('1024 KB'), 'saved originals listed');
   const run = flashPanel(Object.assign({}, f, {job: {state: 'running', port: '/dev/ttyUSB0', version: '0.2.2', step: 'writing', percent: 60}}), {});
-  assert(run.includes('writing 60 %') && run.includes('width:60%') && /rcflashgo[^>]*disabled/.test(run) && /rcflashid[^>]*disabled/.test(run), 'while flashing: progress; nothing else starts');
+  assert(run.includes('writing · <span class="num">60 %</span>') && run.includes('width:60%') && /rcflashgo[^>]*disabled/.test(run) && /rcflashid[^>]*disabled/.test(run), 'while flashing: progress; nothing else starts');
   const fail = flashPanel(Object.assign({}, f, {job: {state: 'failed', port: '/dev/ttyUSB0', version: '0.2.2', message: 'a different device is plugged in now'}}), {flashMsg: 'x'});
-  assert(fail.includes('warnbox') && fail.includes('a different device'), 'a failure shows');
+  assert(fail.includes('class="flashjob failed"') && fail.includes('>Failed · ') && fail.includes('a different device'), 'a failure shows');
   const nothing = flashPanel({ports: [], probes: {}, job: null, backups: []}, {});
   assert(nothing.includes('Nothing is plugged in') && !nothing.includes('id="fs_ssid"') && !nothing.includes('All saved'), 'nothing plugged in: what to plug in, no form, no list');
   assert.strictEqual(flashPanel(null, {}), '');
@@ -1231,7 +1247,7 @@ console.log('OK');
   assert(!flashPanel(f, rcf).includes('and configure'), 'a 0.2.2 image takes no settings');
   assert(/rcflashcfg[^>]*disabled/.test(flashPanel(Object.assign({}, f3, {job: {state: 'running', port: 'x'}}), rcf)), 'one job at a time');
   const cfg = flashPanel(Object.assign({}, f3, {job: {state: 'running', kind: 'configure', what: 'Settings', port: '/dev/ttyUSB0', step: 'waiting for FeT Bridge to start', percent: 0}}), rcf);
-  assert(cfg.includes('Settings:</b> waiting for FeT Bridge to start<') && !cfg.includes('width:0%'), 'configuring: a step, no progress bar');
+  assert(cfg.includes('<b>Settings</b><span>waiting for FeT Bridge to start</span>') && !cfg.includes('width:0%'), 'configuring: a step, no progress bar');
   // the Arduino Mega: install, new key, put back; FeT target firmware images
   const megaPortRow = {port: '/dev/ttyACM0', adapter: '', product: 'Arduino Mega 2560', hint: 'arduino', serial: 'ABC'};
   const fm = {ports: [megaPortRow], job: null, server_host: '1.2.3.4',
@@ -1294,7 +1310,9 @@ console.log('OK');
   assert.strictEqual(faceWarning(Object.assign({}, wd, {lanes: [wd.lanes[1]]})), '');
   assert.strictEqual(faceWarning(Object.assign({}, wd, {state: 'done'})), '');
   const rcT = rangeView(state({rc: {status: {password_set: true, logged_in: true}, data: {targets: [Object.assign({}, rcData.targets[0], {installed_face: 'nra-a23'})], banned: []}}}));
-  assert(rcT.includes('<td>50 yd conventional (NRA A-23)</td>') && rcT.includes('id="rcfacepick"') && rcT.includes('data-act="rcface"'), 'Range Control: each target\'s face, Set face');
+  const tsh = X.targetSettingsSheet(Object.assign({}, rcData.targets[0], {installed_face: 'nra-a23'}), {targets: []}, {});
+  assert(/<option value="nra-a23" selected>50 yd conventional \(NRA A-23\)/.test(tsh) && tsh.includes('id="tsface"') && tsh.includes('data-act="rcface" data-id="'), 'Range Control: each target\'s face in its sheet, Set');
+  assert(rcT.includes('id="rcfacepick"') && rcT.includes('data-act="rcface"'), 'and for several at once');
   const ed = matchView(Object.assign(MCS({view: 'format', fdraft: {name: 'S', scoring: 'integer', face: 'nra-a17', phases: []}}), {mcTab: 'formats'}));
   assert(ed.includes('<option value="nra-a17" selected>'), 'the format editor: its face');
   const nm = matchView(Object.assign(MCS({view: 'new', formats: [{id: 'f1', name: 'Smallbore', face: 'issf-r50', phases: [], book_name: 'X'}],
@@ -1316,13 +1334,12 @@ console.log('OK');
 
 // Range Control: settings of targets that run FeT target firmware
 {
-  const {targetSettingsPanel, targetSettingsChanges, TARGET_SETTINGS} = X;
-  assert(targetSettingsPanel({targets: [{device_id: 'a', name: 'A'}]}, {}).includes('No target with FeT target firmware has reported yet'), 'no FeT targets: says so');
-  const why = targetSettingsPanel({targets: [{device_id: 'a', name: 'Lane <1>', bridge_fw: '0.2.0'}, {device_id: 'b', name: 'B', bridge_fw: '0.4.0'}]}, {timages: [{version: '0.1.1'}]});
-  assert(why.includes('No target with FeT target firmware has reported yet') && why.includes('FeT Bridge 0.4.0'), 'firmware here, nothing heard: says why');
-  assert(why.includes('Lane &lt;1&gt; (0.2.0)') && !why.includes('B (0.4.0)'), 'names the targets whose bridge is too old');
-  assert(!targetSettingsPanel({targets: [{device_id: 'e', name: 'Esp', bridge_fw: 'esp32/0.1.0'}]}, {timages: [{version: '0.1.1'}]}).includes('Older FeT Bridge'),
-    'an ESP32 target is not an old FeT Bridge');
+  const {targetSettingsChanges, TARGET_SETTINGS} = X;
+  const TS1 = t => X.targetSettingsSheet(t, {targets: [t]}, {});
+  assert(TS1({device_id: 'a', name: 'A'}).includes('appear here once the target runs FeT target firmware') && TS1({device_id: 'a', name: 'A'}).includes('FeT Bridge 0.4.0'), 'no FeT target firmware: says why');
+  assert(TS1({device_id: 'a', name: 'Lane <1>', bridge_fw: '0.2.0'}).includes('this one has 0.2.0, update it under Firmware') && !TS1({device_id: 'b', name: 'B', bridge_fw: '0.4.0'}).includes('this one has'),
+    'a bridge too old for it: named');
+  assert(!TS1({device_id: 'e', name: 'Esp', bridge_fw: 'esp32/0.1.0'}).includes('this one has'), 'an ESP32 target is not an old FeT Bridge');
   const {esp32Update, esp32Images} = X;
   const e32 = v => ({device_id: 'e1', name: 'E', fet_target: {esp32: true, version: v, key_fp: 'ab12cd34'}});
   const imgs = {e32images: [{version: '0.1.1', size: 1116016, sha256: 'a'.repeat(64)}, {version: '0.2.0', size: 1116016, sha256: 'b'.repeat(64)}]};
@@ -1336,11 +1353,10 @@ console.log('OK');
   const t = {device_id: 'fet-1', name: 'Lane <1>', fet_target: {key_fp: 'ab12cd34', boot: 4, settings_id: '1234abcd',
     settings: {led_pct: 50, wait_ms: 2}, commands: [{verb: 'set', status: 'done', reply: 'out_of_range:led_pct'}, {verb: 'get', status: 'done', reply: 'ok'}]}};
   const TSS = (d, rc) => targetSettingsSheet(d.targets[0], d, rc);   // the sheet a target opens in
-  const list = targetSettingsPanel({targets: [t, Object.assign({}, t, {device_id: 'fet-2', name: 'Two'})]}, {});
-  assert(count(list, /data-act="rctopen"/g) === 2 && list.includes('data-id="fet-2"') && !list.includes('data-ts='), 'a list; the settings open in a sheet');
-  assert(list.includes('set: <span class="bad">out_of_range:led_pct'), 'each target\'s last answer in the list');
+  const list = X.targetsTab({targets: [t, Object.assign({}, t, {device_id: 'fet-2', name: 'Two'})], banned: []}, {});
+  assert(count(list, /class="trow[^"]*" data-act="rctopen"/g) === 2 && list.includes('data-id="fet-2"') && !list.includes('data-ts='), 'a list; the settings open in a sheet');
   const p = TSS({targets: [t]}, {tsf: {'fet-1:paper_ms': '300'}});
-  assert(p.includes('Lane &lt;1&gt;') && p.includes('key ab12cd34') && p.includes('start 4'), 'which target, its key and start');
+  assert(p.includes('Lane &lt;1&gt;') && p.includes('<span class="num">ab12cd34</span>') && p.includes('start 4'), 'which target, its key and start');
   assert(p.includes('data-ts="fet-1:led_pct"') && p.includes('value="50"') && p.includes('value="300"'), 'reported values, typed values kept');
   assert(p.includes('class="bad">out_of_range:led_pct') && count(p, /data-act="rct(get|set|paper)"/g) === 3, 'the target\'s own answers; three actions');
   assert.strictEqual(TARGET_SETTINGS.length, 8);
@@ -1387,7 +1403,7 @@ console.log('OK');
   const lane = {device_id: 'fet-<1>', name: 'Lane <3>', lane: 3, lease: {mine: true}}, other = {device_id: 'fet-2', name: 'B', lane: 4, lease: {mine: false}};
   const items = h => Array.from(h.matchAll(/<a class="item[^"]*" href="([^"]+)"[^>]*>([^<]+)/g)).map(m => m[2] + ' ' + m[1]);
   let h = drawerHtml([other], {}, {dark: false, live: 'live'});
-  assert.deepStrictEqual(items(h), ['Lanes #/', 'Results #/results', 'Match Control #/match', 'Range Control #/range'], 'nobody holds a lane here: no Shooting section');
+  assert.deepStrictEqual(items(h), ['Lanes #/', 'Results #/results', 'Match Control #/match', 'Range Control #/range', 'About #/about'], 'nobody holds a lane here: no Shooting section');
   assert(!h.includes('Shooting') && h.includes('aria-current="page">Lanes') && h.includes('>Dark<') && !h.includes('rcsys'), 'Lanes current; Dark; no power');
   h = drawerHtml([other, lane], {id: 'fet-<1>'}, {dark: true, power: true});
   assert(h.includes('<h2>Shooting</h2>') && h.includes('href="#/t/fet-%3C1%3E"') && h.includes('aria-current="page">My lane<span class="mut">Lane 3</span>'),
@@ -1629,4 +1645,37 @@ console.log('OK');
   cl0.individuals.push(Object.assign({}, cl0.individuals[0], {id: 999, fired: false, dq: null, name: 'Nobody'}));
   assert(scoreCards(ofn, String(cl0.individuals[0].id)).includes(' of ' + ranked + '</dd>'), 'place of those ranked, not of everyone entered');
   console.log('competition OK');
+}
+
+// --- 1.0 Range Control: what needs attention, the old tab addresses, staff sign-in, About
+{
+  const {rcAttention, staffSignIn, aboutView, rcTab, boardOf} = X;
+  const T = o => Object.assign({device_id: 'd', name: 'N', lane: 1, online: true, last_seen: '2026-11-10T10:00:00Z', delivery: null}, o);
+  assert.deepStrictEqual(rcAttention({targets: [T({})]}), [], 'all well: nothing');
+  assert(rcAttention({targets: [T({online: false})]})[0][0].includes('is not reporting'));
+  assert.deepStrictEqual(rcAttention({targets: [T({online: false, lane: null})]}), [], 'a spare not reporting is not news');
+  assert(rcAttention({targets: [T({fet_target: {key_fp: null}})]})[0][0].includes('no key'));
+  assert(rcAttention({targets: [T({delivery: {over_goal: 2}})]})[0][1].includes('2 shot(s) took over 5 s'));
+  assert.deepStrictEqual(rcAttention({targets: [T({online: false, delivery: {over_goal: 2}})]}).length, 1, 'silent: only that');
+  assert.deepStrictEqual(rcAttention({targets: [T({online: false, fet_target: {key_fp: null}})]}).length, 1, 'silent and no key: only that it is silent');
+  assert.deepStrictEqual(['#/range', '#/range/settings', '#/range/updates', '#/range/flash', '#/range/nope'].map(rcTab), ['targets', 'targets', 'pi', 'flash', 'targets'], 'old addresses open the right tab');
+  const h = X.targetsTab({targets: [T({online: false})], banned: []}, {});
+  assert(h.includes('Needs attention') && h.includes('data-act="rctopen" data-id="d"'), 'each item opens the target');
+  assert(!X.targetsTab({targets: [T({})], banned: []}, {}).includes('Needs attention'));
+  assert.deepStrictEqual([boardOf({fet_target: {esp32: true}}), boardOf({fet_target: {}, bridge_fw: '0.4.0'}), boardOf({bridge_fw: '0.4.0'}), boardOf({})],
+    ['ESP32 board', 'Arduino Mega + ESP-01', 'ESP-01 (FeT Bridge)', '']);
+  // staff sign-in: the Pi's own form always; deepTENS first when linked (its form then folded)
+  const keep = X.S.dt;
+  X.S.dt = null;
+  let s = staffSignIn('Range Control', 'range', '<i>local</i>', '<b>bad</b>');
+  assert(s.includes('<i>local</i>') && !s.includes('dtsignin') && s.includes('&lt;b&gt;bad') && !s.includes('<details'), 'not linked: the password form');
+  X.S.dt = {linked: true, roster_ok: true, range: {name: '<b>R</b>'}};
+  s = staffSignIn('Match Control', 'match', '<i>local</i>', '');
+  assert(s.includes('data-act="dtsignin" data-to="match"') && s.includes('id="dt_pc_match"') && /<details class="rodet"><summary><b>This Pi's own users/.test(s) && s.includes('&lt;b&gt;R'), 'linked: deepTENS, offline passcode, own users folded');
+  assert(/<details class="rodet" open>/.test(staffSignIn('Match Control', 'match', 'x', 'wrong')), 'a failed local login stays open');
+  X.S.dt = keep;
+  // About: the rulebooks the Pi reports (publishers, once each)
+  const a = aboutView({version: '1.0.0', aboutBooks: {docs: [{publisher: 'ISSF'}, {publisher: 'NRA'}, {publisher: 'NRA'}, {publisher: 'CMP (National Three-Position Air Rifle Council)'}]}});
+  assert(a.includes('ISSF · NRA · CMP') && a.includes('1.0.0') && a.includes('Compatible with freETarget targets') && !a.includes('Backups'));
+  console.log('range control OK');
 }
