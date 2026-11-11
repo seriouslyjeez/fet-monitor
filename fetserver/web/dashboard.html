@@ -1876,7 +1876,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
   h += tabStrip(RC_TABS, tab, k => '#/range' + (k === 'targets' ? '' : '/' + k), 'Range Control') + '</div>';
   const d = rc.data || {targets: [], banned: []};
   const body = tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
-    : tab === 'tv' ? displaysTab(rc) : tab === 'pi' ? updatesPanel(rc.updates) + deeptensPanel(rc.dt) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+    : tab === 'tv' ? displaysTab(rc) : tab === 'pi' ? (rc.dt && rc.dt.linking ? deeptensPanel(rc.dt) + updatesPanel(rc.updates) : updatesPanel(rc.updates) + deeptensPanel(rc.dt)) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
