@@ -23,7 +23,10 @@ IDLE_MIN_DEFAULT = 15
 LATE_MS = 15 * 60 * 1000                         # a session's late shots (event time inside, arrived after) are sent up to this long after it ends
 PIN_FAILS, PIN_LOCK_MS = 5, 15 * 60 * 1000       # offline (and per lane) on top of deepTENS's own lock
 PIN_TIMEOUT_S = 6                                # a lane tablet does not wait longer for deepTENS: then offline
-VIAS = ("phone", "pin", "pin_offline", "staff")
+VIAS = ("phone", "pin", "pin_offline", "staff", "poster")
+CLAIM_MS = 2 * 60 * 1000                         # a poster's claim waits this long for a shot on the lane (user, 2026-11-11)
+CLAIM_GRACE_MS = 30 * 1000                       # a shot fired in time that arrives a little late still confirms it
+CLAIM_QUIET_MS = 5 * 60 * 1000                   # a lane is free to claim only with no shot on it for this long
 
 
 class SigninError(ValueError):
@@ -37,6 +40,8 @@ class Athletes:
         self.codes = {}                          # device_id -> {"code", "prev", "made_ms"}
         self.fails = {}                          # athlete number -> [count, locked until ms]
         self.sent = {}                           # session id -> what was last queued (shots, last event, ended)
+        self.claims = {}                         # device_id -> a poster's claim waiting for a shot (docs/PLAN-signin-posters.md)
+        self.claim_news = []                     # how claims went since the link last asked: {"id", "ok", "state", "why"}
 
     # ------------------------------------------------------------------------------------------------- lane codes
     def _new_code(self) -> str:
@@ -108,7 +113,7 @@ class Athletes:
         return {"athlete_id": a["athlete_id"], "number": str(a.get("number") or "")[:6] or None, "name": name,
                 "public_name": str(a.get("public_name") or "").strip()[:60] or "Athlete"}
 
-    def sign_in(self, device_id: str, athlete: dict, via: str) -> dict:
+    def sign_in(self, device_id: str, athlete: dict, via: str, claim: Optional[dict] = None) -> dict:
         """Sign an athlete in at a target. A lane in use is refused (sign out first); the athlete's session on another
         lane ends. Outside a match a new series starts in the athlete's results name; in a match whose firing point has
         no name yet, the competitor becomes the athlete."""
@@ -135,7 +140,10 @@ class Athletes:
             for other in c.execute("SELECT * FROM athlete_sessions WHERE athlete_id=? AND ended_ms IS NULL", (a["athlete_id"],)).fetchall():
                 self._end(c, other, "elsewhere", now)
                 ended.append(other["device_id"])
-            if core.matches.lock_of(c, device_id):
+            if claim is not None:                        # a poster's claim, confirmed by a shot: theirs since the claim
+                c.execute("UPDATE series SET shooter=? WHERE id=?", (a["public_name"], claim["series_id"]))
+                c.execute("UPDATE segments SET shooter=? WHERE series_id=?", (a["public_name"], claim["series_id"]))
+            elif core.matches.lock_of(c, device_id):
                 c.execute("""UPDATE match_lanes SET competitor=? WHERE device_id=? AND competitor IS NULL AND left_ms IS NULL AND match_id IN
                              (SELECT id FROM matches WHERE state IN """ + ACTIVE_SQL + ")", (a["public_name"], device_id))
             else:
@@ -143,9 +151,14 @@ class Athletes:
                 core._mode_change(c, device_id, seg["mode"] if seg else "practice", a["public_name"], True, None, a["public_name"], now)
             sid = c.execute("INSERT INTO athlete_sessions (device_id, lane, athlete_id, number, name, public_name, via, started_ms, last_ms) "
                             "VALUES (?,?,?,?,?,?,?,?,?)", (device_id, t["lane"], a["athlete_id"], a["number"], a["name"], a["public_name"],
-                                                         via, now, now)).lastrowid
+                                                         via, claim["made_ms"] if claim else now, now)).lastrowid
             out = self.on(c, device_id)
         self._rotate(device_id, now)
+        if claim is None:                                # someone signed in at the lane: a claim waiting there gives way
+            self._drop_claim(device_id, "cancelled", "someone signed in at the lane")
+            for d, cl in list(self.claims.items()):    # and this athlete's own claim elsewhere is no longer needed
+                if cl["athlete"]["athlete_id"] == a["athlete_id"]:
+                    self._drop_claim(d, "cancelled", "signed in on another lane")
         for d in [device_id] + ended:
             core.hub.publish({"type": "mode", "device_id": d})
         dt.changed("s", sid)
@@ -188,6 +201,7 @@ class Athletes:
             for r in c.execute("SELECT * FROM athlete_sessions WHERE ended_ms IS NULL").fetchall():
                 self._end(c, r, why, now)
         self.codes.clear()
+        self.claims.clear()
 
     # ---------------------------------------------------------------------------------------------------- the PIN
     def pin_sign_in(self, device_id: str, number, pin) -> dict:
@@ -254,6 +268,8 @@ class Athletes:
         t = c.execute("SELECT device_id FROM targets WHERE lane=? AND removed=0 AND banned=0", (lane,)).fetchone() if isinstance(lane, int) else None
         if t is None:
             return False, f"lane {lane} is not on this FeT Monitor any more"
+        if s.get("kind") == "claim":
+            return self.claim(s)
         try:
             if s.get("kind") == "out":
                 a = self._athlete(s.get("athlete"))
@@ -267,6 +283,100 @@ class Athletes:
         except SigninError as exc:
             return False, str(exc)
 
+    # ------------------------------------------------------------------------------------- posters: claim, then a shot
+    def lane_free(self, c, device_id: str, now: int) -> str:
+        """Why a poster cannot claim this target now ('' = it can): nobody signed in, not in a match, no shot on it for 5
+        minutes, reporting, and no other claim waiting."""
+        t = c.execute("SELECT lane, last_seen_ms FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone()
+        if t is None or t["lane"] is None:
+            return "that lane is not on this FeT Monitor any more"
+        if now - t["last_seen_ms"] > self.core.offline_after_ms:
+            return "the target is not reporting: tell the range officer"
+        if self.on(c, device_id) is not None:
+            return "someone is signed in on that lane"
+        if self.core.matches.lock_of(c, device_id):
+            return "that lane is in a match: the match director assigns it"
+        if device_id in self.claims:
+            return "someone else is claiming that lane: try again in two minutes"
+        last = c.execute("SELECT MAX(event_ms) FROM shots WHERE device_id=?", (device_id,)).fetchone()[0]
+        if last is not None and now - last < CLAIM_QUIET_MS:
+            return "someone shot on that lane in the last 5 minutes"
+        return ""
+
+    def claim(self, s: dict) -> tuple:
+        """A poster's claim that deepTENS passed on: (ok, why). The lane waits 2 minutes for a shot; a fresh series in
+        no one's name starts now, and takes the athlete's name when their shot confirms the claim."""
+        from .core import RANGE_NAME, KIND_OF_MODE, session_name
+        dt = self.core.deeptens
+        if dt is None or not dt.linked:
+            return False, "this FeT Monitor is not linked to deepTENS"
+        lane = s.get("lane")
+        core = self.core
+        c = core.db.conn()
+        t = c.execute("SELECT device_id FROM targets WHERE lane=? AND removed=0 AND banned=0", (lane,)).fetchone() if isinstance(lane, int) else None
+        if t is None:
+            return False, f"lane {lane} is not on this FeT Monitor any more"
+        try:
+            a = self._athlete(s.get("athlete"))
+        except SigninError as exc:
+            return False, str(exc)
+        did, now = t["device_id"], core.now_ms()
+        for d, cl in list(self.claims.items()):        # one claim per athlete: a new one replaces theirs
+            if cl["athlete"]["athlete_id"] == a["athlete_id"]:
+                self._drop_claim(d, "cancelled", "you claimed another lane")
+        with core.db.write() as w:
+            why = self.lane_free(w, did, now)
+            if why:
+                return False, why
+            seg = w.execute("SELECT mode FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+            mode = seg["mode"] if seg else "practice"
+            series_id = core._mode_change(w, did, mode, session_name(RANGE_NAME, KIND_OF_MODE.get(mode, "match")), True, None, RANGE_NAME, now)[0]
+            self.claims[did] = {"id": s.get("id"), "athlete": a, "made_ms": now, "until_ms": now + CLAIM_MS, "series_id": series_id, "lane": lane}
+        core.hub.publish({"type": "mode", "device_id": did})
+        return True, ""
+
+    def claim_view(self, device_id: str) -> Optional[dict]:
+        """What the lane's screen shows of a claim waiting there: the athlete's public name and until when."""
+        cl = self.claims.get(device_id)
+        return {"public_name": cl["athlete"]["public_name"], "until_ms": cl["until_ms"], "left_ms": max(0, cl["until_ms"] - self.core.now_ms())} if cl else None
+
+    def _drop_claim(self, device_id: str, state: str, why: str) -> None:
+        cl = self.claims.pop(device_id, None)
+        if cl is not None:
+            self.claim_news.append({"id": cl["id"], "ok": state == "confirmed", "state": state, "why": why})
+            self.core.hub.publish({"type": "mode", "device_id": device_id})
+
+    def cancel_claim(self, device_id: str) -> bool:
+        """'Not you? Cancel' on the lane's screen (anyone standing at the lane)."""
+        if device_id not in self.claims:
+            return False
+        self._drop_claim(device_id, "cancelled", "cancelled at the lane")
+        return True
+
+    def claims_check(self, device_id: Optional[str] = None) -> None:
+        """After shots arrive (one target) and every few seconds (all): the first shot fired on the lane after the claim
+        and within its 2 minutes confirms it (also when it arrives up to 30 s late); without one it lapses."""
+        now = self.core.now_ms()
+        c = self.core.db.conn()
+        for did, cl in list(self.claims.items()):
+            if device_id is not None and did != device_id:
+                continue
+            hit = c.execute("SELECT 1 FROM shots WHERE device_id=? AND event_ms>=? AND event_ms<=? LIMIT 1", (did, cl["made_ms"], cl["until_ms"])).fetchone()
+            if hit:
+                self.claims.pop(did, None)
+                try:
+                    self.sign_in(did, cl["athlete"], "poster", claim=cl)
+                except SigninError as exc:
+                    self.claim_news.append({"id": cl["id"], "ok": False, "state": "cancelled", "why": str(exc)})
+                else:
+                    self.claim_news.append({"id": cl["id"], "ok": True, "state": "confirmed", "why": ""})
+            elif now > cl["until_ms"] + CLAIM_GRACE_MS:
+                self._drop_claim(did, "lapsed", "no shot on the lane within 2 minutes")
+
+    def take_claim_news(self) -> list:
+        out, self.claim_news = self.claim_news, []
+        return out
+
     # ------------------------------------------------------------------------------------------- timeouts and sending
     def idle_ms(self) -> int:
         dt = self.core.deeptens
@@ -278,6 +388,7 @@ class Athletes:
         4 hours, never during a match (its time does not count as idle); queue a new snapshot of each session whose
         shots changed, also late shots after it ended."""
         core = self.core
+        self.claims_check()
         now = core.now_ms()
         idle = self.idle_ms()
         c = core.db.conn()

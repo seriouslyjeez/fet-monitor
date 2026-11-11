@@ -34,7 +34,7 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
-TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters|signin|signout)$")
+TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters|signin|signout|claim/cancel)$")
 MATCH_ATHLETE_RE = re.compile(r"^/api/v1/match/targets/([A-Za-z0-9_-]{1,64})/athlete$")
 MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw|publish)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
@@ -1110,6 +1110,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, core.handle_events(payload, ip))
             return self._send(200, core.handle_heartbeat(payload, ip))
         m = TARGET_RE.match(url.path)
+        if m and m.group(2) == "claim/cancel":             # the lane's screen: "Not you? Cancel" a poster's claim waiting there
+            return self._send(200 if core.athletes.cancel_claim(m.group(1)) else 404, {})
         if m and m.group(2) in ("signin", "signout"):         # the lane's screen (P2): athlete number + PIN, or sign out
             payload = self._read_json()
             if not isinstance(payload, dict):

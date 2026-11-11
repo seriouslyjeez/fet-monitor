@@ -6,10 +6,10 @@ import json
 import tempfile
 
 from fetserver.admin import hash_password
-from fetserver.athletes import CODE_LIFE_MS, SigninError
+from fetserver.athletes import CLAIM_MS, CLAIM_QUIET_MS, CODE_LIFE_MS, SigninError
 from fetserver.deeptens import DeepTens
 from tests.test_deeptens_link import FakeDeepTens
-from tests.test_matches import MatchCase
+from tests.test_matches import BASE, SHOT, MatchCase
 
 JO = {"athlete_id": 41, "number": "123456", "name": "Jo Shot", "public_name": "J. S."}
 AL = {"athlete_id": 42, "number": "654321", "name": "Al Aim", "public_name": "Al Aim"}
@@ -312,6 +312,128 @@ class Sending(Case):
 
 
 from tests.test_match_http import MatchHttpBase  # noqa: E402
+
+
+class Posters(Case):
+    """Sign-in posters (docs/PLAN-signin-posters.md): a claim from deepTENS, confirmed by the first shot on the lane
+    within 2 minutes; the lane must be free; one claim per lane and per athlete."""
+    def setUp(self):
+        super().setUp()
+        self.clock.t += CLAIM_QUIET_MS          # no recent shots anywhere
+        self.hb()
+
+    def hb(self, *dids):
+        for did in dids or ("lane-1", "lane-2", "lane-3", "lane-4"):
+            self.core.handle_heartbeat({"device_id": did, "boot_count": 1, "uptime_ms": self.clock.t - BASE})
+
+    def fire(self, did="lane-1", ago_ms=0, x="1.00"):
+        """A shot fired ago_ms before it arrives (late delivery)."""
+        n = self.seq[did] = self.seq.get(did, 0) + 1
+        self.core.handle_events({"device_id": did, "boot_count": 1, "uptime_ms": self.clock.t - BASE, "events": [
+            {"seq": n, "type": "shot", "uptime_ms": self.clock.t - BASE - ago_ms, "raw": SHOT % (n, x)}]})
+
+    def claim(self, sid, athlete=JO, did="lane-1"):
+        self.fake.pending = [{"id": sid, "kind": "claim", "lane": self.target(did)["lane"], "athlete": athlete}]
+        self.step(); self.step()
+        return [a for a in self.fake.acks if a["id"] == sid]
+
+    def test_a_claim_confirmed_by_the_first_shot(self):
+        acks = self.claim(5)
+        self.assertEqual(acks, [{"id": 5, "ok": True, "why": "", "state": "pending"}])
+        t = self.target()
+        self.assertEqual(t["claim"]["public_name"], "J. S.", "the lane's screen: who is claiming (public name only)")
+        self.assertEqual(set(t["claim"]), {"public_name", "until_ms", "left_ms"})
+        self.assertIsNone(t["athlete"])
+        made = self.clock.t
+        self.clock.t += 40_000
+        self.fire()
+        t = self.target()
+        self.assertEqual((t["athlete"]["athlete_id"], t["athlete"]["via"], t["athlete"]["started_ms"]), (41, "poster", made), "signed in since the claim")
+        self.assertIsNone(t["claim"])
+        self.assertEqual(t["view"]["shooter"], "J. S.", "the series takes their results name")
+        self.step(); self.step()
+        self.assertIn({"id": 5, "ok": True, "state": "confirmed", "why": ""}, self.fake.acks)
+        sess = self.sent("s1")
+        self.assertEqual((sess["via"], sess["started_ms"], [x["name"] for x in sess["series"]], [x["scored"]["agg"]["shots"] for x in sess["series"]]),
+                         ("poster", made, ["J. S."], [1]), "deepTENS gets the session with that shot in it")
+
+    def test_refused_unless_the_lane_is_free(self):
+        self.a.pin_sign_in("lane-2", "654321", "1357")
+        self.assertEqual(self.claim(6, did="lane-2")[0]["why"], "someone is signed in on that lane")
+        self.fire("lane-3")
+        self.assertEqual(self.claim(7, did="lane-3")[0], {"id": 7, "ok": False, "why": "someone shot on that lane in the last 5 minutes", "state": "refused"})
+        self.clock.t += 20_000
+        self.assertIn("not reporting", self.claim(8, did="lane-4")[0]["why"])
+        self.hb()
+        self.assertTrue(self.claim(9, did="lane-1")[0]["ok"])
+        self.assertIn("someone else is claiming", self.claim(10, athlete=AL, did="lane-1")[0]["why"], "one claim per lane")
+        mid = self.m.create("M", self.custom([("record", 300, 10)]), [{"device_id": "lane-4"}], "dir", publish=False)
+        self.assertIn("in a match", self.claim(11, athlete=AL, did="lane-4")[0]["why"])
+        self.assertIsNotNone(mid)
+
+    def test_it_lapses_after_two_minutes_and_a_later_shot_is_not_theirs(self):
+        self.claim(12)
+        self.clock.t += CLAIM_MS + 31_000
+        self.hb()
+        self.step(); self.step()
+        self.assertIn({"id": 12, "ok": False, "state": "lapsed", "why": "no shot on the lane within 2 minutes"}, self.fake.acks)
+        self.assertIsNone(self.target()["claim"])
+        self.fire()
+        self.assertIsNone(self.target()["athlete"], "a shot after the lapse signs nobody in")
+
+    def test_a_shot_fired_in_time_that_arrives_late_still_confirms(self):
+        self.claim(13)
+        self.clock.t += CLAIM_MS + 20_000        # arrives 20 s after the 2 minutes, fired 30 s before that
+        self.hb()
+        self.step()                               # the periodic check runs meanwhile: the claim still waits (30 s grace)
+        self.assertIsNotNone(self.target()["claim"])
+        self.fire(ago_ms=50_000)
+        self.assertEqual(self.target()["athlete"]["athlete_id"], 41)
+
+    def test_a_shot_fired_after_the_two_minutes_does_not_confirm(self):
+        self.claim(19)
+        self.clock.t += CLAIM_MS + 10_000        # inside the grace, but fired after the 2 minutes
+        self.hb()
+        self.fire()
+        self.assertIsNone(self.target()["athlete"])
+
+    def test_a_shot_before_the_claim_does_not_confirm_it(self):
+        self.claim(14)
+        self.clock.t += 10_000
+        self.fire(ago_ms=60_000)                  # fired before the claim, delivered after it
+        self.assertIsNone(self.target()["athlete"])
+        self.assertIsNotNone(self.target()["claim"])
+
+    def test_cancel_at_the_lane_and_one_claim_per_athlete(self):
+        self.claim(15)
+        self.claim(16, did="lane-2")
+        self.assertIsNone(self.target("lane-1")["claim"], "a new claim replaces the athlete's older one")
+        self.assertIn({"id": 15, "ok": False, "state": "cancelled", "why": "you claimed another lane"}, self.fake.acks)
+        self.assertTrue(self.a.cancel_claim("lane-2"))
+        self.assertFalse(self.a.cancel_claim("lane-2"))
+        self.step(); self.step()
+        self.assertIn({"id": 16, "ok": False, "state": "cancelled", "why": "cancelled at the lane"}, self.fake.acks)
+
+    def test_someone_signing_in_at_the_lane_wins(self):
+        self.claim(17)
+        self.a.pin_sign_in("lane-1", "654321", "1357")
+        self.assertIsNone(self.target()["claim"])
+        self.step(); self.step()
+        self.assertIn({"id": 17, "ok": False, "state": "cancelled", "why": "someone signed in at the lane"}, self.fake.acks)
+        self.clock.t += 5_000
+        self.fire()
+        self.assertEqual(self.target()["athlete"]["athlete_id"], 42, "the shot is the one who is there")
+
+    def test_the_lanes_say_which_are_free(self):
+        self.fire("lane-2")
+        free = {x["lane"]: x["free"] for x in self.dt._lanes()}          # the heartbeat's lanes
+        self.assertEqual((free[self.target("lane-1")["lane"]], free[self.target("lane-2")["lane"]]), (True, False))
+        self.claim(18)
+        self.assertFalse({x["lane"]: x["free"] for x in self.dt._lanes()}[self.target("lane-1")["lane"]], "a claim waiting: not free")
+        self.assertNotIn("free", self.dt.lanes_payload()[0], "the public lane board does not carry it")
+        self.assertEqual({x["lane"]: x["free"] for x in self.dt._lanes()}[self.target("lane-3")["lane"]], True)
+        self.a.end_all("unlinked")
+        self.assertIsNone(self.target()["claim"], "unlinking clears claims")
 
 
 class OverHttp(MatchHttpBase):

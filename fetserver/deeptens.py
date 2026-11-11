@@ -525,7 +525,7 @@ class DeepTens:
     def _signins(self, now: float) -> None:
         """Phones signing in or out at a lane (its QR code opens deepTENS): report how the last ones went, take the new."""
         self.next_signins = now + SIGNINS_S
-        acks, self.signin_acks = self.signin_acks, []
+        acks, self.signin_acks = self.signin_acks + self.core.athletes.take_claim_news(), []   # and how posters' claims went
         try:
             st, r = self._call("/signins", {"acks": acks})
         except OSError:
@@ -540,8 +540,11 @@ class DeepTens:
         for s in r.get("signins", []) if isinstance(r.get("signins"), list) else []:
             if isinstance(s, dict) and isinstance(s.get("id"), int):
                 ok, why = self.core.athletes.phone(s)
-                self.signin_acks.append({"id": s["id"], "ok": ok, "why": why})
-        if self.signin_acks:
+                ack = {"id": s["id"], "ok": ok, "why": why}
+                if s.get("kind") == "claim":             # a poster's claim: waiting for a shot, or refused (later: confirmed / lapsed / cancelled)
+                    ack["state"] = "pending" if ok else "refused"
+                self.signin_acks.append(ack)
+        if self.signin_acks or self.core.athletes.claim_news:
             self.next_signins = now                      # say how it went at once (the phone is waiting)
 
     def _poll(self, now: float) -> float:
@@ -578,7 +581,10 @@ class DeepTens:
         return lk["interval"]
 
     def _lanes(self) -> list:
-        return [{"lane": t["lane"], "name": t["name"], "online": t["online"]} for t in self.core.list_targets() if t["lane"] is not None]
+        """The heartbeat's lanes; "free": a sign-in poster may claim it now (docs/PLAN-signin-posters.md)."""
+        c, now = self.core.db.conn(), self.core.now_ms()
+        return [{"lane": t["lane"], "name": t["name"], "online": t["online"], "free": not self.core.athletes.lane_free(c, t["device_id"], now)}
+                for t in self.core.list_targets() if t["lane"] is not None]
 
     def _heartbeat(self, now: float) -> bool:
         body = {"version": self.version, "name": self.name(), "lanes": self._lanes(), "outbox": self.outbox_count(), "now_ms": int(now * 1000)}

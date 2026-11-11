@@ -257,6 +257,8 @@ class Core:
                 else:
                     acked.append([boot, seq])   # (boot_count, seq) is the event's identity
         if created:                         # after the commit, so a browser never sees an unsaved shot
+            if self.athletes.claims:        # a poster's claim waiting on this lane: its shot confirms it
+                self.athletes.claims_check(device_id)
             self.hub.publish({"type": "shot", "device_id": device_id})
             self._deeptens_shot(device_id)
         return {"acked": acked, "rejected": rejected, "server_time_ms": recv_ms}
@@ -1268,6 +1270,7 @@ class Core:
                 # Control, Match Control) and the deepTENS link see their full name, number and id (user, 2026-11-10)
                 "athlete": self.athletes.on(c, did) if staff else self.athletes.public_view(self.athletes.on(c, did)),
                 "signin_url": self.athletes.signin_url(did, r["lane"], now) if self.athletes.on(c, did) is None else None,
+                "claim": self.athletes.claim_view(did),             # a poster's claim waiting for a shot here (public name only)
             })
         return out
 

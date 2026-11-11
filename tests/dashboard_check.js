@@ -1693,3 +1693,26 @@ console.log('OK');
   assert(a.includes('ISSF · NRA · CMP') && a.includes('1.0.0') && a.includes('Compatible with freETarget targets') && !a.includes('Backups'));
   console.log('range control OK');
 }
+
+// --- sign-in posters: a claim waiting on the lane, the posters, the Range Control button
+{
+  const {laneClaim, printPosters, posterUrl} = X;
+  assert.strictEqual(laneClaim({claim: null}), '');
+  const c = laneClaim({claim: {public_name: '<b>Ann</b>', left_ms: 112000, ends: 5}});
+  assert(c.includes('&lt;b&gt;Ann&lt;/b&gt;: fire a shot to claim this lane') && c.includes('>1:52<') && c.includes('data-claimends="5"') && c.includes('data-act="lnclaimx"'), 'who, the time left, Cancel');
+  const dt = {linked: true, url: 'https://deeptens.com/', range: {id: 3, name: '<i>Riverside</i>'}};
+  assert.strictEqual(posterUrl(dt), 'https://deeptens.com/join/3/');
+  assert.strictEqual(posterUrl(dt, 7), 'https://deeptens.com/join/3/7/');
+  const ts = [{lane: 2}, {lane: null}, {lane: 1}];
+  const p = printPosters({status: 200, data: dt}, ts);
+  assert.strictEqual(count(p, /<section class="poster">/g), 3, 'the entrance and one per lane (not the spare)');
+  assert(p.indexOf('>Sign in to shoot<') < p.indexOf('>Lane 1<') && p.indexOf('>Lane 1<') < p.indexOf('>Lane 2<'), 'entrance first, then by lane');
+  assert(p.includes('&lt;i&gt;Riverside') && !p.includes('<i>Riverside') && p.includes('https://deeptens.com/join/3/2/') && p.includes('Claim lane 2'), 'escaped; each lane its own address');
+  assert(p.includes('within 2 minutes') && p.includes('athlete number and PIN'), 'how to confirm; the offline way');
+  assert(printPosters({status: 401, data: {}}, ts).includes('Log in to Range Control'));
+  assert(printPosters({status: 200, data: {linked: false}}, ts).includes('need this FeT Monitor to be linked'));
+  assert.strictEqual(printPosters(null, ts), '<p>Loading…</p>');
+  const tt = X.targetsTab({targets: [], banned: []}, {dt: {linked: true}});
+  assert(tt.includes('href="#/print/posters"') && !X.targetsTab({targets: [], banned: []}, {dt: {linked: false}}).includes('print/posters'), 'the button only while linked');
+  console.log('posters OK');
+}

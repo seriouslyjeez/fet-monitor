@@ -397,6 +397,13 @@ body.tv .tv-small td{height:52px}body.tv .tv-small td.who b{font-size:24px;displ
 .tvfoot{display:flex;justify-content:space-between;gap:20px;font-size:20px;color:var(--mut);margin-top:18px}body.tv .finalnote{font-size:26px;margin:0 0 14px}
 body.tv .board h2{font-size:30px;margin:18px 0 6px}
 body.tv .board td.tot,body.tv .board th.tot{background:transparent;border:0;border-radius:0}body.tv .board td.tot{border-top:1px solid var(--line)}.tvwarn{margin-left:10px}body.tv .board td.who .tvwarn{display:inline}.tvfaces.strip .tvface{padding:10px}.tvfaces.strip .tvfhead b{font-size:22px}
+.claimband{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--last-bg);color:var(--last-ink);border-radius:16px;padding:12px 14px;margin:0 0 10px}.claimband>span{display:flex;flex-direction:column;flex:1;min-width:200px}.claimband .num{font-size:28px}.claimband .small{color:var(--fg)}
+.posters .poster{break-after:page;page-break-after:always;max-width:190mm;margin:0 auto 24px;padding:10mm 0;text-align:center;font-family:Archivo,system-ui,sans-serif}
+.posters .poster h1{font-size:64pt;margin:4mm 0 2mm;line-height:1}.posters .pmut{font-size:18pt;color:#444}.posters .psub{font-size:16pt;margin:0 0 6mm}
+.posters .pqr{width:110mm;height:110mm;margin:0 auto 6mm}.posters .pqr svg{width:100%;height:100%;display:block}
+.posters ol{text-align:left;font-size:16pt;max-width:160mm;margin:0 auto 6mm;padding-left:10mm}.posters li{margin:2mm 0}
+.posters .pfoot{font-size:12pt;color:#333}.posters .pfoot span{font-family:'JetBrains Mono',monospace;font-size:10pt}
+@media print{.posters .poster{margin:0 auto;padding:0}}
 </style>
 </head>
 <body>
@@ -1141,6 +1148,31 @@ function laneHead(t, mode, S) {                  // phones: the lane, its mode, 
     '<span class="st"><span class="livedot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' + (t.online ? 'Live' : 'Reconnecting') + '</span>' +
     '<button class="iconbtn" data-act="menu" aria-label="Lane menu" aria-expanded="' + !!S.menu + '">' + LI.more + '</button></div>';
 }
+// Sign-in posters (docs/PLAN-signin-posters.md): the range's entrance poster, then one per lane. They hold only an
+// address on deepTENS (no secret): the phone claims a lane there, and the first shot on the lane confirms it.
+const posterUrl = (dt, lane) => dt.url.replace(/\/+$/, '') + '/join/' + encodeURIComponent(dt.range.id) + '/' + (lane != null ? encodeURIComponent(lane) + '/' : '');
+function printPosters(res, targets) {
+  if (!res) return '<p>Loading…</p>';
+  if (res.status === 401) return '<p>Log in to Range Control (in another tab) to print the sign-in posters.</p>';
+  const dt = res.data || {};
+  if (!dt.linked || !dt.range || dt.range.id == null) return '<p>Sign-in posters need this FeT Monitor to be linked to deepTENS (Range Control → This Pi).</p>';
+  const lanes = (targets || []).filter(t => t.lane != null).map(t => t.lane).sort((a, b) => a - b);
+  const page = (title, sub, url, steps) => '<section class="poster"><div class="pmut">' + esc(dt.range.name) + '</div><h1>' + title + '</h1><p class="psub">' + sub + '</p>' +
+    '<div class="pqr">' + qrSvg(url) + '</div><ol>' + steps.map(x => '<li>' + x + '</li>').join('') + '</ol>' +
+    '<p class="pfoot">No signal on your phone? Use your athlete number and PIN on the lane\'s screen.<br><span>' + esc(url) + '</span></p></section>';
+  return '<div class="sheetpage posters" data-pages="' + (lanes.length + 1) + '">' +
+    page('Sign in to shoot', 'Your shots go into your deepTENS history.', posterUrl(dt), ['Scan this code with your phone. deepTENS opens; sign in.', 'Choose who is shooting, then a free lane, and tap <b>Claim</b>.',
+      'Fire your first shot on that lane within 2 minutes: the lane is yours.']) +
+    lanes.map(n => page('Lane ' + esc(n), 'Sign in on this lane with deepTENS.', posterUrl(dt, n), ['Scan this code with your phone. deepTENS opens; sign in.',
+      'Choose who is shooting and tap <b>Claim lane ' + esc(n) + '</b>.', 'Fire your first shot within 2 minutes: the lane is yours.'])).join('') + '</div>';
+}
+function laneClaim(t) {                          // a poster's claim waiting for its shot (docs/PLAN-signin-posters.md)
+  const c = t.claim;
+  if (!c) return '';
+  return '<section class="claimband" role="status"><span><b>' + esc(c.public_name) + ': fire a shot to claim this lane</b>' +
+    '<span class="small">Claimed from a sign-in poster with deepTENS. The first shot signs them in.</span></span>' +
+    '<b class="num" data-claimends="' + (c.ends || '') + '">' + fmtClock(c.left_ms) + '</b><button data-act="lnclaimx">Not you? Cancel</button></section>';
+}
 function laneLost(t) {                           // the target is silent: its shots are kept on it and arrive later (FmLaneLost)
   if (t.online) return '';
   const L = t.view && t.view.last_shot;
@@ -1274,7 +1306,7 @@ function shooterView(t, S) {
     '<span class="meta">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) +
     (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</span>' +
     (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '<button class="iconbtn" data-act="gear" title="Settings" aria-label="Settings">' + LI.gear + '</button></div>';
-  const top = reviewing ? reviewHead(t, v, ammo) + reviewPager(v, ammo) + reviewDetail(v) : laneLost(t) + matchBanner(t.match, t, S) + laneSignin(t, S) + laneModes(t, S);
+  const top = reviewing ? reviewHead(t, v, ammo) + reviewPager(v, ammo) + reviewDetail(v) : laneLost(t) + laneClaim(t) + matchBanner(t.match, t, S) + laneSignin(t, S) + laneModes(t, S);
   const body = ammo ? laneZoom(S.zoom, v.face) + ammoPanel(t, v) + ammoCompare(v, S) + ammoTable(v, true) : laneScore(t, v) + laneZoom(S.zoom, v.face) + laneSeries(v, true) + laneGrid(v);
   const acts = reviewing ? '' : '<div class="laneacts">' + (mine ? (t.kind === 'practice' ? act('sight', 'sights', 'Sights', !ready) : '') + act('menureview', 'review', 'Review') +
       (t.match ? '' : act('newseries', 'plus', t.kind === 'ammo' ? 'New test' : 'New series')) + exitButton : act('menureview', 'review', 'Review')) + '</div>';
@@ -1331,7 +1363,7 @@ function phoneView(t, S) {
   const ammo = v.kind === 'ammo' && !!v.ammo, mode = laneMode(t, v, reviewing);
   if (reviewing) return '<div class="phone lane">' + reviewHead(t, v, ammo) + laneFace(v, mode, S) + reviewDetail(v) + reviewBar(v, ammo) + '</div>';
   if (showSignin(t, S)) return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneSigninScreen(t, S) + '</div>';
-  return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneLost(t) + matchBanner(t.match, t, S) + (t.athlete ? laneSignin(t, S, true) : '') + laneModes(t, S) +
+  return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneLost(t) + laneClaim(t) + matchBanner(t.match, t, S) + (t.athlete ? laneSignin(t, S, true) : '') + laneModes(t, S) +
     (ammo ? '' : laneScore(t, v)) + laneFace(v, mode, S) + laneZoom(S.zoom, v.face) + (ammo ? laneAmmo(v, S) : laneSeries(v, false) + laneGrid(v)) + laneBar(t, S) + '</div>';
 }
 
@@ -1893,7 +1925,7 @@ function fwJobText(t, images) {      // the latest firmware update of a target, 
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
-  targets: ['/targets', '/athletes', '/updates'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
+  targets: ['/targets', '/athletes', '/updates', '/deeptens'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
   firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
   users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
 const RC_TABS = [['targets', 'Targets'], ['firmware', 'Firmware'], ['flash', 'Flash station'], ['tv', 'TV displays'], ['pi', 'This Pi'], ['users', 'Staff']];
@@ -1946,6 +1978,8 @@ function targetsTab(d, rc) {                     // Range Control → Targets (F
   const nsel = ids.filter(i => sel[i]).length, all = ids.length > 0 && nsel === ids.length, dis = nsel ? '' : ' disabled';
   const sl = sleepers(d), asleep = sl.filter(t => t.fet_target.asleep).length, att = rcAttention(d);
   let h = att.length ? '<section class="panel attn"><h3>Needs attention</h3>' + att.map(([t, x, id]) => '<button class="attrow" data-act="rctopen" data-id="' + esc(id) + '"><b>' + t + '</b><span class="mut">' + x + '</span></button>').join('') + '</section>' : '';
+  if (rc.dt && rc.dt.linked) h += '<div class="bulk"><a class="btn" href="#/print/posters" target="_blank" rel="noopener">Print sign-in posters</a>' +
+    '<span class="mut">An entrance poster and one per lane: athletes claim a lane from their phone with deepTENS, and their first shot confirms it.</span></div>';
   h += '<div class="rlisthead"><b>' + ts.length + (ts.length === 1 ? ' target' : ' targets') + '</b><span class="mut">Signal · shot delivery</span></div><ul class="tlist">' + (ts.length ? ts.map(t => {
     const D = t.delivery, med = D && D.shots ? (D.median_ms / 1000).toFixed(1) + ' s' : '–', ft = t.fet_target;
     return '<li><button class="trow' + (t.online ? '' : ' off') + '" data-act="rctopen" data-id="' + esc(t.device_id) + '"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' +
@@ -2777,6 +2811,7 @@ const route = () => {
   if (dp) return {display: dp[1].toUpperCase()};
   const tv = location.hash.match(/^#\/tv\/(targets|board)(?:\?(.*))?$/);
   if (tv) { const params = {}; (tv[2] || '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); params[k] = v || ''; }); return {tv: tv[1], params: params}; }
+  if (/^#\/print\/posters\/?$/.test(location.hash)) return {print: 'posters'};
   const pr = location.hash.match(/^#\/print\/(results|cards|incidents)\/([cma]?\d+)(?:\?p=(\d+))?$/);   // c competition, m match, a saved copy; incidents: a match id
   if (pr) return {print: pr[1], cid: pr[2], p: pr[3] || null};
   const rs = location.hash.match(/^#\/results(?:\/([cma]?\d+))?$/);
@@ -2808,6 +2843,7 @@ async function refresh() {
       return;
     }
     S.targets = (await get('/targets?client_id=' + CID)).targets.sort(byLane);
+    S.targets.forEach(x => { if (x.claim) x.claim.ends = Date.now() + x.claim.left_ms; });   // a poster's claim: its countdown on this device's clock
     const t = current();
     if (t && S.review) {
       S.reviewView = await get('/series/' + S.review.sid + '?stream=' + S.review.stream + '&upto=' + S.review.shot);
@@ -2898,7 +2934,8 @@ async function refresh() {
       const b = await get('/board' + (q.length ? '?' + q.join('&') : ''));
       S.board = b.matches; S.boardComps = b.competitions || []; S.boardOffset = b.server_time_ms - Date.now();
     }
-    if (rr.results || rr.print) {
+    if (rr.print === 'posters') S.posterDt = await adminCall('/deeptens');   // the range and its deepTENS address (Range Control)
+    if (rr.results || (rr.print && rr.print !== 'posters')) {
       if (rr.print === 'incidents') {             // the Range Incident Report needs a Match Control login
         const r = await matchCall('/matches/' + rr.cid + '/incidents');
         S.inc = r.status === 200 ? r.data : {error: r.status === 401 ? 'Log in to Match Control (in another tab) to see the range incident report.' : (r.data.error || 'error ' + r.status)};
@@ -3010,7 +3047,7 @@ function render(force) {                  // force: a structural change (e.g. an
   if (bar) bar.hidden = !r.print;
   if (r.print) {
     S.printAt = S.printAt || new Date();          // the time on the sheet: when the page was opened (a ticking clock would redraw it)
-    setApp(app, r.print === 'incidents' ? incidentReport(S.inc) : r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res, S.printAt));
+    setApp(app, r.print === 'posters' ? printPosters(S.posterDt, S.targets) : r.print === 'incidents' ? incidentReport(S.inc) : r.print === 'cards' ? scoreCards(S.res, r.p) : printResults(S.res, S.printAt));
     const n = r.print === 'cards' && app.firstElementChild ? app.firstElementChild.dataset.cards : null;
     document.getElementById('printinfo').textContent = n != null ? ' ' + n + ' score card' + (n === '1' ? '' : 's') : '';
     return;
@@ -3110,6 +3147,11 @@ async function act(el) {
   if (/^rc/.test(a)) return rangeAct(el, a);
   if (/^mc/.test(a)) return matchAct(el, a);
   if (!id) return;
+  if (a === 'lnclaimx') {                       // "Not you? Cancel" a poster's claim on this lane
+    const r = await fetch(API + '/targets/' + encodeURIComponent(route().id) + '/claim/cancel', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'});
+    if (r.status !== 200) toast('Nothing to cancel any more');
+    return refresh();
+  }
   if (a === 'lnskip') { S.lnskip = Object.assign({}, S.lnskip, {[route().id]: true}); return render(true); }   // this phone just shoots here
   if (a === 'lnpin') { S.lnpin = !S.lnpin; render(); const n = document.getElementById('ln_num'); if (n) n.focus(); return; }
   if (a === 'lnin') {                            // target sign-in with the athlete number and PIN (deepTENS checks it)
@@ -3906,6 +3948,7 @@ function say(text) {                              // the RO console speaks a com
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 0.95; setTimeout(() => speechSynthesis.speak(u), 300); } catch (e) { /* no speech */ }
 }
 function clockTick() {                            // between refreshes: count down, and speak commands on the console
+  document.querySelectorAll('[data-claimends]').forEach(x => { if (x.dataset.claimends) x.textContent = fmtClock(Math.max(0, +x.dataset.claimends - Date.now())); });
   document.querySelectorAll('[data-clock^="tv-"]').forEach(el => {
     let b = (S.board || []).find(x => 'tv-' + x.id === el.dataset.clock);
     if (!b) (S.boardComps || []).forEach(c => c.relays.forEach(r => { if ('tv-c' + c.id + '-' + r.match_id === el.dataset.clock) b = r; }));
@@ -4161,7 +4204,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

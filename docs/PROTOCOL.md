@@ -353,6 +353,20 @@ may have a target PIN (4 to 6 digits, a slow hash; five wrong tries lock it for 
    (`POST /api/v1/match/targets/<id>/athlete`) sign one of the range's athletes in (`{"athlete_id"}`) or the lane's
    athlete out (`{"athlete_id": null}`, in a match too). `GET .../athletes` lists the range's athletes (no hashes).
 
+4. *Sign-in posters* (2026-11-11, docs/PLAN-signin-posters.md). Range Control prints an entrance poster and one per
+   lane; each holds only an address: `<deepTENS>/join/<range id>/` (the range's lanes, free first) or
+   `<deepTENS>/join/<range id>/<lane>/`. The phone (on its own data) chooses who shoots and a lane; deepTENS passes a
+   claim in the same round: `{"id", "kind": "claim", "lane", "athlete"}` (no code). The Pi accepts it only for a free
+   lane (nobody signed in, not in a match, no shot on it for 5 minutes, the target reporting, no other claim waiting)
+   and answers `{"id", "ok", "why", "state": "pending"|"refused"}`. The lane's screen shows the claim and a 2-minute
+   countdown with *Not you? Cancel*. The first shot fired on that target after the claim and within 2 minutes (one that
+   arrives up to 30 s late still counts) signs the athlete in (`via: "poster"`) from the moment of the claim, so that
+   shot is theirs; the Pi reports `{"id", "ok": true, "state": "confirmed"}` in a later round. Otherwise
+   `{"id", "ok": false, "state": "lapsed"|"cancelled", "why"}` (no shot in time; cancelled at the lane; someone signed
+   in there; the athlete claimed another lane). One claim per lane and per athlete. Who may claim: any deepTENS athlete
+   (the poster needs the internet on both ends; offline, number and PIN at the lane). Each lane in the heartbeat's
+   `lanes` carries `"free"` (whether it may be claimed now; the public lane board's data does not).
+
 `athlete` is `{"athlete_id", "number", "name", "public_name"}`; `public_name` is the name the athlete chose for
 results (full name, initials or "Athlete").
 
