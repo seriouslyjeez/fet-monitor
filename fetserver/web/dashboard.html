@@ -373,6 +373,30 @@ label.tick{display:inline-flex;align-items:center;gap:8px;min-height:44px}label.
 .flashjob{background:var(--band);color:var(--band-ink);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.flashjob .mut{color:var(--band-mut)}.flashjob b{font-size:19px}
 .flashjob.failed{border:2px solid var(--bad)}.fjbar{height:10px;border-radius:5px;background:rgba(255,255,255,.15)}.fjbar>div{height:10px;border-radius:5px;background:var(--last)}
 .stchip .dot{background:var(--mut)}.stchip.ok .dot{background:var(--ok)}.stchip.bad .dot{background:var(--bad)}.signform input{width:100%}
+/* TV (1.0: FmTV, FmFinalTV): dark, large, one screen */
+body.tv{--tvhot:var(--last-ink)}:root[data-theme=dark] body.tv{--tvhot:var(--band-hot)}
+body.tv main{padding:32px 48px}body.tv{font-size:22px}
+body.tv .tvclock{display:flex;align-items:flex-end;gap:28px;background:transparent;border:0;padding:0 0 18px;margin:0}
+body.tv .tvtitle{flex:1;min-width:0}body.tv .tvtitle .mut{font-size:24px}body.tv .tvtitle h1{margin:0;font-size:56px;font-weight:800;letter-spacing:-.02em;line-height:1.05}
+body.tv .tvtime{text-align:right}body.tv .tvtime .mcphase{font-size:24px;text-transform:uppercase;letter-spacing:.1em;color:var(--tvhot);font-weight:700}
+body.tv .tvtime .mcclock{font-size:96px;line-height:1;font-weight:700}
+body.tv .board{margin:0 0 28px}body.tv .tvbody{display:flex;gap:40px;align-items:flex-start}body.tv .tvbody table{flex:1}
+body.tv .board table{border-collapse:collapse;font-size:30px}body.tv .board th{font-size:20px;font-weight:600;color:var(--mut);border-bottom:0;padding:0 12px;text-align:left}
+body.tv .board td{border-bottom:0;border-top:1px solid var(--line);padding:0 12px;height:96px}
+body.tv .board th.ser,body.tv .board th.tot,body.tv .board td.ser,body.tv .board td.tot{text-align:right}
+body.tv .board td.pl{font-size:40px;font-weight:700;color:var(--mut);width:60px}body.tv .board tr.top td.pl{color:var(--tvhot)}
+body.tv .board td.who b{display:block;font-size:38px}body.tv .board td.who .mut{font-size:22px}
+body.tv .board td.ser{font-size:30px;color:var(--mut)}body.tv .board td.ser.cur{color:var(--fg)}body.tv .board td.ser.last{color:var(--tvhot);font-weight:700}.dim{opacity:.5}
+body.tv .board td.tot{font-size:50px;font-weight:700}body.tv .board td.tot .mut{display:block;font-size:18px;font-weight:400}
+body.tv .board tr.top td{background:transparent}body.tv .board tr.low td{background:var(--warn-bg)}.tvwarn{color:var(--warn-ink);font-size:22px;font-weight:600}
+body.tv .tv-mid td{height:70px}body.tv .tv-mid td.who b{font-size:30px}body.tv .tv-mid td.tot{font-size:40px}body.tv .tv-mid td.pl{font-size:32px}
+body.tv .tv-small td{height:52px}body.tv .tv-small td.who b{font-size:24px;display:inline}body.tv .tv-small td.who .mut{font-size:18px;margin-left:10px}body.tv .tv-small td.tot{font-size:32px}body.tv .tv-small td.tot .mut{display:none}body.tv .tv-small td.pl{font-size:26px}body.tv .tv-small td.ser{font-size:24px}
+.tvfaces{width:520px;flex:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.tvfaces.strip{width:auto;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:18px}
+.tvface{background:var(--card);border-radius:20px;padding:14px;display:flex;flex-direction:column;gap:10px}.tvfhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.tvfhead b{font-size:26px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tvface .mface{width:100%;height:auto;aspect-ratio:1;border-radius:14px}.tvlast{color:var(--tvhot);font-size:30px}
+.tvfoot{display:flex;justify-content:space-between;gap:20px;font-size:20px;color:var(--mut);margin-top:18px}body.tv .finalnote{font-size:26px;margin:0 0 14px}
+body.tv .board h2{font-size:30px;margin:18px 0 6px}
+body.tv .board td.tot,body.tv .board th.tot{background:transparent;border:0;border-radius:0}body.tv .board td.tot{border-top:1px solid var(--line)}.tvwarn{margin-left:10px}body.tv .board td.who .tvwarn{display:inline}.tvfaces.strip .tvface{padding:10px}.tvfaces.strip .tvfhead b{font-size:22px}
 </style>
 </head>
 <body>
@@ -736,7 +760,7 @@ function displayPage(P, targets) {                // what a TV shows (read only)
   if (v.show === 'board') {
     if (!ms.length) return '<div class="dvmsg"><b>' + esc(v.name) + '</b><div class="mut">No match right now.</div></div>';
     const own = ms.filter(m => m.relay_of == null);              // a single match or a final (a relay is on its competition's board)
-    return (P.competitions || []).map(tvCompBoard).join('') + (own.length ? tvBoard(own, []) : '');
+    return (P.competitions || []).map(tvCompBoard).join('') + (own.length ? tvBoard(own, [], targets) : '');
   }
   const pick = ids => ids && ids.length ? targets.filter(t => ids.includes(t.device_id)) : null;
   const chosen = pick(v.targets), cards = list => '<div class="tvgrid">' + list.map(coachCard).join('') + '</div>' + (list.length ? '' : '<p class="mut">No targets to show.</p>');
@@ -746,14 +770,21 @@ function displayPage(P, targets) {                // what a TV shows (read only)
 function readOnly(html) {                         // a display: no links, no buttons, nothing a TV remote can focus
   return html.replace(/(<a\b[^>]*?)\s+href="[^"]*"/g, '$1').replace(/ data-act="[^"]*"/g, '').replace(/ tabindex="[^"]*"/g, '');
 }
-function tvClock(b) {
+function tvClock(b) {                             // a TV's header: the match, its phase and the clock, large (FmTV)
   if (!b) return '';
   const c = b.clock, live = ['running', 'paused', 'holding'].includes(b.state);
   const label = b.state === 'ready' ? 'Starting soon' : b.state === 'done' ? 'Finished' : b.state === 'aborted' ? 'Stopped' :
     (b.state === 'paused' ? 'Paused · ' : b.state === 'holding' ? 'Waiting for START · ' : '') + c.label;
-  return '<div class="tvclock"><div><div class="mut">' + esc(b.name) + ' · ' + esc(b.format_name) + '</div><div class="mcphase">' + esc(label || '') + '</div>' +
-    (live && c.next ? '<div class="mut">Next: ' + esc(c.next) + '</div>' : '') + (b.state === 'done' ? statusLine(b) : '') +
-    '</div><div class="mcclock" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div>';
+  return '<div class="tvclock"><div class="tvtitle"><div class="mut">' + esc(b.format_name) + '</div><h1>' + esc(b.name) + '</h1>' + (b.state === 'done' ? statusLine(b) : '') + '</div>' +
+    '<div class="tvtime"><div class="mcphase">' + esc(label || '') + (live && c.next ? '<span class="mut"> · next ' + esc(c.next) + '</span>' : '') + '</div>' +
+    '<div class="mcclock num" data-clock="tv-' + b.id + '">' + (live ? fmtClock(c.remaining_ms) : '–:––') + '</div></div></div>';
+}
+const tvSize = n => n <= 6 ? 'big' : n <= 10 ? 'mid' : 'small';   // a TV fits the rows on one screen up to about 16
+function tvFaces(rows, targets, max, label, last) {   // the lanes' targets beside a TV board: the face, the lane or name, the last shot (last(row) when given)
+  const ts = rows.map(r => [r, (targets || []).find(t => t.device_id === r.device_id)]).filter(x => x[1]).slice(0, max);
+  return ts.length ? '<div class="tvfaces">' + ts.map(([r, t]) => { const v = t.view, W = wholeRings(v), L = v.last_shot;
+    const shown = last ? last(r) : L ? (L.miss ? 'M' : W ? L.ring : dec(L.decimal)) : '';
+    return '<div class="tvface"><div class="tvfhead"><b>' + esc(label(t)) + '</b>' + (shown !== '' && shown != null ? '<b class="num tvlast">' + esc(shown) + '</b>' : '') + '</div>' + miniFace(t) + '</div>'; }).join('') + '</div>' : '';
 }
 function tvTargets(targets, boards, params) {
   const m = params.m ? boards.find(b => b.id === +params.m) : null;
@@ -767,18 +798,22 @@ function tvCompBoard(res) {
   const running = res.relays.find(r => r.match_id === res.current_relay) || res.relays.find(r => ['running', 'paused', 'holding', 'overtime'].includes(r.state));
   const clock = running ? tvClock({id: 'c' + res.id + '-' + running.match_id, name: res.name + ' · relay ' + running.relay, format_name: res.format_name, state: running.state, clock: running.clock}) :
     '<div class="tvclock"><div><div class="mcphase">' + esc(res.name) + '</div><div class="mut">' + esc(res.format_name) + '</div>' + statusLine(res) + '</div></div>';
-  return '<div class="board">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
-    '<table><tr><th>Place</th><th>Competitor</th><th>Team</th><th>Total</th><th>' + (res.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
-    Array.from({length: n}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
-    cl.individuals.map(e => '<tr class="' + (e.place === 1 && e.fired && !e.dq ? 'top' : '') + '"><td>' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</td><td>' + esc(e.name) + (e.pending ? ' <span class="mut">*</span>' : '') + penMark(e) +
-      '</td><td>' + esc(e.team) + '</td><td class="tot">' + (e.dq ? 'DQ' : e.fired ? fmt(e.total) : '') + '</td><td>' + (e.fired && !e.dq ? e.x : '') + '</td>' +
-      Array.from({length: n}, (_, i) => '<td class="ser">' + (e.dq ? '' : fmt(e.series[i])) + '</td>').join('') + '<td class="l10">' + (e.dq ? '' : e.last10.map(fmt).join(' ')) + '</td><td>' + (e.dq ? '' : e.shots + ' / ' + res.record_shots) + '</td></tr>').join('') +
-    '</table>').join('') + '</div>';
+  const nrows = res.classes.reduce((k, cl) => k + cl.individuals.length + (res.classes.length > 1 ? 1 : 0), 0);
+  return '<div class="board tv-' + tvSize(nrows) + '">' + clock + res.classes.map(cl => (cl.name || res.classes.length > 1 ? '<h2>' + esc(cl.name || 'No class') + '</h2>' : '') +
+    '<table><tr><th></th><th></th>' + Array.from({length: n}, (_, i) => '<th class="ser">S' + (i + 1) + '</th>').join('') + '<th class="ser">Last</th><th class="tot">Total</th></tr>' +
+    cl.individuals.map(e => '<tr class="' + (e.place === 1 && e.fired && !e.dq ? 'top' : '') + '"><td class="pl num">' + (e.fired && !e.dq ? e.place + (e.tied ? '=' : '') : '') + '</td>' +
+      '<td class="who"><b>' + esc(e.name) + (e.pending ? ' <span class="mut">*</span>' : '') + '</b><span class="mut">' + esc([e.team, e.relay ? 'relay ' + e.relay + ' · lane ' + e.lane : '', e.shots + ' of ' + res.record_shots].filter(Boolean).join(' · ')) + '</span></td>' +
+      Array.from({length: n}, (_, i) => '<td class="ser num">' + (e.dq || e.series[i] == null ? '<span class="dim">–</span>' : fmt(e.series[i])) + '</td>').join('') +
+      '<td class="ser num last">' + (!e.dq && e.last10 && e.last10.length ? fmt(e.last10[e.last10.length - 1]) : '') + '</td>' +
+      '<td class="tot num">' + (e.dq ? 'DQ' : e.fired ? fmt(e.total) + '<span class="mut">' + e.x + (res.scoring === 'decimal' ? ' inner' : 'x') + '</span>' : '') + '</td></tr>').join('') +
+    '</table>').join('') + '<div class="tvfoot"><span>' + esc(res.format_name) + '</span><span>FeT Monitor · compatible with freETarget targets</span></div></div>';
 }
 const ORD = n => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
-function tvFinalBoard(b) {                       // a final on the TV: live places, everyone's last shot, eliminations, shoot-offs
+function tvFinalBoard(b, targets) {               // a final on the TV: live places, everyone's last shot, who goes out next, eliminations, shoot-offs (FmFinalTV)
   const f = b.final, so = f.shoot_off || [], done = b.state === 'done';
   const any = f.rows.some(r => r.shoot_off.length);
+  const isOut = r => f.elim && r.out != null && r.out > 3 && !done;
+  const inn = f.rows.filter(r => !isOut(r) && !r.dq), low = f.elim && !done && f.next_out && inn.length > 1 ? inn.filter(r => r.out == null).slice(-1)[0] : null;
   const place = r => {
     if (r.dq) return 'DQ';
     const decided = f.elim ? r.out != null : done && !r.tied;
@@ -789,32 +824,38 @@ function tvFinalBoard(b) {                       // a final on the TV: live plac
     f.next_out ? (f.next_out.places.includes(2) ? '1st and 2nd are decided' : f.next_out.places.map(ORD).join(' and ') + ' place ' + (f.next_out.places.length > 1 ? 'are' : 'is') + ' decided') +
       ' after shot ' + f.next_out.after : '',
     so.length ? 'Shoot-off: ' + f.rows.filter(r => so.includes(r.lane)).map(r => esc(r.name)).join(' and ') : ''].filter(Boolean).join(' · ');
-  return '<div class="board">' + tvClock(b) + '<h2>' + esc(f.title || f.name) + '</h2><div class="finalnote">' + note + '</div>' +
-    '<table><tr><th>Place</th><th>Pos</th><th>Finalist</th><th>Last shot</th>' + (f.elim ? '<th>Final</th>' : '<th>Qualification</th><th>Final</th><th>Total</th>') +
-    (any ? '<th>Shoot-off</th>' : '') + '</tr>' +
-    f.rows.map(r => '<tr class="' + (f.elim && r.out != null && r.out > 3 && !done ? 'out' : '') + (so.includes(r.lane) ? ' so' : '') + '"><td>' + place(r) + '</td><td>' + esc(r.pos || '') + '</td>' +
-      '<td>' + esc(r.name) + (so.includes(r.lane) ? '<span class="sotag">SHOOT-OFF</span>' : '') + (f.elim && r.out != null && r.out > 3 ? ' <span class="mut">out, ' + ORD(r.out) + '</span>' : '') + '</td>' +
-      '<td class="last">' + (r.last != null ? r.last.toFixed(1) : '') + '</td>' +
-      (f.elim ? '<td class="tot">' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut" style="font-size:15px">(' + r.shots + ')</span></td>'
-        : '<td>' + (r.qual != null ? r.qual.toFixed(1) : '') + '</td><td>' + (r.dq ? '' : r.final.toFixed(1)) + ' <span class="mut" style="font-size:15px">(' + r.shots + ')</span></td><td class="tot">' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</td>') +
-      (any ? '<td>' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>').join('') + '</table>' +
-    (f.elim ? '<div class="mut">The final alone decides; the lowest finalist is eliminated at each decision.</div>' : '<div class="mut">The final is added to the qualification score.</div>') + '</div>';
+  const status = r => isOut(r) ? '<span class="mut">Out, ' + ORD(r.out) + '</span>' : r === low ? '<span class="tvwarn">Lowest: out after shot ' + f.next_out.after + ' if still lowest</span>'
+    : '<span class="mut">' + (r.pos ? 'Position ' + esc(r.pos) + ' · ' : '') + 'Lane ' + esc(FP(r)) + '</span>';
+  const strip = tvFaces(f.rows.filter(r => !isOut(r) && !r.dq), targets, 8, t => (f.rows.find(r => r.device_id === t.device_id) || {}).name || laneTitle(t), r => r.last != null ? r.last.toFixed(1) : '');
+  return '<div class="board tvfinal tv-' + tvSize(f.rows.length + (strip ? 6 : 0)) + '">' + tvClock(Object.assign({}, b, {name: f.title || f.name, format_name: b.name})) + '<div class="finalnote">' + note + '</div>' +
+    '<div class="tvbody"><table><tr><th></th><th></th><th class="ser">Last shot</th>' + (f.elim ? '<th class="tot">Final</th>' : '<th class="ser">Qualification</th><th class="ser">Final</th><th class="tot">Total</th>') +
+    (any ? '<th class="ser">Shoot-off</th>' : '') + '</tr>' +
+    f.rows.map(r => '<tr class="' + (isOut(r) ? 'out' : '') + (so.includes(r.lane) ? ' so' : '') + (r === low ? ' low' : '') + '"><td class="pl num">' + place(r) + '</td>' +
+      '<td class="who"><b>' + esc(r.name) + (so.includes(r.lane) ? '<span class="sotag">SHOOT-OFF</span>' : '') + '</b>' + status(r) + '</td>' +
+      '<td class="ser num last">' + (r.last != null ? r.last.toFixed(1) : '') + '</td>' +
+      (f.elim ? '<td class="tot num">' + (r.dq ? '' : r.final.toFixed(1)) + '<span class="mut">' + r.shots + ' shots</span></td>'
+        : '<td class="ser num">' + (r.qual != null ? r.qual.toFixed(1) : '') + '</td><td class="ser num">' + (r.dq ? '' : r.final.toFixed(1)) + '<span class="mut"> (' + r.shots + ')</span></td><td class="tot num">' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</td>') +
+      (any ? '<td class="ser num">' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>').join('') + '</table></div>' +
+    strip.replace('class="tvfaces"', 'class="tvfaces strip"') +
+    '<div class="tvfoot"><span>' + (f.elim ? 'The final alone decides; the lowest finalist is eliminated at each decision.' : 'The final is added to the qualification score.') + '</span><span>FeT Monitor · compatible with freETarget targets</span></div></div>';
 }
-function tvBoard(boards, comps) {
-  if (comps && comps.length) return comps.map(tvCompBoard).join('') + (boards || []).map(b => tvBoard([b])).join('');
-  if (!boards.length) return '<p class="mut" style="font-size:24px">No current matches.</p>';
+function tvBoard(boards, comps, targets) {        // the TV board: each match's ranking in TV type, the leaders' targets beside it (FmTV)
+  if (comps && comps.length) return comps.map(tvCompBoard).join('') + (boards || []).map(b => tvBoard([b], [], targets)).join('');
+  if (!boards.length) return '<p class="mut dvmsg">No current matches.</p>';
   return boards.map(b => {
-    if (b.final) return tvFinalBoard(b);
+    if (b.final) return tvFinalBoard(b, targets);
     const maxSeries = Math.max(1, Math.ceil(b.record_shots / 10)), fmt = v => b.scoring === 'decimal' ? v.toFixed(1) : String(Math.round(v));
-    const live = ['running', 'paused', 'holding'].includes(b.state);
-    return '<div class="board">' + tvClock(b) +
-      '<table><tr><th>Place</th><th>Lane</th><th>Competitor</th><th>Total</th><th>' + (b.scoring === 'decimal' ? 'Inner 10s' : 'X') + '</th>' +
-      Array.from({length: maxSeries}, (_, i) => '<th>' + (i * 10 + 1) + '–' + (i * 10 + 10) + '</th>').join('') + '<th>Last 10 shots</th><th>Shots</th></tr>' +
-      b.rows.map(r => '<tr class="' + (r.place === 1 && r.shots ? 'top' : '') + '"><td>' + (r.dq ? '' : r.place) + '</td><td>' + FP(r) + '</td><td>' + esc(r.competitor || r.target) + (r.pending ? ' <span class="mut" title="shots waiting for the match director">*</span>' : '') + penMark(r) + '</td>' +
-        '<td class="tot">' + (r.dq ? 'DQ' : fmt(r.total)) + '</td><td>' + (r.dq ? '' : r.x) + '</td>' +
-        Array.from({length: maxSeries}, (_, i) => '<td class="ser">' + (!r.dq && r.series[i] != null ? fmt(r.series[i]) : '') + '</td>').join('') +
-        '<td class="l10">' + (r.dq ? '' : r.last10.map(fmt).join(' ')) + '</td><td>' + (r.dq ? '' : r.shots + ' / ' + b.record_shots) + '</td></tr>').join('') + '</table>' +
-      (b.provisional_ranking ? '<div class="mut">Provisional: ties are split by inner tens, then 10-shot series from the last one. * = shots waiting for the match director.</div>' : '') + '</div>';
+    const ranked = b.rows.slice(), faces = tvFaces(ranked.filter(r => r.shots), targets, 4, t => laneTitle(t));
+    return '<div class="board tv-' + tvSize(b.rows.length) + '">' + tvClock(b) + '<div class="tvbody"><table><tr><th></th><th></th>' +
+      Array.from({length: maxSeries}, (_, i) => '<th class="ser">S' + (i + 1) + '</th>').join('') + '<th class="ser">Last</th><th class="tot">Total</th></tr>' +
+      ranked.map(r => '<tr class="' + (r.place === 1 && r.shots ? 'top' : '') + '"><td class="pl num">' + (r.dq || !r.shots ? '' : r.place) + '</td>' +
+        '<td class="who"><b>' + esc(r.competitor || r.target) + (r.pending ? ' <span class="mut" title="shots waiting for the match director">*</span>' : '') + '</b><span class="mut">Lane ' + esc(FP(r)) + ' · ' + r.shots + ' of ' + b.record_shots + '</span></td>' +
+        Array.from({length: maxSeries}, (_, i) => { const cur = i === Math.floor(Math.max(0, r.shots - 1) / 10);
+          return '<td class="ser num' + (cur ? ' cur' : '') + '">' + (!r.dq && r.series[i] != null ? fmt(r.series[i]) : '<span class="dim">–</span>') + '</td>'; }).join('') +
+        '<td class="ser num last">' + (!r.dq && r.last10.length ? fmt(r.last10[r.last10.length - 1]) : '') + '</td>' +
+        '<td class="tot num">' + (r.dq ? 'DQ' : fmt(r.total)) + (r.dq ? '' : '<span class="mut">' + r.x + (b.scoring === 'decimal' ? ' inner' : 'x') + '</span>') + '</td></tr>').join('') + '</table>' + faces + '</div>' +
+      '<div class="tvfoot"><span>' + (b.provisional_ranking ? 'Provisional: ties are split by inner tens, then 10-shot series from the last one. * = shots waiting for the match director.' : b.official_ms ? 'Official results' : 'Provisional results') + ' · ' + esc(b.format_name) + '</span>' +
+      '<span>FeT Monitor · compatible with freETarget targets</span></div></div>';
   }).join('');
 }
 
@@ -2753,13 +2794,13 @@ async function refresh() {
   S.busy = true;
   try {
     const dr = route();
-    if (dr.display) {                              // a TV display: its view, and the targets only when it shows them
+    if (dr.display) {                              // a TV display: its view and the targets
       const r = await fetch(API + '/displays/' + dr.display);
       if (r.status === 404) S.disp = {missing: true, code: dr.display};
       else if (r.ok) {
         S.disp = await r.json();
         if (S.version && S.disp.version && S.disp.version !== S.version) location.reload();   // the server was updated: the TV loads the new page
-        if (S.disp.view.show === 'targets') S.targets = (await get('/targets?client_id=' + CID)).targets.sort(byLane);
+        S.targets = (await get('/targets?client_id=' + CID)).targets.sort(byLane);   // the targets (a board shows the leaders' faces too)
         S.board = S.disp.matches; S.boardComps = S.disp.competitions; S.boardOffset = S.disp.server_time_ms - Date.now();
       } else throw new Error(r.status);
       S.dispAt = Date.now();
@@ -2956,7 +2997,7 @@ function render(force) {                  // force: a structural change (e.g. an
   document.body.classList.toggle('display', !!(r.tv || r.display));
   if (r.display) {                                // a TV display: its view's look, and only the data
     const th = S.disp && S.disp.view && S.disp.view.theme;
-    if (th === 'dark' || th === 'light') document.documentElement.dataset.theme = th; else delete document.documentElement.dataset.theme;
+    document.documentElement.dataset.theme = th === 'light' ? 'light' : 'dark';   // TVs are dark unless the view chooses light (1.0)
     const stale = S.dispAt && Date.now() - S.dispAt > 30000 ? '<div class="dvstale">not updated since ' + esc(new Date(S.dispAt).toLocaleTimeString()) + '</div>' : '';
     setApp(app, readOnly(displayPage(S.disp, S.targets || [])) + stale);
     return;
@@ -2976,7 +3017,7 @@ function render(force) {                  // force: a structural change (e.g. an
   }
   if (r.results) { setApp(app, S.phone ? (r.cid ? resultsPhone(S.res, S) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsList(S.resList, S) + '</div>')
     : r.cid ? resultsPage(S.res) : '<div class="spect">' + spectTabs('results', watchState(store('fet_watch')).picks.length) + resultsIndex(S.resList) + '</div>'); return; }
-  if (r.tv) { setApp(app, readOnly(r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || []) : tvTargets(S.targets, S.board || [], r.params))); return; }
+  if (r.tv) { document.documentElement.dataset.theme = 'dark'; setApp(app, readOnly(r.tv === 'board' ? tvBoard(S.board || [], S.boardComps || [], S.targets) : tvTargets(S.targets, S.board || [], r.params))); return; }
   setApp(app, r.about ? aboutView(S) : r.match ? matchView(S) : r.range ? rangeView(S) : r.id ? (t ? shooterView(t, S) : '<p>Unknown target. <a href="#/">Back</a></p>') : spectatorView(S, r, S.phone));
   if (r.spect) fitWatch();
   renderOverlay(t);
@@ -4120,7 +4161,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

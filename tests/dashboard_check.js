@@ -650,7 +650,15 @@ const B = {id: 2, name: '<b>League</b>', format_name: 'F', scoring: 'decimal', r
 const tb = tvBoard([B]);
 assert(tb.includes('&lt;b&gt;League') && tb.includes('&lt;i&gt;Bob') && !tb.includes('<i>Bob'), 'escaped');
 assert(tb.indexOf('&lt;i&gt;Bob') < tb.indexOf('Lane 1'), 'ordered by place');
-assert(tb.includes('<th>1–10</th><th>11–20</th>') && tb.includes('>104.3<') && tb.includes('10.1 10.9') && tb.includes('10 / 20') && tb.includes('title="shots waiting'));
+assert(tb.includes('<th class="ser">S1</th><th class="ser">S2</th>') && tb.includes('>104.3<') && tb.includes('class="ser num last">10.9<') && tb.includes('10 of 20') && tb.includes('title="shots waiting'), 'series, the last shot, shots so far');
+assert(/class="ser num cur">104\.3</.test(tb) && /class="ser num"><span class="dim">–/.test(tb), 'the series being shot stands out; the ones to come are dashes');
+assert(tb.includes('class="board tv-big"') && tvBoard([Object.assign({}, B, {rows: Array.from({length: 12}, (_, i) => Object.assign({}, B.rows[1], {device_id: 'x' + i})).concat([])})]).includes('tv-small'), 'the rows sized to fit one screen');
+assert(!tb.includes('class="tvfaces"') && tvBoard([B], [], D.targets).includes('class="tvfaces"'), 'the leaders\' targets beside the board, when the targets are known');
+assert.deepStrictEqual([1, 6, 7, 10, 11, 16].map(X.tvSize), ['big', 'big', 'mid', 'mid', 'small', 'small']);
+{ const B0 = Object.assign({}, B, {rows: [B.rows[0], Object.assign({}, B.rows[1], {shots: 0, total: 0, series: [], last10: []})]});
+  const h0 = tvBoard([B0], [], D.targets);
+  assert(!/data-|<td class="pl num">2</.test(h0.replace(/data-clock="[^"]*"/, '')) && /<td class="pl num"><\/td>/.test(h0), 'no place before a first shot');
+  assert(!h0.includes('aria-label="lane-1') && count(h0, /class="tvface"/g) === 1, 'a lane with no shot yet: no face beside the board'); }
 assert(tb.includes('data-clock="tv-2"') && tb.includes('1:01') && tb.includes('Provisional'));
 assert(tvBoard([Object.assign({}, B, {scoring: 'integer', rows: [Object.assign({}, B.rows[0], {total: 98, series: [98], last10: [10, 9]})]})]).includes('>98<'), 'integer scoring without decimals');
 assert(tvBoard([]).includes('No current matches'));
@@ -755,6 +763,7 @@ assert(printResults(C).includes('&lt;b&gt;League'));
   assert(printResults(C, at).includes(esc(at.toLocaleString())), 'the time the page was opened'); }
 const tb2 = tvCompBoard(C);
 assert(tb2.includes('data-clock="tv-c' + C.id + '-') && tb2.includes('<h2>Junior</h2>') && tb2.includes('<h2>Open</h2>'));
+assert(tb2.includes('<th class="ser">S1</th>') && tb2.includes('<th class="ser">Last</th>') && /class="board tv-(big|mid|small)"/.test(tb2) && tb2.includes('class="tvfoot"'), 'a competition on the TV: the same layout as a match');
 assert(tvBoard([], [C]).includes('Junior'), 'the TV board shows competitions');
 assert.strictEqual(tvUrl({kind: 'board', comps: [C.id], matches: []}), '#/tv/board?c=' + C.id);
 const det = {id: 1, name: 'L', format: {name: 'F'}, record_shots: 12, tie_rules: 'ISSF', team_size: 2, best_count: false, paced: 'spoken',
@@ -1160,14 +1169,19 @@ console.log('OK');
   const t = tvBoard([b], []);
   assert(t === tvFinalBoard(b), 'a final gets the finals board');
   assert(t.includes('Shot 22 of 24 fired') && t.includes('3rd place is decided after shot 22') && t.includes('Shoot-off: BELL and COLE'), t);
-  assert(t.includes('&lt;b&gt;AMES') && t.includes('<td class="last">10.9</td>') && count(t, /SHOOT-OFF<\/span>/g) === 2, 'names escaped; last shots; shoot-off marked');
-  assert(t.includes('class="out"') && t.includes('out, 4th') && !t.includes('class="medal'), 'eliminated 4th: muted; no medals before they are decided');
+  assert(t.includes('&lt;b&gt;AMES') && t.includes('<td class="ser num last">10.9</td>') && count(t, /SHOOT-OFF<\/span>/g) === 2, 'names escaped; last shots; shoot-off marked');
+  assert(t.includes('class="out"') && t.includes('Out, 4th') && !t.includes('class="medal'), 'eliminated 4th: muted; no medals before they are decided');
+  assert(/<tr class=" so low">[\s\S]*?COLE[\s\S]*?Lowest: out after shot 22 if still lowest/.test(t) && count(t, / low"/g) === 1, 'the lowest still in, and when they go out');
+  assert(!tvFinalBoard(Object.assign({}, b, {state: 'done'})).includes('Lowest:'), 'over: nobody is lowest');
+  const medal = tvFinalBoard(Object.assign({}, b, {final: Object.assign({}, b.final, {shoot_off: null, next_out: {after: 24, places: [2]},
+    rows: [row({place: 1, name: 'P1', lane: 1}), row({place: 2, name: 'P2', lane: 2}), row({place: 3, name: 'P3', lane: 3, out: 3})]})}));
+  assert(/<tr class=" low">[\s\S]*?P2/.test(medal) && !/ low">[\s\S]{0,200}P3/.test(medal), 'a medal place already decided is not the lowest still in');
   const done = tvFinalBoard(Object.assign({}, b, {state: 'done', final: Object.assign({}, b.final, {shoot_off: null, next_out: null, shots_done: 24,
     rows: [row({place: 1, out: 1}), row({place: 2, out: 2, lane: 2}), row({place: 3, out: 3, lane: 3}), row({place: 4, out: 4, lane: 4})]})}));
   assert(done.includes('class="medal m1"') && done.includes('class="medal m3"') && !done.includes('class="out"') && done.includes('Shot 24 of 24'), 'medals at the end');
   const nra = tvFinalBoard(Object.assign({}, b, {final: {title: 'NRA Final (NRA 7.1.2)', elim: false, shots_done: 4, shots_total: 10, next_out: null, shoot_off: null,
     rows: [row({place: 1, total: 300.4, qual: 196, final: 104.4}), row({place: 1, tied: true, lane: 2, total: 300.4})]}}));
-  assert(nra.includes('<th>Qualification</th>') && nra.includes('300.4') && nra.includes('added to the qualification') && !nra.includes('medal'), 'added finals: totals; no medal while running');
+  assert(nra.includes('<th class="ser">Qualification</th>') && nra.includes('300.4') && nra.includes('added to the qualification') && !nra.includes('medal'), 'added finals: totals; no medal while running');
   console.log('final board OK');
 }
 

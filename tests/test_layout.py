@@ -349,6 +349,35 @@ return {open: !!sheet, title: sheet.querySelector('h2').textContent};""", cookie
         modes = {t["device_id"]: t["mode"] for t in self.core.list_targets(None, staff=True)}
         self.assertEqual((modes["lane-2"], modes["lane-1"]), ("ammo", "practice"), "only that target changed")
 
+    def test_the_tv_board_fits_one_screen(self):
+        mid, cookie = self.match_range(12)
+        for f in self.core.matches.detail(mid)["flags"]:
+            self.core.matches.decide(mid, f["shot_id"], "count", "md")
+        v = self.look("/#/tv/board", TV, "light", r"""
+for (let i = 0; i < 80 && !document.querySelector('.board tr td'); i++) await sleep(50);
+await sleep(300);
+return {overflow: overflow(), h: document.documentElement.scrollHeight, rows: document.querySelectorAll('.board tr td.pl').length, size: document.querySelector('.board').className,
+        faces: document.querySelectorAll('.tvface').length, theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor,
+        buttons: document.querySelectorAll('.board button, .board [data-act], .board a[href]').length};""")
+        self.assertEqual(v["rows"], 12)
+        self.assertIn("tv-small", v["size"])
+        self.assertFalse(v["overflow"])
+        self.assertLessEqual(v["h"], 1080, "twelve lanes on one TV screen")
+        self.assertEqual(v["faces"], 4, "the leaders' targets beside it")
+        self.assertEqual((v["theme"], v["bg"]), ("dark", "rgb(14, 22, 30)"), "a TV is dark")
+        self.assertEqual(v["buttons"], 0, "read only")
+        t = self.look("/#/tv/targets?m=%d" % mid, TV, "light", "for (let i = 0; i < 80 && !document.querySelector('.card'); i++) await sleep(50); return {overflow: overflow(), cards: document.querySelectorAll('.card').length};")
+        self.assertEqual((t["overflow"], t["cards"]), (False, 12))
+
+    def test_a_saved_tv_display_is_dark_unless_it_chooses_light(self):
+        self.range_of(2)
+        auto = self.core.displays.save({"name": "Hall", "show": "board", "follow": "range"})
+        light = self.core.displays.save({"name": "Lobby", "show": "board", "follow": "range", "theme": "light"})
+        for code, want in ((auto, "dark"), (light, "light")):
+            with self.subTest(code=code):
+                v = self.look("/" + code, TV, "dark" if want == "light" else "light", "await sleep(1200); return {theme: document.documentElement.dataset.theme, overflow: overflow()};")
+                self.assertEqual((v["theme"], v["overflow"]), (want, False))
+
     def test_all_lanes_on_a_tablet(self):
         self.range_of(6)
         v = self.look("/#/lanes", TABLET, "dark", r"""
@@ -446,7 +475,7 @@ def ratio(a: str, b: str) -> float:
 PAIRS = [("fg", "bg"), ("fg", "card"), ("mut", "bg"), ("mut", "card"), ("link", "card"), ("on-accent", "accent"), ("bad", "card"),
          ("ok", "card"), ("warn", "card"), ("last-ink", "last-bg"), ("last-ink", "card"), ("fg", "hi"), ("mut", "hi"),
          ("bf-practice", "b-practice"), ("bf-sighter", "b-sighter"), ("bf-record", "b-record"), ("bf-ammo", "b-ammo"),
-         ("band-ink", "band"), ("band-mut", "band"), ("warn-ink", "warn-bg"), ("fg", "surface2"), ("mut", "surface2"), ("fg", "warn-bg")]
+         ("band-ink", "band"), ("band-mut", "band"), ("warn-ink", "warn-bg"), ("fg", "surface2"), ("mut", "surface2"), ("fg", "warn-bg"), ("last-ink", "bg"), ("warn-ink", "bg")]
 
 
 class Contrast(unittest.TestCase):
