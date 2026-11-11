@@ -140,6 +140,29 @@ press **Identify**, then install. The first install saves the board's original f
 same page) and gives the board its key. Fill in *Settings for the target* (WiFi name and password, the target's name)
 to set up its WiFi over USB at the same time. Later updates go over WiFi from **Range Control → Firmware**.
 
+## 7c. A home target on the range for a while
+
+A target set up at home with deepTENS (deeptens.com/setup) reports to deepTENS, signed with its own key that deepTENS
+holds. FeT Monitor does not take such a target as a guest. If the range needs it for a while (a target of its own has
+failed, a match needs one more lane), the Range Manager makes it one of the range's targets, and the owner puts it back
+afterwards. Both take a few minutes.
+
+**At the range** (Range Manager):
+
+1. Plug the target into the Pi: an ESP32 board by its USB-C port; for an Arduino Mega target, its Mega by USB *and*
+   its ESP-01S WiFi module in a USB adapter (one after the other).
+2. **Range Control → Flash station → Identify.** It already runs FeT firmware, so nothing is copied off it first.
+3. Fill in *Settings for the target* with the range's WiFi and this Pi's address, then install (or **Reinstall**) and
+   press **New key**. The target now signs for this Pi; the owner's key on it is replaced and kept nowhere.
+4. Give it a lane in **Range Control → Targets**. It is an ordinary range target from now on.
+
+**Afterwards** (the owner, at home): open **deeptens.com/setup** in Chrome or Edge, plug the target in and follow the
+steps again: home WiFi, a new key made in the browser and kept by deepTENS. Its history on deepTENS stays as it was:
+shots belong to the athletes who fired them, not to the target. Shots fired on it at the range count for an athlete
+signed in on that lane, like any other.
+
+Its settings (paper, lights, home WiFi) are not kept across the visit: the owner sets them again.
+
 ## 8. Rulebooks on the Pi
 
 Each match follows one rulebook, and the Pi keeps a copy of each one FeT Monitor uses (ISSF, USA Shooting, CMP Air
