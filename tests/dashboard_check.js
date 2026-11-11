@@ -65,15 +65,22 @@ assert(corner(coachView([sighterT])) && !corner(coachView([recordT])));
 const card = X.coachCard(recordT);
 assert(!coachView([recordT], state()).includes('tvcfg') && !coachView([recordT], state()).includes('TV display'), 'TV displays are set up in Range Control, not on All targets');
 const v = recordT.view;
-assert(card.includes('>' + dec(v.agg.decimal) + '<') && card.includes('>' + v.agg.integer + '<') && card.includes('X ' + v.agg.x), 'total, integer and X count');
-assert(card.indexOf('class="tot"') < card.indexOf('class="rows"'), 'total box is on the left');
-assert(card.indexOf('class="grprow"') < card.indexOf('class="shotrow"'), 'groups on the top row, last shots on the bottom row');
-assert.strictEqual(count(card, /class="cell/g), v.bull_size, 'one cell per shot position in the bull');
-assert.strictEqual(count(card, /class="grp( part)?"/g), v.groups.length);
+assert(card.includes('>' + dec(v.agg.decimal) + '<') && card.includes(v.count + (v.total ? ' of ' + v.total : ' shots')), 'the total and how many shots');
+assert(v.agg.x ? card.includes(v.agg.x + ' inner') : !card.includes(' inner'), 'inner tens counted when there are any');
+assert(card.includes('Last <b class="num">' + dec(v.last_shot.decimal) + '</b>'), 'the last shot');
+assert(card.indexOf('class="lcface"') < card.indexOf('class="lcinfo"'), 'the face beside the figures');
 assert(card.includes('Alice'), 'shooter name shown');
 assert(!/waiting on the target|controlled by|Take control|data-act/.test(card), 'nothing else under the target');
 const empty = coachView([T('lane-3')]);
-assert(empty.includes('offline') && empty.includes('no shots yet'));
+assert(empty.includes('Last report') && empty.includes('power and WiFi'), 'a silent target says so');
+const free = X.coachCard(Object.assign({}, practiceT, {online: true, shooter: '', athlete: null, view: Object.assign({}, practiceT.view, {count: 0, shooter: ''})}));
+assert(free.includes('>Free<') && free.includes('class="card lcard free"'), 'a free lane');
+const named = X.coachCard(Object.assign({}, practiceT, {online: true, shooter: 'Kim', view: Object.assign({}, practiceT.view, {count: 0, shooter: ''})}));
+assert(!named.includes('>Free<') && named.includes('Kim'), 'someone there, no shot yet: not free');
+const nox = X.coachCard(Object.assign({}, recordT, {view: Object.assign({}, recordT.view, {agg: Object.assign({}, recordT.view.agg, {x: 0})})}));
+assert(!nox.includes(' inner') && !nox.includes('0x'), 'no inner tens: nothing said');
+const lanesOrder = coachView([Object.assign({}, recordT, {device_id: 'z', lane: 3, name: 'Lane 3'}), Object.assign({}, practiceT, {device_id: 'y', lane: 1, name: 'Lane 1'})]);
+assert(lanesOrder.indexOf('href="#/t/y"') < lanesOrder.indexOf('href="#/t/z"'), 'by lane');
 assert(count(strip(v), /class="cell x/g) === v.bull_shots.filter(s => s.inner).length && v.bull_shots.some(s => s.inner), 'inner tens are highlighted');
 assert(strip(v).includes('>M<'), 'a miss is shown as M');
 // auto zoom on cards
@@ -710,7 +717,7 @@ assert(autoc.includes('Commands: Automatic (no commands)') && autoc.includes('no
 // new match: the three choices in order, spoken by default
 const nm = X.mcNew({draft: {lanes: {}}, formats: [], targets: []});
 assert(nm.indexOf('data-v="spoken"') < nm.indexOf('data-v="officer"') && nm.indexOf('data-v="officer"') < nm.indexOf('data-v="auto"'));
-assert(/data-v="spoken" class="sel"/.test(nm) && !/data-v="auto" class="sel"/.test(nm), 'spoken commands is the default');
+assert(/class="nmopt sel" data-act="mcpaced" data-v="spoken" aria-pressed="true"/.test(nm) && /data-v="auto" aria-pressed="false"/.test(nm), 'spoken commands is the default');
 // competitions: results, print, score cards, TV board (real server output)
 const C = D.comp;
 assert.deepStrictEqual(C.classes.map(c => c.name), ['Junior', 'Open']);
@@ -1566,4 +1573,21 @@ console.log('OK');
   const st = laneSheet({status: {role: 'officer'}, detail: stop, lanep: 'l5'});
   assert(st.includes('data-a="interrupt_end" data-id="l5"') && st.includes('>Interruption ended<') && !st.includes('mclready'), 'interrupted: its end, not Shooter ready');
   console.log('RO console OK');
+}
+
+// --- 1.0 a new match: how it will run (editable times, the total), the band's way to Match Control
+{
+  const {howItRuns, liveBand} = X;
+  const f = {name: 'F', edition: 'Book <1>', scoring: 'decimal', phases: [{kind: 'sight', label: 'Sighting', seconds: 900, shots: 0, rule: 'r1'}, {kind: 'record', label: 'Match', seconds: 3000, shots: 40, rule: 'r2'}]};
+  let h = howItRuns(f, {});
+  assert(h.includes('data-mct="0" value="15"') && h.includes('data-mct="1" value="50"') && h.includes('about 65 minutes') && h.includes('Book &lt;1&gt;') && h.includes('40 shots'), 'the rulebook times and the total');
+  h = howItRuns(f, {1: 600});
+  assert(h.includes('data-mct="1" value="10"') && h.includes('about 25 minutes'), 'a changed time counts');
+  const B = [{id: 3, name: 'M', state: 'running', clock: {label: 'Match', remaining_ms: 1000}}];
+  const keep = X.S.mc;
+  X.S.mc = null; assert(!liveBand(B).includes('href="#/match"'), 'not logged in: no link');
+  X.S.mc = {status: {logged_in: true}}; assert(liveBand(B).includes('href="#/match"'), 'Match Control staff: the way there');
+  X.S.mc = keep;
+  assert.strictEqual(liveBand([{id: 1, name: 'x', state: 'done', clock: {}}]), '', 'nothing being shot: no band');
+  console.log('new match OK');
 }

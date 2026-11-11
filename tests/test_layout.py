@@ -229,6 +229,57 @@ return {id, before, after, closed: !document.getElementById('overlay').classList
         d = {f["shot_id"]: f["decision"] for f in self.core.matches.detail(mid)["flags"]}
         self.assertEqual(d[v["id"]], "count", "the server has the decision")
 
+    def director(self):
+        self.core.matches.set_user("md", "director", "layout-pass-1")
+        req = urllib.request.Request(self.url + "/api/v1/match/login", data=json.dumps({"username": "md", "password": "layout-pass-1"}).encode(),
+                                     headers={"Content-Type": "application/json", "X-FET-Admin": "1"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            return r.headers["Set-Cookie"].split(";")[0]
+
+    def test_a_new_match_made_on_a_phone_and_a_tablet(self):
+        self.range_of(5)
+        cookie = self.director()
+        script = r"""
+for (let i = 0; i < 80 && !document.querySelector('[data-act=mcnew]'); i++) await sleep(50);
+document.querySelector('[data-act=mcnew]').click(); await sleep(400);
+const sel = document.querySelector('#mcfmt'), opt = [...sel.options].find(o => /10m Air Rifle 60/.test(o.textContent));
+sel.value = opt.value; sel.dispatchEvent(new Event('input', {bubbles: true})); await sleep(400);
+const name = document.querySelector('#mcname'); name.value = 'Phone night'; name.dispatchEvent(new Event('input', {bubbles: true}));
+document.querySelector('[data-mcl="lane-A"]').click(); document.querySelector('[data-mcl="lane-B"]').click();
+const c = document.querySelector('[data-mcc="lane-B"]'); c.value = 'Ann <b>Lee'; c.dispatchEvent(new Event('input', {bubbles: true}));
+const t = document.querySelector('[data-mct="3"]'); t.value = '60'; t.dispatchEvent(new Event('input', {bubbles: true}));
+await sleep(100);
+const out = {overflow: overflow(), small: small('.nm button, .nm input:not([type=checkbox]), .nm select, .nm label'), steps: document.querySelectorAll('.howrun li').length,
+             cols: new Set([...document.querySelectorAll('.nmcol')].map(e => Math.round(e.getBoundingClientRect().left))).size};
+document.querySelector('[data-act=mccreate]').click();
+for (let i = 0; i < 80 && !document.querySelector('[data-clock=console]'); i++) await sleep(50);
+out.console = !!document.querySelector('[data-clock=console]');
+return out;"""
+        for size, a, b in ((PHONE, 2, 3), (TABLET, 4, 5)):
+            with self.subTest(size=size):
+                v = self.look("/#/match/singles", size, "light", script.replace("lane-A", "lane-%d" % a).replace("lane-B", "lane-%d" % b), cookie=cookie)
+                self.assertFalse(v["overflow"])
+                self.assertEqual(v["small"], [])
+                self.assertEqual(v["steps"], 4, "how it will run: the format's phases")
+                self.assertEqual(v["cols"], 1 if size == PHONE else 2)
+                self.assertTrue(v["console"], "created: its console opens")
+        ms = [m for m in self.core.matches.list() if m["name"] == "Phone night"]
+        self.assertEqual(len(ms), 2)
+        d = self.core.matches.detail(min(m["id"] for m in ms))
+        self.assertEqual([(l["device_id"], l["competitor"]) for l in d["lanes"]], [("lane-2", None), ("lane-3", "Ann <b>Lee")])
+        self.assertEqual(d["format"]["phases"][3]["seconds"], 3600, "a changed time is kept")
+        self.assertTrue(d["format"].get("modified"), "and marked as modified")
+
+    def test_all_lanes_on_a_tablet(self):
+        self.range_of(6)
+        v = self.look("/#/lanes", TABLET, "dark", r"""
+for (let i = 0; i < 80 && !document.querySelector('.lcard'); i++) await sleep(50);
+const cards = [...document.querySelectorAll('.lcard')];
+return {n: cards.length, cols: new Set(cards.map(c => Math.round(c.getBoundingClientRect().left))).size, overflow: overflow(),
+        fits: cards[cards.length - 1].getBoundingClientRect().bottom <= innerHeight};""")
+        self.assertEqual((v["n"], v["cols"], v["overflow"]), (6, 3, False))
+        self.assertTrue(v["fits"], "six lanes on one tablet screen")
+
     def test_watching_lanes_on_a_phone_and_a_tablet(self):
         self.range_of(12)
         script = r"""
