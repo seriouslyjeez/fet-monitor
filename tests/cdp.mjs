@@ -1,6 +1,7 @@
 // Headless Chrome over the DevTools protocol, no packages (Node 22+ has WebSocket): open a page at a screen size, light
 // or dark, run a check script in it and print what it returns (JSON). Used by tests/test_layout.py.
 //   node tests/cdp.mjs <chrome> <url> <width> <height> <light|dark> <check.js>
+// Optional: CDP_INIT (script run on every new document), CDP_COOKIE (name=value), CDP_SHOT (+ CDP_FULL) a screenshot.
 // The check script is the body of an async function run in the page; it returns a JSON-able value.
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -39,6 +40,10 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: w < 700 }, sessionId);
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: scheme === "dark" ? "dark" : "light" }] }, sessionId);
   await send("Page.enable", {}, sessionId);
+  if (process.env.CDP_COOKIE) {                    // e.g. a Match Control session: name=value for this page's origin
+    const i = process.env.CDP_COOKIE.indexOf("=");
+    await send("Network.setCookie", { name: process.env.CDP_COOKIE.slice(0, i), value: process.env.CDP_COOKIE.slice(i + 1), url }, sessionId);
+  }
   if (process.env.CDP_INIT) await send("Page.addScriptToEvaluateOnNewDocument", { source: process.env.CDP_INIT }, sessionId);   // e.g. this browser's client id
   await send("Runtime.enable", {}, sessionId);
   await send("Page.navigate", { url }, sessionId);

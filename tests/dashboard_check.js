@@ -552,9 +552,12 @@ const DET = (o) => Object.assign({id: 1, name: '<i>Club</i>', state: 'running', 
   flags: [{shot_id: 9, lane: 1, n: 3, stream: 'scored', why: 'more than 2 record shots in stage', miss: false, decimal: 10.4, decision: null}]}, o || {});
 const con = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
 assert(con.includes('&lt;i&gt;Club') && con.includes('&lt;u&gt;Al') && con.includes('&lt;b&gt;Sighting') && !con.includes('<i>Club'), 'escaped');
-assert(con.includes('data-act="mcrecord" data-id="lane-1"') && con.includes('data-mcdec="9"') && con.includes('1:05'));
+const LS = (detail, role) => X.laneSheet({status: {role: role || 'officer'}, detail: detail, lanep: 'lane-1'});
+const FS = (detail, flagp, role) => X.flagSheet({status: {role: role || 'director'}, detail: detail, flagp: flagp});
+assert(con.includes('data-act="mcflag" data-id="9"') && con.includes('1:05') && LS(DET()).includes('data-act="mcrecord" data-id="lane-1"'), 'a flag opens its sheet; the lane its actions');
+assert(FS(DET(), {shot: 9}).includes('value="annul"') && FS(DET(), {shot: 9}).includes('data-flagpick="1"') && /value="undecided" data-flagpick="1" checked/.test(FS(DET(), {shot: 9})), 'the decisions, undecided chosen');
 assert(con.includes('data-a="pause"') && !con.includes('data-a="resume"') && con.includes('data-a="abort"'));
-assert(!mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('data-mcdec'), 'only directors decide');
+assert(!mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('data-act="mcflag"') && mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('more than 2 record shots'), 'only directors decide; officers see the flag');
 assert(mcConsole({status: {role: 'officer'}, detail: DET({state: 'ready', flags: []}), speak: false}).includes('data-act="mcstart"'));
 assert(mcConsole({status: {role: 'officer'}, detail: DET({state: 'paused', clock: Object.assign({}, DET().clock, {state: 'paused'})}), speak: false}).includes('data-a="resume"'));
 const info = {name: 'Club', competitor: 'Al', lane: 2, state: 'running', label: 'Stage', kind: 'stage', next: 'Changeover', remaining_ms: 61000, shots: 20, in_record: false};
@@ -570,8 +573,8 @@ assert(!matchBanner(Object.assign({}, info, {kind: 'record'}), mine, state()).in
   assert(matchBanner(sb, mine, state()).includes('data-act="mcmysighters"') && matchBanner(sb, mine, state()).includes('NRA SB 9.2'), 'smallbore: back to sighters');
   assert(!matchBanner(sb, notMine, state()).includes('mcmysighters') && !matchBanner(Object.assign({}, sb, {state: 'paused'}), mine, state()).includes('mcmysighters'));
   const inRec = DET({lanes: [Object.assign({}, DET().lanes[0], {in_record: true})]});
-  assert(!mcConsole({status: {role: 'officer'}, detail: inRec, speak: false}).includes('mcsighters'));
-  assert(mcConsole({status: {role: 'officer'}, detail: Object.assign({}, inRec, {rb: {sighters_any_time: true}}), speak: false}).includes('data-act="mcsighters" data-id="lane-1"'),
+  assert(!LS(inRec).includes('mcsighters'));
+  assert(LS(Object.assign({}, inRec, {rb: {sighters_any_time: true}})).includes('data-act="mcsighters" data-id="lane-1"'),
     'the console: back to sighters for a lane in record');
   // ISSF 3-position (7.7.3): the switch between positions on one clock
   const p3 = Object.assign({}, info, {kind: 'record', position: 'kneeling', pos_shots: 20, pos_of: 20, between: false, can_back: true});
@@ -583,7 +586,7 @@ assert(!matchBanner(Object.assign({}, info, {kind: 'record'}), mine, state()).in
     'sighting for the next position: Start record');
   const l3 = Object.assign({}, DET().lanes[0], {position: 'prone', between: true, can_record: true, can_back: false, pos_shots: 0, pos_of: 20});
   const c3 = mcConsole({status: {role: 'officer'}, detail: DET({lanes: [l3]}), speak: false});
-  assert(c3.includes('sighting for prone') && c3.includes('data-act="mcrecord" data-id="lane-1"'), 'the console: the position and the switch');
+  assert(c3.includes('sighting for prone') && LS(DET({lanes: [l3]})).includes('data-act="mcrecord" data-id="lane-1"'), 'the console: the position; the lane sheet: the switch');
 }
 assert(matchBanner(Object.assign({}, info, {state: 'ready'}), mine, state()).includes('Waiting for the start'));
 assert.strictEqual(matchBanner(null, mine, state()), '');
@@ -611,7 +614,7 @@ assert.strictEqual(correctionsPanel(DET({state: 'ready'}), true), '');
 }
 assert(commandsPanel(DET()).includes('id="mcsay"') && commandsPanel(DET()).includes('Given: “Stage”'));
 const sflag = DET({flags: [{shot_id: 7, lane: 1, n: 1, stream: 'sighter', why: 'during set-up', miss: false, decimal: 10.1, decision: null}]});
-const sc = mcConsole({status: {role: 'director'}, detail: sflag, speak: false});
+const sc = FS(sflag, {shot: 7});
 assert(sc.includes('value="penalty2_first"') && sc.includes('value="miss_first"') && !sc.includes('value="annul"'), 'sighter flags get sighter decisions');
 // TV displays
 assert.strictEqual(tvUrl({kind: 'board', matches: [3, 4]}), '#/tv/board?m=3,4');
@@ -696,7 +699,8 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
 // the console says how commands are given and can switch to the other two
 const spk = mcConsole({status: {role: 'director'}, detail: DET(), speak: false});
 assert(spk.includes('Commands: Spoken commands') && spk.includes('data-v="officer"') && spk.includes('data-v="auto"') && !spk.includes('data-a="pacing" data-v="spoken"'));
-assert(spk.includes('Turn on sound for spoken commands') && mcConsole({status: {role: 'director'}, detail: DET(), speak: true}).includes('Sound on · mute this device'));
+assert(spk.includes('Turn on sound for spoken commands') && mcConsole({status: {role: 'director'}, detail: DET(), speak: true}).includes('sound on (tap to mute this device)') &&
+  !mcConsole({status: {role: 'director'}, detail: DET(), speak: true}).includes('Turn on sound'));
 const offc = mcConsole({status: {role: 'officer'}, detail: HOLD, speak: false});
 assert(offc.includes('data-a="pacing" data-v="spoken"') && offc.includes('data-a="pacing" data-v="auto"') && offc.includes('the clock waits for Next') && !offc.includes('data-act="mcspeak"'));
 const AUTO = DET({clock: Object.assign({}, DET().clock, {paced: 'auto'})});
@@ -766,21 +770,22 @@ console.log('OK');
 
 // moving a shooter (real server output): the console, the move window, the shooter's own screen
 {
-  const {lanesPanel, moveSheet, placeSection, mcList, competitorSheet} = X;
+  const {moveSheet, placeSection, mcList, competitorSheet} = X;
+  const lanesUI = (d, mc, director) => d.lanes.map(l => X.laneCard(d, l, {}, director) + X.laneSheet({status: {role: director ? 'director' : 'officer'}, detail: d, lanep: l.device_id})).join('');   // what the console shows: each lane's card and sheet
   const lane = (d, id) => d.lanes.find(l => l.device_id === id);
   const mv = D.moving, lm = lane(mv, 'comp-4');
   assert.strictEqual(lm.own, 'moving');
   assert.deepStrictEqual(lm.moved_from, ['comp-1']);
-  const p1 = lanesPanel(mv, {}, true);
+  const p1 = lanesUI(mv, {}, true);
   assert(p1.includes('data-act="mclready" data-id="comp-4"') && p1.includes('value="5"'), 'Ready with the ISSF 5 minutes, editable');
   assert(p1.includes('moved from comp-1') && p1.includes('<b>Moving</b>'), 'the console says who moved and that their time stands still');
   assert.strictEqual(count(p1, /data-act="mclready"/g), 1, 'only the moving shooter can be made ready');
   const rd = D.ready, lr = lane(rd, 'comp-4');
   assert.strictEqual(lr.own, 'extra'); assert(lr.sighting);
-  const p2 = lanesPanel(rd, {}, false);
+  const p2 = lanesUI(rd, {}, false);
   assert(p2.includes('data-act="mclrecord" data-id="comp-4"') && /data-lends="\d+"/.test(p2), 'sighting, then Start record; their own clock ticks');
   assert(p2.includes('data-act="mcmove"'), 'a range officer can move a shooter during the match');
-  assert(!lanesPanel(Object.assign({}, rd, {state: 'ready'}), {}, false).includes('mcmove'), 'before the start only the director moves');
+  assert(!lanesUI(Object.assign({}, rd, {state: 'ready'}), {}, false).includes('mcmove'), 'before the start only the director moves');
   // the move window lists the free targets only, with the rulebook text; names are escaped
   const sheet = moveSheet({detail: rd, movep: {from: 'comp-2'}, targets: D.mtargets});
   assert(!sheet.includes('value="comp-3"') && !sheet.includes('value="comp-4"'), 'targets in a match are not offered');
@@ -956,14 +961,15 @@ console.log('OK');
 
 // decision guidance on the flagged shots
 {
-  const {guideRow, mcConsole} = X;
+  const {mcConsole} = X;
   const f = {shot_id: 1, lane: 1, n: 2, stream: 'sighter', why: 'during setup', decision: null, miss: false, decimal: 9.1,
     guide: {rule: 'ISSF 6.11.1.1 h', text: 'A shot before START <x>', suggest: 'miss_first', todo: null, url: 'https://issf-sports.org/rules'}};
-  const g = guideRow(f, {miss_first: 'Miss on the first record shot'});
-  assert(g.includes('href="https://issf-sports.org/rules"') && g.includes('&lt;x&gt;') && g.includes('Suggested: Miss on the first record shot'), g);
-  assert.strictEqual(guideRow({}, {}), '');
-  const todo = guideRow({guide: {rule: 'NRA 14.5', text: 't', suggest: null, todo: 'Ignore this shot, then…', url: 'u'}}, {});
-  assert(!todo.includes('Suggested') && todo.includes('Ignore this shot'));
+  const det = {state: 'running', clock: {label: 'Stage'}, lanes: [{device_id: 'd1', lane: 1, target: 'T'}], flags: [Object.assign({device_id: 'd1'}, f)], unplaced: []};
+  const g = X.flagSheet({status: {role: 'director'}, detail: det, flagp: {shot: 1}});
+  assert(g.includes('href="https://issf-sports.org/rules"') && g.includes('&lt;x&gt;') && /value="miss_first" data-flagpick="1"><span><b>[^<]+<\/b><span class="mut">What the rulebook suggests/.test(g), 'the rule, its text, the suggestion');
+  det.flags[0].guide = {rule: 'NRA 14.5', text: 't', suggest: null, todo: 'Ignore this shot, then…', url: 'u'};
+  const todo = X.flagSheet({status: {role: 'director'}, detail: det, flagp: {shot: 1}});
+  assert(!todo.includes('What the rulebook suggests') && todo.includes('Ignore this shot'));
   console.log('guidance OK');
 }
 
@@ -1022,16 +1028,17 @@ console.log('OK');
 
 // phase G: interruptions, malfunctions and late arrival on the console
 {
-  const {lanesPanel, lateSheet} = X;
+  const {lateSheet} = X;
+  const lanesUI = (d, mc, director) => d.lanes.map(l => X.laneCard(d, l, {}, director) + X.laneSheet({status: {role: director ? 'director' : 'officer'}, detail: d, lanep: l.device_id})).join('');   // what the console shows: each lane's card and sheet
   const rd = JSON.parse(JSON.stringify(D.ready)), l = rd.lanes.find(x => x.device_id !== 'comp-4');
   rd.state = 'running'; rd.clock.kind = 'record';
-  const p = lanesPanel(rd, {}, false);
+  const p = lanesUI(rd, {}, false);
   assert(p.includes('data-act="mclint" data-a="interrupt" data-id="' + l.device_id + '"') && p.includes('data-a="malfunction"'), 'interruption and malfunction per firing point');
   l.own = 'moving'; l.stop = 'interrupt'; l.own_remaining_ms = 300000;
-  const q = lanesPanel(rd, {}, false);
+  const q = lanesUI(rd, {}, false);
   assert(q.includes('<b>Interrupted</b> · 5:00 kept') && q.includes('data-a="interrupt_end" data-id="' + l.device_id + '">Interruption ended') && !q.includes('data-act="mclready" data-id="' + l.device_id + '"'));
   l.stop = 'malfunction';
-  assert(lanesPanel(rd, {}, false).includes('>Repaired<'), 'NRA disabled rifle: Repaired');
+  assert(lanesUI(rd, {}, false).includes('>Repaired<'), 'NRA disabled rifle: Repaired');
   const det = Object.assign({}, rd, {competition_id: 1});
   const ls = lateSheet({detail: det, latep: {people: [{id: 1, name: 'AMES', relay: 1}, {id: 2, name: '<b>BELL</b>', relay: null}]}, targets: D.mtargets});
   assert(ls.includes('&lt;b&gt;BELL') && !ls.includes('>AMES<') && ls.includes('ISSF 6.11.4'), 'only competitors on no relay');
@@ -1094,7 +1101,7 @@ console.log('OK');
 
 // rulebooks: local copies on the server, the publishers' pages; a match links its own book
 {
-  const {mcRulebooks, bookLink, bookFile, guideRow} = X;
+  const {mcRulebooks, bookLink, bookFile} = X;
   const R = D.rulebooks, base = {status: {user: 'md', role: 'director'}, rulebooks: R};
   const pg = mcRulebooks(base);
   assert(R.docs.length === 6 && pg.includes('NRA Smallbore Rifle Rules') && pg.includes('USA Shooting Rules') && pg.includes('ISSF Rule Book 2026'), 'every document, USA Shooting listed separately');
@@ -1111,8 +1118,10 @@ console.log('OK');
   const nra = {doc: 'nra-par-2025', name: 'NRA', url: 'https://competitions.nra.org/competition-resources/rule-books/'};
   assert(bookLink(base, nra).includes('href="https://competitions.nra.org/') && bookLink(base, nra).includes('not stored here'), 'not stored: the publisher, marked');
   assert.strictEqual(bookLink(base, {doc: null, name: 'No rulebook'}), '', 'no rulebook: no link');
-  const f = {guide: {rule: 'CMP AG 7.11.8', text: 't', suggest: null, todo: null, url: ag.url}};
-  assert(guideRow(f, {}, bookFile(base, ag)).includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') && guideRow(f, {}, null).includes('href="' + ag.url + '"'), 'guidance opens the local copy');
+  const det = {state: 'running', clock: {label: 'S'}, rb: ag, lanes: [{device_id: 'd1', lane: 1, target: 'T'}], unplaced: [],
+    flags: [{shot_id: 1, device_id: 'd1', lane: 1, n: 1, stream: 'scored', why: 'w', miss: false, decimal: 9, decision: null, guide: {rule: 'CMP AG 7.11.8', text: 't', suggest: null, todo: null, url: ag.url}}]};
+  assert(X.flagSheet(Object.assign({}, base, {detail: det, flagp: {shot: 1}})).includes('href="/api/v1/rulebooks/cmp-ag-2026.pdf"') &&
+    X.flagSheet({status: {role: 'director'}, detail: det, flagp: {shot: 1}}).includes('href="' + ag.url + '"'), 'guidance opens the local copy, else the publisher');
   console.log('rulebooks OK');
 }
 
@@ -1497,4 +1506,64 @@ console.log('OK');
   assert(D.listing.every(c => typeof c.official === 'boolean'), 'the server says whether each is official');
   delete global.localStorage;
   console.log('spectators OK');
+}
+
+// --- 1.0 the Range Officer's console: the lanes that need a look first, the band's next step, the sheets
+{
+  const {laneNeeds, roBand, laneCard, flagSheet, laneSheet, mcConsole} = X;
+  const L = (id, fp, o) => Object.assign({device_id: id, lane: fp, fp: fp, target: 'Lane ' + fp, competitor: 'C' + fp, online: true, sighters: 0, record: 2, in_record: true}, o || {});
+  const fl = (id, dev, o) => Object.assign({shot_id: id, device_id: dev, lane: +dev.slice(1), n: id, stream: 'scored', why: 'too soon', miss: false, decimal: 9.1, decision: null}, o || {});
+  const D0 = (o) => Object.assign({id: 4, name: 'M', state: 'running', format: {name: 'F', phases: [{kind: 'record', label: 'Match', seconds: 600, shots: 20}], scoring: 'decimal'}, record_shots: 20,
+    clock: {state: 'running', paced: 'spoken', phase: 0, label: 'Match', kind: 'record', remaining_ms: 61000, next: null, extra_ms: 0, warnings: []},
+    lanes: [L('l3', 3), L('l1', 1), L('l2', 2, {online: false}), L('l4', 4, {own: 'moving', own_remaining_ms: 1000})], flags: [fl(5, 'l3'), fl(6, 'l1', {decision: 'count'})], unplaced: []}, o || {});
+  const d = D0();
+  assert.deepStrictEqual(d.lanes.map(l => laneNeeds(d, l)), ['1 flagged shot to decide', '', 'Target not reporting', 'Moving to another target'], 'decided flags need nothing');
+  assert.strictEqual(laneNeeds(D0({state: 'done'}), d.lanes[2]), '', 'a silent target after the match needs nothing');
+  assert.strictEqual(laneNeeds(D0({unplaced: [{id: 1, device_id: 'l1', lane: 1, why: 'heard', decision: null}]}), d.lanes[1]), '1 flagged shot to decide', 'heard, not placed too');
+  const con = mcConsole({status: {role: 'director'}, detail: d, speak: false});
+  const order = Array.from(con.matchAll(/<b class="rlfp">Lane (\d+)/g)).map(m => +m[1]);
+  assert.deepStrictEqual(order, [2, 3, 4, 1], 'needing a look first (by lane), then the others');
+  assert(con.indexOf('Needs a look first') < con.indexOf('Lane 2') && con.indexOf('>Shooting<') > con.indexOf('Lane 4'));
+  assert(!mcConsole({status: {role: 'director'}, detail: D0({lanes: [L('l1', 1)], flags: []}), speak: false}).includes('Needs a look first'), 'nothing to look at: no such heading');
+  assert(!mcConsole({status: {role: 'director'}, detail: D0({lanes: [L('l1', 1)], flags: [fl(1, 'l1')]}), speak: false}).includes('class="rosec">Shooting'), 'every lane needs a look: no empty heading');
+  assert(mcConsole({status: {role: 'director'}, detail: D0({lanes: [L('l1', 1)], flags: []}), speak: false}).includes('Lanes · all well'));
+  // a lane's flags: two shown, then how many more (opening the third)
+  const many = D0({flags: [1, 2, 3, 4].map(i => fl(i, 'l1'))});
+  const lc = laneCard(many, many.lanes[1], {}, true);
+  assert.strictEqual(count(lc, /data-act="mcflag"/g), 3);
+  assert(lc.includes('and 2 more flagged') && /data-act="mcflag" data-id="3"><span>and 2 more/.test(lc), 'the third opens from "more"');
+  assert(!laneCard(many, many.lanes[1], {}, false).includes('data-act'.concat('="mcflag"')), 'officers: no decision buttons');
+  // the totals come from the ranking
+  assert(laneCard(d, d.lanes[1], {rows: {l1: {shots: 2, total: 19.2}}}, true).includes('· <span class="num">19.2</span>'));
+  assert(laneCard(Object.assign({}, d, {format: Object.assign({}, d.format, {scoring: 'integer'})}), d.lanes[1], {rows: {l1: {shots: 2, total: 19}}}, true).includes('· <span class="num">19</span>'), 'whole rings');
+  assert(!laneCard(d, d.lanes[1], {rows: {l1: {shots: 0, total: 0}}}, true).includes('class="num">0'), 'no total before a shot counts');
+  // the band: the one next step for each state
+  const nb = o => roBand(D0(o), {});
+  assert(nb({state: 'ready'}).includes('data-act="mcstart"'));
+  assert(nb({state: 'holding', clock: Object.assign({}, D0().clock, {state: 'holding'})}).includes('data-a="go"'));
+  assert(nb({state: 'paused', interrupted: true}).includes('data-a="interrupt_end"') && !nb({state: 'paused', interrupted: true}).includes('data-a="resume"'), 'an interruption ends with its own button');
+  assert(nb({state: 'paused'}).includes('data-a="resume"') && nb({}).includes('data-a="pause"'));
+  assert(nb({clock: Object.assign({}, D0().clock, {paced: 'officer', next: 'STOP'})}).includes('>Next: STOP<') && !nb({clock: Object.assign({}, D0().clock, {next: 'STOP'})}).includes('class="ronext"'), 'Next only when the officer reads the commands');
+  assert(nb({state: 'done'}).includes('data-a="discharge"') && !nb({state: 'done', discharged_ms: 1}).includes('class="ronext"'));
+  // the flag sheet: the pair, what the rulebook suggests, the choice, Save only when something changed
+  const pair = D0({flags: [fl(9, 'l1', {pair: {shot_id: 8, n: 8}, guide: {rule: '6.11.2', text: 'Two <holes>', suggest: 'annul', url: 'https://x'}})]});
+  let h = flagSheet({status: {role: 'director'}, detail: pair, flagp: {shot: 9}});
+  assert(h.includes('Shots 8 and 9') && h.includes('Two &lt;holes&gt;') && /value="annul" data-flagpick="1"><span><b>[^<]+<\/b><span class="mut">What the rulebook suggests/.test(h), 'the pair and the suggestion');
+  assert.strictEqual(count(h, /What the rulebook suggests/g), 1, 'only the suggested choice');
+  assert(h.includes('data-act="mcdouble"') && h.includes('data-other="8"') && /data-act="mcflagsave" disabled/.test(h), 'nothing chosen: Save waits');
+  h = flagSheet({status: {role: 'director'}, detail: pair, flagp: {shot: 9, choice: 'annul'}});
+  assert(/value="annul" data-flagpick="1" checked/.test(h) && !/mcflagsave" disabled/.test(h));
+  assert.strictEqual(flagSheet({status: {role: 'director'}, detail: pair, flagp: {shot: 99}}), '', 'gone meanwhile: no sheet');
+  h = flagSheet({status: {role: 'director'}, detail: D0({unplaced: [{id: 3, device_id: 'l1', lane: 1, why: 'heard but not placed', decision: 'miss'}]}), flagp: {unp: 3}});
+  assert(h.includes('A shot heard, not placed') && /value="miss" data-flagpick="1" checked/.test(h) && h.includes('Heard but not placed.'));
+  // the lane sheet: its actions; a moving shooter gets Shooter ready with the extra time
+  const ls = laneSheet({status: {role: 'officer'}, detail: d, lanep: 'l1'});
+  assert(ls.includes('data-act="mclint" data-a="malfunction" data-id="l1"') && ls.includes('data-act="mcmove"') && ls.includes('data-act="mcshots" data-lane="1"') && !ls.includes('Lane 1 · Lane 1'));
+  const mv = laneSheet({status: {role: 'officer'}, detail: d, lanep: 'l4'});
+  assert(mv.includes('id="rdy_l4"') && mv.includes('data-act="mclready" data-id="l4"') && !mv.includes('data-act="mcmove"'.concat(' data-id="l4"x')));
+  assert.strictEqual(laneSheet({status: {role: 'officer'}, detail: d, lanep: 'zz'}), '');
+  const stop = D0({lanes: [L('l5', 5, {own: 'moving', stop: 'interrupt', own_remaining_ms: 5000})]});
+  const st = laneSheet({status: {role: 'officer'}, detail: stop, lanep: 'l5'});
+  assert(st.includes('data-a="interrupt_end" data-id="l5"') && st.includes('>Interruption ended<') && !st.includes('mclready'), 'interrupted: its end, not Shooter ready');
+  console.log('RO console OK');
 }

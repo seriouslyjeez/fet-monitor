@@ -209,17 +209,20 @@ class Page(unittest.TestCase):
 const fs = require('fs'), assert = require('assert');
 const html = fs.readFileSync(process.argv[1], 'utf8');
 const mod = {}; new Function('module', html.match(/<script>([\s\S]*)<\/script>/)[1])(mod);
-const {flagsPanel, checkMark, shotsTable, lastPanel} = mod.exports;
-const d = {flags: [{shot_id: 7, lane: 1, n: 2, stream: 'scored', miss: true, decimal: 0, why: '1.5 s after shot 1: <b>', code: 'close',
+const {flagsList, flagSheet, checkMark, shotsTable, lastPanel} = mod.exports;
+const d = {state: 'running', clock: {label: 'Match'}, lanes: [{device_id: 'l1', lane: 1, target: 'Lane 1', competitor: 'A'}],
+           flags: [{shot_id: 7, device_id: 'l1', lane: 1, n: 2, stream: 'scored', miss: true, decimal: 0, why: '1.5 s after shot 1: <b>', code: 'close',
                     pair: {shot_id: 6, n: 1}, decision: null, guide: {rule: null, text: 'Look at the target.', suggest: null, url: ''}}],
-           unplaced: [{id: 3, lane: 1, why: 'heard but not placed by the target', decision: 'miss', pair: null}], rb: {}};
-const dir = flagsPanel(d, {}, true), ro = flagsPanel(d, {}, false);
-assert(dir.includes('Flagged shots (2)'));
-assert(dir.includes('data-act="mcdouble" data-lane="1" data-shot="7" data-other="6"'), 'one click to the double load form');
-assert(dir.includes('data-mcunp="3"') && dir.includes('<option value="miss" selected>A shot: scored as a miss</option>'));
-assert(dir.includes('&lt;b&gt;') && !dir.includes('<b>'), 'escaped');
-assert(!ro.includes('mcdouble') && !ro.includes('<select') && ro.includes('A shot: scored as a miss'), 'officers see, do not decide');
-assert(flagsPanel({flags: [], unplaced: [], rb: {}}, {}, true).includes('too soon after another shot'));
+           unplaced: [{id: 3, device_id: 'l1', lane: 1, why: 'heard but not placed by the target', decision: 'miss', pair: null}], rb: {}};
+const dir = flagsList(d, true), ro = flagsList(d, false);
+assert(dir.includes('Flagged shots (2, 1 to decide)'));
+assert(dir.includes('data-act="mcflag" data-id="7"') && dir.includes('data-act="mcunpl" data-id="3"') && dir.includes('A shot: scored as a miss'), 'each opens its sheet; the decision shown');
+assert(dir.includes('&lt;b&gt;') && !dir.includes('<b>:'), 'escaped');
+assert(!ro.includes('data-act') && ro.includes('A shot: scored as a miss'), 'officers see, do not decide');
+const sh = flagSheet({status: {role: 'director'}, detail: d, flagp: {shot: 7}});
+assert(sh.includes('data-act="mcdouble" data-lane="1" data-shot="7" data-other="6"'), 'one click to the double load form');
+assert(/value="miss" data-flagpick="1" checked/.test(flagSheet({status: {role: 'director'}, detail: d, flagp: {unp: 3}})), 'heard, not placed: its decision');
+assert(flagsList({state: 'running', flags: [], unplaced: [], rb: {}}, true).includes('too soon after another shot'));
 assert.strictEqual(checkMark({check: null}), '');
 assert(checkMark({check: 'a "b"'}).includes('title="a &quot;b&quot;"'));
 const v = {bull_size: 10, bull_shots: [{n: 1, miss: false, decimal: 10.2, ring: 10, inner: false, check: null},

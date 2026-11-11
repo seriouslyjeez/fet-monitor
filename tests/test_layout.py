@@ -39,11 +39,15 @@ def node():
 
 @unittest.skipIf(chrome() is None or node() is None, "no Chrome or no Node here")
 class Layout(ServerCase):
-    def look(self, path, size, scheme, script, init=None):
+    def look(self, path, size, scheme, script, init=None, cookie=None):
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
             f.write(LIB + script)
         self.addCleanup(os.unlink, f.name)
-        env = dict(os.environ, CDP_INIT=init) if init else None
+        env = dict(os.environ)
+        if init:
+            env["CDP_INIT"] = init
+        if cookie:
+            env["CDP_COOKIE"] = cookie
         r = subprocess.run([node(), str(ROOT / "tests/cdp.mjs"), chrome(), self.url + path, str(size[0]), str(size[1]), scheme, f.name],
                            capture_output=True, text=True, timeout=90, env=env)
         self.assertTrue(r.stdout, r.stderr[-2000:])
@@ -144,8 +148,10 @@ return {overflow: overflow(), small: small('.lane button, .lane a, .shoot .right
     def range_of(self, n):
         """n lanes with a named shooter and shots each, as the spectators see them."""
         from fetserver.simtarget import SimTarget
+        self.sims = []
         for i in range(1, n + 1):
             sim = SimTarget(self.url, "test-token", "lane-%d" % i, "Lane %d" % i, seed=i)
+            self.sims.append(sim)
             sim.heartbeat()
             self.core.set_lane("lane-%d" % i, i)
             self.core.acquire_control("lane-%d" % i, "shooter-client-%04d" % i, "S%d" % i)
@@ -153,6 +159,75 @@ return {overflow: overflow(), small: small('.lane button, .lane a, .shoot .right
             for _ in range(6):
                 sim.fire()
             sim.deliver()
+
+    def match_range(self, n=6):
+        """A running match on n lanes with shots (the simulator fires close together: flagged shots), and a match
+        director logged in: (match id, the session cookie)."""
+        self.range_of(n)
+        m = self.core.matches
+        m.set_user("md", "director", "layout-pass-1")
+        fid = m.save_format({"name": "Club 20", "book": "ISSF", "scoring": "decimal", "phases": [
+            {"kind": "sight", "label": "Preparation and sighting", "seconds": 600},
+            {"kind": "record", "label": "Match", "seconds": 3000, "shots": 20}]}, "md")["id"]
+        names = ["Maya Chen", "J. Ortiz", "Sam Price", "Riley K.", "A. Novak", "Theo Banks", "P. Iyer", "Lee Park"]
+        mid = m.create("Tuesday League", fid, [{"device_id": "lane-%d" % (i + 1), "competitor": names[i % 8]} for i in range(n)], "md")
+        m.start(mid, "md")
+        m.command(mid, "next", "md")
+        for i, sim in enumerate(self.sims):
+            for _ in range(3 + i % 3):
+                sim.fire()
+            sim.deliver()
+        req = urllib.request.Request(self.url + "/api/v1/match/login", data=json.dumps({"username": "md", "password": "layout-pass-1"}).encode(),
+                                     headers={"Content-Type": "application/json", "X-FET-Admin": "1"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            cookie = r.headers["Set-Cookie"].split(";")[0]
+        return mid, cookie
+
+    CONSOLE = r"""
+for (let i = 0; i < 80 && !document.querySelector('[data-act=mcopen]'); i++) await sleep(50);
+document.querySelector('[data-act=mcopen]').click();
+for (let i = 0; i < 80 && !document.querySelector('[data-clock=console]'); i++) await sleep(50);
+await sleep(400);
+const top = el => el ? Math.round(el.getBoundingClientRect().top + scrollY) : null;
+"""
+
+    def test_the_range_officers_console_on_a_phone_and_a_tablet(self):
+        mid, cookie = self.match_range()
+        for size in (PHONE, TABLET):
+            for scheme in ("light", "dark"):
+                with self.subTest(size=size, scheme=scheme):
+                    v = self.look("/#/match/singles", size, scheme, self.CONSOLE + r"""
+return {overflow: overflow(), small: small('.roconsole button, .roconsole a:not(.rotitle a), .roconsole summary'), lanes: top(document.querySelector('.rolane')),
+        acts: top(document.querySelector('.roacts')), rest: top(document.querySelector('.rorest')), left: Math.round(document.querySelector('.rolane').getBoundingClientRect().left),
+        tabs: !!document.querySelector('.mc .tabs, .mc .secsel'), clock: document.querySelector('[data-clock=console]').textContent};""", cookie=cookie)
+                    self.assertFalse(v["overflow"], "no sideways scrolling")
+                    self.assertEqual(v["small"], [], "every control at least 44 px")
+                    self.assertFalse(v["tabs"], "the console alone (its back button returns)")
+                    self.assertRegex(v["clock"], r"^\d+:\d\d$")
+                    if size == PHONE:
+                        self.assertLess(v["acts"], v["lanes"], "the lanes right under the quick actions")
+                        self.assertLess(v["lanes"], v["rest"], "the rest after the lanes")
+                    else:
+                        self.assertGreater(v["left"], 500, "the lanes in their own column")
+
+    def test_deciding_a_flagged_shot_from_the_sheet(self):
+        mid, cookie = self.match_range(2)
+        flags = [f for f in self.core.matches.detail(mid)["flags"] if not f["decision"]]
+        self.assertTrue(flags, "the simulator's close shots are flagged")
+        v = self.look("/#/match/singles", PHONE, "light", self.CONSOLE + r"""
+const f = document.querySelector('[data-act=mcflag]'), id = +f.dataset.id;
+f.click(); await sleep(300);
+const sheet = document.querySelector('#overlay .sheet'), save = () => sheet.querySelector('[data-act=mcflagsave]');
+const before = save().disabled;
+sheet.querySelector('input[data-flagpick][value=count]').click(); await sleep(200);
+const after = document.querySelector('#overlay [data-act=mcflagsave]').disabled;
+document.querySelector('#overlay [data-act=mcflagsave]').click();
+for (let i = 0; i < 60 && document.getElementById('overlay').classList.contains('open'); i++) await sleep(50);
+await sleep(300);
+return {id, before, after, closed: !document.getElementById('overlay').classList.contains('open'), small: small('#overlay button, #overlay label'), overflow: overflow()};""", cookie=cookie)
+        self.assertEqual((v["before"], v["after"], v["closed"]), (True, False, True), "Save waits for a choice, saves, the sheet closes")
+        d = {f["shot_id"]: f["decision"] for f in self.core.matches.detail(mid)["flags"]}
+        self.assertEqual(d[v["id"]], "count", "the server has the decision")
 
     def test_watching_lanes_on_a_phone_and_a_tablet(self):
         self.range_of(12)
