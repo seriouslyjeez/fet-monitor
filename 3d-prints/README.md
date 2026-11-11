@@ -7,5 +7,6 @@ source with the part's `build-stls.sh`; rebuild and commit them together wheneve
 | Part | What it is for |
 |---|---|
 | [pipe-guide-bracket](pipe-guide-bracket/) | Keeps a Competition target from twisting on a 1" steel-pipe stand while it is raised and lowered |
+| [rifle-mask-holder](rifle-mask-holder/) | Holds a 185 × 229 mm paper mask over the rifle faceplate, with the witness paper running underneath |
 
 Rebuilding needs OpenSCAD; the development snapshot is recommended. On a Mac: `brew install --cask openscad@snapshot`.
