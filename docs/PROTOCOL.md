@@ -107,6 +107,12 @@ Answer:
  "commands": [{"id": 42, "type": "serial", "line": "{\"ECHO\":0}"}]}
 ```
 
+`heartbeat_interval_ms`: when to send the next heartbeat. The bridge (FeT Bridge and the ESP32 target firmware, which
+runs the same core) takes any value and keeps it between 1000 and 60000, from the next heartbeat on; a server may
+change it at any time. FeT Monitor suggests 5000 on the range. deeptens.com suggests 15000 at home and 5000 while the
+target is in a virtual match (from 10 minutes before its run until the run ends), so the readiness check and the
+organiser see a silent target quickly. Shots never wait for a heartbeat: events are sent as they happen.
+
 Commands (at most 5 per answer; each has a server-wide unique `id` and is carried out **at most once**: the bridge
 remembers the ids it has done and reports each result once in `cmd_results`; the server resends a command until a
 result for its id arrives):
