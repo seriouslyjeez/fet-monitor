@@ -76,6 +76,10 @@ You see *All targets* (empty until a target reports).
 
 ## 6. Set up each target
 
+**Easiest: the Pi's flash station.** Range Control → Flash station → *Set up a target step by step* walks you
+through it with the target plugged into the Pi ([QUICKSTART.md, guide 2](QUICKSTART.md#2-your-first-target)). Without it,
+using the target's own setup portal:
+
 For each target (its WiFi bridge must already have FeT Monitor firmware; see `firmware/FLASHING.md`):
 
 1. With the target off, make sure the WiFi module is plugged in. Switch the target **off and on three times

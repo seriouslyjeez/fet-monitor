@@ -239,6 +239,7 @@ and flash faults (needs g++; skipped without it).
 
 ## Install on a Raspberry Pi
 
+Quick start (three one-page guides: the Pi, your first target, linking to deepTENS): **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 Step-by-step guide (SD card to first shot): **[docs/INSTALL.md](docs/INSTALL.md)**. The usual way needs no command
 line: write the release's SD card image (`fet-monitor-<version>-pi.img.xz`) with Raspberry Pi Imager, start the Pi,
 join the WiFi `FeTMonitor-Setup-XXXX` with a phone and fill in the setup page (name, time zone, Range Control

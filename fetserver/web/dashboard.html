@@ -45,7 +45,7 @@ header{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 12px 0
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) #dt .dt-l{display:none}:root:not([data-theme=light]) #dt .dt-d{display:inline}}
 :root[data-theme=dark] #dt .dt-l{display:none}:root[data-theme=dark] #dt .dt-d{display:inline}#dt .ball{position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;background:#d33;border:1.5px solid var(--bg)}#dt .ball.on{background:#1a9b3c}
 .dtcode{font-size:32px;font-weight:700;letter-spacing:3px;font-family:ui-monospace,monospace}main{--pad:12px;padding:var(--pad);max-width:1500px;margin:0 auto}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--bad);margin-right:6px}.dot.on{background:var(--ok)}.warnc{color:var(--warn-ink)}.dot.on.nopower{background:var(--warn-line)}.badge.nopower{background:var(--warn-bg);color:var(--warn-ink)}
 .mut{color:var(--mut);font-size:13px}.num{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
 .lanesign{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:var(--card)}
 .lanesign .qr{flex:none;width:118px;height:118px;border-radius:6px;overflow:hidden;background:#fff}.lanesign .qr svg{width:100%;height:100%;display:block}
@@ -370,6 +370,7 @@ label.tick{display:inline-flex;align-items:center;gap:8px;min-height:44px}label.
 .dvtop{display:flex;align-items:center;gap:10px}.dvtop .lmain{display:flex;flex-direction:column;flex:1;min-width:0}.dvtop .mut{font-size:13px}
 .dvtv{width:64px;height:36px;border-radius:6px;background:#0E161E;flex:none;display:flex;align-items:center;justify-content:center}.dvtv span{width:44px;height:3px;background:#FF8A4C;border-radius:2px}
 .about{max-width:720px;margin:0 auto}.about h2{margin:2px 0 6px;font-size:26px}
+.rc details.tap>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}.wizpick{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 6px}.wiz .wizhead{display:flex;align-items:center;gap:12px}.wiz .wizhead h3{flex:1;margin:0}.wizbar{height:4px;background:var(--line2);border-radius:2px;margin:10px 0 14px}.wizbar>span{display:block;height:100%;background:var(--fg);border-radius:2px}.wizh{font-size:20px;margin:0 0 8px}.wizh:focus{outline:none}.wizfoot{display:flex;justify-content:space-between;gap:10px;margin-top:16px;border-top:1px solid var(--line2);padding-top:12px}.wizform{border-top:1px solid var(--line2);margin-top:12px;padding-top:4px}.wizform h3{font-size:15px}.wizwatch{background:var(--hi);border-radius:12px;padding:10px 14px;margin-top:10px}
 .flashjob{background:var(--band);color:var(--band-ink);border-radius:18px;padding:14px 16px;display:flex;flex-direction:column;gap:6px;margin:0 0 10px}.flashjob .mut{color:var(--band-mut)}.flashjob b{font-size:19px}
 .flashjob.failed{border:2px solid var(--bad)}.fjbar{height:10px;border-radius:5px;background:rgba(255,255,255,.15)}.fjbar>div{height:10px;border-radius:5px;background:var(--last)}
 .stchip .dot{background:var(--mut)}.stchip.ok .dot{background:var(--ok)}.stchip.bad .dot{background:var(--bad)}.signform input{width:100%}
@@ -452,6 +453,9 @@ function halfFor(zoom, shots, pr, start, F) {
   return k >= 1 && k <= 9 && ringRf(F, k) != null ? zoomHalf(k, F) : fullHalf(F);
 }
 const modeColor = m => 'var(--m-' + (MODES[m] ? m : 'practice') + ')';
+const noPower = t => !!(t.online && t.power && !t.power.ok);     // an ESP32 board running from USB alone: yellow, not a fault colour
+const dotOn = t => t.online ? (noPower(t) ? ' on nopower' : ' on') : '';
+const powerBadge = t => noPower(t) ? '<span class="badge nopower" title="The target is running from USB alone: connect its 12 V supply">No 12 V</span>' : '';
 const badge = m => '<span class="badge m-' + (MODES[m] ? m : 'practice') + '">' + esc(MODES[m] || 'Practice') + '</span>';
 const clock = iso => new Date(iso).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
 const when = iso => new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'});
@@ -565,7 +569,7 @@ function groupsRow(v) {
 function ammoCard(t) {
   const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9, v.face), e = a.ellipse;
   return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
-    '<div class="row"><b><span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(tName(t)) + '</b>' + badge(t.mode) + '</div>' +
+    '<div class="row"><b><span class="dot' + dotOn(t) + '"></span>' + esc(tName(t)) + '</b>' + badge(t.mode) + '</div>' +
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
     faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, face: v.face, color: modeColor('ammo')}, ammoMarks(v))) +
     '<div class="who">' + whoText(t.shooter || 'Ammo test', t.label) + '</div>' +
@@ -584,7 +588,7 @@ const fpKey = (d, key) => { const v = (d.fps || {})[key]; return v != null ? v :
 function coachCard(t) {                          // one lane on the Lanes page (FmCoach)
   if (t.kind === 'ammo' && t.view.ammo) return ammoCard(t);
   const v = t.view, F = faceOf(v.face), pr = F.projectile_mm / 2, half = halfFor('auto', v.bull_shots, pr, undefined, F), W = wholeRings(v), L = v.last_shot, who = nameOn(t);
-  const head = '<div class="lchead"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span><b>' + esc(tName(t)) + '</b>' + (t.online ? badge(t.mode) : '<span class="badge off">Not reporting</span>') + '</div>';
+  const head = '<div class="lchead"><span class="dot' + dotOn(t) + '" aria-hidden="true"></span><b>' + esc(tName(t)) + '</b>' + (t.online ? badge(t.mode) + powerBadge(t) : '<span class="badge off">Not reporting</span>') + '</div>';
   if (!t.online) return '<a class="card lcard off" href="#/t/' + encodeURIComponent(t.device_id) + '">' + head + '<div class="lcempty"><b>Last report ' + esc(clock(t.last_seen)) + '</b>Check the target\'s power and WiFi</div></a>';
   if (!v.count && !who) return '<a class="card lcard free" href="#/t/' + encodeURIComponent(t.device_id) + '">' + head + '<div class="lcempty"><b>Free</b>' +
     (S.dt && S.dt.linked ? 'Scan the lane code or sign in on the lane screen' : 'Open this lane on a phone to shoot') + '</div></a>';
@@ -1114,7 +1118,7 @@ function infoPanel(t, v, mode, S) {
           (L.mine ? '' : '<div class="mut">Open the gear and take control to switch.</div>');
   }
   if (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN) ctl += '<div class="modes"><button class="pri" data-act="sight">Adjust sights</button></div>';
-  return '<div class="panel"><div class="row"><span class="title"><span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + '</span>' +
+  return '<div class="panel"><div class="row"><span class="title"><span class="dot' + dotOn(t) + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
     '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
@@ -1516,10 +1520,15 @@ function devCard(p, title, body, buttons) {      // one device plugged into the 
 const ownBackups = (f, p, pr) => (f.backups || []).filter(b => pr && pr.mac && pr.device !== 'mega' ? b.name.startsWith(pr.mac.replace(/:/g, ''))
   : pr && pr.device === 'mega' ? b.name.startsWith('mega-' + String(p.serial || '').replace(/[^0-9A-Za-z]/g, '').slice(0, 20) + '-') : false);
 const backupLinks = bs => bs.map(b => '<a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">' + esc(b.name) + '</a> <span class="mut">' + Math.round(b.size / 1024) + ' KB</span>').join('<br>');
-function flashPanel(f, rc) {                    // Range Control → Flash station: what is plugged into the Pi, and what it can get
-  if (!f) return '';
-  const job = f.job, running = job && job.state === 'running', kept = rc.flashf || {};
-  const val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));
+const wizFocus = () => { const h = document.querySelector('.wizh'); if (h) { h.focus(); h.scrollIntoView({block: 'nearest'}); } };   // keyboards and screen readers: to the step's heading
+function flashJob(f) {                          // the flash station's job: running now (with progress), failed, or the last one
+  const job = f.job, running = job && job.state === 'running';
+  return (job ? '<section class="flashjob' + (job.state === 'failed' ? ' failed' : '') + '"><span class="mut">' + (running ? 'Running now' : job.state === 'failed' ? 'Failed' : 'Last job') + ' · ' + esc(job.port) + '</span>' +
+      '<b>' + esc(job.what || ('FeT Bridge ' + job.version)) + '</b><span>' + (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' · <span class="num">' + esc(job.percent) + ' %</span>') : esc(job.message || job.state)) + '</span>' +
+      (running && job.kind !== 'configure' ? '<div class="fjbar"><div style="width:' + (+job.percent || 0) + '%"></div></div><span class="mut">Keep it plugged in.</span>' : '') + '</section>' : '');
+}
+function flashCards(f, rc, keep) {               // a card for each device plugged into the Pi (keep(port, probe): only some); form: the WiFi settings apply
+  const job = f.job, running = job && job.state === 'running';
   const dis = running || rc.flashBusy ? ' disabled' : '';
   const idBtn = p => '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (rc.flashBusy === p.port ? 'Identifying…' : 'Identify') + '</button>';
   let wantsForm = false;
@@ -1542,18 +1551,13 @@ function flashPanel(f, rc) {                    // Range Control → Flash stati
       (mine.length ? '<p class="mut">Its original firmware, saved here (esptool write_flash 0x0 puts it back):<br>' + backupLinks(mine) + '</p>' : ''),
       idBtn(p) + (canCfg ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
   };
-  const cards = f.ports.map(card).join('');
-  let h = (job ? '<section class="flashjob' + (job.state === 'failed' ? ' failed' : '') + '"><span class="mut">' + (running ? 'Running now' : job.state === 'failed' ? 'Failed' : 'Last job') + ' · ' + esc(job.port) + '</span>' +
-      '<b>' + esc(job.what || ('FeT Bridge ' + job.version)) + '</b><span>' + (running ? esc(job.step) + (job.kind === 'configure' ? '' : ' · <span class="num">' + esc(job.percent) + ' %</span>') : esc(job.message || job.state)) + '</span>' +
-      (running && job.kind !== 'configure' ? '<div class="fjbar"><div style="width:' + (+job.percent || 0) + '%"></div></div><span class="mut">Keep it plugged in.</span>' : '') + '</section>' : '') +
-    '<div class="panel"><h3>Flash station</h3>' +
-    (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
-    (f.ports.length ? cards : '<p><b>Nothing is plugged in.</b></p><ul class="mut">' +
-      '<li><b>FeT Bridge</b> (the target\'s WiFi module, an ESP-01 or ESP-01S): on a USB programmer, into a USB port of this Pi.</li>' +
-      '<li><b>Arduino Mega</b> of a target: by its own USB port. Its original program and settings are saved first and can be put back.</li>' +
-      '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li></ul>' +
-      '<p class="mut">Then press Identify. The firmware it gets comes from the Firmware tab.</p>') + '</div>';
-  if (wantsForm) h += '<div class="panel"><h3>WiFi settings for the device</h3>' +
+  const shown = f.ports.filter(p => !keep || keep(p, f.probes[p.port]));
+  return {html: shown.map(card).join(''), form: wantsForm, n: shown.length};
+}
+function flashForm(f, rc) {                      // the WiFi settings Install and Configure send to the device
+  const kept = rc.flashf || {};
+  const val = (id, dflt) => esc(kept[id] != null ? kept[id] : (dflt == null ? '' : dflt));
+  return '<div class="panel"><h3>WiFi settings for the device</h3>' +
     '<div class="npgrid"><label class="fld">WiFi<input id="fs_ssid" maxlength="32" value="' + val('fs_ssid') + '"></label><label class="fld">Password<input id="fs_pass" type="password" autocomplete="off" value="' + val('fs_pass') + '"></label>' +
     '<label class="fld">Target name<input id="fs_name" maxlength="32" placeholder="Lane-1" value="' + val('fs_name') + '"></label>' +
     '<label class="fld">This Pi\'s address<input id="fs_host" value="' + val('fs_host', f.server_host) + '"></label>' +
@@ -1561,14 +1565,96 @@ function flashPanel(f, rc) {                    // Range Control → Flash stati
     '<p class="mut">With a WiFi name filled in, Install also configures the device, and Configure sends these settings to one that is already installed ' +
     '(FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware). It reports to this Pi (its port and token are added). Use the Pi\'s IP address: ' +
     'names ending in .local do not work for targets. The device checks the settings like its own setup page, keeps them, and restarts.</p>' +
-    '<details><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
+    '<details class="tap"><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
     'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
     '<p class="mut"><b>A programmer with a PROG/UART switch</b> works too: set PROG and plug it in for Identify and Install; then press Configure, ' +
     'set the switch to UART and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p></details></div>';
+}
+function flashPanel(f, rc) {                    // Range Control → Flash station: what is plugged into the Pi, and what it can get
+  if (!f) return '';
+  if (rc.fwiz) return flashWizard(f, rc);
+  const cards = flashCards(f, rc);
+  let h = flashJob(f) +
+    '<div class="panel"><h3>Flash station</h3>' + wizPick() +
+    (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
+    (f.ports.length ? cards.html : '<p><b>Nothing is plugged in.</b></p><ul class="mut">' +
+      '<li><b>FeT Bridge</b> (the target\'s WiFi module, an ESP-01 or ESP-01S): on a USB programmer, into a USB port of this Pi.</li>' +
+      '<li><b>Arduino Mega</b> of a target: by its own USB port. Its original program and settings are saved first and can be put back.</li>' +
+      '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li></ul>' +
+      '<p class="mut">Then press Identify. The firmware it gets comes from the Firmware tab.</p>') + '</div>';
+  if (cards.form) h += flashForm(f, rc);
   if ((f.backups || []).length) h += '<div class="panel"><details><summary>All saved original firmware (' + f.backups.length + ')</summary>' +
     '<p class="mut">What each device had before its first install. ESP: esptool write_flash 0x0 puts it back. Arduino Mega: the program (.hex) and its ' +
     'settings (.eep, where freETarget keeps the calibration); plug the Mega in to put them back.</p><p>' + backupLinks(f.backups) + '</p></details></div>';
   return h;
+}
+// The flash station step by step (user 2026-11-12: as deeptens.com/setup does it): which target, then one step at a time,
+// each with the cards of the devices that step needs. The same buttons as the station; the Pi does the work. A port not
+// identified yet shows in every step it could be for (clone Megas and the ESP32 board's FTDI look like programmers).
+const WIZ = {
+  mega: {title: 'Arduino Mega target', steps: [
+    {h: 'What you need', p: '<p>Two parts get set up: the target\'s <b>Arduino Mega</b> first, through the target\'s own USB cable (nothing to take apart), ' +
+      'then its small <b>WiFi module</b>, which comes out for a few minutes.</p><ul><li>The target\'s <b>USB cable</b>, and its 12 V supply.</li>' +
+      '<li>A <b>USB programmer for the WiFi module</b> (ESP-01). Best: one with automatic download mode (the Pi needs no hands). ' +
+      'One with a PROG / UART switch works too.</li><li>The range WiFi\'s name and password: a <b>2.4 GHz</b> network (the module cannot use 5 GHz).</li></ul>'},
+    {h: 'Connect the target', p: '<ol><li>Switch the target on (its 12 V supply).</li><li>Plug the target\'s USB cable into a USB port of this Pi.</li>' +
+      '<li>Press <b>Identify</b> on the card that appears below.</li></ol><p class="mut">Identify only asks the board what it runs. Nothing is changed.</p>',
+      keep: (p, pr) => pr ? pr.device === 'mega' : p.hint !== 'esp32', none: 'Plug the target\'s USB cable into the Pi. It shows here within a few seconds.'},
+    {h: 'Install FeT target firmware', p: '<p>Press <b>Install</b>. On a first install the original program and its settings (the calibration) are saved first ' +
+      'and can be put back; then the firmware is written and checked, and the target gets its own key. If it already has the newest, go on with Next. ' +
+      'A target back from a home or another range: press <b>New key</b>.</p><p class="mut">Keep the USB cable in until it says done.</p>',
+      keep: (p, pr) => pr ? pr.device === 'mega' : p.hint !== 'esp32', none: 'The target is not plugged in any more. Plug its USB cable into the Pi.'},
+    {h: 'Take the WiFi module out', p: '<ol><li>Unplug the USB cable and <b>switch the target off</b>. The module must never be plugged in or out while the target is on.</li>' +
+      '<li>Find the small black WiFi module on the target\'s board.</li><li>Note which way round it sits (a photo helps), then pull it straight up.</li></ol>'},
+    {h: 'Install FeT Bridge and connect it to the range WiFi', p: '<ol><li>Fill in the WiFi settings below.</li><li>Push the module into the USB programmer ' +
+      '(a PROG / UART switch: set it to <b>PROG</b>) and plug it into the Pi.</li><li>Press <b>Identify</b>, then <b>Install</b>: with a WiFi name filled in, ' +
+      'Install also sends it the settings.</li></ol><p class="mut">A programmer with a PROG / UART switch: after Install, press <b>Configure</b>, set the switch to ' +
+      '<b>UART</b>, and unplug it and plug it in again within a minute and a half (the Pi waits for it).</p>',
+      keep: (p, pr) => pr ? pr.device !== 'mega' && pr.device !== 'esp32' : p.hint !== 'arduino' && p.hint !== 'esp32', form: true,
+      none: 'Plug the programmer with the module into the Pi. It shows here within a few seconds.'},
+    {h: 'Put it back and test', p: '<ol><li>Unplug the programmer and take the module out.</li><li>With the target still <b>off</b>, push the module back in, ' +
+      'the same way round as before.</li><li><b>Now</b> switch the target on.</li><li>Fire a shot.</li></ol>', watch: true}]},
+  esp32: {title: 'ESP32 target', steps: [
+    {h: 'What you need', p: '<p>Everything happens through the target\'s own USB cable: nothing to take apart, no programmer.</p><ul>' +
+      '<li>The target\'s <b>USB-C cable</b>, and its 12 V supply.</li><li>The range WiFi\'s name and password: a <b>2.4 GHz</b> network (the target cannot use 5 GHz).</li>' +
+      '<li>About 10 minutes, or about 17 on a first install (its original firmware is saved first).</li></ul>'},
+    {h: 'Connect the target', p: '<ol><li>Switch the target on (its 12 V supply).</li><li>Plug its USB-C cable into a USB port of this Pi.</li>' +
+      '<li>Press <b>Identify</b> on the card that appears below.</li></ol><p class="mut">Identify restarts the board and asks what it runs. Nothing is changed.</p>',
+      keep: (p, pr) => pr ? pr.device === 'esp32' : p.hint !== 'arduino', none: 'Plug the target\'s USB-C cable into the Pi. It shows here within a few seconds.'},
+    {h: 'Install FeT target firmware and connect it to the range WiFi', p: '<ol><li>Fill in the WiFi settings below.</li><li>Press <b>Install</b> (or <b>Update</b>): ' +
+      'with a WiFi name filled in, it also sends the board the settings. A first install saves the original firmware, writes and checks the new one, and gives ' +
+      'the board its own key.</li></ol><p class="mut">It already has the newest? Press <b>Configure</b> to send the WiFi settings. A target back from a home or ' +
+      'another range: press <b>New key</b>. Keep the cable in until it says done.</p>',
+      keep: (p, pr) => pr ? pr.device === 'esp32' : p.hint !== 'arduino', form: true, none: 'The target is not plugged in any more. Plug its USB-C cable into the Pi.'},
+    {h: 'Test it', p: '<ol><li>Unplug the USB cable. Leave the target on its 12 V supply.</li><li>Fire a shot.</li></ol>', watch: true}]}};
+function wizPick() {                              // the way in: which target
+  return '<div class="wizpick"><span class="mut">Set up a target step by step:</span><button data-act="rcwiz" data-k="mega">Arduino Mega target</button>' +
+    '<button data-act="rcwiz" data-k="esp32">ESP32 target</button></div>' +
+    '<details class="tap"><summary>Which one is it?</summary><p class="mut">Look inside the target\'s box. A board marked <b>Arduino MEGA</b> (MEGA 2560) with a tiny WiFi ' +
+    'module on top: an <b>Arduino Mega target</b>. One board with a square metal chip marked <b>ESP32-S3</b> and a USB-C socket: an <b>ESP32 target</b>.</p></details>';
+}
+function wizWatch(targets) {                      // the last step: the targets that reported in the last minutes, newest first
+  const now = Date.now(), recent = (targets || []).filter(t => t.online && t.last_seen && now - Date.parse(t.last_seen) < 5 * 60000)
+    .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen)).slice(0, 4);
+  return '<div class="wizwatch" aria-live="polite">' + (recent.length ? '<p>Reporting now:</p><ul class="mclist">' + recent.map(t => '<li><span class="lmain"><b><span class="dot' + dotOn(t) + '"></span> ' +
+    esc(laneTitle(t)) + '</b><span class="mut">' + (t.fet_target && t.fet_target.version ? 'FeT target ' + esc(t.fet_target.version) : t.bridge_fw ? 'FeT Bridge ' + esc(t.bridge_fw) : '') +
+    (t.fet_target && t.fet_target.key_fp ? ' · its key is known here' : '') + '</span></span>' + powerBadge(t) + '</li>').join('') + '</ul>' +
+    '<p class="mut">Yours is there? Fire a shot: it shows on its lane. Put it on a lane in Targets.</p>'
+    : '<p><b>Waiting for your target to report…</b></p><p class="mut">It shows here within a minute of being switched on. Nothing after two minutes? ' +
+      'Check its WiFi settings (the name and password, 2.4 GHz) and that the module sits the right way round.</p>') + '</div>';
+}
+function flashWizard(f, rc) {
+  const W = WIZ[rc.fwiz.k], n = W.steps.length, i = Math.min(Math.max(rc.fwiz.step || 0, 0), n - 1), st = W.steps[i];
+  const cards = st.keep ? flashCards(f, rc, st.keep) : null;
+  return '<div class="panel wiz"><div class="wizhead"><h3>' + esc(W.title) + '</h3><span class="mut">Step ' + (i + 1) + ' of ' + n + '</span>' +
+    '<button data-act="rcwizclose">Close</button></div><div class="wizbar"><span style="width:' + Math.round((i + 1) / n * 100) + '%"></span></div>' +
+    '<h4 tabindex="-1" class="wizh">' + esc(st.h) + '</h4>' + st.p +
+    (rc.flashMsg ? '<p class="bad">' + esc(rc.flashMsg) + '</p>' : '') +
+    (st.form ? flashForm(f, rc).replace('<div class="panel">', '<div class="wizform">') : '') +      // the settings first: Install sends them
+    (cards ? flashJob(f) + (cards.n ? cards.html : '<p class="mut">' + esc(st.none) + '</p>') : '') +
+    (st.watch ? wizWatch(S.targets) : '') +
+    '<div class="wizfoot"><button data-act="rcwizstep" data-d="-1"' + (i === 0 ? ' disabled' : '') + '>Back</button>' +
+    (i < n - 1 ? '<button class="pri" data-act="rcwizstep" data-d="1">Next</button>' : '<button class="pri" data-act="rcwizclose">Done</button>') + '</div></div>';
 }
 function esp32Images(rc) {                       // the ESP32 board's firmware: over the air from here (signed), or by USB
   const ims = rc.e32images || [];
@@ -1648,9 +1734,17 @@ function linkLines(t) {                          // the WiFi link: signal; for E
     (L.loop_max_ms != null ? ' <span class="mut">· longest network turn ' + esc(L.loop_max_ms) + ' ms</span>' : ''));
   return out.length ? '<p>' + out.join('<br>') + '</p>' : '';
 }
+function powerLine(t) {                        // the 12 V supply: ESP32 boards measure it (FeT target 0.4.2+); the Mega cannot
+  const P = t.power;
+  if (P) return '<p>12 V supply ' + (P.ok ? '<b>' + esc(P.volts.toFixed(1)) + ' V</b>' : '<b class="warnc">not connected</b> <span class="mut">(' + esc(P.volts.toFixed(1)) +
+    ' V)</span> · the target is running from USB alone, so its microphones and lights have no power: connect its 12 V supply') +
+    (P.at ? ' <span class="mut">· measured ' + esc(when(P.at)) + '</span>' : '') + '</p>';
+  return t.fet_target && !t.fet_target.esp32 ? '<p>12 V supply <span class="mut">not measured (the Mega board has no sensor for it)</span></p>' : '';
+}
 function deviceSection(t) {                    // the target as a device: trip point, WiFi link, its own page, setup portal, factory reset
   const su = statusUrl(t.ip), id = esc(t.device_id);
   return '<h4>Device</h4>' + linkLines(t) +
+    powerLine(t) +
     (t.v_ref ? '<p>Trip point (V_REF) <b>' + esc(Number(t.v_ref.volts).toFixed(2)) + ' V</b> <span class="mut">' +
       (t.v_ref.from === 'target' ? 'measured by the target' : 'with its last shot') + (t.v_ref.at ? ', ' + esc(when(t.v_ref.at)) : '') + '</span></p>' : '') +
     '<p>' + (su ? '<a href="' + su + '" target="_blank" rel="noopener">Its own status page (' + esc(t.ip) + ')</a> <span class="mut">WiFi, signal, server, shots waiting</span>'
@@ -1706,7 +1800,7 @@ function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): no
   const cmds = ft && ft.commands.length ? '<details class="rodet"><summary><b>Commands sent</b> <span class="mut">' + ft.commands.length + '</span></summary><ul class="flist">' + ft.commands.map(c =>
       '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(c.reply || '–') + '</span></span></li>').join('') + '</ul></details>' : '';
   return '<div class="sheet wide"><div class="shhead"><span><span class="mut">' + (boardOf(t) ? esc(boardOf(t)) + ' · ' : '') + eid + (ft && ft.boot != null ? ' · start ' + esc(ft.boot) : '') + (ft && ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span>' +
-    '<h2><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span> ' + esc(laneTitle(t)) + (t.online ? '' : ' <span class="bad">not reporting</span>') + '</h2></span>' +
+    '<h2><span class="dot' + dotOn(t) + '" aria-hidden="true"></span> ' + esc(laneTitle(t)) + (t.online ? '' : ' <span class="bad">not reporting</span>') + '</h2></span>' +
     '<button class="iconbtn" data-act="rctclose" aria-label="Close">' + LI.close + '</button></div>' + now + range + settings + device + acts + cmds + '</div>';
 }
 function noKeyReason(ft) {                       // why this Pi cannot sign for the target yet, and what to do
@@ -1745,7 +1839,7 @@ function firmwareTab(d, rc) {                    // Range Control → Firmware (
   h += '<details class="panel rodet"' + (rc.fwOpen === 'b' ? ' open' : '') + '><summary><b>FeT Bridge</b> <span class="mut">targets, images, upload</span></summary>' +
     (bridges.length ? '<label class="tick"><input type="checkbox" data-act="rcfwall"' + (all ? ' checked' : '') + '> All (' + nsel + ' ticked)</label><ul class="mclist">' +
       bridges.map(t => '<li><label class="tick"><input type="checkbox" data-act="rcfwsel" data-id="' + esc(t.device_id) + '"' + (fsel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></label>' +
-        '<span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT Bridge ' + esc(t.bridge_fw) + (t.flash_size ? ' · ' + esc(Math.round(t.flash_size / 1048576) + ' MB') : '') + '</span>' +
+        '<span class="lmain"><b><span class="dot' + dotOn(t) + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT Bridge ' + esc(t.bridge_fw) + (t.flash_size ? ' · ' + esc(Math.round(t.flash_size / 1048576) + ' MB') : '') + '</span>' +
         (fwJobText(t, imgs) ? '<span>' + fwJobText(t, imgs) + '</span>' : '') + '</span></li>').join('') + '</ul>' +
       '<div class="bulk"><button class="pri" data-act="rcbest"' + (nsel && imgs.length ? '' : ' disabled') + '>Update ' + nsel + ' to the best image</button>' +
       '<button data-act="rcflash" data-sha="' + esc(pick || '') + '"' + (nsel && pick ? '' : ' disabled') + '>Install the chosen image (' + esc((imgs.find(m => m.sha256 === pick) || {}).version || '–') + ')</button></div>' +
@@ -1762,13 +1856,13 @@ function firmwareTab(d, rc) {                    // Range Control → Firmware (
     (rc.fwResults && rc.fwResults.length ? '<ul class="fwres">' + rc.fwResults.map(r => '<li class="' + (r.ok ? 'mut' : 'bad') + '"><b>' + esc(r.name) + '</b>: ' + esc(r.text) + '</li>').join('') + '</ul>' : '') +
     '<p class="mut">From Arduino: Sketch &gt; Export Compiled Binary (Flash Mode DOUT), one file per flash size. Only FeT Bridge 0.2.0 or newer is accepted.</p></details>';
   h += '<details class="panel rodet"' + (rc.fwOpen === 'e' ? ' open' : '') + '><summary><b>FeT target, ESP32 boards</b> <span class="mut">targets, images</span></summary>' +
-    (e32.length ? '<ul class="mclist">' + e32.map(t => '<li><span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') + '</span></span>' +
+    (e32.length ? '<ul class="mclist">' + e32.map(t => '<li><span class="lmain"><b><span class="dot' + dotOn(t) + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') + '</span></span>' +
       '<span class="lacts">' + esp32Update(t, rc) + '</span></li>').join('') + '</ul>' +
       '<p class="mut">Over WiFi: the target fetches the image from this Pi and installs it only if it is the one this Pi signed for it; if the new firmware ' +
       'does not reach FeT Monitor, its next start goes back to the old one. Not during a match.</p>' : '<p class="mut">No ESP32 target has reported.</p>') +
     '<h4>Images on this Pi</h4>' + esp32Images(rc) + '</details>';
   h += '<details class="panel rodet"' + (rc.fwOpen === 'm' ? ' open' : '') + '><summary><b>FeT target, Arduino Mega</b> <span class="mut">targets, images</span></summary>' +
-    (megas.length ? '<ul class="mclist">' + megas.map(t => '<li><span class="lmain"><b><span class="dot' + (t.online ? ' on' : '') + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') +
+    (megas.length ? '<ul class="mclist">' + megas.map(t => '<li><span class="lmain"><b><span class="dot' + dotOn(t) + '"></span> ' + esc(laneTitle(t)) + '</b><span class="mut">FeT target ' + esc(t.fet_target.version || '?') +
       (nm ? (t.fet_target.version === nm.version ? ' · the newest on this Pi' : ' · ' + esc(nm.version) + ' on this Pi') : '') + '</span></span></li>').join('') + '</ul>' : '<p class="mut">No Mega target has reported.</p>') +
     '<p class="mut">A Mega is installed by USB: plug it into this Pi and use the Flash station.</p>' +
     '<h4>Images on this Pi</h4>' + targetImages(rc) + '</details>';
@@ -1988,7 +2082,7 @@ function targetsTab(d, rc) {                     // Range Control → Targets (F
     '<span class="mut">An entrance poster and one per lane: athletes claim a lane from their phone with deepTENS, and their first shot confirms it.</span></div>';
   h += '<div class="rlisthead"><b>' + ts.length + (ts.length === 1 ? ' target' : ' targets') + '</b><span class="mut">Signal · shot delivery</span></div><ul class="tlist">' + (ts.length ? ts.map(t => {
     const D = t.delivery, med = D && D.shots ? (D.median_ms / 1000).toFixed(1) + ' s' : '–', ft = t.fet_target;
-    return '<li><button class="trow' + (t.online ? '' : ' off') + '" data-act="rctopen" data-id="' + esc(t.device_id) + '"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' +
+    return '<li><button class="trow' + (t.online ? '' : ' off') + '" data-act="rctopen" data-id="' + esc(t.device_id) + '"><span class="dot' + dotOn(t) + '" aria-hidden="true"></span>' +
       '<span class="tmain"><b>' + esc(laneTitle(t)) + (boardOf(t) ? ' <span class="mut">· ' + esc(boardOf(t)) + '</span>' : '') + '</b><span class="mut">' +
       (t.online ? esc(fwOf(t)) + (ft && ft.asleep ? ' · asleep' : '') + (t.lane == null ? ' · spare' : '') : 'Not reporting since ' + esc(clock(t.last_seen))) + '</span></span>' +
       '<span class="tnums"><span>' + (t.online && t.rssi ? esc(t.rssi) + ' dBm' : '–') + '</span><span class="num' + (D && D.over_goal ? ' bad' : '') + '">' + med + '</span></span>' +
@@ -2097,7 +2191,7 @@ function mcNew(mc) {                             // a new single match (FmMatchN
   const lanesBox = '<section class="nmlanes"><h3>Lanes <span class="mut">' + on + ' chosen</span></h3>' + (lanes.length ? lanes.map(t => {
     const ln = (d.lanes || {})[t.device_id] || {}, swap = fid && ln.on && t.installed_face && t.installed_face !== fid, off = t.in_match || t.lane == null;
     return '<div class="nmlane' + (off ? ' off' : '') + '"><label><input type="checkbox" data-mcl="' + esc(t.device_id) + '"' + (ln.on && t.lane != null ? ' checked' : '') + (off ? ' disabled' : '') + '>' +
-      '<b>' + esc(tName(t)) + '</b><span class="dot' + (t.online ? ' on' : '') + '" aria-label="' + (t.online ? 'reporting' : 'not reporting') + '"></span></label>' +
+      '<b>' + esc(tName(t)) + '</b><span class="dot' + dotOn(t) + '" aria-label="' + (t.online ? 'reporting' : 'not reporting') + '"></span></label>' +
       (off ? '<span class="mut">' + (t.in_match ? 'in a match' : 'a spare: give it a lane in Range Control') + '</span>'
         : '<input type="text" maxlength="60" data-mcc="' + esc(t.device_id) + '" value="' + esc(ln.competitor || '') + '" aria-label="Competitor on ' + esc(tName(t)) + '" placeholder="' + (t.athlete ? esc(t.athlete.public_name) + ' (signed in)' : 'Competitor (optional)') + '">') +
       (swap ? '<span class="bad">Has the ' + esc(faceName(t.installed_face)) + ': swap its mask and faceplate</span>' : '') + '</div>';
@@ -2430,7 +2524,7 @@ function lateSheet(mc) {                         // a late arrival joins the run
     (d.competition_id != null ? (people == null ? '<p class="mut">Loading…</p>' : people.length ? '<p>Competitor: <select data-latep><option value="">choose…</option>' +
       people.map(p => '<option value="' + p.id + '"' + (String(lp.pid) === String(p.id) ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></p>' : '<p class="bad">Every competitor is on a relay.</p>')
       : '<p>Name: <input type="text" data-latename maxlength="60" value="' + esc(lp.name || '') + '"></p>') +
-    '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + '</label>').join('')
+    '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot' + dotOn(t) + '"></span>' + esc(t.name) + '</label>').join('')
       : '<p class="bad">No free target.</p>') +
     '<p class="mut">' + esc((d.rb || {}).late || '') + '</p>' +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '<div class="mcbar"><button class="pri" data-act="mclatego"' + (free.length ? '' : ' disabled') + '>Add to the match</button></div></div>';
@@ -2447,7 +2541,7 @@ function moveSheet(mc) {                         // move a shooter to another ta
     (toRelay ? '<p>Relay: <select data-mvrel><option value="">a new relay</option>' + later.map(r => '<option value="' + r.id + '"' + (String(mv.rel) === String(r.id) ? ' selected' : '') + '>Relay ' + esc(r.relay) + ' (not started)</option>').join('') + '</select></p>' +
       '<p class="mut">' + esc((d.rb || {}).later_relay_text || '') + '</p>' : '') +
     '<p>From <b>' + esc(l.target) + '</b> to:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="mvto" value="' + esc(t.device_id) + '"' +
-      (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
+      (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot' + dotOn(t) + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
       : '<p class="bad">No free target: every other target is in a match.</p>') +
     (toRelay ? '' : '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc((d.rb || {}).move || '') +
       ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there.' + ((d.rb || {}).book === 'ISSF' ? ' ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).' : '')
@@ -2700,7 +2794,7 @@ function mcCompPage(mc) {                        // a competition (FmCompetition
       '<textarea id="np_paste" data-np="paste" rows="6" style="width:100%" aria-label="Competitors, one per line">' + esc((mc.np || {}).paste || '') + '</textarea><div class="mcbar"><button data-act="mcppaste">Add these competitors</button></div></details>' : '') +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '</section>';
   if (director) h += '<section class="panel"><h3>New relay</h3>' + (free.length ? '<p class="mut">Who shoots on which target. Each competitor on one target.</p><ul class="plist">' + (mc.targets || []).filter(t => !t.in_match).slice().sort(byLane).map(t =>
-      '<li><span class="rlnew"><span class="dot' + (t.online ? ' on' : '') + '" aria-hidden="true"></span>' + esc(tName(t)) + '</span><select data-rl="' + esc(t.device_id) + '" aria-label="Competitor on ' + esc(tName(t)) + '"><option value="">– empty –</option>' +
+      '<li><span class="rlnew"><span class="dot' + dotOn(t) + '" aria-hidden="true"></span>' + esc(tName(t)) + '</span><select data-rl="' + esc(t.device_id) + '" aria-label="Competitor on ' + esc(tName(t)) + '"><option value="">– empty –</option>' +
         free.filter(p => +rd[t.device_id] === p.id || !Object.keys(rd).some(k => k !== t.device_id && +rd[k] === p.id))   // each competitor on one target
           .map(p => '<option value="' + p.id + '"' + (+rd[t.device_id] === p.id ? ' selected' : '') + '>' + esc(p.name) + (p.class ? ' (' + esc(p.class) + ')' : '') + '</option>').join('') + '</select></li>').join('') + '</ul>' +
       '<div class="mcbar"><button class="pri" data-act="mcrcreate">Create relay</button></div>' : '<p class="mut">Everyone is on a relay. A relay that is stopped frees its competitors.</p>') + '</section>';
@@ -3392,6 +3486,9 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rce32nobk') { rc.e32NoBackup = el.checked; return render(true); }
+  if (a === 'rcwiz') { rc.fwiz = {k: el.dataset.k, step: 0}; rc.flashMsg = ''; render(true); return wizFocus(); }
+  if (a === 'rcwizstep') { rc.fwiz.step = Math.max(0, (rc.fwiz.step || 0) + (+el.dataset.d)); rc.flashMsg = ''; render(true); return wizFocus(); }
+  if (a === 'rcwizclose') { rc.fwiz = null; rc.flashMsg = ''; return render(true); }
   if (a === 'rce32go' || a === 'rce32key' || a === 'rce32restore') {
     const nobk = a === 'rce32go' && rc.e32NoBackup && ((rc.flash || {}).probes || {})[el.dataset.port] && rc.flash.probes[el.dataset.port].first_install;
     const what = a === 'rce32go' ? 'Install FeT target firmware on the ESP32 board on ' + el.dataset.port + '?\n\n' +
@@ -4253,7 +4350,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {mcHostedHtml, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

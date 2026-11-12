@@ -1763,3 +1763,58 @@ console.log('OK');
   console.log('hosted OK');
 }
 
+// the 12 V supply (ESP32 boards, FeT target 0.4.2+): yellow, never a fault colour, when a board runs from USB alone
+{
+  const {powerLine, dotOn, powerBadge} = X;
+  const on = {online: true, power: {volts: 11.9, ok: true, at: null}, fet_target: {esp32: true}};
+  const usb = {online: true, power: {volts: 0.8, ok: false, at: null}, fet_target: {esp32: true}};
+  assert.strictEqual(dotOn(on), ' on'); assert.strictEqual(dotOn(usb), ' on nopower', 'online without 12 V: the yellow dot');
+  assert.strictEqual(dotOn(Object.assign({}, usb, {online: false})), '', 'not reporting: as before');
+  assert.strictEqual(dotOn({online: true, power: null}), ' on', 'not measured (the Mega, older firmware): green');
+  assert(powerBadge(usb).includes('No 12 V') && powerBadge(on) === '' && powerBadge(Object.assign({}, usb, {online: false})) === '');
+  assert(powerLine(on).includes('<b>11.9 V</b>') && !powerLine(on).includes('not connected'));
+  assert(powerLine(usb).includes('not connected') && powerLine(usb).includes('0.8 V') && powerLine(usb).includes('connect its 12 V supply'));
+  assert(powerLine({online: true, power: null, fet_target: {esp32: false}}).includes('not measured'), 'the Mega says it cannot');
+  assert.strictEqual(powerLine({online: true, power: null, fet_target: {esp32: true}}), '', 'an ESP32 board before 0.4.2: nothing');
+  assert.strictEqual(powerLine({online: true, power: null}), '', 'the original firmware: nothing');
+  assert(/\.dot\.on\.nopower\{background:var\(--warn-line\)\}/.test(html) && !/nopower\{[^}]*(--bad|--last)/.test(html), 'yellow, not red or orange');
+  console.log('power OK');
+}
+
+// the flash station step by step (as deeptens.com/setup): which target, one step at a time, each with the cards it needs
+{
+  const {flashPanel, flashWizard, WIZ, wizWatch} = X;
+  const ports = [{port: '/dev/ttyUSB0', product: 'USB Serial', hint: 'adapter'}, {port: '/dev/ttyACM0', product: 'Arduino Mega 2560', hint: 'arduino'},
+    {port: '/dev/ttyUSB1', product: 'FT232R', hint: 'unknown'}];
+  const f = {ports, probes: {'/dev/ttyACM0': {device: 'mega', label: 'Arduino Mega 2560 with freETarget 4.3.0', first_install: true, can_key: false, offer: {sha256: 'cd', version: '0.1.4'}},
+    '/dev/ttyUSB0': {device: 'esp8266', label: 'ESP-01S (4 MB flash)', first_install: true, offer: {sha256: 'ab', version: '0.5.0'}}}, job: null, backups: [], server_host: '192.168.1.20'};
+  const home = flashPanel(f, {});
+  assert(home.includes('data-act="rcwiz" data-k="mega"') && home.includes('data-act="rcwiz" data-k="esp32"') && home.includes('Which one is it?'), 'the way in: which target');
+  const at = (k, step, rc) => flashPanel(f, Object.assign({fwiz: {k, step}}, rc || {}));
+  assert.strictEqual(WIZ.mega.steps.length, 6); assert.strictEqual(WIZ.esp32.steps.length, 4);
+  const m0 = at('mega', 0);
+  assert(m0.includes('Step 1 of 6') && m0.includes('What you need') && !m0.includes('data-act="rcmegago"') && !m0.includes('rcwiz" data-k') && /data-act="rcwizstep" data-d="-1" disabled/.test(m0),
+    'step 1: what you need, no device cards, no Back');
+  const m1 = at('mega', 1);
+  assert(m1.includes('data-act="rcmegago" data-port="/dev/ttyACM0"') && m1.includes('/dev/ttyUSB1') && !m1.includes('data-act="rcflashgo"'),
+    'connect the Mega: its card, and a port not identified yet; not the WiFi module');
+  assert(!m1.includes('id="fs_ssid"'), 'no WiFi form before it is needed');
+  const m4 = at('mega', 4);
+  assert(m4.includes('data-act="rcflashgo" data-port="/dev/ttyUSB0"') && !m4.includes('rcmegago') && m4.includes('id="fs_ssid"') && count(m4, /id="fs_ssid"/g) === 1 &&
+    m4.includes('value="192.168.1.20"'), 'the WiFi module: its card and the WiFi form (once), the Pi\'s address filled in');
+  const m5 = at('mega', 5);
+  assert(m5.includes('Put it back and test') && m5.includes('data-act="rcwizclose">Done') && !m5.includes('data-d="1"'), 'the last step: Done');
+  const e2 = at('esp32', 2, {flashMsg: 'busy <now>'});
+  assert(e2.includes('/dev/ttyUSB1') && !e2.includes('/dev/ttyACM0') && e2.includes('id="fs_ssid"') && e2.includes('busy &lt;now&gt;'), 'ESP32: its port, the form, a message');
+  const gone = flashPanel(Object.assign({}, f, {ports: [], probes: {}}), {fwiz: {k: 'mega', step: 1}});
+  assert(gone.includes('Plug the target') && gone.includes('USB cable into the Pi'), 'nothing plugged in: says what to do');
+  const run = flashPanel(Object.assign({}, f, {job: {state: 'running', port: '/dev/ttyACM0', what: 'FeT target 0.1.4', step: 'writing', percent: 40}}), {fwiz: {k: 'mega', step: 2}});
+  assert(run.includes('Running now') && run.includes('40 %') && /data-act="rcmegago"[^>]*disabled/.test(run), 'a job: its progress in the step, buttons wait');
+  assert(at('mega', 99).includes('Step 6 of 6') && at('mega', -3).includes('Step 1 of 6'), 'a step out of range: kept in range');
+  const now = new Date().toISOString(), old = new Date(Date.now() - 600000).toISOString();
+  const w = wizWatch([{device_id: 'a', name: 'New-one', online: true, last_seen: now, fet_target: {version: '0.4.2', key_fp: 'x'}, power: {volts: 0.8, ok: false}},
+    {device_id: 'b', name: 'Old-one', online: true, last_seen: old}, {device_id: 'c', name: 'Off-one', online: false, last_seen: now}]);
+  assert(w.includes('New-one') && w.includes('its key is known here') && w.includes('No 12 V') && !w.includes('Old-one') && !w.includes('Off-one'), 'reporting now: only the last minutes');
+  assert(wizWatch([]).includes('Waiting for your target to report'), 'none yet: waiting');
+  console.log('flash wizard OK');
+}

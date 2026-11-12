@@ -323,7 +323,10 @@ return {labels, overflow: overflow(), msg: (document.querySelector('.fmted .bad'
         self.range_of(3)
         cookie = self.range_manager()
         pages = [("/#/range/" + t, "") for t in ("targets", "firmware", "flash", "tv", "pi", "users")] + [
-            ("/#/range", "document.querySelector('[data-act=rctopen]').click(); await sleep(400);"), ("/#/about", "")]
+            ("/#/range", "document.querySelector('[data-act=rctopen]').click(); await sleep(400);"), ("/#/about", "")] + [
+            ("/#/range/flash", "document.querySelector('[data-act=rcwiz][data-k=%s]').click(); await sleep(300);" % k +     # the flash station step by step
+             "for (let i = 0; i < %d; i++) { document.querySelector('[data-act=rcwizstep][data-d=\"1\"]').click(); await sleep(250); }" % n)
+            for k, n in (("mega", 4), ("esp32", 2), ("esp32", 3))]
         for path, step in pages:
             for size in (PHONE, TABLET):
                 with self.subTest(path=path, step=bool(step), size=size):
