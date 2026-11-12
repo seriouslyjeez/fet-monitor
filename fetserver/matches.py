@@ -40,6 +40,14 @@ from fetcore.matchengine import (ACTIVE, ACTIVE_SQL, CLOSE_MS, DECISIONS, LIVE, 
 from fetcore.matchengine import discharged_at as _discharged_at
 
 
+def _note(v):
+    """A decision's note: free text, one line, at most 300 characters; None when empty."""
+    if not isinstance(v, str):
+        return None
+    v = " ".join(v.split())[:300]
+    return v or None
+
+
 class _Facts:
     """What a Run reads besides the match's own rows, loaded when it asks (a tick seldom needs the shots)."""
     def __init__(self, c, mid):
@@ -575,7 +583,7 @@ class Matches:
             self._log(c, mid, now, "reopen", None, None, {"by": by, "was_official_ms": m["official_ms"]})
         self._pub(mid)
 
-    def decide(self, mid: int, shot_id: int, decision: str, by: str) -> None:
+    def decide(self, mid: int, shot_id: int, decision: str, by: str, note=None) -> None:
         flags = {f["shot_id"]: f for f in self.detail(mid)["flags"]}
         if shot_id not in flags:
             raise MatchError("that shot is not flagged in this match")
@@ -587,9 +595,11 @@ class Matches:
             if decision == "undecided":
                 c.execute("DELETE FROM shot_decisions WHERE shot_id=?", (shot_id,))
             else:
-                c.execute("INSERT INTO shot_decisions (shot_id, match_id, decision, decided_by, at_ms) VALUES (?,?,?,?,?) "
+                keep = note is None                        # no note given (a quick choice in a list): the note stays
+                c.execute("INSERT INTO shot_decisions (shot_id, match_id, decision, decided_by, at_ms, note) VALUES (?,?,?,?,?,?) "
                           "ON CONFLICT(shot_id) DO UPDATE SET decision=excluded.decision, decided_by=excluded.decided_by, "
-                          "at_ms=excluded.at_ms", (shot_id, mid, decision, by, self.core.now_ms()))
+                          "at_ms=excluded.at_ms, note=" + ("shot_decisions.note" if keep else "excluded.note"),
+                          (shot_id, mid, decision, by, self.core.now_ms(), _note(note)))
         self._pub(mid)
 
     # ------------------------------------------------------------------------------------------- reading
@@ -633,6 +643,12 @@ class Matches:
                         {ln["series_id"]: self._series_unplaced(c, ln["series_id"]) for ln in lanes}, decisions,
                         {ln["lane"]: self.core.corrections.effects(c, m, ln["lane"]) for ln in lanes}, self.close_ms)
 
+    @staticmethod
+    def _with_notes(c, mid: int, flags: List[dict]) -> List[dict]:
+        """The director's note with each decided flag (user 2026-11-12), for the screens and the incident report."""
+        notes = {r["shot_id"]: r["note"] for r in c.execute("SELECT shot_id, note FROM shot_decisions WHERE match_id=?", (mid,))}
+        return [dict(f, note=notes.get(f["shot_id"]) if f["decision"] else None) for f in flags]
+
     def unplaced(self, c, m) -> List[dict]:
         """Record-time reports the target heard but could not place, on this match's firing points. They count as
         nothing until the director decides: ignore (noise, an echo) or miss (it was a shot)."""
@@ -641,7 +657,15 @@ class Matches:
                                    {ln["series_id"]: self._series_unplaced(c, ln["series_id"]) for ln in lanes},
                                    self.discharged_at(c, m["id"]), self.close_ms)
 
-    def decide_unplaced(self, mid: int, unplaced_id: int, decision: str, by: str) -> None:
+    @staticmethod
+    def _unplaced_with_notes(c, reports: List[dict]) -> List[dict]:
+        if not reports:
+            return []
+        notes = {r["id"]: r["decision_note"] for r in c.execute("SELECT id, decision_note FROM unplaced WHERE id IN (%s)" % ",".join("?" * len(reports)),
+                                                                 [u["id"] for u in reports])}
+        return [dict(u, note=notes.get(u["id"]) if u["decision"] else None) for u in reports]
+
+    def decide_unplaced(self, mid: int, unplaced_id: int, decision: str, by: str, note=None) -> None:
         if decision not in UNPLACED_DECISIONS and decision != "undecided":
             raise MatchError(f"decision must be one of {', '.join(UNPLACED_DECISIONS)}")
         with self.db.write() as c:
@@ -649,8 +673,13 @@ class Matches:
             self.not_official(m)
             if not any(u["id"] == unplaced_id for u in self.unplaced(c, m)):
                 raise MatchError("that report is not in this match")
-            c.execute("UPDATE unplaced SET decision=?, decided_by=?, decided_ms=? WHERE id=?",
-                      (None, None, None, unplaced_id) if decision == "undecided" else (decision, by, self.core.now_ms(), unplaced_id))
+            if decision == "undecided":
+                c.execute("UPDATE unplaced SET decision=NULL, decided_by=NULL, decided_ms=NULL, decision_note=NULL WHERE id=?", (unplaced_id,))
+            elif note is None:                             # no note given: the note stays
+                c.execute("UPDATE unplaced SET decision=?, decided_by=?, decided_ms=? WHERE id=?", (decision, by, self.core.now_ms(), unplaced_id))
+            else:
+                c.execute("UPDATE unplaced SET decision=?, decided_by=?, decided_ms=?, decision_note=? WHERE id=?",
+                          (decision, by, self.core.now_ms(), _note(note), unplaced_id))
         self._pub(mid)
 
     def _clock(self, m, now: int) -> dict:
@@ -689,8 +718,8 @@ class Matches:
                 "move_extra_s": rb.move_extra(rb.book_of(fmt))[0], "tie_rules": rules_of(fmt), "rb": rb.texts(rb.book_of(fmt)),
                 "interrupted": m["state"] == "paused" and bool(json.loads((c.execute("SELECT data FROM match_log WHERE match_id=? AND kind='pause' "
                                                                                      "ORDER BY id DESC LIMIT 1", (mid,)).fetchone() or {"data": "{}"})["data"] or "{}").get("interruption")),
-                "flags": self.flags(c, m) if m["state"] != "ready" else [],
-                "unplaced": self.unplaced(c, m) if m["state"] != "ready" else [],
+                "flags": self._with_notes(c, mid, self.flags(c, m)) if m["state"] != "ready" else [],
+                "unplaced": self._unplaced_with_notes(c, self.unplaced(c, m)) if m["state"] != "ready" else [],
                 "corrections": self.core.corrections.list(c, mid), "open_corrections": self.core.corrections.open_count(c, mid),
                 "open_items": self.open_items(c, m) if m["official_ms"] is None else [],
                 "final": self._final_view(m)}
@@ -737,16 +766,18 @@ class Matches:
                          "rule": (later or "") if k in ("left_relay", "joins_relay") else d.get("rule") or "", "by": d.get("by", "")})
         decided = {r["shot_id"]: r for r in c.execute("SELECT * FROM shot_decisions WHERE match_id=?", (mid,))}
         if m["state"] != "ready":
-            for f in self.flags(c, m):
+            for f in self._with_notes(c, mid, self.flags(c, m)):
                 dd = decided.get(f["shot_id"])
                 rows.append({"at_ms": f["event_ms"], "lane": f["lane"], "competitor": who_of.get(f["lane"], ""),
                              "what": "Flagged %s shot %s (%s)" % ("record" if f["stream"] == "scored" else "sighting", f["n"], "miss" if f["miss"] else "%.1f" % f["decimal"]),
-                             "detail": f["why"] + (" · decided: " + self.WORDS.get(f["decision"], f["decision"]) if f["decision"] else " · NOT DECIDED"),
+                             "detail": f["why"] + (" · decided: " + self.WORDS.get(f["decision"], f["decision"]) if f["decision"] else " · NOT DECIDED") +
+                                       (" · note: " + f["note"] if f.get("note") else ""),
                              "rule": (f["guide"] or {}).get("rule") or "", "by": dd["decided_by"] if dd else ""})
-            for u in self.unplaced(c, m):
+            for u in self._unplaced_with_notes(c, self.unplaced(c, m)):
                 rows.append({"at_ms": u["event_ms"], "lane": u["lane"], "competitor": who_of.get(u["lane"], ""),
                              "what": "Shot heard but not placed", "detail": u["why"] + (" · decided: " + {"ignore": "not a shot (counts nothing)",
-                             "miss": "a shot, scored as a miss"}[u["decision"]] if u["decision"] else " · NOT DECIDED"),
+                             "miss": "a shot, scored as a miss"}[u["decision"]] if u["decision"] else " · NOT DECIDED") +
+                                       (" · note: " + u["note"] if u.get("note") else ""),
                              "rule": "", "by": u["decided_by"] or ""})
         for x in self.core.corrections.list(c, mid):
             d = x["data"]

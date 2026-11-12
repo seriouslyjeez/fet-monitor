@@ -463,11 +463,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(3):
                     need_director()
-                    mc.decide(mid, int(mm.group(3)), str(payload.get("decision", "")), who)
+                    mc.decide(mid, int(mm.group(3)), str(payload.get("decision", "")), who, payload.get("note"))
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(4):
                     need_director()                        # a shot heard but not placed: noise, or a miss
-                    mc.decide_unplaced(mid, int(mm.group(4)), str(payload.get("decision", "")), who)
+                    mc.decide_unplaced(mid, int(mm.group(4)), str(payload.get("decision", "")), who, payload.get("note"))
                     return self._send(200, mc.detail(mid))
         except MatchError as exc:
             return self._send(400, {"error": str(exc)})

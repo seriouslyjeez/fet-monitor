@@ -529,6 +529,12 @@ MIGRATIONS = [
         rejected TEXT
     );
     """,
+    """
+    -- A note with each decision on a flagged shot or a shot heard but not placed (user 2026-11-12): why the director
+    -- decided so, for the Range Incident Report.
+    ALTER TABLE shot_decisions ADD COLUMN note TEXT;
+    ALTER TABLE unplaced ADD COLUMN decision_note TEXT;
+    """,
 ]
 
 

@@ -579,6 +579,13 @@ const LS = (detail, role) => X.laneSheet({status: {role: role || 'officer'}, det
 const FS = (detail, flagp, role) => X.flagSheet({status: {role: role || 'director'}, detail: detail, flagp: flagp});
 assert(con.includes('data-act="mcflag" data-id="9"') && con.includes('1:05') && LS(DET()).includes('data-act="mcrecord" data-id="lane-1"'), 'a flag opens its sheet; the lane its actions');
 assert(FS(DET(), {shot: 9}).includes('value="annul"') && FS(DET(), {shot: 9}).includes('data-flagpick="1"') && /value="undecided" data-flagpick="1" checked/.test(FS(DET(), {shot: 9})), 'the decisions, undecided chosen');
+{ // a note with the decision (user 2026-11-12): typed in the sheet, shown in the list
+  const fl = DET().flags[0], noted = DET({flags: [Object.assign({}, fl, {decision: 'annul', note: 'paper <shows> one hole'})]});
+  const sh = FS(noted, {shot: fl.shot_id});
+  assert(sh.includes('id="flnote"') && sh.includes('paper &lt;shows&gt; one hole</textarea>') && sh.includes('data-act="mcflagsave" disabled'), 'the note in the sheet, escaped; nothing changed yet');
+  assert(!FS(noted, {shot: fl.shot_id, note: 'paper shows two holes'}).includes('data-act="mcflagsave" disabled'), 'a changed note can be saved');
+  assert(mcConsole({status: {role: 'director'}, detail: noted, speak: false}).includes('<i>paper &lt;shows&gt; one hole</i>'), 'and in the flags list');
+}
 assert(con.includes('data-a="pause"') && !con.includes('data-a="resume"') && con.includes('data-a="abort"'));
 assert(!mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('data-act="mcflag"') && mcConsole({status: {role: 'officer'}, detail: DET(), speak: false}).includes('more than 2 record shots'), 'only directors decide; officers see the flag');
 assert(mcConsole({status: {role: 'officer'}, detail: DET({state: 'ready', flags: []}), speak: false}).includes('data-act="mcstart"'));
@@ -1182,6 +1189,19 @@ console.log('OK');
   const nra = tvFinalBoard(Object.assign({}, b, {final: {title: 'NRA Final (NRA 7.1.2)', elim: false, shots_done: 4, shots_total: 10, next_out: null, shoot_off: null,
     rows: [row({place: 1, total: 300.4, qual: 196, final: 104.4}), row({place: 1, tied: true, lane: 2, total: 300.4})]}}));
   assert(nra.includes('<th class="ser">Qualification</th>') && nra.includes('300.4') && nra.includes('added to the qualification') && !nra.includes('medal'), 'added finals: totals; no medal while running');
+  { // each finalist's single shots (user 2026-11-12): a row under each finalist, the newest bright while it runs
+    const one = v => ({v, n: 1, of: 1}), S = (v, n) => ({v, n, of: 5});
+    const sb = Object.assign({}, b, {final: Object.assign({}, b.final, {rows: [row({place: 1, name: 'AMES', lane: 1, series: [S(52.1, 5), S(51.0, 5), one(9.2), one(10.9)], last: 10.9}),
+      row({place: 2, name: 'DUNN', lane: 4, out: 4, series: [S(50.3, 5), S(30.0, 3)]}), row({place: 3, name: 'COLE', lane: 3})]})});
+    const h = tvFinalBoard(sb);
+    assert(h.includes('<th class="fshots">Shots</th>') && count(h, /<td class="fshots">/g) === 3 && !h.includes('<tr class="fshots'), 'a Shots column on each finalist\'s own row');
+    assert(/AMES[\s\S]*?<td class="fshots"><span class="ser5" title="5 of 5 shots">52.1<\/span><span class="ser5" title="5 of 5 shots">51.0<\/span><span class="lowsh">9.2<\/span><span class="new">10.9<\/span><\/td>/.test(h),
+      'series as totals, then each single shot; the newest bright, a low single dimmed');
+    const dunn = h.split('DUNN')[1].split('</tr>')[0];
+    assert(dunn.includes('<span class="ser5 part" title="3 of 5 shots">30.0</span>') && !/class="[^"]*new/.test(dunn), 'a series being fired is marked; an eliminated finalist: nothing bright');
+    assert(!tvFinalBoard(b).includes('fshots'), 'no shots yet: no column');
+    assert(!/class="[^"]*new/.test(tvFinalBoard(Object.assign({}, sb, {state: 'done'}))), 'over: no newest');
+  }
   console.log('final board OK');
 }
 
@@ -1742,3 +1762,4 @@ console.log('OK');
   assert(!official.includes('mchplace') && official.includes('results official'), 'official results: no more lanes');
   console.log('hosted OK');
 }
+

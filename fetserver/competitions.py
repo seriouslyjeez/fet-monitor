@@ -439,6 +439,22 @@ class Competitions:
         self.matches._pub(mid)
         self._pub(m["competition_id"])
 
+    @staticmethod
+    def _final_series(main, phase_of, phases, fdec: bool) -> List[dict]:
+        """The final as a TV shows it: each series of several shots as its total ({"v", "n" fired, "of" its shots}),
+        each single shot as itself (of 1), in order. A series still being fired shows what is in so far."""
+        out, key = [], object()
+        for s in main:
+            ph = phase_of(s["t"])
+            of = phases[ph].get("shots", 1) if ph is not None else 1
+            v = s["tenths"] if fdec else s["ring"] * 10
+            if of > 1 and ph == key and out[-1]["n"] < of:
+                out[-1]["t"] += v; out[-1]["n"] += 1
+            else:
+                out.append({"t": v, "n": 1, "of": max(1, of)})
+            key = ph
+        return [{"v": d["t"] / 10.0, "n": d["n"], "of": d["of"]} for d in out]
+
     def _finals(self, c, comp, finals, classes, decimal: bool, with_shots: bool) -> List[dict]:
         """Each final's standings. Standard (CMP 10.4.3): qualification + final; ties for places 1-3 by shoot-off
         (10.2.9 n), the others by the final score, then the final's shots by CMP 8.6.1 e. A relay's "final for all"
@@ -467,7 +483,9 @@ class Competitions:
                        "family": q.get("family", ""), "cls": q.get("cls", ""), "qual": q.get("total"), "final": ft, "shots": len(main),
                        "total": round((q.get("total") or 0) + ft, 1), "shoot_off": [v / 10.0 for v in off], "dq": x["dq"],
                        "counts": m["final_for"] is None or ln["competitor_id"] in top8, "summary": ranking.summary(main),
-                       "last": (shots[-1]["tenths"] if fdec else shots[-1]["ring"] * 10) / 10.0 if shots and not x["dq"] else None}
+                       "last": (shots[-1]["tenths"] if fdec else shots[-1]["ring"] * 10) / 10.0 if shots and not x["dq"] else None,
+                       # the final shot by shot for the TV final board (user 2026-11-12): nothing for a DQ
+                       "series": [] if x["dq"] else self._final_series(main, phase_of, fmt["phases"], fdec)}
                 if with_shots:
                     row["shot_list"] = main
                 rows.append(row)

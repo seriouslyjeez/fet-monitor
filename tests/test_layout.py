@@ -369,6 +369,35 @@ return {overflow: overflow(), h: document.documentElement.scrollHeight, rows: do
         t = self.look("/#/tv/targets?m=%d" % mid, TV, "light", "for (let i = 0; i < 80 && !document.querySelector('.card'); i++) await sleep(50); return {overflow: overflow(), cards: document.querySelectorAll('.card').length};")
         self.assertEqual((t["overflow"], t["cards"]), (False, 12))
 
+    def test_a_final_with_every_shot_fits_one_tv_screen(self):
+        """The worst case: eight finalists, all 24 shots each (two series and 14 single shots), a shoot-off column, the targets strip with all eight (nobody out yet). The page's
+        /board answer is replaced by that final (the server's own finals are driven in tests/test_finals*.py)."""
+        self.range_of(8)
+        rows = [{"place": i + 1, "tied": False, "pos": "ABCDEFGH"[i], "name": "FINALIST NUMBER %d" % (i + 1), "lane": i + 1, "device_id": "lane-%d" % (i + 1),
+                 "qual": 630.0, "final": 240.0, "total": 240.0, "shots": 24, "shoot_off": [10.1] if i in (1, 2) else [], "dq": None,
+                 "out": None, "last": 10.9, "series": [{"v": 104.9, "n": 5, "of": 5}] * 2 + [{"v": 10.0 + k / 10, "n": 1, "of": 1} for k in range(14)]} for i in range(8)]
+        board = {"matches": [{"id": 9, "name": "League - final", "format_name": "ISSF 10m Air Rifle Final", "state": "running", "scoring": "decimal",
+                              "clock": {"label": "Shoot-off 1", "remaining_ms": 40000, "phase": 40, "kind": "record"},
+                              "final": {"title": "ISSF 10m Air Rifle Final (ISSF 6.17.2)", "elim": True, "shots_done": 24, "shots_total": 24, "now": "Shoot-off 1",
+                                        "shoot_off": [2, 3], "next_out": None, "rows": rows}}],
+                 "competitions": [], "server_time_ms": 1800000000000}
+        init = "(() => { const f = window.fetch; window.fetch = (u, o) => /\\/api\\/v1\\/board/.test(String(u)) ? " \
+               "Promise.resolve(new Response(%s, {headers: {'Content-Type': 'application/json'}})) : f(u, o); })();" % json.dumps(json.dumps(board))
+        v = self.look("/#/tv/board", TV, "dark", r"""
+for (let i = 0; i < 80 && !document.querySelector('.tvfinal td.fshots'); i++) await sleep(50);
+await sleep(300);
+const lines = [...document.querySelectorAll('.tvfinal td.fshots')].map(td => { const t = [...td.querySelectorAll('span')].map(s => s.getBoundingClientRect().top); return Math.max(...t) - Math.min(...t) > 12 ? 2 : 1; });
+return {overflow: overflow(), h: document.documentElement.scrollHeight, shots: document.querySelectorAll('.tvfinal td.fshots span').length,
+        rows: document.querySelectorAll('.tvfinal td.fshots').length, wrapped: lines.filter(n => n > 1).length, faces: document.querySelectorAll('.tvface').length,
+        font: parseFloat(getComputedStyle(document.querySelector('.tvfinal td.fshots span')).fontSize)};
+""", init=init)
+        self.assertEqual((v["rows"], v["shots"]), (8, 128), "every finalist: two series totals and 14 single shots")
+        self.assertEqual(v["faces"], 8, "the finalists' targets below")
+        self.assertGreaterEqual(v["font"], 20, "readable from the seats")
+        self.assertFalse(v["overflow"])
+        self.assertLessEqual(v["h"], 1080, "a full final on one TV screen")
+        self.assertEqual(v["wrapped"], 0, "each finalist's shots on one line")
+
     def test_a_saved_tv_display_is_dark_unless_it_chooses_light(self):
         self.range_of(2)
         auto = self.core.displays.save({"name": "Hall", "show": "board", "follow": "range"})

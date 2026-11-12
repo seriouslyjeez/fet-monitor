@@ -404,6 +404,8 @@ body.tv .board td.tot,body.tv .board th.tot{background:transparent;border:0;bord
 .posters ol{text-align:left;font-size:16pt;max-width:160mm;margin:0 auto 6mm;padding-left:10mm}.posters li{margin:2mm 0}
 .posters .pfoot{font-size:12pt;color:#333}.posters .pfoot span{font-family:'JetBrains Mono',monospace;font-size:10pt}
 @media print{.posters .poster{margin:0 auto;padding:0}}
+.flnote{display:flex;flex-direction:column;gap:6px;margin:10px 0}.flnote textarea{width:100%;box-sizing:border-box;font:inherit;padding:8px;border-radius:10px;border:1px solid var(--line,#ccc)}
+.tvfinal td.fshots{width:100%;line-height:1}.tvfinal th{white-space:nowrap}.tvfinal td.fshots span{display:inline-block;min-width:2.2em;margin:.1em .15em .1em 0;padding:.12em .15em;border-radius:.3em;font-variant-numeric:tabular-nums;font-size:20px;font-weight:600;opacity:.85;text-align:center}.tvfinal td.fshots span.ser5{min-width:3.2em;border:2px solid var(--line);font-weight:800}.tvfinal td.fshots span.part{border-style:dashed}.tvfinal td.fshots span.new{opacity:1;background:var(--tvhot,#F26A21);border-color:transparent;color:#fff;font-weight:800}.tvfinal td.fshots span.lowsh{opacity:.55}.tvfinal tr.out td.fshots span{opacity:.35}.tvfinal th.fshots{text-align:left}
 </style>
 </head>
 <body>
@@ -563,7 +565,7 @@ function groupsRow(v) {
 function ammoCard(t) {
   const v = t.view, a = v.ammo, pr = a.diameter_mm / 2, half = halfFor('auto', v.bull_shots, pr, 9, v.face), e = a.ellipse;
   return '<a class="card ' + (t.online ? '' : 'off') + '" href="#/t/' + esc(t.device_id) + '">' +
-    '<div class="row"><b><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(tName(t)) + '</b>' + badge(t.mode) + '</div>' +
+    '<div class="row"><b><span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(tName(t)) + '</b>' + badge(t.mode) + '</div>' +
     (t.online ? '' : '<div class="mut">offline, last seen ' + esc(clock(t.last_seen)) + '</div>') +
     faceSvg(v.bull_shots, Object.assign({mini: true, half: half, pellet: a.diameter_mm, face: v.face, color: modeColor('ammo')}, ammoMarks(v))) +
     '<div class="who">' + whoText(t.shooter || 'Ammo test', t.label) + '</div>' +
@@ -834,12 +836,16 @@ function tvFinalBoard(b, targets) {               // a final on the TV: live pla
   const status = r => isOut(r) ? '<span class="mut">Out, ' + ORD(r.out) + '</span>' : r === low ? '<span class="tvwarn">Lowest: out after shot ' + f.next_out.after + ' if still lowest</span>'
     : '<span class="mut">' + (r.pos ? 'Position ' + esc(r.pos) + ' · ' : '') + 'Lane ' + esc(FP(r)) + '</span>';
   const strip = tvFaces(f.rows.filter(r => !isOut(r) && !r.dq), targets, 8, t => (f.rows.find(r => r.device_id === t.device_id) || {}).name || laneTitle(t), r => r.last != null ? r.last.toFixed(1) : '');
+  const cells = r => (r.series || []).map((c, i, a) => {   // the final as a TV shows it: series totals, then each single shot; the newest bright
+    const cls = (c.of > 1 ? 'ser5' + (c.n < c.of ? ' part' : '') : '') + (i === a.length - 1 && !isOut(r) && !done ? ' new' : '') + (c.of === 1 && c.v < 9.5 ? ' lowsh' : '');
+    return '<span class="' + cls.trim() + '"' + (c.of > 1 ? ' title="' + c.n + ' of ' + c.of + ' shots"' : '') + '>' + c.v.toFixed(1) + '</span>'; }).join('');
+  const shotsCol = f.rows.some(r => (r.series || []).length);
   return '<div class="board tvfinal tv-' + tvSize(f.rows.length + (strip ? 6 : 0)) + '">' + tvClock(Object.assign({}, b, {name: f.title || f.name, format_name: b.name})) + '<div class="finalnote">' + note + '</div>' +
-    '<div class="tvbody"><table><tr><th></th><th></th><th class="ser">Last shot</th>' + (f.elim ? '<th class="tot">Final</th>' : '<th class="ser">Qualification</th><th class="ser">Final</th><th class="tot">Total</th>') +
+    '<div class="tvbody"><table><tr><th></th><th></th>' + (shotsCol ? '<th class="fshots">Shots</th>' : '') + '<th class="ser">Last shot</th>' + (f.elim ? '<th class="tot">Final</th>' : '<th class="ser">Qualification</th><th class="ser">Final</th><th class="tot">Total</th>') +
     (any ? '<th class="ser">Shoot-off</th>' : '') + '</tr>' +
     f.rows.map(r => '<tr class="' + (isOut(r) ? 'out' : '') + (so.includes(r.lane) ? ' so' : '') + (r === low ? ' low' : '') + '"><td class="pl num">' + place(r) + '</td>' +
       '<td class="who"><b>' + esc(r.name) + (so.includes(r.lane) ? '<span class="sotag">SHOOT-OFF</span>' : '') + '</b>' + status(r) + '</td>' +
-      '<td class="ser num last">' + (r.last != null ? r.last.toFixed(1) : '') + '</td>' +
+      (shotsCol ? '<td class="fshots">' + cells(r) + '</td>' : '') + '<td class="ser num last">' + (r.last != null ? r.last.toFixed(1) : '') + '</td>' +
       (f.elim ? '<td class="tot num">' + (r.dq ? '' : r.final.toFixed(1)) + '<span class="mut">' + r.shots + ' shots</span></td>'
         : '<td class="ser num">' + (r.qual != null ? r.qual.toFixed(1) : '') + '</td><td class="ser num">' + (r.dq ? '' : r.final.toFixed(1)) + '<span class="mut"> (' + r.shots + ')</span></td><td class="tot num">' + (r.dq ? 'DQ' : r.total.toFixed(1)) + '</td>') +
       (any ? '<td class="ser num">' + r.shoot_off.map(v => v.toFixed(1)).join(' ') + '</td>' : '') + '</tr>').join('') + '</table></div>' +
@@ -1108,7 +1114,7 @@ function infoPanel(t, v, mode, S) {
           (L.mine ? '' : '<div class="mut">Open the gear and take control to switch.</div>');
   }
   if (sightAllowed(t, S) && sightSince(t.view, S) >= SIGHT_MIN) ctl += '<div class="modes"><button class="pri" data-act="sight">Adjust sights</button></div>';
-  return '<div class="panel"><div class="row"><span class="title"><span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</span>' +
+  return '<div class="panel"><div class="row"><span class="title"><span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + '</span>' +
     '<span>' + badge(mode) + ' <button class="gear" data-act="gear" title="Settings" aria-label="Settings">⚙</button></span></div>' +
     '<div class="mut">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) + (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') +
     (t.online ? '' : ' · offline, last seen ' + esc(clock(t.last_seen))) + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</div>' + ctl + '</div>';
@@ -2349,11 +2355,12 @@ function flagsList(d, director) {                // every flagged shot and heard
   const un = d.unplaced || [], n = d.flags.length + un.length;
   if (!n) return d.state === 'ready' ? '' : '<div class="panel"><h3>Flagged shots</h3><p class="mut">None. Shots fired out of their time, too soon after another shot, or that the target could not place are listed here and do not count until the match director decides.</p></div>';
   const open = d.flags.filter(f => !f.decision).length + un.filter(u => !u.decision).length;
-  const item = (act, id, lane, what, why, decided) => '<li>' + (director ? '<button data-act="' + act + '" data-id="' + id + '">' : '<span class="fli">') +
-    '<b>Lane ' + esc(fpKey(d, lane)) + ' · ' + what + '</b><span class="mut">' + esc(why) + '</span><span class="' + (decided ? 'mut' : 'bad') + '">' + esc(decided || 'Undecided') + '</span>' + (director ? '</button>' : '</span>') + '</li>';
+  const item = (act, id, lane, what, why, decided, note) => '<li>' + (director ? '<button data-act="' + act + '" data-id="' + id + '">' : '<span class="fli">') +
+    '<b>Lane ' + esc(fpKey(d, lane)) + ' · ' + what + '</b><span class="mut">' + esc(why) + '</span><span class="' + (decided ? 'mut' : 'bad') + '">' + esc(decided || 'Undecided') +
+    (note ? ' · <i>' + esc(note) + '</i>' : '') + '</span>' + (director ? '</button>' : '</span>') + '</li>';
   return '<details class="panel rodet"><summary><b>Flagged shots (' + n + (open ? ', ' + open + ' to decide' : '') + ')</b> <span class="mut">all, decided too</span></summary><ul class="flist">' +
-    d.flags.map(f => item('mcflag', f.shot_id, f.lane, (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + ' · ' + (f.miss ? 'miss' : dec(f.decimal)), f.why, f.decision ? decisionsFor(f)[f.decision] : '')).join('') +
-    un.map(u => item('mcunpl', u.id, u.lane, 'heard, not placed', u.why, u.decision ? UNPLACED[u.decision] : '')).join('') + '</ul></details>';
+    d.flags.map(f => item('mcflag', f.shot_id, f.lane, (f.stream === 'scored' ? 'record ' : 'sighter ') + f.n + ' · ' + (f.miss ? 'miss' : dec(f.decimal)), f.why, f.decision ? decisionsFor(f)[f.decision] : '', f.note)).join('') +
+    un.map(u => item('mcunpl', u.id, u.lane, 'heard, not placed', u.why, u.decision ? UNPLACED[u.decision] : '', u.note)).join('') + '</ul></details>';
 }
 function laneSheet(mc) {                         // a lane's actions (FmRO's lane menu)
   const d = mc.detail, l = d && d.lanes.find(x => x.device_id === mc.lanep);
@@ -2402,8 +2409,10 @@ function flagSheet(mc) {                         // decide a flagged shot (FmCor
     '<fieldset class="flopts"><legend>Decision</legend>' + opts.map(([k, txt]) => '<label class="' + (cur === k ? 'on' : '') + '"><input type="radio" name="' + name + '" value="' + esc(k) + '" data-flagpick="1"' + (cur === k ? ' checked' : '') + '>' +
       '<span><b>' + esc(txt) + '</b>' + (g && g.suggest === k ? '<span class="mut">What the rulebook suggests</span>' : '') + '</span></label>').join('') + '</fieldset>' +
     (f && (f.pair || f.code === 'inconsistent') ? '<button class="btn quiet" data-act="mcdouble" data-lane="' + f.lane + '" data-shot="' + f.shot_id + '" data-other="' + (f.pair ? f.pair.shot_id : '') + '">A double load (record a correction)…</button>' : '') +
+    '<label class="fld flnote">Note (why; it goes in the Range Incident Report)<textarea id="flnote" rows="2" maxlength="300" placeholder="e.g. witness paper shows one hole">' +
+      esc(fp.note != null ? fp.note : (it.note || '')) + '</textarea></label>' +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') +
-    '<button class="btn pri big shsave" data-act="mcflagsave"' + (cur === (it.decision || 'undecided') ? ' disabled' : '') + '>Save decision</button>' +
+    '<button class="btn pri big shsave" data-act="mcflagsave"' + (cur === (it.decision || 'undecided') && (fp.note == null || fp.note === (it.note || '')) ? ' disabled' : '') + '>Save decision</button>' +
     '<p class="mut" style="text-align:center">Logged with your name and the time; it can be changed until the results are official.</p></div>';
 }
 function laneTime(l, d) {                       // a shooter's own clock (moved, interrupted, ...), or the match's
@@ -2421,7 +2430,7 @@ function lateSheet(mc) {                         // a late arrival joins the run
     (d.competition_id != null ? (people == null ? '<p class="mut">Loading…</p>' : people.length ? '<p>Competitor: <select data-latep><option value="">choose…</option>' +
       people.map(p => '<option value="' + p.id + '"' + (String(lp.pid) === String(p.id) ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></p>' : '<p class="bad">Every competitor is on a relay.</p>')
       : '<p>Name: <input type="text" data-latename maxlength="60" value="' + esc(lp.name || '') + '"></p>') +
-    '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + '</label>').join('')
+    '<p>Target:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="lateto" value="' + esc(t.device_id) + '"' + (lp.to === t.device_id ? ' checked' : '') + '> <span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + '</label>').join('')
       : '<p class="bad">No free target.</p>') +
     '<p class="mut">' + esc((d.rb || {}).late || '') + '</p>' +
     (mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '') + '<div class="mcbar"><button class="pri" data-act="mclatego"' + (free.length ? '' : ' disabled') + '>Add to the match</button></div></div>';
@@ -2438,7 +2447,7 @@ function moveSheet(mc) {                         // move a shooter to another ta
     (toRelay ? '<p>Relay: <select data-mvrel><option value="">a new relay</option>' + later.map(r => '<option value="' + r.id + '"' + (String(mv.rel) === String(r.id) ? ' selected' : '') + '>Relay ' + esc(r.relay) + ' (not started)</option>').join('') + '</select></p>' +
       '<p class="mut">' + esc((d.rb || {}).later_relay_text || '') + '</p>' : '') +
     '<p>From <b>' + esc(l.target) + '</b> to:</p>' + (free.length ? free.map(t => '<label style="display:block;margin:4px 0"><input type="radio" name="mvto" value="' + esc(t.device_id) + '"' +
-      (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot ' + (t.online ? 'on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
+      (mv.to === t.device_id ? ' checked' : '') + '> <span class="dot' + (t.online ? ' on' : '') + '"></span>' + esc(t.name) + (t.online ? '' : ' <span class="mut">(offline)</span>') + '</label>').join('')
       : '<p class="bad">No free target: every other target is in a match.</p>') +
     (toRelay ? '' : '<p class="mut">' + (started ? 'Their shots so far go with them. ' + esc((d.rb || {}).move || '') +
       ' Press <b>Shooter ready</b> when they are in position; the extra time can be changed there.' + ((d.rb || {}).book === 'ISSF' ? ' ISSF moves a shooter only when the target cannot be repaired within 5 minutes (6.10.9.2 a).' : '')
@@ -3885,8 +3894,11 @@ async function matchAct(el, a) {
   if (a === 'mcsheetclose') { mc.lanep = null; mc.flagp = null; mc.msg = ''; return render(); }
   if (a === 'mcflagsave' && mc.flagp) {          // the decision chosen in the sheet: the same call the list's choice made
     const fp = mc.flagp, path = fp.shot != null ? '/flags/' + fp.shot : '/unplaced/' + fp.unp;
-    if (fp.choice == null) return;
-    const res = await matchCall('/matches/' + mc.open + path, {decision: fp.choice});
+    const it = fp.shot != null ? (mc.detail.flags || []).find(x => x.shot_id === fp.shot) : (mc.detail.unplaced || []).find(x => x.id === fp.unp);
+    const choice = fp.choice != null ? fp.choice : (it && it.decision) || null;
+    if (choice == null || choice === 'undecided' && fp.choice == null) return;
+    const ta = document.getElementById('flnote');
+    const res = await matchCall('/matches/' + mc.open + path, {decision: choice, note: ta ? ta.value : (fp.note || '')});
     if (res.status === 200) { mc.flagp = null; mc.msg = ''; toast('Decision saved'); } else mc.msg = res.data.error || 'Not saved';
     return refresh();
   }
@@ -4158,6 +4170,13 @@ function boot() {
     if (el.dataset.mcunp) { const res = await matchCall('/matches/' + mc.open + '/unplaced/' + el.dataset.mcunp, {decision: el.value}); if (res.status !== 200) toast(res.data.error || 'Not saved'); refresh(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target && e.target.id === 'mcpw') matchAct(e.target, 'mclogin'); });
+  document.addEventListener('input', e => {                 // a decision's note, kept through redraws; Save as soon as it changes
+    if (e.target && e.target.id === 'flnote' && S.mc && S.mc.flagp) {
+      S.mc.flagp.note = e.target.value;
+      const b = document.querySelector('[data-act="mcflagsave"]');
+      if (b) b.disabled = false;
+    }
+  });
   const dvField = e => {                          // Range Control → TV displays: the view being edited keeps what is typed and chosen
     const dv = S.rc && S.rc.dv, el = e.target;
     if (!dv || !el.dataset) return;

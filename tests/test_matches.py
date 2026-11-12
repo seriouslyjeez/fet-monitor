@@ -255,6 +255,27 @@ class Flags(MatchCase):
         self.m.decide(mid, sid, "penalty2_first", "md")
         self.assertEqual([s["decision"] for s in counted()], ["penalty2_first", None], "the penalised first record shot shows as decided")
 
+    def test_a_note_with_a_decision(self):
+        """User 2026-11-12: why the director decided, kept with the decision and in the Range Incident Report."""
+        fid = self.custom([("setup", 60, 0), ("record", 60, 3)])
+        mid = self.m.create("C", fid, [{"device_id": "lane-1"}], "dir")
+        self.m.start(mid, "ro")
+        self.at(5); self.shoot()
+        sid = self.m.detail(mid)["flags"][0]["shot_id"]
+        self.assertIsNone(self.m.detail(mid)["flags"][0]["note"])
+        self.m.decide(mid, sid, "ignore", "md", "  witness paper:\n no hole  ")
+        f = self.m.detail(mid)["flags"][0]
+        self.assertEqual((f["decision"], f["note"]), ("ignore", "witness paper: no hole"), "one line, trimmed")
+        self.assertIn("note: witness paper: no hole", next(r["detail"] for r in self.m.incidents(mid)["rows"] if r["what"].startswith("Flagged")))
+        self.m.decide(mid, sid, "penalty2_first", "md")                  # a quick choice in a list: the note stays
+        self.assertEqual(self.m.detail(mid)["flags"][0]["note"], "witness paper: no hole")
+        self.m.decide(mid, sid, "ignore", "md", "")                     # an empty note clears it
+        self.assertIsNone(self.m.detail(mid)["flags"][0]["note"])
+        self.m.decide(mid, sid, "ignore", "md", "x" * 400)
+        self.assertEqual(len(self.m.detail(mid)["flags"][0]["note"]), 300)
+        self.m.decide(mid, sid, "undecided", "md")
+        self.assertIsNone(self.m.detail(mid)["flags"][0]["note"], "undecided: no note")
+
     def test_decisions(self):
         fid = self.custom([("setup", 60, 0), ("record", 60, 1)])
         mid = self.m.create("C", fid, [{"device_id": "lane-1"}], "dir")

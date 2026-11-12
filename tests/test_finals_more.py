@@ -1,5 +1,7 @@
 """The other finals, each by its own book: ISSF 10 m Air Rifle (6.17.2), CMP 3PAR Standing Start-from-Zero (10.5) and
 Three-Position Start-from-Zero (10.3), NRA Precision Air Rifle (7.1.2)."""
+import unittest
+
 from fetcore import matchformats as mf
 from fetserver.matches import MatchError
 from tests.test_finals import AirGunFinal, FinalCase
@@ -267,6 +269,11 @@ class FinalOnTheBoard(Drive, FinalCase):
         f = self.board(self.drive(mid, lambda d, n, ph: value[d], until=lambda d: d["clock"]["label"] == "Shot 15")["id"])
         self.assertEqual((f["shots_done"], f["now"], f["next_out"]), (14, "Shot 15", {"after": 16, "places": [6]}))
         self.assertEqual([r["last"] for r in f["rows"]], [10.8, 10.5, 10.1], "everyone's last shot")
+        self.assertEqual([[(c["n"], c["of"]) for c in r["series"]] for r in f["rows"]], [[(5, 5), (5, 5)] + [(1, 1)] * 4] * 3,
+                         "for the TV: the two series as totals, then each single shot (6.17.2)")
+        self.assertEqual([r["series"][-1]["v"] for r in f["rows"]], [r["last"] for r in f["rows"]], "the newest is the last shot")
+        self.assertEqual(f["rows"][0]["series"][0]["v"], 54.0, "a series' total")
+        self.assertAlmostEqual(sum(c["v"] for c in f["rows"][0]["series"]), f["rows"][0]["final"], places=1)
         self.drive(mid, lambda d, n, ph: value[d])
         f = self.board(mid)
         self.assertEqual((f["shots_done"], f["next_out"], f["now"]), (24, None, None))
@@ -281,3 +288,18 @@ class FinalOnTheBoard(Drive, FinalCase):
         lanes = {l["target"]: l["lane"] for l in d["lanes"]}
         self.assertEqual(f["shoot_off"], sorted([lanes[devs[1]], lanes[devs[2]]]))
         self.assertEqual(f["next_out"], {"after": 22, "places": [3]}, "the shoot-off decides the place of shot 22")
+
+
+class FinalSeries(unittest.TestCase):
+    def test_series_totals_and_single_shots(self):
+        from fetserver.competitions import Competitions
+        phases = [{"kind": "record", "shots": 5}, {"kind": "record", "shots": 5}, {"kind": "record", "shots": 1}, {"kind": "record", "shots": 1}]
+        win = {1: 0, 2: 0, 3: 1, 4: 1, 5: 1, 6: 2, 7: 3, 8: None}
+        shots = [{"t": t, "tenths": 100 + t, "ring": 10} for t in (1, 2, 3, 4, 5, 6, 7, 8)]
+        got = Competitions._final_series(shots, win.get, phases, True)
+        self.assertEqual(got, [{"v": 20.3, "n": 2, "of": 5}, {"v": 31.2, "n": 3, "of": 5}, {"v": 10.6, "n": 1, "of": 1},
+                               {"v": 10.7, "n": 1, "of": 1}, {"v": 10.8, "n": 1, "of": 1}], "a series in progress, then singles; a shot outside a phase alone")
+        self.assertEqual([c["v"] for c in Competitions._final_series(shots[:2], win.get, phases, False)], [20.0], "whole rings")
+        twelve = [{"t": 1, "tenths": 100, "ring": 10}] * 7
+        self.assertEqual([(c["n"], c["of"]) for c in Competitions._final_series(twelve, lambda t: 0, phases, True)], [(5, 5), (2, 5)],
+                         "more shots than the series has: a new cell")

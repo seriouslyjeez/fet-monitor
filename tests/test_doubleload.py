@@ -144,6 +144,13 @@ class MatchFlags(Case):
         self.m.decide_unplaced(mid, uid, "ignore", "dir")
         self.assertEqual(len(self.total(mid)), 1)
         self.m.decide_unplaced(mid, uid, "undecided", "dir")
+        self.m.decide_unplaced(mid, uid, "ignore", "dir", "an echo from lane 4")
+        self.assertEqual(self.m.detail(mid)["unplaced"][0]["note"], "an echo from lane 4")
+        self.assertIn("note: an echo from lane 4", next(r["detail"] for r in self.m.incidents(mid)["rows"] if r["what"] == "Shot heard but not placed"))
+        self.m.decide_unplaced(mid, uid, "miss", "dir")
+        self.assertEqual(self.m.detail(mid)["unplaced"][0]["note"], "an echo from lane 4", "a quick choice keeps the note")
+        self.m.decide_unplaced(mid, uid, "undecided", "dir")
+        self.assertIsNone(self.m.detail(mid)["unplaced"][0]["note"])
         self.assertIsNone(self.m.detail(mid)["unplaced"][0]["decision"])
         with self.assertRaises(MatchError):
             self.m.decide_unplaced(mid, uid, "count", "dir")
