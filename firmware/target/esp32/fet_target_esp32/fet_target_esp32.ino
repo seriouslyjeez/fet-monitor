@@ -45,7 +45,7 @@
 #include "portal_esp32.h"
 #include <esp_ota_ops.h>
 
-#define FW_VERSION "0.4.1"
+#define FW_VERSION "0.4.2"
 #ifndef FET_TIMING_PCNT
 #define FET_TIMING_PCNT 0       // 0: the ESP32-S3's capture timers, 10 MHz clock off (0.3.0); 1: PCNT counting the 10 MHz clock
 #endif
@@ -334,10 +334,12 @@ struct Esp32Actions : tgt::Actions {
   uint16_t muted() override { return capture.muted(); }
   const char* firmwareUpdate(const uint8_t sha[32], uint32_t size) override;
   int32_t vrefMv() override { return vrefMeas; }                           // as read back (-1: ADC2 busy with WiFi)
+  int32_t supplyMv() override;                                             // the 12 V supply (ADC1: works with WiFi on)
   const char* sleep(bool on) override;
   int asleep() override { return sleeping ? 1 : 0; }
 };
 static Esp32Actions actions;
+int32_t Esp32Actions::supplyMv() { return (int32_t)(v12Volts() * 1000.0f + 0.5f); }   // USB alone reads about 750 (the diode)
 static struct { volatile bool pending = false; uint8_t sha[32]; uint32_t size = 0; } upd;   // main loop -> network task
 
 const char* Esp32Actions::firmwareUpdate(const uint8_t sha[32], uint32_t size) {

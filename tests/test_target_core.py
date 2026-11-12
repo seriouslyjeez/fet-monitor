@@ -677,7 +677,14 @@ class CommandChannel(Case):
         self.assertNotIn("vr", s["values"], "a board that cannot measure its trip point says nothing")
         self.h.run("vref 650")
         self.assertEqual(self.cmd(4, "status")["values"]["vr"], 650, "the trip point as measured, mV")
-        self.assertTrue(self.cmd(5, "paper")["ok"])
+        self.assertNotIn("ps", self.cmd(6, "status")["values"], "a board that cannot measure its supply (the Mega) says nothing")
+        self.h.run("v12 11850"); self.h.run("vref 4675"); self.h.run("cansleep")
+        full = self.cmd(7, "status")
+        self.assertTrue(full["ok"] and full["authenticated"], "every status value fits the reply, and the keys are letters: a server before 1.1 still reads it")
+        self.assertEqual((full["values"]["ps"], full["values"]["vr"], full["values"]["sl"]), (11850, 4675, 0), "the 12 V supply as measured, mV")
+        self.h.run("v12 0")
+        self.assertEqual(self.cmd(8, "status")["values"]["ps"], 0, "no supply: 0, said")
+        self.assertTrue(self.cmd(9, "paper")["ok"])
         self.assertEqual(self.h.run("acts"), "1 0")
 
     def test_set_is_checked_saved_and_survives_a_restart(self):

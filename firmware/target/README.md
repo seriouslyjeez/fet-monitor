@@ -27,7 +27,9 @@ the position (fetcore/shotsolve.py). Plan and review of the upstream code: docs/
 
 **Power: the 12 V supply must always be connected in normal operation.** USB is for flashing and setup; on USB alone
 the lights, paper drive and microphone circuits are not powered as designed. The first status LED (V12) is red
-without it.
+without it. From 0.4.2 the ESP32 board also says what its supply measures (`ps`, mV, in the status reply; the
+key is letters only, so servers before it still read the reply): below 10 V, FeT Monitor and deepTENS show the target
+in yellow ("no 12 V supply") and ask again each minute until it has it. The Mega board cannot measure it.
 
 **The 10 MHz clock disturbs the ESP32 board's WiFi (B59, 2026-11-05).** With the clock running (whenever the board is
 armed, as in upstream's firmware), B59's reports to FeT Monitor mostly failed ("could not connect"), it answered ARP

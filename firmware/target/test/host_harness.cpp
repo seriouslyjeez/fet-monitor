@@ -61,6 +61,8 @@ struct FakeActions : Actions {
   uint16_t muted() override { return 3; }
   int32_t vref = -1;
   int32_t vrefMv() override { return vref; }
+  int32_t v12 = -1;
+  int32_t supplyMv() override { return v12; }
   int sleeps = -1;                                   // -1: this board cannot sleep (the default)
   const char* sleep(bool on) override { if (sleeps < 0) return Actions::sleep(on); sleeps = on; return 0; }
   int asleep() override { return sleeps; }
@@ -209,6 +211,7 @@ int main() {
     else if (cmd == "acts") std::cout << acts.papers << " " << acts.changes << "\n";
     else if (cmd == "canupdate") { int v; is >> v; acts.canUpdate = v != 0; }
     else if (cmd == "vref") { int v; is >> v; acts.vref = v; }
+    else if (cmd == "v12") { int v; is >> v; acts.v12 = v; }
     else if (cmd == "cansleep") acts.sleeps = 0;
     else if (cmd == "lastupdate") std::cout << (acts.updSha.empty() ? std::string("none") : acts.updSha) << " " << acts.updSize << "\n";
     else if (cmd == "quit") break;

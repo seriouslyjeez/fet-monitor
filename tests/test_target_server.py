@@ -387,6 +387,30 @@ class Commands(Base):
         v = self.core.list_targets()[0]["v_ref"]
         self.assertEqual((v["volts"], v["from"]), (0.65, "target"), "the trip point on the target's page, in volts")
 
+    def test_the_12_volt_supply(self):
+        """ESP32 boards from 0.4.2 say what their 12 V supply measures (ps, mV): below 10 V the board runs from USB alone.
+        Plugging the supply in does not restart it, so until it has 12 V it is asked again, at most once a minute."""
+        t = [1_800_000_000_000]
+        self.core.now_ms = lambda: t[0]
+        self.bound()
+        self.assertIsNone(self.core.list_targets()[0]["power"], "not measured yet (and never on the Mega)")
+        self.send("target_reply", signed("FT1 R b=3 i=2 r=ok k=99887766 up=5000 d=0 q=0 vr=1250 ps=750"))
+        self.assertEqual({k: v for k, v in self.core.list_targets()[0]["power"].items() if k != "at"}, {"volts": 0.8, "ok": False}, "USB alone")
+        status_cmds = lambda: [r[0] for r in self.core.db.conn().execute("SELECT line FROM commands WHERE line LIKE '% status h=%' ORDER BY id")]
+        hb = lambda: self.core.handle_heartbeat({"device_id": "t1", "boot_count": 1, "uptime_ms": 20_000})
+        hb()
+        self.assertEqual(len(status_cmds()), 1, "asked a moment ago: not again yet")
+        t[0] += 61_000
+        hb(); hb()
+        self.assertEqual(len(status_cmds()), 2, "a minute on: asked once more, not twice")
+        self.assertIn("i=3 status", status_cmds()[-1])
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok k=99887766 up=66000 d=0 q=0 ps=11900"))
+        p = self.core.list_targets()[0]["power"]
+        self.assertEqual((p["volts"], p["ok"]), (11.9, True), "the supply plugged in")
+        t[0] += 3_600_000
+        hb()
+        self.assertEqual(len(status_cmds()), 2, "with 12 V it is not asked again")
+
     def test_a_refusal_is_recorded_and_changes_nothing(self):
         self.bound()
         self.core.target_command("t1", "set", {"led_pct": 80})

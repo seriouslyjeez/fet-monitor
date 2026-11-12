@@ -124,6 +124,8 @@ size_t Commands::handle(const char* line, char* out, size_t cap) {
     r.b.add(" q="); r.b.addU(act_.muted());
     int32_t vr = act_.vrefMv();
     if (vr >= 0) { r.b.add(" vr="); r.b.addU((uint32_t)vr); }
+    int32_t v12 = act_.supplyMv();
+    if (v12 >= 0) { r.b.add(" ps="); r.b.addU((uint32_t)v12); }
     int sl = act_.asleep();
     if (sl >= 0) { r.b.add(" sl="); r.b.addU((uint32_t)sl); }
     return r.finish(out, key_, keyLen_);

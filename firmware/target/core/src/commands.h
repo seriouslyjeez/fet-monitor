@@ -33,6 +33,7 @@ struct Actions {                                    // what the platform does fo
   virtual uint16_t dropped() = 0;
   virtual uint16_t muted() = 0;                       // triggers ignored while the paper moved (Capture::muted)
   virtual int32_t vrefMv() { return -1; }             // the trip point (V_REF) as measured, mV; -1 = cannot measure
+  virtual int32_t supplyMv() { return -1; }           // the 12 V supply as measured, mV; -1 = cannot measure (the Mega)
   // Sleep (true) or wake: 0 = done, else a reason without spaces. asleep(): 1, 0, or -1 = this board cannot sleep.
   virtual const char* sleep(bool on) { (void)on; return "not_supported"; }
   virtual int asleep() { return -1; }

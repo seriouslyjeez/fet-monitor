@@ -28,7 +28,9 @@ from .corrections import Corrections
 from .displays import Displays
 
 log = logging.getLogger("fetserver.core")
-STATUS_KEYS = ("up", "d", "q", "vr", "sl")            # a FeT target's status reply: counts, the measured trip point, asleep
+STATUS_KEYS = ("up", "d", "q", "vr", "sl", "ps")      # a FeT target's status reply: counts, the measured trip point, asleep, the 12 V supply
+SUPPLY_OK_MV = 10000           # a FeT target's 12 V supply below this: running from USB alone (the ESP32 board's own test: 10 V)
+SUPPLY_RECHECK_MS = 60_000     # ... then asked again each minute: plugging the supply in does not restart the board
 
 EVENT_TYPES = {"shot", "config", "arduino_boot", "log",
                "target_shot", "target_hello", "target_reply"}    # FeT target firmware lines (fetcore/targetproto.py)
@@ -642,6 +644,7 @@ class Core:
                         # the unit is erasing itself and will not report again: take it off the lists (history stays)
                         c.execute("UPDATE targets SET removed=1, lane=NULL WHERE device_id=?", (device_id,))   # its lane is free
                         c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
+            self._recheck_supply(c, device_id, recv_ms)
             rows = c.execute("""SELECT id, type, line FROM commands WHERE device_id=? AND status IN ('queued','sent')
                                 ORDER BY id LIMIT ?""", (device_id, MAX_COMMANDS_PER_HEARTBEAT)).fetchall()
             changed = bool(results)
@@ -758,6 +761,21 @@ class Core:
         cur = c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
                         (device_id, "target", line, self.now_ms()))
         return cur.lastrowid
+
+    def _recheck_supply(self, c, device_id: str, now: int) -> None:
+        """A FeT target that said it had no 12 V supply is asked for its status again, at most once a minute, until it
+        has: a board running from USB does not restart when its supply is plugged in, so its start-up status would stay."""
+        t = c.execute("SELECT target_boot, target_status_json FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if t is None or t["target_boot"] is None or not t["target_status_json"]:
+            return
+        st = json.loads(t["target_status_json"])
+        if not isinstance(st.get("ps"), int) or st["ps"] >= SUPPLY_OK_MV or now - (st.get("at") or 0) < SUPPLY_RECHECK_MS:
+            return
+        if c.execute("""SELECT 1 FROM commands WHERE device_id=? AND type='target' AND status IN ('queued','sent') AND reply IS NULL
+                        AND created_ms > ? AND line LIKE '% status h=%'""", (device_id, now - 5 * SUPPLY_RECHECK_MS)).fetchone():
+            return                                          # one already on its way
+        if self._target_key(c, device_id) is not None:
+            self._queue_target(c, device_id, "status")
 
     def wake_in(self, c, device_id: str) -> None:
         """Wake a FeT target that is asleep or about to be (in the caller's transaction): taken by a shooter, or put
@@ -1267,6 +1285,7 @@ class Core:
                 "lease": self._lease_view(lease, now, client_id), "view": view,
                 "match": self._match_info(c, did, now),
                 "v_ref": self._v_ref(c, r),
+                "power": self._power(r),
                 "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
                 # who is signed in (P2): everyone sees the name the athlete chose for public pages; only staff (Range
                 # Control, Match Control) and the deepTENS link see their full name, number and id (user, 2026-11-10)
@@ -1275,6 +1294,15 @@ class Core:
                 "claim": self.athletes.claim_view(did),             # a poster's claim waiting for a shot here (public name only)
             })
         return out
+
+    @staticmethod
+    def _power(r) -> Optional[dict]:
+        """The 12 V supply as the target measured it (FeT target firmware 0.4.2+ on the ESP32 board; the Mega cannot):
+        volts, ok (at least 10 V; else it runs from USB alone and its sensors and lights have no power), when."""
+        st = json.loads(r["target_status_json"]) if r["target_status_json"] else {}
+        if not isinstance(st.get("ps"), int):
+            return None
+        return {"volts": round(st["ps"] / 1000, 1), "ok": st["ps"] >= SUPPLY_OK_MV, "at": iso(st["at"]) if st.get("at") else None}
 
     @staticmethod
     def _v_ref(c, r) -> Optional[dict]:
