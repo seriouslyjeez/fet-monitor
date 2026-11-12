@@ -1716,3 +1716,29 @@ console.log('OK');
   assert(tt.includes('href="#/print/posters"') && !X.targetsTab({targets: [], banned: []}, {dt: {linked: false}}).includes('print/posters'), 'the button only while linked');
   console.log('posters OK');
 }
+
+{ // deepTENS matches this range hosts (fetserver/hosted.py): entrants, a target for each, their matches; not among single matches
+  const {mcHostedHtml, mcList} = X;
+  const h = {code: 'syncmatch1', name: 'Thanks <giving>', timing: 'sync', starts_ms: 1800003600000, format_name: 'Air Rifle 60', official: false,
+    entrants: [{entry_id: 501, athlete: {public_name: 'A. N.'}, class: 'Junior', left: 1, placed: null},
+               {entry_id: 502, athlete: {public_name: 'Sam'}, class: '', left: 1, placed: {lane: 3}},
+               {entry_id: 503, athlete: {public_name: 'Done'}, class: '', left: 0, placed: null}],
+    matches: [{id: 9, state: 'ready'}]};
+  const mc = {status: {user: 'md', role: 'director'}, hosted: [h], matches: [{id: 9, name: 'Thanks', format_name: 'F', state: 'ready', competition_id: null, hosted_code: 'syncmatch1', clock: {}}],
+    targets: [{device_id: 't1', lane: 1, name: 'North', in_match: false}, {device_id: 't3', lane: 3, in_match: true}, {device_id: 't9', lane: null}]};
+  const html = mcHostedHtml(mc);
+  assert(html.includes('Thanks &lt;giving&gt;') && html.includes('everyone together'), 'the match, escaped, and how it starts');
+  assert.strictEqual(count(html, /data-act="mchplace"/g), 1, 'only the entrant with a run left and no lane gets a button');
+  assert(html.includes('data-hsel="syncmatch1:501"') && html.includes('<option value="t1">Lane 1 · North</option>'), 'free targets with a lane only');
+  assert(!html.includes('value="t3"') && !html.includes('value="t9"'), 'not a target in a match, not a spare');
+  assert(html.includes('Lane 3') && html.includes('no run left') && html.includes('Junior · 1 run left'), 'where each entrant is');
+  assert(html.includes('data-act="mcopen" data-id="9"'), 'its match opens here');
+  const ro = mcHostedHtml(Object.assign({}, mc, {status: {user: 'ro', role: 'officer'}}));
+  assert(!ro.includes('mchplace'), 'a range officer sees them, the Match Director places them');
+  assert.strictEqual(mcHostedHtml({hosted: []}), '', 'nothing hosted: nothing shown');
+  const singles = mcList(mc, 'singles');
+  assert(singles.startsWith(html) && !singles.includes('<b>Thanks</b>'), 'above the single matches, not among them');
+  const official = mcHostedHtml(Object.assign({}, mc, {hosted: [Object.assign({}, h, {official: true})]}));
+  assert(!official.includes('mchplace') && official.includes('results official'), 'official results: no more lanes');
+  console.log('hosted OK');
+}

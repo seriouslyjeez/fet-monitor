@@ -70,6 +70,7 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
         last_err, last_at = None, 0.0
         while not stop.wait(0.25):
             try:
+                core.hosted.tick()            # a deepTENS synchronized match starts at its own time
                 core.matches.tick()
             except Exception as exc:              # keep going; the same error is logged at most once a minute
                 if repr(exc) != last_err or time.monotonic() - last_at > 60:

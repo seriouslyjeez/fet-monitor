@@ -511,6 +511,24 @@ MIGRATIONS = [
     CREATE INDEX athlete_sessions_target ON athlete_sessions (device_id, started_ms);
     CREATE INDEX athlete_sessions_open ON athlete_sessions (ended_ms);
     """,
+    """
+    -- Hosted virtual matches (deepTENS P4 stage 5, docs/PLAN-virtual-matches.md): a match run here for a deepTENS match
+    -- (its code), each lane's deepTENS entry, when staff had the match open in Match Control (supervision), and which
+    -- target lines went to deepTENS.
+    ALTER TABLE matches ADD COLUMN hosted_code TEXT;
+    ALTER TABLE match_lanes ADD COLUMN entry_id INTEGER;
+    CREATE TABLE hosted_console (
+        match_id INTEGER NOT NULL,
+        from_ms  INTEGER NOT NULL,
+        to_ms    INTEGER NOT NULL
+    );
+    CREATE INDEX hosted_console_match ON hosted_console (match_id, to_ms);
+    CREATE TABLE deeptens_lines (
+        event_id INTEGER PRIMARY KEY,
+        sent_ms  INTEGER NOT NULL,
+        rejected TEXT
+    );
+    """,
 ]
 
 

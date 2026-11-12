@@ -158,6 +158,8 @@ class Core:
         self.offline_after_ms = offline_after_ms
         self.heartbeat_interval_ms = heartbeat_interval_ms
         self.matches = Matches(self)
+        from .hosted import Hosted
+        self.hosted = Hosted(self)            # deepTENS virtual matches this range hosts (fetserver/hosted.py)
         self.competitions = Competitions(self)
         self.results = ResultStore(self)
         self.displays = Displays(self)

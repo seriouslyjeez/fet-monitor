@@ -30,6 +30,9 @@ ROSTER_MAX_AGE_S = 30 * 86400                    # offline sign-in stops working
 SIGNIN_TTL_S = 600                               # a sign-in started on the Pi must come back within this long
 LANES_S = 2                                      # the public lane board: at most this often, and only when changed
 LANES_REFRESH_S = 30                             # ... or this often unchanged (so deepTENS knows the lanes are alive)
+HOSTED_S = 60                                    # hosted virtual matches: fetched this often (and when deepTENS says they changed)
+LINES_S = 1                                      # a hosted lane's signed lines: sent within this (the 5-second goal)
+LINES_BATCH = 200
 SIGNINS_S = 3                                    # phones signing in at a lane (P2): deepTENS is asked this often
 ATHLETES_TICK_S = 5                              # idle sign-outs and session snapshots (fetserver/athletes.py)
 MARK_MAX = 64 * 1024                             # the deepTENS mark, downloaded once after linking: a small PNG only
@@ -125,6 +128,11 @@ class DeepTens:
         self.next_mark = 0.0
         self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
         self.next_signins, self.next_tick, self.signin_acks = 0.0, 0.0, []
+        # Hosted virtual matches (P4 stage 5, fetserver/hosted.py): what deepTENS said, kept on disk so a synchronized
+        # match still starts and runs here when the internet is down.
+        self.hosted_path = Path(data_dir) / "deeptens-hosted.json" if data_dir is not None else None
+        self.hosted_rev, self.new_hosted_rev, self.next_hosted, self.registered = None, None, 0.0, set()
+        self._load_hosted()
 
     # ---------------------------------------------------------------------------------------------- the settings file
     def _load(self) -> dict:
@@ -161,6 +169,23 @@ class DeepTens:
             json.dump(self.roster, f)
         os.chmod(tmp, 0o600)
         os.replace(tmp, self.roster_path)
+
+    def _load_hosted(self) -> None:
+        try:
+            h = json.loads(self.hosted_path.read_text()) if self.hosted_path and self.hosted_path.exists() else {}
+        except (OSError, ValueError):
+            h = {}
+        if isinstance(h, dict) and isinstance(h.get("matches"), list):
+            self.hosted_rev = h.get("rev")
+            self.core.hosted.set_matches(h["matches"])
+
+    def _save_hosted(self, matches: list) -> None:
+        if self.hosted_path is None:
+            return
+        tmp = self.hosted_path.with_name("deeptens-hosted.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump({"rev": self.hosted_rev, "matches": matches}, f)
+        os.replace(tmp, self.hosted_path)
 
     @property
     def linked(self) -> bool:
@@ -227,6 +252,10 @@ class DeepTens:
             if self.roster_path is not None and self.roster_path.exists():
                 self.roster_path.unlink()
             self.signin_acks = []
+            self.hosted_rev, self.registered = None, set()
+            if self.hosted_path is not None and self.hosted_path.exists():
+                self.hosted_path.unlink()
+        self.core.hosted.set_matches([])                # its hosted matches went with it
         self.core.athletes.end_all("unlinked")          # athletes signed in through it are signed out
         with self.core.db.write() as c:                 # what was waiting belonged to that link
             c.execute("DELETE FROM deeptens_outbox")
@@ -461,6 +490,11 @@ class DeepTens:
             todo, self.dirty = self.dirty, set()
         for kind, n in sorted(todo):
             try:
+                if kind == "m" and self.core.hosted.is_hosted(n):     # a deepTENS match: each lane's run, not a result
+                    with self.core.db.write() as c:
+                        for key, data in self.core.hosted.runs(n):
+                            self.enqueue(c, "hosted_run", key, data, int(now * 1000))
+                    continue
                 snap = self.snapshot(kind, n)
                 if snap is not None:
                     with self.core.db.write() as c:
@@ -503,6 +537,12 @@ class DeepTens:
                 if not self.linked:
                     return 1.0
                 self.next_send = max(self.next_send, self.next_hb)   # deepTENS is not answering: uploads wait with it
+        if now >= self.next_hosted and now - self.last_ok < CONNECTED_S:
+            self._fetch_hosted(now)
+        lines_left = False
+        if self.core.hosted.by_code and now - self.last_ok < CONNECTED_S:
+            self._send_targets(now)
+            lines_left = self._send_lines(now)
         if now >= self.next_tick:
             self.next_tick = now + ATHLETES_TICK_S
             self.core.athletes.tick()
@@ -517,10 +557,85 @@ class DeepTens:
         live = self.lane_board or bool(self.core.athletes.open_sessions())   # coaches follow signed-in athletes
         if live and self.linked and now >= self.next_lanes and now - self.last_ok < CONNECTED_S:
             self._send_lanes(now)
-        nxt = min(self.next_hb, self.next_send if self.outbox_count() else self.next_hb, self.next_tick, self.next_signins)
+        nxt = min(self.next_hb, self.next_send if self.outbox_count() else self.next_hb, self.next_tick, self.next_signins, self.next_hosted)
+        if lines_left or (self.core.hosted.by_code and self.core.hosted.carried(self.core.db.conn())):
+            nxt = min(nxt, now + LINES_S)                # a hosted match: its shots go within seconds (the 5-second goal)
         if live:
             nxt = min(nxt, self.next_lanes)
         return max(0.2, min(5.0, nxt - self.clock()))
+
+    # ------------------------------------------------------------------------------------- hosted virtual matches
+    def _fetch_hosted(self, now: float) -> None:
+        self.next_hosted = now + HOSTED_S
+        try:
+            st, r = self._call("/hosted", {})
+        except OSError:
+            return
+        if st == 401:
+            self._forget(remotely=True)
+            return
+        if st != 200 or not isinstance(r.get("matches"), list):
+            return
+        matches = [m for m in r["matches"] if isinstance(m, dict) and isinstance(m.get("code"), str) and isinstance(m.get("format"), dict)]
+        self.core.hosted.set_matches(matches)
+        if self.new_hosted_rev is not None:
+            self.hosted_rev, self.new_hosted_rev = self.new_hosted_rev, None
+        self._save_hosted(matches)
+
+    def _send_targets(self, now: float) -> None:
+        """The targets of lanes in hosted matches, with their keys, once each (again after a restart or a new key)."""
+        due = [t for t in self.core.hosted.targets_due() if (t["device_id"], t["key_fp"]) not in self.registered]
+        if not due:
+            return
+        try:
+            st, r = self._call("/targets", {"targets": due})
+        except OSError:
+            return
+        if st == 401:
+            self._forget(remotely=True)
+            return
+        if st != 200:
+            return
+        ok = set(r.get("ok", [])) if isinstance(r.get("ok"), list) else set()
+        for t in due:
+            if t["device_id"] in ok:
+                self.registered.add((t["device_id"], t["key_fp"]))
+        for x in r.get("refused", []) if isinstance(r.get("refused"), list) else []:
+            if isinstance(x, dict):
+                log.warning("deepTENS refused target %s: %s", x.get("device_id"), x.get("why"))
+
+    def _send_lines(self, now: float) -> bool:
+        """Signed lines of hosted lanes, as the targets sent them; True if more are waiting."""
+        rows = self.core.hosted.lines_due(LINES_BATCH)
+        if not rows:
+            return False
+        body = {"lines": [{"device_id": r["device_id"], "boot_count": r["boot_count"], "seq": r["seq"], "type": r["type"],
+                           "uptime_ms": r["uptime_ms"] or 0, "event_ms": r["event_ms"], "time_quality": r["time_quality"], "raw": r["raw"] or ""}
+                          for r in rows]}
+        try:
+            st, ans = self._call("/lines", body)
+        except OSError:
+            return True
+        if st == 401:
+            self._forget(remotely=True)
+            return False
+        if st != 200:
+            return True
+        ids = {(r["device_id"], r["boot_count"], r["seq"]): r["id"] for r in rows}
+        stamp = int(now * 1000)
+        with self.core.db.write() as c:
+            for a in ans.get("acked", []) if isinstance(ans.get("acked"), list) else []:
+                if isinstance(a, list) and len(a) == 3 and tuple(a) in ids:
+                    c.execute("INSERT OR IGNORE INTO deeptens_lines (event_id, sent_ms) VALUES (?,?)", (ids[tuple(a)], stamp))
+            for x in ans.get("rejected", []) if isinstance(ans.get("rejected"), list) else []:
+                if not isinstance(x, dict) or "range's targets" in str(x.get("why", "")):
+                    continue                             # its target is not on deepTENS yet: sent again after it is
+                k = next((i for (d, b, q), i in ids.items() if d == x.get("device_id") and q == x.get("seq")), None)
+                if k is not None:
+                    c.execute("INSERT OR IGNORE INTO deeptens_lines (event_id, sent_ms, rejected) VALUES (?,?,?)", (k, stamp, str(x.get("why"))[:200]))
+        with self.lock:
+            self._ok(now)
+        return len(rows) == LINES_BATCH
 
     def _signins(self, now: float) -> None:
         """Phones signing in or out at a lane (its QR code opens deepTENS): report how the last ones went, take the new."""
@@ -604,6 +719,8 @@ class DeepTens:
             self._ok(now)
             self.lane_conflicts = [x for x in r.get("lane_conflicts", []) if isinstance(x, int)]
             self.lane_board = r.get("lane_board") is True
+            if isinstance(r.get("hosted_rev"), str) and r["hosted_rev"] != self.hosted_rev:
+                self.new_hosted_rev, self.next_hosted = r["hosted_rev"], now     # deepTENS's hosted matches changed: fetch them now
         self.next_hb = now + HEARTBEAT_S
         return True
 

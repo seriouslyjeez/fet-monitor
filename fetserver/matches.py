@@ -242,6 +242,31 @@ class Matches:
         self._pub(mid)
         return mid
 
+    def add_ready(self, mid: int, device_id: str, competitor: Optional[str], by: str) -> None:
+        """One more lane in a match that has not started (a deepTENS match's entrant, fetserver/hosted.py)."""
+        with self.db.write() as c:
+            m = self._row(c, mid)
+            if m["state"] != "ready":
+                raise MatchError("the match has started")
+            if not isinstance(device_id, str) or c.execute("SELECT 1 FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone() is None:
+                raise MatchError("unknown target")
+            other = self.lock_of(c, device_id)
+            if other:
+                raise MatchError(f"{device_id} is already in the match '{other}'")
+            fp = self.target_lane(c, device_id)
+            name = competitor.strip()[:60] if isinstance(competitor, str) and competitor.strip() else None
+            c.execute("INSERT INTO match_lanes (match_id, device_id, lane, fp, competitor) VALUES (?,?,?,?,?)",
+                      (mid, device_id, self.new_key(c, mid, fp), fp, name))
+            self.core.wake_in(c, device_id)
+            self._log(c, mid, self.core.now_ms(), "lane_added", None, device_id, {"competitor": name, "by": by})
+
+    def _hosted_guard(self, c, mid: int, action: str) -> None:
+        m = c.execute("SELECT hosted_code FROM matches WHERE id=?", (mid,)).fetchone()
+        if m is not None and m["hosted_code"]:
+            from .hosted import REFUSED_ACTIONS
+            if action in REFUSED_ACTIONS | {"restart", "move", "shoot_off"}:
+                raise MatchError("not in a deepTENS match: its clock is the match's (pause, extra time, restart and moves are not available)")
+
     def check_publish_choice(self, publish, asked: bool) -> None:
         """While this Pi is linked to deepTENS, the Match Director says when creating a match (or competition) whether
         it is published live there (user, 2026-11-08)."""
@@ -295,8 +320,9 @@ class Matches:
     def _position_state(self, c, mid, ln, phase) -> tuple:
         return self._run(c, mid).position_state(ln, phase)
 
-    def start(self, mid: int, by: str) -> None:
-        now = self.core.now_ms()
+    def start(self, mid: int, by: str, at: Optional[int] = None) -> None:
+        """at: the start time when it is not now (a deepTENS synchronized match starts at its own time, fetserver/hosted.py)."""
+        now = at if at is not None else self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
             if m["state"] != "ready":
@@ -344,6 +370,7 @@ class Matches:
         """A tie-breaking shot for the tied firing points of a final (fetcore.matchrun.Run.shoot_off)."""
         now = self.core.now_ms()
         with self.db.write() as c:
+            self._hosted_guard(c, mid, "shoot_off")
             run = self._run(c, mid)
             run.shoot_off(lanes, by, now)
             self._apply(c, run)
@@ -361,6 +388,7 @@ class Matches:
             return self.lane_command(mid, device_id, action, by)
         now = self.core.now_ms()
         with self.db.write() as c:
+            self._hosted_guard(c, mid, action)
             run = self._run(c, mid)
             run.command(action, by, now, seconds=seconds, paced=paced)
             self._apply(c, run)
@@ -370,6 +398,7 @@ class Matches:
         """Go back to the start of `phase` (fetcore.matchrun.Run.restart)."""
         now = self.core.now_ms()
         with self.db.write() as c:
+            self._hosted_guard(c, mid, "restart")
             run = self._run(c, mid)
             run.restart(phase, by, now)
             self._apply(c, run)
@@ -402,6 +431,7 @@ class Matches:
         the same stand) it stays."""
         now = self.core.now_ms()
         with self.db.write() as c:
+            self._hosted_guard(c, mid, "move")
             run = self._run(c, mid)
             ln = run.move_check(from_dev)
             if to_dev == from_dev:
@@ -422,12 +452,16 @@ class Matches:
             self.core.wake_in(c, to_dev)
         self._pub(mid)
 
-    def add_late(self, mid: int, device_id: str, competitor: Optional[str], by: str, competitor_id: Optional[int] = None) -> None:
+    def add_late(self, mid: int, device_id: str, competitor: Optional[str], by: str, competitor_id: Optional[int] = None,
+                 hosted_ok: bool = False) -> None:
         """A shooter who arrives late joins the running match on a free target, with no extra time (ISSF 6.11.4,
-        CMP AG 7.14, CMP 3PAR 7.20); after the preparation and sighting time they may still fire sighters, within their time."""
+        CMP AG 7.14, CMP 3PAR 7.20); after the preparation and sighting time they may still fire sighters, within their time.
+        A deepTENS match's late entrants come through its entrants list (fetserver/hosted.py, hosted_ok)."""
         now = self.core.now_ms()
         with self.db.write() as c:
             m = self._row(c, mid)
+            if m["hosted_code"] and not hosted_ok:
+                raise MatchError("a deepTENS match: put its entrants on lanes from its entrants list")
             if m["state"] not in LIVE:
                 raise MatchError("the match is not running")
             self.not_official(m)
@@ -463,6 +497,8 @@ class Matches:
         malfunction, interrupt_end."""
         now = self.core.now_ms()
         with self.db.write() as c:
+            if action not in ("start_record", "back_to_sighters"):
+                self._hosted_guard(c, mid, "extra")
             run = self._run(c, mid)
             run.lane_command(device_id, action, by, now, seconds=seconds)
             self._apply(c, run)
@@ -641,6 +677,7 @@ class Matches:
                           "installed_face": faces.face(t["face_id"] if t else None).id,    # the mask on it (Range Control)
                           **run.position_view(m, ln, fmt)})
         return {"id": m["id"], "name": m["name"], "format": fmt, "face": faces.view(faces.face(fmt.get("face"))), "state": m["state"], "created_by": m["created_by"],
+                "hosted_code": m["hosted_code"],
                 "competition_id": m["competition_id"], "relay": m["relay"], "official_ms": m["official_ms"], "official_by": m["official_by"],
                 "results_posted_ms": m["results_posted_ms"], "protest_until_ms": m["protest_until_ms"],
                 "discharged_ms": self.discharged_at(c, m["id"]), "publish_deeptens": m["publish_deeptens"],
@@ -773,7 +810,7 @@ class Matches:
             out.append({"id": m["id"], "name": m["name"], "state": m["state"], "format_name": fmt["name"],
                         "created_ms": m["created_ms"], "clock": self._clock(m, now),
                         "competition_id": m["competition_id"], "relay": m["relay"], "results_hidden": bool(m["results_hidden"]),
-                        "official_ms": m["official_ms"]})
+                        "official_ms": m["official_ms"], "hosted_code": m["hosted_code"]})
         return out
 
     def target_info(self, c, device_id: str, now: int) -> Optional[dict]:

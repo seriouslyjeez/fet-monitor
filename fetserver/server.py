@@ -35,6 +35,7 @@ FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-
 log = logging.getLogger("fetserver.http")
 MAX_BODY = 256 * 1024
 TARGET_RE = re.compile(r"^/api/v1/targets/([A-Za-z0-9_-]{1,64})/(shots|segments|series|control|control/release|mode|settings|start-record|back-to-sighters|signin|signout|claim/cancel)$")
+HOSTED_LANES_RE = re.compile(r"^/api/v1/match/hosted/([a-z0-9]{6,12})/lanes$")
 MATCH_ATHLETE_RE = re.compile(r"^/api/v1/match/targets/([A-Za-z0-9_-]{1,64})/athlete$")
 MATCH_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})(?:/(start|command|restart|move|lane|corrections|official|later-relay|late|shoot-off|redraw|publish)|/flags/(\d{1,12})|/unplaced/(\d{1,12}))?$")
 CORR_RE = re.compile(r"^/api/v1/match/matches/(\d{1,9})/(?:corrections/(\d{1,12})/(settle|void)|shots/(\d{1,4})|(incidents))$")
@@ -355,6 +356,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, out)
             if path == "/api/v1/match/matches" and method == "GET":
                 return self._send(200, {"matches": mc.list()})
+            if path == "/api/v1/match/hosted" and method == "GET":        # deepTENS virtual matches this range hosts
+                return self._send(200, {"hosted": core.hosted.list()})
+            hl = HOSTED_LANES_RE.match(path)
+            if hl and method == "POST":
+                need_director()
+                mid = core.hosted.place(hl.group(1), payload.get("lanes"), who)
+                log.info("Match Control: %s put deepTENS entrants on lanes in match %d (%s)", who, mid, hl.group(1))
+                return self._send(200, mc.detail(mid))
             if path == "/api/v1/match/matches" and method == "POST":
                 need_director()
                 mid = mc.create(payload.get("name"), payload.get("format_id"), payload.get("lanes"), who, payload.get("override"),
@@ -381,6 +390,7 @@ class Handler(BaseHTTPRequestHandler):
             if mm:
                 mid = int(mm.group(1))
                 if method == "GET" and not mm.group(2) and not mm.group(3) and not mm.group(4):
+                    core.hosted.console_seen(mid, role)     # staff have it open: a deepTENS match's runs are supervised
                     return self._send(200, mc.detail(mid))
                 if method == "POST" and mm.group(2) == "start":
                     mc.start(mid, who)

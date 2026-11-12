@@ -7,6 +7,7 @@ match. Only while this Pi is linked: an athlete is a deepTENS athlete."""
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 import threading
 from typing import Optional
@@ -15,6 +16,8 @@ from fetcore.matchengine import ACTIVE_SQL
 
 from fetcore import faces as F
 from .admin import verify_password
+
+log = logging.getLogger("fetserver.athletes")
 
 CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ"
 CODE_LIFE_MS = 30 * 60 * 1000                    # a lane's QR code changes at least this often (and at each sign-in/out)
@@ -162,6 +165,10 @@ class Athletes:
         for d in [device_id] + ended:
             core.hub.publish({"type": "mode", "device_id": d})
         dt.changed("s", sid)
+        try:                                             # an entrant of a deepTENS match this range hosts: onto it here
+            core.hosted.signed_in(device_id, a["athlete_id"])
+        except Exception:
+            log.exception("hosted match: putting a signed-in entrant on a lane")
         return out
 
     def sign_out(self, device_id: str, why: str = "signout", athlete_id: Optional[int] = None, staff: bool = False) -> Optional[dict]:

@@ -401,7 +401,7 @@ sessions) and shows them in published results by the name they chose.
 while anyone is signed in even when the public board is off. deepTENS keeps those lanes only for coaches (never on a
 board that is off; never the athlete's name on the board).
 
-### Hosted virtual matches (P4 stage 5; deepTENS side built 2026-11-11, FeT Monitor side in progress)
+### Hosted virtual matches (P4 stage 5; built 2026-11-12, not yet tried on real targets)
 A range's Range Manager hosts a deepTENS virtual match; entrants may choose to shoot there. The Pi keeps the clock
 and carries its targets' signed lines; deepTENS scores them and is the authority (docs/PLAN-virtual-matches.md).
 - The heartbeat's answer carries `"hosted_rev"`: a short fingerprint of what `hosted` answers ("" when nothing is
@@ -420,6 +420,8 @@ and carries its targets' signed lines; deepTENS scores them and is the authority
   quality; stored once by identity (a repeat with other content is kept apart as a conflict). Sent at once; resent
   until acknowledged.
 - Outbox kind `hosted_run`, key `h<id>`: `{"match": code, "entry_id", "lane", "device_id", "started_ms", "ends_ms",
-  "stopped_ms", "supervised", "unsupervised": [[from, to]]}`. A synchronized run starts at the match's start; a window
+  "stopped_ms", "supervised", "unsupervised": [[from, to]], "actions": [{"at_ms", "kind": "start_record"|"to_sighters",
+  "phase"}]}`. `actions`: the lane's switches (an NRA-style stage, positions on one clock): deepTENS takes each shot's
+  stream from them, as at home; a newer revision replaces them. A synchronized run starts at the match's start; a window
   run lies within the window; the entrant must have a run left. `supervised`: a Range Officer or Match Director had
   the RO console open throughout (gaps under 60 s ignored).

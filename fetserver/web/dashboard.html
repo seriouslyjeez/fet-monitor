@@ -2181,9 +2181,30 @@ const mcTab = mc => {                            // #/match/<tab>; Competitions 
   const m = typeof location !== 'undefined' && location.hash.match(/^#\/match\/(\w+)/), t = m && MC_TABS.find(x => x[0] === m[1]);
   return t && (!t[2] || mcDirector(mc)) ? t[0] : 'comps';
 };
+// deepTENS virtual matches this range hosts (fetserver/hosted.py): their entrants here, put on lanes by the Match Director
+// (or by signing in at a free lane), and their matches here. The clock is deepTENS's; deepTENS scores and decides.
+function mcHostedHtml(mc) {
+  const hs = mc.hosted || [];
+  if (!hs.length) return '';
+  const director = mcDirector(mc), busy = new Set((mc.targets || []).filter(t => t.in_match).map(t => t.device_id));
+  const free = (mc.targets || []).filter(t => t.lane != null && !busy.has(t.device_id));
+  const when = h => h.timing === 'sync' ? 'Starts ' + fmtDay(h.starts_ms) + ' ' + clock(h.starts_ms) + ' · everyone together'
+    : 'Open until ' + fmtDay(h.closes_ms) + ' ' + clock(h.closes_ms) + ' · relays when you start them';
+  return '<div class="panel"><h3>deepTENS matches at this range</h3><p class="mut">Virtual matches this range hosts. Put each entrant on a target with FeT target ' +
+    'firmware (or they sign in at a free lane). deepTENS keeps the result; a run is range-supervised while a Range Officer or the Match Director has the match open here.</p>' +
+    hs.map(h => '<div class="hosted"><b>' + esc(h.name) + '</b> <span class="mut">' + esc(h.format_name) + ' · ' + when(h) + (h.official ? ' · results official' : '') + '</span>' +
+      '<ul class="mclist">' + (h.entrants.length ? h.entrants.map(e => '<li><span class="lmain"><b>' + esc(e.athlete.public_name) + '</b><span class="mut">' +
+        (e.class ? esc(e.class) + ' · ' : '') + (e.placed ? 'Lane ' + esc(e.placed.lane) : e.left > 0 ? e.left + ' run' + (e.left > 1 ? 's' : '') + ' left' : 'no run left') + '</span></span>' +
+        (director && !e.placed && e.left > 0 && !h.official ? '<span class="lacts"><select data-hsel="' + esc(h.code) + ':' + e.entry_id + '" aria-label="Target for ' + esc(e.athlete.public_name) + '">' +
+          free.map(t => '<option value="' + esc(t.device_id) + '">Lane ' + esc(t.lane) + (t.name ? ' · ' + esc(t.name) : '') + '</option>').join('') + '</select>' +
+          '<button data-act="mchplace" data-code="' + esc(h.code) + '" data-entry="' + e.entry_id + '"' + (free.length ? '' : ' disabled') + '>Put on lane</button></span>' : '') +
+        '</li>').join('') : '<li><span class="mut">No entrant has chosen this range yet.</span></li>') + '</ul>' +
+      (h.matches.length ? '<div class="mcbar">' + h.matches.map(m => '<button class="' + (RUNNING.includes(m.state) || m.state === 'ready' ? 'pri' : '') + '" data-act="mcopen" data-id="' + m.id + '">Open ' +
+        (h.timing === 'sync' ? 'the match' : 'relay') + ': ' + esc(RELAY_STATE[m.state] || m.state) + '</button>').join('') + '</div>' : '') + '</div>').join('') + '</div>';
+}
 function mcList(mc, tab) {                       // one Match Control tab (the lists; a match or competition opens over it), as cards
   const director = mcDirector(mc), sel = mc.msel || {}, rsel = mc.rsel || {};
-  const singles = (mc.matches || []).filter(m => m.competition_id == null || mc.compsErr);   // relays are listed with their competition
+  const singles = (mc.matches || []).filter(m => (m.competition_id == null || mc.compsErr) && !m.hosted_code);   // relays with their competition; deepTENS matches above
   const tick = (key, busy, what) => director ? '<label class="tick"><input type="checkbox" data-msel="' + key + '"' + (sel[key] && !busy ? ' checked' : '') + (busy ? ' disabled title="Running: stop it first"' : '') +
     ' aria-label="Select ' + esc(what) + '"></label>' : '';
   const delBar = (kind, n, what) => director && n ? '<div class="mcbar"><button class="danger" data-act="mcdelsel" data-kind="' + kind + '"' + (deletable(mc, kind).length ? '' : ' disabled') + '>Delete selected' +
@@ -2191,7 +2212,7 @@ function mcList(mc, tab) {                       // one Match Control tab (the l
     'the results already). Shots stay in each target\'s history. A running match must be stopped first.</span></div>' : '';
   const msg = mc.msg ? '<p class="bad">' + esc(mc.msg) + '</p>' : '';
   const st = m => esc(RELAY_STATE[m.state] || m.state) + (m.clock && m.clock.label && (m.state === 'running' || m.state === 'paused') ? ' · ' + esc(m.clock.label) : '');
-  if (tab === 'singles') return '<div class="panel"><h3>Single matches</h3>' +
+  if (tab === 'singles') return mcHostedHtml(mc) + '<div class="panel"><h3>Single matches</h3>' +
     (director ? '<div class="mcbar"><button class="pri" data-act="mcnew">New single match</button><span class="mut">A match on its own, without a competitor list.</span></div>' : '') +
     (singles.length ? '<ul class="mclist">' + singles.map(m => '<li>' + tick('m' + m.id, RUNNING.includes(m.state), m.name) +
       '<span class="lmain"><b>' + esc(m.name) + (m.results_hidden ? ' <span class="mut">(results deleted)</span>' : '') + '</b><span class="mut">' + esc(m.format_name) + ' · ' + st(m) + '</span></span>' +
@@ -2304,7 +2325,8 @@ function mcConsole(mc) {
   const pace = st !== 'done' && st !== 'aborted' && !ot ? '<details class="panel rodet"><summary><b>Commands: ' + esc(PACE[c.paced] ? PACE[c.paced][0] : c.paced) + '</b></summary><p class="mut">' + esc(PACE[c.paced] ? PACE[c.paced][1] : '') + '</p>' +
     '<div class="roacts">' + ['spoken', 'officer', 'auto'].filter(k => k !== c.paced).map(k => '<button data-act="mccmd" data-a="pacing" data-v="' + k + '">Switch to ' + esc(PACE[k][0].toLowerCase()) + '</button>').join('') + '</div></details>' : '';
   const top = head + roBand(d, mc) + (spoken && !mc.speak ? '<button class="btn pri rosound" data-act="mcspeak">Turn on sound for spoken commands</button>' : '') + roActions(d, mc);
-  const rest = '<div class="mut roface">Target face: <b>' + esc(faceOf(d.face).name) + '</b>' + (d.competition_id != null ? ' · <button class="linkbtn" data-act="mccopen" data-id="' + d.competition_id + '">Competitors &amp; relays</button>' : '') + '</div>' + faceWarning(d) +
+  const rest = (d.hosted_code ? '<p class="mut">A deepTENS match: its clock is the match\'s on deepTENS (no pause, extra time, restart or moves here), deepTENS scores it and decides flagged shots. Keep this open while it runs: that makes its runs range-supervised.</p>' : '') +
+    '<div class="mut roface">Target face: <b>' + esc(faceOf(d.face).name) + '</b>' + (d.competition_id != null ? ' · <button class="linkbtn" data-act="mccopen" data-id="' + d.competition_id + '">Competitors &amp; relays</button>' : '') + '</div>' + faceWarning(d) +
     commandsPanel(d) + finalPanel(d, director) + officialPanel(d, director) + flagsList(d, director) + pace +
     (st !== 'ready' && director ? '<details class="panel rodet"><summary><b>Corrections</b> <span class="mut">restart a phase or the match</span></summary>' + correctionsPanel(d, director).replace(/^<div class="panel"><h3>Corrections<\/h3>/, '').replace(/<\/div>$/, '') + '</details>' : correctionsPanel(d, director)) +
     publishPanel(d, director, S.dt && S.dt.linked, false) +
@@ -2898,6 +2920,8 @@ async function refresh() {
         if (fs.status === 200) mc.formats = fs.data.formats;
         if (ts.status === 200) mc.targets = ts.data.targets.sort(byLane);
         if (as.status === 200) mc.athletes = as.data.athletes;
+        const hs = await matchCall('/hosted');
+        if (hs.status === 200) mc.hosted = hs.data.hosted;
         const rl = await matchCall('/results');
         if (rl.status === 200) mc.results = rl.data.results;
         const cs = await matchCall('/competitions');
@@ -3675,6 +3699,12 @@ async function matchAct(el, a) {
     if (show(res)) { mc.view = 'console'; mc.open = res.data.id; mc.detail = res.data; }
     return refresh();
   }
+  if (a === 'mchplace') {                       // a deepTENS entrant onto a target
+    const s = document.querySelector('select[data-hsel="' + el.dataset.code + ':' + el.dataset.entry + '"]');
+    const res = await matchCall('/hosted/' + el.dataset.code + '/lanes', {lanes: [{device_id: s ? s.value : '', entry_id: +el.dataset.entry}]});
+    if (show(res)) toast('On the lane');
+    return refresh();
+  }
   if (a === 'mcopen') { mc.view = 'console'; mc.open = +el.dataset.id; mc.detail = null; mc.msg = ''; mc.movep = null; mc.editp = null; return refresh(); }
   if (a === 'mccnew') { mc.view = 'cnew'; mc.cdraft = {}; mc.msg = ''; return render(); }
   if (a === 'mccpaced') { mc.cdraft.paced = el.dataset.v; return render(true); }
@@ -4204,7 +4234,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {mcHostedHtml, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>
