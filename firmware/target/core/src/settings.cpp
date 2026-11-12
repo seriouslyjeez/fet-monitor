@@ -13,7 +13,7 @@ static const SettingDef DEFS[S_COUNT] = {
     {"ring_ms", 10, 2000, 50},
     {"face", 0, 1, 0},
     {"face_alone_ms", 1, 100, 5},
-    {"vref_mv", 0, 3300, 0},
+    {"vref_mv", 0, 4675, 0},                      // ESP32 boards: freETarget's usable 1.25-4.25 V, 10 % more each way (0 = the default 1.25 V)
 };
 
 uint32_t crc32(const uint8_t* p, size_t n, uint32_t crc) {

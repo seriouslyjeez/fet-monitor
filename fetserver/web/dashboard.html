@@ -1622,7 +1622,7 @@ const TARGET_SETTINGS = [               // [key, label, unit ('yesno': a Yes/No 
   ['ring_ms', 'Quiet before re-arming', 'ms', 10, 2000, 'After a shot, how long the target must be quiet (no echo ringing in the box) before it listens for the next one.'],
   ['face', 'Face sensor fitted', 'yesno', 0, 1, 'Only if a face-plate sensor is wired to the board: it tells a hit on the faceplate (a miss) from a shot.'],
   ['face_alone_ms', 'Face-only event after', 'ms', 1, 100, 'A faceplate hit that no microphone heard within this time is reported on its own (a hit on the faceplate).', 'face'],
-  ['vref_mv', 'Microphone threshold', 'mV (0 = the board\'s own)', 0, 3300, 'How loud a sound must be to trigger a microphone. Lower is more sensitive. (ESP32 boards; on the Mega the trimmer RV1 sets it.)', 'esp32']];
+  ['vref_mv', 'Microphone threshold', 'mV (0 = the board\'s own, 1250)', 0, 4675, 'How loud a sound must be to trigger a microphone. Lower is more sensitive. freETarget: usable 1250-4250 mV (ESP32 boards from 0.4.1 take up to 4675; on the Mega the trimmer RV1 sets it).', 'esp32']];
 const dur = ms => { const s = Math.round(ms / 1000); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : Math.floor(s / 3600) + ' h ' + Math.round(s % 3600 / 60) + ' min'; };
 function linkLines(t) {                          // the WiFi link: signal; for ESP32 boards (0.2.2+) why it started and its drops
   const L = t.link, out = [];

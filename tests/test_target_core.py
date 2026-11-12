@@ -700,6 +700,14 @@ class CommandChannel(Case):
         self.assertEqual(self.h.run("sget led_pct"), "50", "nothing applied")
         self.assertEqual(self.h.run("acts"), "0 0")
 
+    def test_the_threshold_reaches_freetargets_range_and_ten_percent(self):
+        """vref_mv up to 4675 (freETarget's usable 1.25-4.25 V for VREF_LO, 10 % more each way; user 2026-11-12)."""
+        self.h.run("ckey " + KEY.hex())
+        self.assertTrue(self.cmd(1, "set", {"vref_mv": 4675})["ok"])
+        self.assertEqual(self.h.run("sget vref_mv"), "4675")
+        self.assertEqual(self.cmd(2, "set", {"vref_mv": 4676})["reason"], "out_of_range:vref_mv")
+        self.assertTrue(self.cmd(3, "set", {"vref_mv": 0})["ok"], "0: the board's own default")
+
     def test_a_failed_save_is_reported(self):
         self.h.run("ckey " + KEY.hex())
         self.h.run("nvmfail 1")
