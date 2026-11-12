@@ -92,6 +92,7 @@ class WifiNet : public fet::Net {
   bool resolveServer(uint64_t now);
   bool postPlain(const char* path, const std::string& body, int& status, std::string& resp);
   bool postTls(const char* path, const std::string& body, int& status, std::string& resp);
+  NetworkClientSecure* tlsForDownload(std::string& err);   // a firmware download over HTTPS (0.4.1)
   void tlsDrop();
   NetworkClientSecure* tls_ = nullptr;            // HTTPS: one connection kept open between reports
   int tlsState_ = 0;                              // 0 not tried, 1 connecting works, 2 failing, 3 waiting for the time:

@@ -386,9 +386,35 @@ static bool certCurrent(const mbedtls_x509_crt* c, std::string& why) {
   return true;
 }
 
+static const std::string& trustPem() {                                // the deepTENS device CA, and Let's Encrypt's root
+  static const std::string trust = std::string(FET_DEVICE_CA) + "\n" + FET_ISRG_ROOT_X1;
+  return trust;
+}
+
+// A connection of its own for a firmware download (0.4.1): the kept-open report connection is closed first (the
+// ESP32-S3 has room for one TLS session at a time with room to spare); the same checks as reports: the chain to the
+// trusted roots, the server's name (SNI), the certificate's dates against the time from NTP.
+NetworkClientSecure* WifiNet::tlsForDownload(std::string& err) {
+  if (time(nullptr) < 1700000000) { err = "no time yet (NTP): the certificate cannot be checked"; return nullptr; }
+  tlsDrop();
+  NetworkClientSecure* s = new NetworkClientSecure();
+  s->setCACert(trustPem().c_str());
+  s->setHandshakeTimeout(FET_TLS_HANDSHAKE_MS / 1000);
+  std::string why;
+  if (s->connect(cfg_.host.c_str(), (uint16_t)cfg_.port, FET_TLS_CONNECT_MS) != 1) {
+    char e[100] = "";
+    int code = s->lastError(e, sizeof e);
+    why = "secure connection failed: " + std::to_string(code) + " " + e;
+  } else if (!certCurrent(s->getPeerCertificate(), why)) {
+    why = "secure connection failed: " + why;
+  }
+  if (!why.empty()) { s->stop(); delete s; err = why; return nullptr; }
+  return s;
+}
+
 // One report over the kept-open connection; a connection the server closed meanwhile is opened again once.
 bool WifiNet::postTls(const char* path, const std::string& body, int& status, std::string& resp) {
-  static const std::string trust = std::string(FET_DEVICE_CA) + "\n" + FET_ISRG_ROOT_X1;
+  const std::string& trust = trustPem();
   if (!timeAsked_) { configTime(0, 0, "pool.ntp.org", "time.nist.gov"); timeAsked_ = true; }
   if (time(nullptr) < 1700000000) {                                  // no clock yet: no certificate can be checked
     if (tlsState_ != 3) say("Secure connection: ", "waiting for the time (NTP)");
@@ -475,13 +501,26 @@ bool WifiNet::fetchImage(const uint8_t sha[32], uint32_t size, std::string& err)
   static const char HX[] = "0123456789abcdef";
   std::string shaHex;
   for (int i = 0; i < 32; i++) { shaHex += HX[sha[i] >> 4]; shaHex += HX[sha[i] & 15]; }
+  WiFiClient plain;
+  Client* cp = &plain;                                                    // the download: plain to a FeT Monitor, or HTTPS
+  std::string host;
 #if FET_HTTPS
-  if (cfg_.tls) { err = "firmware updates over HTTPS are not supported yet: update by USB"; return false; }
+  NetworkClientSecure* sec = nullptr;
+  struct Own { NetworkClientSecure*& p; ~Own() { if (p) { p->stop(); delete p; } } } own{sec};
+  if (cfg_.tls) {                                                         // a target at home, from deepTENS (0.4.1)
+    sec = tlsForDownload(err);
+    if (!sec) return false;
+    cp = sec;
+    host = cfg_.host;
+  } else
 #endif
-  if (!ready()) { err = "server not reachable"; return false; }
-  WiFiClient c;
-  if (!c.connect(ip_, (uint16_t)port_, FET_FW_CONNECT_MS)) { err = "could not connect to the server"; return false; }
-  std::string req = "GET /api/v1/firmware/" + shaHex + " HTTP/1.1\r\nHost: " + ip_.toString().c_str() + "\r\nUser-Agent: " +
+  {
+    if (!ready()) { err = "server not reachable"; return false; }
+    if (!plain.connect(ip_, (uint16_t)port_, FET_FW_CONNECT_MS)) { err = "could not connect to the server"; return false; }
+    host = ip_.toString().c_str();
+  }
+  Client& c = *cp;
+  std::string req = "GET /api/v1/firmware/" + shaHex + " HTTP/1.1\r\nHost: " + host + "\r\nUser-Agent: " +
                     userAgent + "\r\nX-FET-Token: " + cfg_.token + "\r\nConnection: close\r\n\r\n";
   if (c.write((const uint8_t*)req.data(), req.size()) != req.size()) { c.stop(); err = "request not sent"; return false; }
   std::string head;
