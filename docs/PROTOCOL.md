@@ -400,3 +400,26 @@ sessions) and shows them in published results by the name they chose.
 **Coaches.** `POST /api/monitor/v1/lanes` lanes carry `athlete_id` while someone is signed in, and the Pi sends lanes
 while anyone is signed in even when the public board is off. deepTENS keeps those lanes only for coaches (never on a
 board that is off; never the athlete's name on the board).
+
+### Hosted virtual matches (P4 stage 5; deepTENS side built 2026-11-11, FeT Monitor side in progress)
+A range's Range Manager hosts a deepTENS virtual match; entrants may choose to shoot there. The Pi keeps the clock
+and carries its targets' signed lines; deepTENS scores them and is the authority (docs/PLAN-virtual-matches.md).
+- The heartbeat's answer carries `"hosted_rev"`: a short fingerprint of what `hosted` answers ("" when nothing is
+  hosted). When it changes the Pi fetches `POST /api/monitor/v1/hosted` → `{"matches": [{"code", "name", "timing":
+  "sync"|"window", "format", "fetcore_version", "starts_ms", "late_ms", "opens_ms", "closes_ms", "attempts", "counts",
+  "classes", "official", "entrants": [{"entry_id", "athlete", "class", "runs", "allowed_runs"}]}], "server_time_ms"}`:
+  the matches its range hosts that ended less than a day ago, with the entrants at this range (`athlete` as in
+  sign-ins).
+- `POST /api/monitor/v1/targets` `{"targets": [{"device_id", "lane", "name", "board_rev", "face", "key_fp",
+  "key_hex"}]}` → `{"ok": [device_id], "refused": [{"device_id", "why"}]}`: the targets of the lanes a hosted match
+  uses, with their signing keys (deepTENS keeps them sealed, bound to the range). A device that is someone's home
+  target, or another range's, is refused.
+- `POST /api/monitor/v1/lines` `{"lines": [{"device_id", "boot_count", "seq", "type": "target_shot"|"target_hello",
+  "uptime_ms", "event_ms", "time_quality", "raw"}]}` (at most 200) → `{"acked": [[device_id, boot_count, seq]],
+  "rejected": [{"device_id", "seq", "why"}]}`: each line as the target sent it, with the Pi's event time and its
+  quality; stored once by identity (a repeat with other content is kept apart as a conflict). Sent at once; resent
+  until acknowledged.
+- Outbox kind `hosted_run`, key `h<id>`: `{"match": code, "entry_id", "lane", "device_id", "started_ms", "ends_ms",
+  "stopped_ms", "supervised", "unsupervised": [[from, to]]}`. A synchronized run starts at the match's start; a window
+  run lies within the window; the entrant must have a run left. `supervised`: a Range Officer or Match Director had
+  the RO console open throughout (gaps under 60 s ignored).
