@@ -125,6 +125,10 @@ result for its id arrives):
 | `factory_reset` | `erase` (required) | erases its settings and queued events, restarts |
 | `target` | one `FT1 C ...` line (printable ASCII, no braces, at most 300 characters) | writes it to the target firmware, which checks its signature, boot and id itself (FeT Bridge 0.4+) |
 
+deeptens.com carries the same commands to its direct targets (lights, VREF, paper, status, and updates: the image at
+`GET https://devices.deeptens.com/api/v1/firmware/<sha256>` with the target's own token; an ESP32 board by its app's
+SHA-256).
+
 FeT target firmware verbs inside `FT1 C` lines (firmware/target/core/src/commands.h): `get`, `set k=v ...`, `paper`,
 `status`, and `update sha=<64 hex> size=<bytes>`: an ESP32 target fetches `GET /api/v1/firmware/<sha>` (device token)
 and installs it only if its SHA-256 is the signed one; the Mega answers `r=not_supported`.
