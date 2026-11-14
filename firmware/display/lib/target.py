@@ -14,6 +14,7 @@ MODES = {"practice": "PRACTICE", "sighter": "SIGHTERS", "record": "RECORD", "amm
 
 def pairing(s, code, footer):
     s.fill(0, 0, W, H, ui.BG)
+    forget()
     big(s, "PAIR THIS DISPLAY", (W - 17 * 16) // 2, 10, 2, ui.WARN, ui.BG)
     y = 40
     for line in ("In FeT Monitor, open", "Range Control > Lane displays", "and type this code:"):
@@ -25,13 +26,41 @@ def pairing(s, code, footer):
     big(s, footer[:40], 0, H - 8, 1, ui.DIM, ui.BG)
 
 
-def _text(s, text, x, y, scale, colour, width):
-    """text in a box width wide (cut to fit), the rest of the box cleared."""
-    n = max(0, width // (8 * scale))
-    text = text[:n]
-    s.fill(x, y, width, 8 * scale, ui.BG)
-    if text:
-        big(s, text, x, y, scale, colour, ui.BG)
+_drawn = {}                  # each text field on the screen: key -> (text, colour, x, y, scale, width)
+
+
+def forget(y0=0, y1=H):
+    """The screen (or rows y0..y1) was cleared: no text field there is drawn any more."""
+    for k in [k for k, d in _drawn.items() if y0 <= d[3] < y1]:
+        del _drawn[k]
+
+
+def _text(s, text, x, y, scale, colour, width, key=None):
+    """A text field: text in a box width wide (cut to fit), the rest of the box empty. The font is fixed-width, so a
+    field that showed something before at the same place, size and colour draws only the characters that changed
+    (each with its own background: nothing is cleared first, nothing flashes)."""
+    cw = 8 * scale
+    text = text[:max(0, width // cw)]
+    key = key or (x, y)
+    old = _drawn.get(key)
+    if old and old[1:5] == (colour, x, y, scale):
+        ot = old[0]
+        for i in range(max(len(ot), len(text))):
+            a = ot[i] if i < len(ot) else None
+            b = text[i] if i < len(text) else None
+            if a != b:
+                if b is None:
+                    s.fill(x + i * cw, y, cw, cw, ui.BG)
+                else:
+                    big(s, b, x + i * cw, y, scale, colour, ui.BG)
+    else:
+        if old:                                    # another size, colour or place: the old box goes first
+            s.fill(old[2], old[3], old[5], 8 * old[4], ui.BG)
+        if text:
+            big(s, text, x, y, scale, colour, ui.BG)
+        if width > len(text) * cw:
+            s.fill(x + len(text) * cw, y, width - len(text) * cw, cw, ui.BG)
+    _drawn[key] = (text, colour, x, y, scale, width)
 
 
 def face(s, v):
@@ -86,6 +115,7 @@ def top(s, v):
     """The top bar: the lane, and who is signed in (a claim draws its own band there: claim_band)."""
     title, who, claim = _top(v)
     s.fill(0, 0, W, FY - 2, ui.BG)
+    forget(0, FY)
     _text(s, title, 4, 6, 2, ui.FG, 104)
     if not claim:
         _text(s, who, 112, 6, 2, ui.GOOD, W - 116)
@@ -96,6 +126,7 @@ def target(s, v, problem=None, prev=None):
     full = prev is None
     if full:
         s.fill(0, 0, W, H, ui.BG)
+        forget()
     pv, pp = prev if prev else (None, None)
     if full or _top(pv) != _top(v):
         top(s, v)
@@ -147,12 +178,28 @@ def clock(s, v, now_server_ms=None):
 PRESSED = rgb(110, 120, 140)
 
 
+def label_lines(label, w, h):
+    """(scale, lines) for a button's label: the large size on one line, else on two (whole words), else small."""
+    for sc in (2, 1):
+        per = (w - 2) // (8 * sc)
+        if len(label) <= per:
+            return sc, [label]
+        lines = ui.wrap(label, per)
+        if len(lines) == 2 and all(any(word in ln.split(" ") for ln in lines) for word in label.split(" ")) \
+                and 2 * 8 * sc + 4 <= h - 4:
+            return sc, lines
+    return 1, [label[: (w - 2) // 8]]
+
+
 def button(s, x, y, w, h, label, key, colour=None):
     """A button (at least 44 px tall: a finger); returns (x, y, w, h, key, label, colour) for tapping and lighting up."""
     c = colour if colour is not None else ui.BTN
     s.fill(x, y, w, h, c)
-    sc = 2 if 16 * len(label) <= w - 8 else 1
-    big(s, label[: (w - 4) // (8 * sc)], x + max(2, (w - 8 * sc * len(label)) // 2), y + (h - 8 * sc) // 2, sc, ui.FG, c)
+    sc, lines = label_lines(label, w, h)
+    ty = y + (h - (len(lines) * 8 * sc + (len(lines) - 1) * 4)) // 2
+    for ln in lines:
+        big(s, ln, x + max(1, (w - 8 * sc * len(ln)) // 2), ty, sc, ui.FG, c)
+        ty += 8 * sc + 4
     return (x, y, w, h, key, label, c)
 
 
@@ -192,8 +239,8 @@ def claim_band(s, v, now_server_ms):
     if not c:
         return
     left = max(0, (c["until_ms"] - now_server_ms) // 1000) if now_server_ms else c["left_ms"] // 1000
-    _text(s, "%s: SHOOT %d:%02d" % (c["public_name"], left // 60, left % 60), 112, 6, 1, ui.WARN, W - 116)
-    _text(s, "to claim this lane", 112, 16, 1, ui.DIM, W - 116)
+    _text(s, "%s: SHOOT %d:%02d" % (c["public_name"], left // 60, left % 60), 112, 6, 1, ui.WARN, W - 116, "claim1")
+    _text(s, "to claim this lane", 112, 16, 1, ui.DIM, W - 116, "claim2")
 
 
 def qr_draw(s, rows, x, y, px):
@@ -220,6 +267,7 @@ def qr_draw(s, rows, x, y, px):
 def signin_screen(s, v, rows):
     """Nobody signed in: the lane's QR code (rows from qr.encode, or None), number + PIN, or shoot without."""
     s.fill(0, 0, W, H, ui.BG)
+    forget()
     out = []
     if rows:
         px = max(1, min(6, (H - 16) // (len(rows) + 8)))
@@ -254,11 +302,10 @@ def _kp_xy(i):
 
 def keypad_top(s, phase, digits, msg=None):
     """The keypad's top lines: the title (or a message) and the digits (the PIN as stars)."""
-    if msg:
-        s.fill(0, 0, W - 60, 20, ui.BG)
-        _text(s, msg, 6, 6, 1, ui.BAD if msg != "Signing in..." else ui.DIM, W - 70)
+    if msg:                                        # one field: a message takes the title's place
+        _text(s, msg, 6, 6, 1, ui.BAD if msg != "Signing in..." else ui.DIM, W - 70, "kptitle")
     else:
-        _text(s, "ATHLETE NUMBER" if phase == "number" else "PIN", 6, 2, 2, ui.FG, W - 70)
+        _text(s, "ATHLETE NUMBER" if phase == "number" else "PIN", 6, 2, 2, ui.FG, W - 70, "kptitle")
     shown = digits if phase == "number" else "*" * len(digits)
     _text(s, shown or "-", 6, 22, 3, ui.GOOD, W - 70)
 
@@ -274,6 +321,7 @@ def keypad_screen(s, phase, digits, msg=None):
     """The whole keypad, drawn once: athlete number (6 digits), then the PIN (4 to 6). Keys 44 px tall below the top
     52 px. Then keypad_top and keypad_ok redraw only what a key press changes."""
     s.fill(0, 0, W, H, ui.BG)
+    forget()
     keypad_top(s, phase, digits, msg)
     out = [button(s, W - 58, 2, 54, 46, "X", "cancel")]
     for i, k in enumerate(KEYS[:-1]):
@@ -285,6 +333,7 @@ def keypad_screen(s, phase, digits, msg=None):
 
 def confirm_screen(s, question, yes_label, yes_key):
     s.fill(0, 0, W, H, ui.BG)
+    forget()
     y = 50
     for line in ui.wrap(question, W // 16):
         big(s, line, (W - 16 * len(line)) // 2, y, 2, ui.FG, ui.BG)
@@ -296,5 +345,6 @@ def confirm_screen(s, question, yes_label, yes_key):
 def message(s, text, colour=None):
     """An answer to a button, across the top bar (two lines at most) until top() draws it again."""
     s.fill(0, 0, W, FY - 2, ui.BG)
+    forget(0, FY)
     for i, line in enumerate(ui.wrap(text, W // 8 - 1)[:2]):
         big(s, line, 4, 3 + 12 * i, 1, colour if colour is not None else ui.WARN, ui.BG)

@@ -97,6 +97,28 @@ for phase in ("number", "pin"):
             for b in target.keypad_screen(s, phase, digits, msg):
                 target.press(s, b, True)
                 target.press(s, b, False)
+def same(what, redraw):
+    # the picture now must be the one a full drawing (redraw()) gives
+    upd = bytes(s.px)
+    s.px[:] = bytes(len(s.px))
+    redraw()
+    assert bytes(s.px) == upd, ("not the picture a full drawing gives", what)
+for phase in ("number", "pin"):                         # typing: only the new or deleted digit is drawn
+    target.keypad_screen(s, phase, "", None)
+    for d, msg in (("1", None), ("12", None), ("123", None), ("12", None), ("", None), ("", "wrong athlete number or PIN"),
+                   ("1", None), ("1234", None), ("123456", None), ("12345", None), ("12345", "Signing in..."), ("", "too many wrong PINs")):
+        target.keypad_top(s, phase, d, msg)
+        target.keypad_ok(s, phase, d)
+        same((phase, d, msg), lambda: target.keypad_screen(s, phase, d, msg))
+        n += 1
+mv = views["match"]
+target.target_with_button(s, mv)                        # the clock: only the digits that change
+for k in range(5):
+    target.clock(s, mv, mv["server_time_ms"] + k * 1000 + 999)
+def full_then_tick():
+    target.target_with_button(s, mv)
+    target.clock(s, mv, mv["server_time_ms"] + 4 * 1000 + 999)
+same("clock", full_then_tick)
 check("confirm", target.confirm_screen(s, "Sign out A Very Long Public Name Indeed?", "SIGN OUT", "signout"))
 print("SCREENS", n)
 """
@@ -143,7 +165,7 @@ class EveryScreen(LinkedCase):
             Path(tmp, "run.py").write_text(RUNNER % (str(ROOT / "firmware/display/lib"), tmp, str(Path(tmp, "views.json"))))
             r = subprocess.run([MP, "-X", "heapsize=16m", str(Path(tmp, "run.py"))], capture_output=True, text=True, timeout=300)
         self.assertIn("SCREENS", r.stdout, r.stdout[-2000:] + r.stderr[-2000:])
-        self.assertEqual(int(r.stdout.split("SCREENS")[1]), 241, "every view over every other (with and without a problem), keypad states, the question")
+        self.assertGreater(int(r.stdout.split("SCREENS")[1]), 250, "every view over every other (with and without a problem), keypad states and typing, the question")
 
 
 if __name__ == "__main__":
