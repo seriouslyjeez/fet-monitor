@@ -75,10 +75,11 @@ class LatestMark(unittest.TestCase):
                     rt.display(mock.Mock(version="9.9.4"))
 
     def test_the_built_display_says_its_version(self):
-        app = (ROOT / "firmware/display/lib/app.py").read_text()
+        mod = (ROOT / "firmware/display/lib/fetdisplay.py").read_text()
         import re
-        v = re.search(r'^VERSION = "([0-9.]+)"', app, re.M).group(1)
-        self.assertIn('MARKER = "fet-display/%s"' % v, app, "the marker names the version (deepTENS and release.py look for it)")
+        v = re.search(r'^VERSION = "([0-9.]+)"', mod, re.M).group(1)
+        self.assertIn('MARKER = "fet-display/%s"' % v, mod, "the marker names the version (deepTENS and release.py look for it)")
+        self.assertIn("from fetdisplay import VERSION", (ROOT / "firmware/display/lib/app.py").read_text(), "one version, in one place")
 
     def test_esp32_kind_builds_a_checked_folder(self):
         import tempfile

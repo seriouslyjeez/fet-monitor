@@ -24,13 +24,14 @@ from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
 from .deeptens import DeepTens, LinkError
 from fetcore import faces as F
 from .firmware import MAX_IMAGE, BadImage, FirmwareStore, best_for, version_tuple
-from .releases import ReleaseError, Updates, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
+from .releases import ReleaseError, Updates, fetch_display_firmware, fetch_esp32_firmware, fetch_firmware, fetch_target_firmware
 from .rulebookfiles import MAX_PDF, RulebookError, RulebookFiles
 from fetcore.rulebooks import DOC_BY_ID, REPOSITORIES
 from .appliance import Appliance, ApplianceError
 from .flashstation import FlashError, FlashStation
 from .targetfw import BadImage as BadHex, TargetFirmwareStore
 from .esp32fw import FULL_SIZE as ESP32_FULL, BadImage as BadEsp32, Esp32FirmwareStore
+from .displayfw import MAX_SIZE as DISPLAY_MAX, BadImage as BadDisplay, DisplayFirmwareStore
 FLASH_BACKUP_RE = re.compile(r"^/api/v1/admin/flash-backups/([0-9a-f]{12}-\d{8}-\d{6}\.bin|mega-[0-9A-Za-z]{1,20}-\d{8}-\d{6}\.(?:hex|eep))$")
 
 log = logging.getLogger("fetserver.http")
@@ -52,6 +53,7 @@ MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
 ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane|athlete)$")
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
+ADMIN_DISPLAY_FW_DELETE_RE = re.compile(r"^/api/v1/admin/display-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
 DISPLAY_PAGE_RE = re.compile(r"^/([A-Za-z0-9]{5})/?$")                    # a TV display's address (displays.py)
@@ -567,7 +569,7 @@ class Handler(BaseHTTPRequestHandler):
             raise BadRequest("upload cut off")
         try:
             meta = (store or self.server.firmware).add(data, uploaded_by=self.client_address[0])
-        except (BadImage, BadHex, BadEsp32) as exc:
+        except (BadImage, BadHex, BadEsp32, BadDisplay) as exc:
             return self._send(400, {"error": str(exc)})
         log.info("Range Control from %s: firmware %s (%s, %d bytes) uploaded", self.client_address[0], meta["version"],
                  meta["sha256"][:12], meta["size"])
@@ -617,6 +619,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._firmware_upload(self.server.target_firmware)
         if path == "/api/v1/admin/esp32-firmware" and method == "POST":
             return self._firmware_upload(self.server.esp32_firmware, ESP32_FULL)
+        if path == "/api/v1/admin/display-firmware" and method == "POST":
+            return self._firmware_upload(self.server.display_firmware, DISPLAY_MAX)
         if method == "POST":
             payload = self._read_json()
             if not isinstance(payload, dict):
@@ -674,6 +678,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"images": self.server.target_firmware.list()})
         if path == "/api/v1/admin/esp32-firmware" and method == "GET":
             return self._send(200, {"images": self.server.esp32_firmware.list()})
+        if path == "/api/v1/admin/display-firmware" and method == "GET":
+            return self._send(200, {"images": self.server.display_firmware.list()})
+        dfd = ADMIN_DISPLAY_FW_DELETE_RE.match(path)
+        if dfd and method == "POST":
+            if not self.server.display_firmware.delete(dfd.group(1)):
+                raise NotFound("no such firmware image")
+            log.info("Range Control from %s: deleted FeT Display firmware %s", self.client_address[0], dfd.group(1)[:12])
+            return self._send(200, {"ok": True})
         e32d = ADMIN_E32_DELETE_RE.match(path)
         if e32d and method == "POST":
             if not self.server.esp32_firmware.delete(e32d.group(1)):
@@ -721,6 +733,24 @@ class Handler(BaseHTTPRequestHandler):
             except FlashError as exc:
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: ESP32 board on %s: %s", self.client_address[0], port, job["what"])
+            return self._send(202, job)
+        if path in ("/api/v1/admin/flash/display-install", "/api/v1/admin/flash/display-configure") and method == "POST":
+            port, fl = str(payload.get("port", "")), self.server.flash
+            settings = payload.get("settings")
+            if isinstance(settings, dict):                                # it reports to this server, on this port
+                settings = dict(settings, port=self.server.server_address[1])
+            did = payload.get("device_id") if isinstance(payload.get("device_id"), str) else None
+            try:
+                if path.endswith("install"):
+                    erase = payload.get("erase")
+                    job = fl.start_display_flash(port, str(payload.get("sha256", "")), "Range Control",
+                                                 settings if isinstance(settings, dict) else None, did,
+                                                 erase if isinstance(erase, bool) else None)
+                else:
+                    job = fl.start_display_configure(port, settings, did, "Range Control")
+            except FlashError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: CYD display on %s: %s", self.client_address[0], port, job["what"])
             return self._send(202, job)
         if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start", "/api/v1/admin/flash/configure") and method == "POST":
             settings = payload.get("settings")
@@ -826,6 +856,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: server update to %s requested", self.client_address[0], meta["version"])
             return self._send(202, meta)
+        if path == "/api/v1/admin/display-firmware/github" and method == "POST":
+            store = self.server.display_firmware
+            try:
+                res = fetch_display_firmware(self.server.updates.gh, lambda sha: store.get(sha) is not None,
+                                             lambda data: store.add(data, uploaded_by="GitHub"), self.server.updates.signers)
+            except ReleaseError as exc:
+                return self._send(502, {"error": str(exc)})
+            log.info("Range Control from %s: FeT Display firmware from GitHub: %s", self.client_address[0], res["message"])
+            return self._send(200, res)
         if path == "/api/v1/admin/esp32-firmware/github" and method == "POST":
             store = self.server.esp32_firmware
             try:
@@ -1253,12 +1292,15 @@ class FetHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, addr, core: Core, token: str, admin: Admin = None, firmware: FirmwareStore = None, updates: Updates = None,
                  rulebooks: RulebookFiles = None, appliance: Appliance = None, flash: FlashStation = None,
-                 target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None):
+                 target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None,
+                 display_firmware: DisplayFirmwareStore = None):
         super().__init__(addr, Handler)
         self.deeptens = deeptens                      # the link to deepTENS (None: not available, e.g. tests)
         if deeptens is not None and admin is not None:
             admin.dt_ok = deeptens.still_has          # sessions made through deepTENS last while the roster gives the role
         self.esp32_firmware = esp32_firmware if esp32_firmware is not None else Esp32FirmwareStore(None)
+        self.display_firmware = display_firmware if display_firmware is not None else (
+            flash.display_images if flash is not None and flash.display_images is not None else DisplayFirmwareStore(None))
         self.target_firmware = target_firmware if target_firmware is not None else (
             flash.target_images if flash is not None and flash.target_images is not None else TargetFirmwareStore(None))
         self.flash = flash if flash is not None else FlashStation(firmware if firmware is not None else FirmwareStore(None), None)
@@ -1290,6 +1332,6 @@ class FetHTTPServer(ThreadingHTTPServer):
 def make_server(core: Core, token: str, host: str = "0.0.0.0", port: int = 8080, admin: Admin = None,
                 firmware: FirmwareStore = None, updates: Updates = None, rulebooks: RulebookFiles = None,
                 appliance: Appliance = None, flash: FlashStation = None, target_firmware: TargetFirmwareStore = None,
-                esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None) -> FetHTTPServer:
+                esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None, display_firmware: DisplayFirmwareStore = None) -> FetHTTPServer:
     return FetHTTPServer((host, port), core, token, admin, firmware, updates, rulebooks, appliance, flash, target_firmware,
-                         esp32_firmware, deeptens)
+                         esp32_firmware, deeptens, display_firmware)

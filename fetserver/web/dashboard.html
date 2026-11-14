@@ -419,6 +419,7 @@ body.tv .board td.tot,body.tv .board th.tot{background:transparent;border:0;bord
 <input type="file" id="rcfile" accept=".bin,application/octet-stream" multiple hidden>
 <input type="file" id="rcmegafile" accept=".hex" hidden>
 <input type="file" id="rce32file" accept=".bin" hidden>
+<input type="file" id="rcdisfile" accept=".bin" hidden>
 <input type="file" id="csvfile" accept=".csv,.txt,text/csv,text/plain" hidden>
 <input type="file" id="pdffile" accept=".pdf,application/pdf" hidden>
 <a id="ver" href="https://github.com/seriouslyjeez/fet-monitor" target="_blank" rel="noopener" title="FeT Monitor on GitHub">FeT Monitor</a>
@@ -1536,7 +1537,7 @@ function updatesPanel(u) {                       // This Pi → FeT Monitor itse
     '</div><p class="mut">Only releases signed with the FeT Monitor release key are installed. The database is backed up first; ' +
     'if the new version does not start, the previous version and its database come back by themselves.</p></section>';
 }
-const FLASH_FIELDS = ['fs_ssid', 'fs_pass', 'fs_name', 'fs_host', 'fs_ip', 'fs_gw'];
+const FLASH_FIELDS = ['fs_ssid', 'fs_pass', 'fs_name', 'fs_host', 'fs_ip', 'fs_gw', 'fs_disp_target'];
 function flashSettings(rc, f) {                 // the settings form's values (typed values survive redraws), or null without a WiFi name
   const v = (rc.flashf || {}), get = id => (v[id] != null ? v[id] : id === 'fs_host' ? (f.server_host || '') : '').trim();
   if (!get('fs_ssid')) return null;
@@ -1571,6 +1572,7 @@ function flashCards(f, rc, keep) {               // a card for each device plugg
     const pr = f.probes[p.port];
     if (pr && pr.device === 'mega') return megaRow(p, pr, running, rc.flashBusy === p.port, rc, f);
     if (pr && pr.device === 'esp32') { wantsForm = true; return esp32Row(p, pr, running, rc.flashBusy === p.port, rc, f); }
+    if (pr && pr.device === 'display') { wantsForm = true; return displayRow(p, pr, running, rc.flashBusy === p.port, rc); }
     const canCfg = p.hint !== 'arduino' && (!pr || pr.device === 'esp8266');
     if (canCfg) wantsForm = true;
     const mine = ownBackups(f, p, pr);
@@ -1598,7 +1600,7 @@ function flashForm(f, rc) {                      // the WiFi settings Install an
     '<label class="fld">This Pi\'s address<input id="fs_host" value="' + val('fs_host', f.server_host) + '"></label>' +
     '<label class="fld">Fixed IP<input id="fs_ip" placeholder="optional" value="' + val('fs_ip') + '"></label><label class="fld">Router<input id="fs_gw" value="' + val('fs_gw') + '"></label></div>' +
     '<p class="mut">With a WiFi name filled in, Install also configures the device, and Configure sends these settings to one that is already installed ' +
-    '(FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware). It reports to this Pi (its port and token are added). Use the Pi\'s IP address: ' +
+    '(FeT Bridge 0.3.0 and newer, ESP32 boards with FeT target firmware, CYD shot monitors). It reports to this Pi (its port and token are added). Use the Pi\'s IP address: ' +
     'names ending in .local do not work for targets. The device checks the settings like its own setup page, keeps them, and restarts.</p>' +
     '<details class="tap"><summary>Which USB programmer?</summary><p class="mut"><b>Recommended: an auto-reset programmer</b> (CH340 with automatic download mode, ' +
     'usually with a reset button). The Pi switches it between flashing and running by itself: Identify, Install and Configure need no hands.</p>' +
@@ -1615,7 +1617,8 @@ function flashPanel(f, rc) {                    // Range Control → Flash stati
     (f.ports.length ? cards.html : '<p><b>Nothing is plugged in.</b></p><ul class="mut">' +
       '<li><b>FeT Bridge</b> (the target\'s WiFi module, an ESP-01 or ESP-01S): on a USB programmer, into a USB port of this Pi.</li>' +
       '<li><b>Arduino Mega</b> of a target: by its own USB port. Its original program and settings are saved first and can be put back.</li>' +
-      '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li></ul>' +
+      '<li><b>ESP32 board</b> (6.2) of a target: by its USB-C port. After the first install it updates over WiFi (Firmware).</li>' +
+      '<li><b>CYD shot monitor</b> (ESP32-2432S028R, 2.8" screen): by its USB port. It gets FeT Display and shows the target you choose.</li></ul>' +
       '<p class="mut">Then press Identify. The firmware it gets comes from the Firmware tab.</p>') + '</div>';
   if (cards.form) h += flashForm(f, rc);
   if ((f.backups || []).length) h += '<div class="panel"><details><summary>All saved original firmware (' + f.backups.length + ')</summary>' +
@@ -1661,10 +1664,24 @@ const WIZ = {
       'the board its own key.</li></ol><p class="mut">It already has the newest? Press <b>Configure</b> to send the WiFi settings. A target back from a home or ' +
       'another range: press <b>New key</b>. Keep the cable in until it says done.</p>',
       keep: (p, pr) => pr ? pr.device === 'esp32' : p.hint !== 'arduino', form: true, none: 'The target is not plugged in any more. Plug its USB-C cable into the Pi.'},
-    {h: 'Test it', p: '<ol><li>Unplug the USB cable. Leave the target on its 12 V supply.</li><li>Fire a shot.</li></ol>', watch: true}]}};
+    {h: 'Test it', p: '<ol><li>Unplug the USB cable. Leave the target on its 12 V supply.</li><li>Fire a shot.</li></ol>', watch: true}]},
+  display: {title: 'CYD shot monitor', steps: [
+    {h: 'What you need', p: '<p>A shot monitor for one firing point: the 2.8" <b>CYD</b> (ESP32-2432S028R) with FeT Display. It belongs to one target and shows ' +
+      'what a phone on that lane shows, with the shooter\'s buttons.</p><ul><li>The CYD and a <b>USB cable</b> that carries data.</li>' +
+      '<li>The range WiFi\'s name and password: a <b>2.4 GHz</b> network.</li><li>The target it is for, already in Targets.</li></ul>'},
+    {h: 'Connect the display', p: '<ol><li>Plug the CYD into a USB port of this Pi (it switches on).</li><li>Press <b>Identify</b> on the card that appears below.</li></ol>' +
+      '<p class="mut">Identify asks the board what it runs, then restarts it. Nothing is changed.</p>',
+      keep: (p, pr) => pr ? pr.device === 'display' : p.hint !== 'arduino', none: 'Plug the CYD into the Pi. It shows here within a few seconds.'},
+    {h: 'Install FeT Display and choose its target', p: '<ol><li>Fill in the WiFi settings below and choose the target it shows.</li><li>Press <b>Install</b>: ' +
+      'FeT Display is written and checked, then the display gets the WiFi and its target.</li></ol><p class="mut">It already runs FeT Display? Press ' +
+      '<b>Configure</b> to give it the WiFi and a target. Keep the cable in until it says done.</p>',
+      keep: (p, pr) => pr ? pr.device === 'display' : p.hint !== 'arduino', form: true, none: 'The display is not plugged in any more. Plug it into the Pi.'},
+    {h: 'Calibrate and test', p: '<ol><li>A new display asks to be calibrated: tap each cross as it appears (four, then a fifth to check).</li>' +
+      '<li>It joins the WiFi and shows its target\'s lane. Range Control → Lane displays lists it as online.</li><li>Unplug it and hand it out: ' +
+      'it runs from any USB power supply.</li></ol>'}]}};
 function wizPick() {                              // the way in: which target
   return '<div class="wizpick"><span class="mut">Set up a target step by step:</span><button data-act="rcwiz" data-k="mega">Arduino Mega target</button>' +
-    '<button data-act="rcwiz" data-k="esp32">ESP32 target</button></div>' +
+    '<button data-act="rcwiz" data-k="esp32">ESP32 target</button><button data-act="rcwiz" data-k="display">CYD shot monitor</button></div>' +
     '<details class="tap"><summary>Which one is it?</summary><p class="mut">Look inside the target\'s box. A board marked <b>Arduino MEGA</b> (MEGA 2560) with a tiny WiFi ' +
     'module on top: an <b>Arduino Mega target</b>. One board with a square metal chip marked <b>ESP32-S3</b> and a USB-C socket: an <b>ESP32 target</b>.</p></details>';
 }
@@ -1717,6 +1734,33 @@ function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a
     '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
     (pr.can_key ? ' <button data-act="rce32key" data-port="' + esc(p.port) + '"' + dis + '>New key</button>' : '') +
     (pr.configurable ? ' <button data-act="rcflashcfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
+}
+function displayRow(p, pr, running, busy, rc) {   // a CYD shot monitor on a USB port: FeT Display, then the target it shows
+  const dis = running || rc.flashBusy ? ' disabled' : '', kept = (rc.flashf || {}).fs_disp_target || '';
+  const ts = ((rc.data || {}).targets || []).slice().sort(byLane);
+  const pick = '<label class="fld">It shows<select id="fs_disp_target"><option value="">Choose the target…</option>' +
+    ts.map(t => '<option value="' + esc(t.device_id) + '"' + (t.device_id === kept ? ' selected' : '') + '>' + esc(laneTitle(t)) + '</option>').join('') + '</select></label>';
+  return devCard(p, esc(pr.label),
+    (pr.offer ? '<div class="bulk"><button class="pri" data-act="rcdisgo" data-port="' + esc(p.port) + '" data-sha="' + esc(pr.offer.sha256) + '"' + dis + '>' +
+      (pr.same ? 'Reinstall' : pr.first_install ? 'Install' : 'Update to') + ' FeT Display ' + esc(pr.offer.version) + '</button>' +
+      ' <span class="mut">and set it up for the target below with the WiFi settings, if they have a WiFi name</span></div>' +
+      (pr.first_install ? '<p class="mut">First install: the whole chip is erased, then FeT Display is written and checked. It asks to be calibrated ' +
+        'when it starts: tap the crosses.</p>'
+        : '<label><input type="checkbox" data-act="rcdiserase"' + (rc.disErase ? ' checked' : '') + '> Erase everything first (its settings and ' +
+          'screen calibration go; untick to keep them)</label>')
+      : '<p class="mut">' + esc(pr.why_not || '') + '</p>') + pick +
+    '<p class="mut">It shows that target\'s lane as soon as it starts: no code to type. Lane displays lists it; one display per target.</p>',
+    '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
+    (pr.configurable ? ' <button data-act="rcdiscfg" data-port="' + esc(p.port) + '"' + dis + '>Configure</button>' : ''));
+}
+function displayImages(rc) {                     // FeT Display for CYD shot monitors: by USB from the flash station
+  const ims = rc.dimages || [];
+  return (ims.length ? '<ul>' + ims.map(m => '<li>' + esc(m.version) + ' <span class="mut">' + Math.round(m.size / 1024) + ' KB · ' + esc(m.sha256.slice(0, 12)) + '</span></li>').join('') + '</ul>'
+    : '<p class="mut">None on this Pi yet.</p>') +
+    '<div class="bulk"><button data-act="rcdisgh">Check GitHub for FeT Display</button><button data-act="rcdispick"' + (rc.uploading ? ' disabled' : '') + '>Upload image…</button>' +
+    (rc.disMsg ? '<span class="' + (rc.disOk ? 'ok' : 'bad') + '">' + esc(rc.disMsg) + '</span>' : '') + '</div>' +
+    '<p class="mut">fet-display-&lt;version&gt;.bin from a FeT Display release (firmware/display/micropython/build.py). It is checked: an image for the CYD\'s ' +
+    'ESP32 that carries FeT Display\'s name and version and fits before the display\'s own storage.</p>';
 }
 function megaRow(p, pr, running, busy, rc, f) {   // an Arduino Mega on a USB port
   const dis = running || rc.flashBusy ? ' disabled' : '';
@@ -1863,14 +1907,15 @@ function firmwareTab(d, rc) {                    // Range Control → Firmware (
   const bridges = ts.filter(isBridge), megas = ts.filter(t => t.fet_target && !t.fet_target.esp32), e32 = ts.filter(t => t.fet_target && t.fet_target.esp32);
   const nsel = bridges.filter(t => fsel[t.device_id]).length, all = bridges.length > 0 && nsel === bridges.length;
   const imgs = rc.images || [], pick = rc.fwPick && imgs.some(m => m.sha256 === rc.fwPick) ? rc.fwPick : (imgs[0] || {}).sha256;
-  const nb = newestImg(imgs), nm = newestImg(rc.timages), ne = newestImg(rc.e32images);
+  const nb = newestImg(imgs), nm = newestImg(rc.timages), ne = newestImg(rc.e32images), nd = newestImg(rc.dimages);
   const [bBehind, bLine] = fwSummary(bridges, nb, t => t.bridge_fw), [mBehind, mLine] = fwSummary(megas, nm, t => t.fet_target.version), [, eLine] = fwSummary(e32, ne, t => t.fet_target.version);
   const card = (name, img, line, behind, btn) => '<section class="fwcard"><div class="fwtop"><b>' + name + '</b><span class="num">' + esc(img ? img.version : '–') + '</span></div>' +
     '<span class="mut">' + (img ? 'Newest on this Pi' : 'No image on this Pi yet') + '</span><span class="' + (behind.length ? 'bad' : /up to date/.test(line) ? 'ok' : 'mut') + '">' + esc(line) + '</span>' + (btn || '') + '</section>';
   let h = '<div class="fwintro"><span class="mut">Signed releases from GitHub, checked on this Pi. A target keeps its old firmware if an update fails; nothing updates during a match.</span></div>' +
     card('FeT Bridge (ESP-01 WiFi module)', nb, bLine, bBehind, bBehind.length && nb ? '<button class="pri" data-act="rcbestall">Update ' + esc(bBehind.map(t => laneTitle(t)).join(', ')) + '</button>' : '') +
     card('FeT target (Arduino Mega)', nm, mLine, mBehind, mBehind.length ? '<span class="mut">A Mega updates by USB: plug it into this Pi (Flash station).</span>' : '') +
-    card('FeT target (ESP32 board)', ne, eLine, [], '');
+    card('FeT target (ESP32 board)', ne, eLine, [], '') +
+    card('FeT Display (CYD shot monitor)', nd, nd ? 'A display updates by USB (Flash station)' : 'Check GitHub for FeT Display below', [], '');
   h += '<details class="panel rodet"' + (rc.fwOpen === 'b' ? ' open' : '') + '><summary><b>FeT Bridge</b> <span class="mut">targets, images, upload</span></summary>' +
     (bridges.length ? '<label class="tick"><input type="checkbox" data-act="rcfwall"' + (all ? ' checked' : '') + '> All (' + nsel + ' ticked)</label><ul class="mclist">' +
       bridges.map(t => '<li><label class="tick"><input type="checkbox" data-act="rcfwsel" data-id="' + esc(t.device_id) + '"' + (fsel[t.device_id] ? ' checked' : '') + ' aria-label="Select ' + esc(t.name) + '"></label>' +
@@ -1901,6 +1946,9 @@ function firmwareTab(d, rc) {                    // Range Control → Firmware (
       (nm ? (t.fet_target.version === nm.version ? ' · the newest on this Pi' : ' · ' + esc(nm.version) + ' on this Pi') : '') + '</span></span></li>').join('') + '</ul>' : '<p class="mut">No Mega target has reported.</p>') +
     '<p class="mut">A Mega is installed by USB: plug it into this Pi and use the Flash station.</p>' +
     '<h4>Images on this Pi</h4>' + targetImages(rc) + '</details>';
+  h += '<details class="panel rodet"' + (rc.fwOpen === 'd' ? ' open' : '') + '><summary><b>FeT Display, CYD shot monitors</b> <span class="mut">images</span></summary>' +
+    '<p class="mut">A display is installed and updated by USB: plug it into this Pi and use the Flash station (CYD shot monitor).</p>' +
+    '<h4>Images on this Pi</h4>' + displayImages(rc) + '</details>';
   return h;
 }
 function esp32Update(t, rc) {                     // an ESP32 target: signed update over WiFi to the newest image here
@@ -2060,8 +2108,8 @@ function fwJobText(t, images) {      // the latest firmware update of a target, 
 const RC_MODES = [['practice', 'Practice'], ['sighter', 'Match'], ['ammo', 'Ammo test']];
 const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso)) / 1000)); return s < 90 ? s + ' s' : s < 5400 ? Math.round(s / 60) + ' min' : s < 172800 ? Math.round(s / 3600) + ' h' : Math.round(s / 86400) + ' days'; };
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
-  targets: ['/targets', '/athletes', '/updates', '/deeptens'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
-  firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
+  targets: ['/targets', '/athletes', '/updates', '/deeptens'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/display-firmware', '/targets', '/updates'],
+  firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/display-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
   users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates'], lanes: ['/lane-displays', '/targets', '/updates']};
 const RC_TABS = [['targets', 'Targets'], ['firmware', 'Firmware'], ['flash', 'Flash station'], ['tv', 'TV displays'], ['lanes', 'Lane displays'], ['pi', 'This Pi'], ['users', 'Staff']];
 const RC_OLD = {settings: 'targets', updates: 'pi'};   // older addresses still open the right tab
@@ -3038,6 +3086,7 @@ async function refresh() {
         if (ok('/flash')) S.rc.flash = r['/flash'].data;
         if (ok('/target-firmware')) S.rc.timages = r['/target-firmware'].data.images;
         if (ok('/esp32-firmware')) S.rc.e32images = r['/esp32-firmware'].data.images;
+        if (ok('/display-firmware')) S.rc.dimages = r['/display-firmware'].data.images;
         if (ok('/system')) S.rc.system = r['/system'].data;
         if (ok('/deeptens')) S.rc.dt = r['/deeptens'].data;
         if (ok('/displays')) S.rc.displays = r['/displays'].data;
@@ -3557,6 +3606,32 @@ async function rangeAct(el, a) {
     return refresh();
   }
   if (a === 'rce32nobk') { rc.e32NoBackup = el.checked; return render(true); }
+  if (a === 'rcdiserase') { rc.disErase = el.checked; return render(true); }
+  if (a === 'rcdisgo' || a === 'rcdiscfg') {
+    const pr = ((rc.flash || {}).probes || {})[el.dataset.port] || {}, s = flashSettings(rc, rc.flash || {});
+    const did = (rc.flashf || {}).fs_disp_target || '', tgt = ((rc.data || {}).targets || []).find(t => t.device_id === did);
+    if (a === 'rcdiscfg' && (!s || !did)) { rc.flashMsg = 'Fill in the WiFi name and choose the target it shows first'; return render(true); }
+    if (s && !did) { rc.flashMsg = 'Choose the target the display shows (or empty the WiFi name to only install)'; return render(true); }
+    const erase = a === 'rcdisgo' && (pr.first_install || !!rc.disErase);
+    if (!confirm((a === 'rcdisgo' ? 'Install FeT Display ' + ((pr.offer || {}).version || '') + ' on the CYD on ' + el.dataset.port + '?' +
+        (erase ? '\n\nThe whole chip is erased first.' : '\n\nIts settings and calibration are kept.') : 'Send the WiFi settings to the display on ' + el.dataset.port + '?') +
+        (s ? '\n\nIt shows ' + (tgt ? laneTitle(tgt) : did) + ' from then on (a display already on that target is replaced).' : '') +
+        '\n\nDo not unplug it until it says done.')) return;
+    const body = {port: el.dataset.port, sha256: el.dataset.sha, device_id: did || null};
+    if (s) body.settings = s;
+    if (a === 'rcdisgo') body.erase = erase;
+    const res = await adminCall(a === 'rcdisgo' ? '/flash/display-install' : '/flash/display-configure', body);
+    rc.flashMsg = res.status === 202 ? '' : (res.data.error || 'error ' + res.status);
+    return refresh();
+  }
+  if (a === 'rcdispick') { const f = document.getElementById('rcdisfile'); if (f && !rc.uploading) f.click(); return; }
+  if (a === 'rcdisgh') {
+    rc.disMsg = 'Asking GitHub…'; rc.disOk = true; render();
+    const res = await adminCall('/display-firmware/github', {});
+    rc.disMsg = res.status === 200 ? 'GitHub: ' + res.data.message + '.' : 'GitHub: ' + (res.data.error || 'check failed');
+    rc.disOk = res.status === 200;
+    return refresh();
+  }
   if (a === 'rcwiz') { rc.fwiz = {k: el.dataset.k, step: 0}; rc.flashMsg = ''; render(true); return wizFocus(); }
   if (a === 'rcwizstep') { rc.fwiz.step = Math.max(0, (rc.fwiz.step || 0) + (+el.dataset.d)); rc.flashMsg = ''; render(true); return wizFocus(); }
   if (a === 'rcwizclose') { rc.fwiz = null; rc.flashMsg = ''; return render(true); }
@@ -4296,6 +4371,21 @@ function boot() {
     rc.uploading = false;
     return refresh();
   });
+  const disPicker = document.getElementById('rcdisfile');
+  if (disPicker) disPicker.addEventListener('change', async () => {
+    const f = (disPicker.files || [])[0];
+    disPicker.value = '';
+    if (!f) return;
+    const rc = S.rc = S.rc || {sel: {}};
+    rc.uploading = true; rc.disMsg = 'uploading…'; rc.disOk = true; render(true);
+    const r = await fetch(API + '/admin/display-firmware', {method: 'POST', credentials: 'same-origin', body: f,
+      headers: {'Content-Type': 'application/octet-stream', 'X-FET-Admin': '1'}}).catch(() => null);
+    const d = r ? await r.json().catch(() => ({})) : {};
+    rc.disOk = !!r && r.status === 200;
+    rc.disMsg = rc.disOk ? 'stored FeT Display ' + d.version : 'not accepted: ' + (d.error || (r ? 'error ' + r.status : 'upload failed'));
+    rc.uploading = false;
+    return refresh();
+  });
   const picker = document.getElementById('rcfile');
   if (picker) picker.addEventListener('change', () => { const files = Array.from(picker.files || []); picker.value = ''; if (files.length) uploadFirmware(files); });
   get('/health').then(h => { S.version = h.version; const v = document.getElementById('ver'); v.textContent = 'FeT Monitor v' + h.version; v.title = 'FeT Monitor ' + h.version + ' on GitHub'; }).catch(() => {});
@@ -4428,7 +4518,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

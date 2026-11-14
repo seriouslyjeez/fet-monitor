@@ -17,8 +17,7 @@ import ui
 from ili9341 import Screen
 from xpt2046 import Touch
 
-VERSION = "0.2.0"
-MARKER = "fet-display/0.2.0"          # found in the firmware image by tools/release.py and deepTENS (devices/firmware.py)
+from fetdisplay import VERSION  # noqa: E402  (its own module: the flash station asks it without starting the display)
 
 s = Screen()
 s.light(True)

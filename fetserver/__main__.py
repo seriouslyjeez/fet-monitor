@@ -20,6 +20,7 @@ from .db import Database
 from .firmware import FirmwareStore
 from .targetfw import TargetFirmwareStore
 from .esp32fw import Esp32FirmwareStore
+from .displayfw import DisplayFirmwareStore
 from .releases import Updates
 from .rulebookfiles import RulebookFiles
 from .appliance import Appliance
@@ -48,14 +49,15 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
     firmware = FirmwareStore(data_dir)
     target_firmware = TargetFirmwareStore(data_dir)
     esp32_firmware = Esp32FirmwareStore(data_dir)
+    display_firmware = DisplayFirmwareStore(data_dir)
     flash = FlashStation(firmware, data_dir, target_images=target_firmware, register_key=core.add_target_key,
-                         esp32_images=esp32_firmware)
+                         esp32_images=esp32_firmware, display_images=display_firmware, program_display=core.lane_displays.program)
     deeptens = DeepTens(core, data_dir, name=socket.gethostname, version=__version__)
     core.deeptens = deeptens                     # the match code queues snapshots while linked
     server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
                          firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
                          appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware,
-                         esp32_firmware=esp32_firmware, deeptens=deeptens)
+                         esp32_firmware=esp32_firmware, deeptens=deeptens, display_firmware=display_firmware)
     stop = threading.Event()
 
     def on_signal(signum, _frame):

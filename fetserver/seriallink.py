@@ -68,6 +68,20 @@ class SerialLink:
         line, self.buf = self.buf.split(b"\n", 1)
         return line.rstrip(b"\r").decode("latin-1")
 
+    def read(self, timeout: float) -> Optional[bytes]:
+        """Whatever arrives within timeout seconds (after anything readline left buffered), or None. OSError when the
+        device is gone. For byte protocols (MicroPython's raw REPL: mpraw.py)."""
+        if self.buf:
+            out, self.buf = self.buf, b""
+            return out
+        r, _, _ = select.select([self.fd], [], [], max(0.0, timeout))
+        if not r:
+            return None
+        chunk = os.read(self.fd, 4096)
+        if not chunk:
+            raise OSError("the device is gone")
+        return chunk
+
     def _lines(self, which: int, on: bool) -> None:
         fcntl.ioctl(self.fd, TIOCMBIS if on else TIOCMBIC, struct.pack("I", which))
 

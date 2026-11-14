@@ -302,6 +302,25 @@ class Releases(ReleasesBase):
             fetch()
         self.assertEqual([m["version"] for m in store.list()], ["0.1.1"])
 
+    def test_fetch_display_firmware(self):
+        from fetserver.displayfw import DisplayFirmwareStore
+        from tests.test_flash_display import display_image
+        store = DisplayFirmwareStore(self.d)
+        fetch = lambda: releases.fetch_display_firmware(self.fake.gh(), lambda sha: store.get(sha) is not None,
+                                                        lambda b: store.add(b, "GitHub"), self.signers)
+        self.assertIsNone(fetch()["version"])
+        self.release("display-0.2.0", {"fet-display-0.2.0.bin": display_image("0.2.0")})
+        r = fetch()
+        self.assertEqual((r["version"], r["added"], [m["version"] for m in store.list()]), ("0.2.0", ["fet-display-0.2.0.bin"], ["0.2.0"]))
+        self.assertEqual(fetch()["already"], ["fet-display-0.2.0.bin"], "nothing downloaded twice")
+        self.release("display-0.2.1", {"fet-display-0.2.1.bin": display_image("0.2.0", size=0x20010)})       # claims 0.2.1
+        with self.assertRaisesRegex(ReleaseError, "really 0.2.0"):
+            fetch()
+        self.release("display-0.2.2", {"fet-display-0.2.2.bin": display_image("0.2.2")}, key=self.other_key)
+        with self.assertRaisesRegex(ReleaseError, "NOT valid"):
+            fetch()
+        self.assertEqual([m["version"] for m in store.list()], ["0.2.0"])
+
     # ---- the server's side
     def test_updates_install_writes_the_request(self):
         self.release("v0.6.30", {"fet-monitor-0.6.30.tar.gz": archive("0.6.30")})

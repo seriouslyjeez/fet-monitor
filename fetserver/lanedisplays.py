@@ -155,6 +155,27 @@ class LaneDisplays:
         self._pub()
         return self.get(new_id)
 
+    def program(self, hw_id, device_id, name=None) -> tuple:
+        """The flash station programmed a CYD over USB (flashstation.py): it shows this target from now on, with no code
+        to type. (the display's record, its token: the station writes it into the display). As approve(): a display
+        already on that target is replaced, and this display leaves any other target; a code it showed is void."""
+        if not isinstance(hw_id, str) or not HW_ID_RE.match(hw_id):
+            raise DisplayError("hw_id: up to 40 letters, digits, '.', '_' or '-'")
+        did = self._target(device_id)
+        nm = self._name(name)
+        now = self.core.now_ms()
+        token = "fetd_" + secrets.token_urlsafe(24)
+        with self.lock:
+            for code in [k for k, p in self.pending.items() if p["hw_id"] == hw_id]:
+                del self.pending[code]
+        with self.db.write() as c:
+            c.execute("DELETE FROM lane_displays WHERE device_id=? OR hw_id=?", (did, hw_id))
+            cur = c.execute("INSERT INTO lane_displays (name, hw_id, device_id, token_hash, created_ms, updated_ms) VALUES (?,?,?,?,?,?)",
+                            (nm or "Display " + hw_id[-6:], hw_id, did, _hash(token), now, now))
+            new_id = cur.lastrowid
+        self._pub()
+        return self.get(new_id), token
+
     def change(self, display_id: int, device_id=None, name=None) -> dict:
         """Range Control: another target (the one there now is replaced) or another name."""
         did = self._target(device_id) if device_id is not None else None

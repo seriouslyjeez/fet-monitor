@@ -26,9 +26,14 @@ deeptens.com over HTTPS.
 
 ## Putting it on a CYD
 
-The easiest way: **deeptens.com/displays → Program a display** (Chrome or Edge, over the CYD's USB cable): it installs
-the signed release, adds the display to your account and writes its settings, with no code to type. For a display
-at a range, or to build it yourself:
+The easiest ways, with no code to type:
+- **At a range: Range Control → Flash station** (plug the CYD into the Pi; "CYD shot monitor" step by step): it installs
+  FeT Display from the Pi's copy of the signed release (Firmware → Check GitHub for FeT Display), and, with the range
+  WiFi filled in and a target chosen, makes it that target's lane display.
+- **At home: deeptens.com/displays → Program a display** (Chrome or Edge, over the CYD's USB cable): it installs the
+  signed release, adds the display to your account and writes its settings.
+
+To build it yourself:
 
 One image holds everything: MicroPython built with double-precision floats (fetcore gives the same bits as on the
 Pi and deepTENS: tests/test_micropython.py) with FeT Display (`main.py`, `lib/`) and fetcore's portable modules frozen

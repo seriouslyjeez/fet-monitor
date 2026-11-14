@@ -18,6 +18,11 @@ needs a full erase), written and verified. A target's Arduino Mega gets FeT targ
 (6.2, ESP32-S3, 8 MB) gets FeT target firmware too: a first install saves the whole 8 MB, writes the full image and
 gives the board its key (and WiFi settings, if filled in); a reinstall writes only the app and keeps the board's key,
 settings and queued shots. Its USB link (FTDI) is reliable only at ESP32_BAUD.
+A CYD shot monitor (ESP32-2432S028R: the classic ESP32, 4 MB) gets FeT Display (displayfw.py): the whole chip erased on a
+first install (or to start over), the image written at 0x1000 and verified; then, with the range WiFi filled in and a
+target chosen, it is registered as that target's lane display (lanedisplays.py program) and its settings go in over
+USB through MicroPython's raw REPL (mpraw.py): it shows that target as soon as it starts, no code to type. Identify asks
+a display what it runs the same way (lib/fetdisplay.py), then restarts it.
 
 Configure (FeT Bridge 0.3.0 and newer): the settings (WiFi, this server's address, port and token, the target's name)
 go over the serial port in the bridge's first minute after start (firmware src/core/provision.h): "FETCFG HELLO", then
@@ -41,6 +46,7 @@ import time
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from . import mpraw
 from .firmware import ID_RE, flash_label, version_tuple
 from .seriallink import SerialLink
 
@@ -69,6 +75,10 @@ SIZE_RE = re.compile(r"Detected flash size:\s*(\d+)\s*(MB|KB)", re.I)
 PCT_RE = re.compile(r"\((\d{1,3}) ?%\)")
 SIG_RE = re.compile(r"device signature = 0x([0-9a-f]{6})", re.I)
 M2560 = "1e9801"
+CLASSIC_ESP32_RE = re.compile(r"^ESP32(-D0|-D2|-U4|-PICO|$)")   # the CYD's chip: not an ESP32-S2/S3/C3/C6/H2
+CYD_FLASH = 4 << 20
+DISPLAY_ADDRESS = 0x1000
+IPV4_RE = re.compile(r"^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$")
 # ESP: <mac>-<date>-<time>.bin; Mega: mega-<USB serial>-<date>-<time>.hex (program) and .eep (EEPROM)
 BACKUP_NAME_RE = re.compile(r"[0-9a-f]{12}-\d{8}-\d{6}\.bin|mega-[0-9A-Za-z]{1,20}-\d{8}-\d{6}\.(?:hex|eep)")
 def ft_info(line: str):
@@ -187,7 +197,11 @@ class FlashStation:
                  esptool: Optional[List[str]] = None, now: Callable[[], float] = time.time, background: bool = True,
                  opener: Callable[[str], SerialLink] = SerialLink, target_images=None,
                  register_key: Optional[Callable[[bytes, str], str]] = None, esp32_images=None,
-                 has_module: Callable[[str], bool] = lambda name: importlib.util.find_spec(name) is not None):
+                 has_module: Callable[[str], bool] = lambda name: importlib.util.find_spec(name) is not None,
+                 display_images=None, program_display: Optional[Callable] = None):
+        self.display_images = display_images        # FeT Display for CYD shot monitors (displayfw.DisplayFirmwareStore)
+        self.program_display = program_display      # LaneDisplays.program: (hw_id, device_id, name) -> (display, token)
+        self.display_wait = 8.0                     # seconds a display has to answer Identify (it may be starting)
         self.has_module = has_module
         self.images, self.run, self.sys_tty, self.now, self.background = images, run, sys_tty, now, background
         self.opener = opener
@@ -257,6 +271,8 @@ class FlashStation:
         mac = (MAC_RE.search(out) or [None, ""])[1].lower()
         sm = SIZE_RE.search(out)
         size = int(sm.group(1)) * (1 << 20 if sm.group(2).upper() == "MB" else 1 << 10) if sm else 0
+        if CLASSIC_ESP32_RE.match(chip):
+            return self._display_found(port, chip, mac, size)
         if chip.startswith("ESP32"):
             return self._esp32_found(port, chip, mac, size)
         if not chip.startswith("ESP8266"):
@@ -387,6 +403,144 @@ class FlashStation:
                 msg += f"; configured as {self._configure(port, line, self.hello_wait)}"
             return msg + ": put the board back into the target"
         return self._mega_job(port, f"FeT target ESP32 {img['version']}", by, work)
+
+    # ------------------------------------------------------------------------------------- a CYD shot monitor
+    def _display_found(self, port: str, chip: str, mac: str, size: int) -> dict:
+        """A classic ESP32: a CYD if it has 4 MB. What it runs: asked over USB (MicroPython's raw REPL), then restarted."""
+        info = self._display_probe(port)
+        running = info["version"] if info else None
+        res = {"port": port, "device": "display", "chip": chip, "mac": mac, "flash_size": size, "hw_id": "cyd-" + mac.replace(":", "")[-6:],
+               "running": running, "micropython": info is not None, "configured": bool(info and info["configured"]),
+               "label": f"CYD shot monitor ({chip}, {flash_label(size)} flash), " + (
+                   f"FeT Display {running}" if running else "FeT Display before 0.2.0" if info else "not FeT Display (first install)"),
+               "configurable": info is not None}
+        best = self.display_images.best() if self.display_images is not None else None
+        if size != CYD_FLASH:
+            res.update(offer=None, why_not="FeT Display is built for the CYD (ESP32-2432S028R) with 4 MB flash")
+        elif best is None:
+            res.update(offer=None, why_not="no FeT Display image on this Pi yet: Firmware → Check GitHub for FeT Display, or upload one")
+        else:
+            res.update(offer={"sha256": best["sha256"], "version": best["version"], "size": best["size"]}, why_not="",
+                       first_install=info is None,
+                       same=running is not None and version_tuple(running) == version_tuple(best["version"]))
+        with self.lock:
+            self.probes[port] = res
+        return res
+
+    def _display_probe(self, port: str) -> Optional[dict]:
+        try:
+            link = self.opener(port)
+        except OSError:
+            return None
+        try:
+            info = mpraw.probe(link, self.display_wait)
+            if info is not None:
+                mpraw.reset(link)                       # it was stopped to be asked: running again
+            return info
+        except OSError:
+            return None
+        finally:
+            link.close()
+
+    @staticmethod
+    def _display_config(raw: dict) -> dict:
+        """The range WiFi and this Pi, as the display's own setup page checks them (firmware/display/lib/config.py)."""
+        if not isinstance(raw, dict):
+            raise FlashError("no settings")
+        ssid, pw, host = str(raw.get("ssid") or "").strip(), raw.get("pass") or "", str(raw.get("host") or "").strip()
+        if not 1 <= len(ssid.encode()) <= 32:
+            raise FlashError("the WiFi name is missing (1 to 32 characters)")
+        if not isinstance(pw, str) or (pw and not 8 <= len(pw) <= 63):
+            raise FlashError("the WiFi password: 8 to 63 characters (empty for a network without one)")
+        if not IPV4_RE.match(host):
+            raise FlashError("this Pi's address: its IP address (a display cannot use names ending in .local)")
+        try:
+            port = int(raw.get("port"))
+        except (TypeError, ValueError):
+            raise FlashError("the server port must be a number")
+        return {"ssid": ssid, "password": pw, "server": f"{host}:{port}"}
+
+    def _display_settings(self, port: str, probe: dict, settings: dict, device_id: str, by: str) -> str:
+        """Registered as device_id's lane display, then its settings over USB. Returns what to say."""
+        if self.program_display is None:
+            raise FlashError("this server cannot register lane displays")
+        cfg = self._display_config(settings)
+        try:
+            disp, token = self.program_display(probe["hw_id"], device_id, None)
+        except ValueError as exc:                        # lanedisplays.DisplayError: no such target, ...
+            raise FlashError(str(exc))
+        cfg["token"] = token
+        self._step(f"sending the settings ({cfg['ssid']}, this Pi at {cfg['server']})")
+        try:
+            link = self.opener(port)
+        except OSError as exc:
+            raise FlashError(f"cannot open {port}: {exc}")
+        try:
+            mpraw.write_settings(link, cfg)
+        except OSError as exc:
+            raise FlashError(f"{exc} (the display stays registered: Configure sends the settings again)")
+        finally:
+            link.close()
+        with self.lock:
+            probe["configured"] = True
+        return f"it shows {disp.get('target_name') or device_id} (Lane displays: {disp.get('name')})"
+
+    def _same_display(self, port: str, probe: dict) -> None:
+        self._step("checking it is the same display")
+        out = self._esp(port, ["--chip", "auto", "flash_id"], 60)
+        if (MAC_RE.search(out) or [None, ""])[1].lower() != probe["mac"]:
+            raise FlashError("a different board is plugged in now: identify it again")
+
+    def start_display_flash(self, port: str, sha: str, by: str, settings: Optional[dict] = None, device_id: Optional[str] = None,
+                            erase: Optional[bool] = None) -> dict:
+        """FeT Display on the CYD identified on port. erase (default: a first install): the whole chip first (its
+        settings, calibration and a kit's shots go); else only the image, and the display keeps them. Then, with the
+        settings (range WiFi) and a target, it becomes that target's lane display."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "display" or not probe.get("offer") or probe["offer"]["sha256"] != sha:
+            raise FlashError("identify the device again first")
+        path = self.display_images.path(sha) if self.display_images is not None else None
+        if path is None:
+            raise FlashError("that firmware is not on this Pi")
+        img = self.display_images.get(sha)
+        if settings is not None:
+            self._display_config(settings)                # checked before anything is written
+            if not device_id:
+                raise FlashError("choose the target the display shows")
+        wipe = probe["first_install"] if erase is None else bool(erase)
+
+        def work(job):
+            self._same_display(port, probe)
+            if wipe:
+                self._step("erasing the whole chip")
+                self._esp(port, ["erase_flash"], 180)
+            self._step("writing" if wipe else "writing (the display keeps its settings and calibration)")
+            self._esp(port, NO_RESET + ["write_flash", "--flash_mode", "keep", "--flash_size", "keep", hex(DISPLAY_ADDRESS), str(path)], 600,
+                      progress=True)
+            self._step("verifying")
+            self._esp(port, ["verify_flash", hex(DISPLAY_ADDRESS), str(path)], 300)
+            with self.lock:
+                probe.update(running=img["version"], micropython=True, first_install=False, same=True, configurable=True,
+                             label=f"CYD shot monitor ({probe['chip']}, {flash_label(probe['flash_size'])} flash), FeT Display {img['version']}")
+            msg = f"FeT Display {img['version']} installed and verified" + ("" if wipe else ", its settings kept")
+            if settings is not None:
+                msg += "; " + self._display_settings(port, probe, settings, device_id, by)
+                if wipe:
+                    msg += ". It asks to be calibrated first: tap the crosses"
+            return msg
+        return self._mega_job(port, f"FeT Display {img['version']}", by, work)
+
+    def start_display_configure(self, port: str, settings: dict, device_id: str, by: str) -> dict:
+        """The range WiFi and a target for a display that runs FeT Display already."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "display" or not probe.get("configurable"):
+            raise FlashError("identify the display first: it must run FeT Display")
+        self._display_config(settings)
+        if not device_id:
+            raise FlashError("choose the target the display shows")
+        return self._mega_job(port, "Display settings", by, lambda job: self._display_settings(port, probe, settings, device_id, by))
 
     def start_esp32_key(self, port: str, by: str) -> dict:
         with self.lock:

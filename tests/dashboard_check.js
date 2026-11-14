@@ -1842,3 +1842,35 @@ console.log('OK');
   assert(wizWatch([]).includes('Waiting for your target to report'), 'none yet: waiting');
   console.log('flash wizard OK');
 }
+
+// a CYD shot monitor at the flash station: FeT Display, the target it shows, no code to type
+{
+  const {flashPanel, displayRow, displayImages, firmwareTab, WIZ} = X;
+  const p = {port: '/dev/ttyUSB2', product: 'USB Serial', hint: 'adapter', adapter: 'CH340'};
+  const ts = [{device_id: 'fet-a', name: 'Lane <one>', lane: 1}, {device_id: 'fet-b', name: 'Two', lane: 2}];
+  const fresh = {device: 'display', label: 'CYD shot monitor (ESP32-D0WD-V3, 4 MB flash), not FeT Display (first install)', first_install: true,
+    configurable: false, offer: {sha256: 'dd', version: '0.2.0'}};
+  let h = displayRow(p, fresh, false, false, {data: {targets: ts}});
+  assert(h.includes('data-act="rcdisgo" data-port="/dev/ttyUSB2" data-sha="dd"') && h.includes('Install FeT Display 0.2.0'), 'install offered');
+  assert(h.includes('the whole chip is erased') && !h.includes('rcdiserase') && !h.includes('rcdiscfg'), 'a first install erases; nothing to configure yet');
+  assert(h.includes('<option value="fet-a">') && h.includes('Lane 1') && !h.includes('<one>'), 'the targets to choose, escaped');
+  h = displayRow(p, Object.assign({}, fresh, {first_install: false, same: true, configurable: true, running: '0.2.0'}), false, false,
+                 {data: {targets: ts}, flashf: {fs_disp_target: 'fet-b'}, disErase: true});
+  assert(h.includes('Reinstall FeT Display') && /data-act="rcdiserase" checked/.test(h) && h.includes('data-act="rcdiscfg"'), 'an update: erase is a choice; Configure');
+  assert(h.includes('<option value="fet-b" selected>'), 'the chosen target kept across redraws');
+  h = displayRow(p, Object.assign({}, fresh, {offer: null, why_not: 'no FeT Display image on this Pi yet'}), true, false, {data: {targets: ts}});
+  assert(h.includes('no FeT Display image') && !h.includes('rcdisgo'), 'no image: says so');
+  const f = {ports: [p], probes: {'/dev/ttyUSB2': fresh}, job: null, backups: [], server_host: '192.168.1.20'};
+  const home = flashPanel(f, {data: {targets: ts}});
+  assert(home.includes('data-act="rcdisgo"') && home.includes('id="fs_ssid"') && home.includes('data-k="display"'), 'on the station: the card, the WiFi form, the guide');
+  assert.strictEqual(WIZ.display.steps.length, 4);
+  const w2 = flashPanel(f, {fwiz: {k: 'display', step: 2}, data: {targets: ts}});
+  assert(w2.includes('data-act="rcdisgo"') && w2.includes('id="fs_ssid"') && w2.includes('Install FeT Display and choose its target'), 'the guide\'s install step');
+  const other = flashPanel(Object.assign({}, f, {probes: {'/dev/ttyUSB2': {device: 'mega', label: 'Mega'}}}), {fwiz: {k: 'display', step: 1}});
+  assert(!other.includes('/dev/ttyUSB2'), 'a Mega is not offered in the display guide');
+  assert(displayImages({}).includes('None on this Pi yet') && displayImages({}).includes('data-act="rcdisgh"'), 'images: none, Check GitHub');
+  assert(displayImages({dimages: [{version: '0.2.0', size: 1716736, sha256: '0dc3a7f873da'}]}).includes('0.2.0'), 'images listed');
+  const fw = firmwareTab({targets: []}, {dimages: [{version: '0.2.0', size: 1716736, sha256: '0dc3a7f873da'}]});
+  assert(fw.includes('FeT Display (CYD shot monitor)') && fw.includes('FeT Display, CYD shot monitors'), 'the Firmware tab: a card and its images');
+  console.log('display flashing OK');
+}

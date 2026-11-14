@@ -53,6 +53,8 @@ TGT_TAG = re.compile(r"^tgt-(\d{1,3}\.\d{1,3}\.\d{1,3})$")                 # FeT
 TGT_ASSET = "fet-target-mega-{}.hex"
 E32_TAG = re.compile(r"^esp32-(\d{1,3}\.\d{1,3}\.\d{1,3})$")                 # FeT target firmware for the ESP32 board
 E32_ASSET = "fet-target-esp32-{}.bin"                                     # the full 8 MB image
+DISPLAY_TAG = re.compile(r"^display-(\d{1,3}\.\d{1,3}\.\d{1,3})$")           # FeT Display for CYD shot monitors
+DISPLAY_ASSET = "fet-display-{}.bin"                                        # written at 0x1000
 SUMS_LINE = re.compile(r"^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]{1,100})$")
 
 
@@ -343,6 +345,32 @@ def fetch_esp32_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable[
     try:
         meta = inspect_e32(data)
     except BadEsp32 as exc:
+        raise ReleaseError(f"{name}: {exc}")
+    if meta["version"] != ver:
+        raise ReleaseError(f"{name} is really {meta['version']}: refusing it")
+    add(data)
+    return {"version": ver, "added": [name], "already": [], "message": f"downloaded {name}"}
+
+
+def fetch_display_firmware(gh: GitHub, have: Callable[[str], bool], add: Callable[[bytes], dict], signers: Path = SIGNERS,
+                           fresh: bool = True) -> dict:
+    """The newest signed FeT Display release (display-<ver>, fet-display-<ver>.bin), if not stored yet (have: by its
+    SHA-256). Every check of an upload applies too."""
+    from .displayfw import MAX_SIZE, BadImage as BadDisplay, inspect as inspect_display
+    found = newest(gh, DISPLAY_TAG, fresh)
+    if not found:
+        return {"version": None, "added": [], "already": [], "message": "no FeT Display release on GitHub"}
+    ver, rel = found
+    sums = signed_sums(gh, rel, signers)
+    name = DISPLAY_ASSET.format(ver)
+    if name not in sums:
+        raise ReleaseError(f"release display-{ver} lists no {name}")
+    if have(sums[name]):
+        return {"version": ver, "added": [], "already": [name], "message": f"already have FeT Display {ver}"}
+    data = checked(gh, rel, name, MAX_SIZE, sums)
+    try:
+        meta = inspect_display(data)
+    except BadDisplay as exc:
         raise ReleaseError(f"{name}: {exc}")
     if meta["version"] != ver:
         raise ReleaseError(f"{name} is really {meta['version']}: refusing it")
