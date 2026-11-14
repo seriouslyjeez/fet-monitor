@@ -11,8 +11,9 @@ Three ways to use it (chosen on its setup page): **a target at a range** (FeT Mo
 and the same bits as FeT Monitor and deepTENS), with no FeT Monitor and no internet. Practice only.
 
 Status (2026-11-14): tried on one CYD against FeT Monitor on a Mac with simulated targets and a fake deepTENS, and as a
-kit with a simulated target over WiFi (FeT Monitor's protocol check passes against it). Not yet tried at a range,
-with real targets, or with a phone scanning its QR code; a kit does not yet forward its shots to deepTENS.
+kit with a simulated target over WiFi (FeT Monitor's protocol check passes against it; its shots forwarded to deepTENS
+on a Mac). Not yet tried at a range, with real targets, with a phone scanning its QR code, or forwarding to
+deeptens.com over HTTPS.
 
 ## Hardware
 
@@ -54,6 +55,9 @@ goes back to the frozen code). Copied modules take memory: copy only what you ch
   that network and its password, server `192.168.4.1` port `8080`, and a token. **FACE** on the target screen chooses
   the face (its projectile comes with it: air rifle and pistol, 50 m rifle, the NRA smallbore faces); a new face
   starts a new series. Its shots are kept on the display (`/kit-data`) and it shows the same screen after a restart.
+  With a WiFi that reaches the internet it sends them to deepTENS: the first time it shows a code on its INFO screen;
+  type it at deeptens.com/display. Only targets that are yours on deepTENS are taken (docs/PROTOCOL.md, "A portable
+  kit").
 - **Pairing:** it shows a 6-character code. In FeT Monitor, Range Control → Lane displays: type the code and choose
   the target. One display per target: pairing another replaces it. Range Control can move, rename or remove it.
 
@@ -64,11 +68,13 @@ soon as anything on the target changes) and the screen (drawing, touch, BOOT, cl
 `xpt2046.py` and `calibrate.py` (touch), `config.py` and `portal.py` (settings, setup), `http.py` and `client.py`
 (FeT Monitor), `target.py` and `ui.py` (screens), `qr.py` (QR codes, as FeT Monitor's pages draw them), `text.py`
 (scaled font), `kit.py` (a kit's server: FeT Monitor's target protocol, every line stored before it is acknowledged)
-and `kitview.py` (a kit's scoring with fetcore, in the shape of FeT Monitor's views). Only what changed is drawn
+`kitview.py` (a kit's scoring with fetcore, in the shape of FeT Monitor's views) and `forward.py` (a kit's lines sent
+on to deepTENS). Only what changed is drawn
 again, character by character. `screen_test.py`: a test pattern.
 
 Tests (under MicroPython on a computer: `brew install micropython`): tests/test_display_portal.py,
 test_display_client.py, test_display_qr.py, test_display_screens.py, test_display_kit.py, test_display_kitview.py,
+test_display_forward.py,
 test_micropython.py.
 
 Credits: NOTICE.

@@ -176,7 +176,9 @@ for pg in range(4):
     b = target.face_screen(s, list(kitview.KIT_FACES), "nra-a17", pg)
     check("faces", b)
     assert {x[4] for x in b} >= {"faces_close", "info", "faces_more"}, [x[4] for x in b]
-check("kit info", target.kit_info(s, "FeT-Kit-7e08f8", "abcdefghjk", "kit_abcdefghjkmnpqrs", 8080, "FeT Display 0.1.0  cyd-7e08f8"))
+for status in (None, "deepTENS: type K7M2QX at deeptens.com/display to send this kit's shots there",
+               "deepTENS: all sent (3 not taken: not one of your targets on deepTENS)"):
+    check("kit info", target.kit_info(s, "FeT-Kit-7e08f8", "abcdefghjk", "kit_abcdefghjkmnpqrs", 8080, "FeT Display 0.1.0  cyd-7e08f8", status))
 print("SCREENS", n)
 """
 

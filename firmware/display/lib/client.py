@@ -31,9 +31,13 @@ class Client:
                 raise
             raise OSError("no answer from FeT Monitor (%s)" % type(exc).__name__)
 
-    async def pair(self):
-        """Ask for a code to show: sets code (and a token kept until Range Control types it)."""
-        st, body = await self._req("POST", "/api/v1/display/pair", {"hw_id": self.hw_id, "fw": self.fw})
+    async def pair(self, kit=False):
+        """Ask for a code to show: sets code (and a token kept until Range Control types it). kit: a portable kit
+        asking deepTENS (it forwards its target's lines; lines())."""
+        req = {"hw_id": self.hw_id, "fw": self.fw}
+        if kit:
+            req["kit"] = True
+        st, body = await self._req("POST", "/api/v1/display/pair", req)
         if st != 200 or not body or "token" not in body:
             raise OSError("pairing refused: %s" % ((body or {}).get("error") or st))
         self.token, self.code = body["token"], body["code"]
@@ -60,4 +64,15 @@ class Client:
             raise NotAssigned((body or {}).get("pairing", "none"))
         if st != 200:
             raise ValueError((body or {}).get("error") or "not done (%d)" % st)
+        return body
+
+    async def lines(self, lines):
+        """A portable kit's lines to deepTENS: its answer ({"acked": [[device_id, boot, seq]], "rejected": [...]}).
+        NotAssigned while the code waits ("pending") or when the kit was removed ("none"); ValueError when deepTENS
+        refuses the request as a whole; OSError when it cannot be reached."""
+        st, body = await self._req("POST", "/api/v1/display/lines", {"lines": lines}, timeout=30)
+        if st == 401:
+            raise NotAssigned((body or {}).get("pairing", "none"))
+        if st != 200 or not isinstance(body, dict):
+            raise ValueError((body or {}).get("error") or "deepTENS answered %d" % st)
         return body

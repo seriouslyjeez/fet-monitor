@@ -150,7 +150,7 @@ class Portal:
                 c = config.check(f)
             except ValueError as exc:
                 return 200, {}, self.setup_page(str(exc), dict(f, password="")).encode(), None
-            for k in ("token", "invert", "zoom", "face"):
+            for k in ("token", "invert", "zoom", "face", "dt_token"):
                 if k in self.current and c["server"] == self.current.get("server") and c.get("home") == self.current.get("home") \
                         and c.get("kit") == self.current.get("kit"):
                     c[k] = self.current[k]                           # still the same FeT Monitor: keep the pairing

@@ -428,8 +428,42 @@ def kit_mode(cfg):
         for rec in lines:
             kv.line(rec)
         st["dirty"] = True
+        wake.set()                                       # deepTENS: send them now
 
     k = kit.Kit(store, cfg["kit_token"], on_new, lambda: kv.face.id)
+    import forward
+    wake = asyncio.Event()
+    fw = forward.Forwarder(kit.LOG, forward.STATE, store.cyd_boot, up, epoch)
+    st["dt_code"], st["dt_state"] = None, None
+
+    def dt_status():
+        if st["dt_code"]:
+            return "deepTENS: type %s at deeptens.com/display to send this kit's shots there" % st["dt_code"]
+        if st["dt_state"]:
+            return st["dt_state"] + (" (%d not taken: %s)" % (fw.refused, fw.last_refusal) if fw.last_refusal else "")
+        return None
+
+    def on_code(code):
+        if code != st["dt_code"]:
+            st["dt_code"] = code
+            if code and st["screen"] != "faces":
+                st["screen"], st["drawn"] = "info", None   # the code to type: on the screen at once
+            if st["screen"] == "info":
+                st["drawn"], st["dirty"] = None, True
+
+    def on_state(text):
+        if text != st["dt_state"]:
+            st["dt_state"] = text
+            if st["screen"] == "info":
+                st["drawn"], st["dirty"] = None, True
+
+    def keep_token(token):
+        if cfg.get("dt_token") != token:
+            if token:
+                cfg["dt_token"] = token
+            else:
+                cfg.pop("dt_token", None)
+            config.save(cfg)
     boot = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
 
     def online():
@@ -446,7 +480,7 @@ def kit_mode(cfg):
             scr = "info"
         if scr == "info":
             if st["drawn"] != "info":
-                st["buttons"] = target.kit_info(s, net, cfg["kit_pass"], cfg["kit_token"], 8080, FOOTER)
+                st["buttons"] = target.kit_info(s, net, cfg["kit_pass"], cfg["kit_token"], 8080, FOOTER, dt_status())
             st["drawn"] = "info"
             return
         if scr == "faces":
@@ -530,6 +564,10 @@ def kit_mode(cfg):
 
     async def main():
         await kit.serve(k, 8080)
+        if cfg.get("ssid"):                              # a WiFi with internet: forward to deepTENS
+            import client
+            cl = client.Client(cfg["server"], HW_ID, VERSION, cfg.get("dt_token"), secure=not cfg.get("plain_http"))
+            asyncio.create_task(forward.run(fw, cl, lambda: sta.isconnected() and clock["set"], on_code, on_state, wake, keep_token))
         await screen()
 
     asyncio.run(main())

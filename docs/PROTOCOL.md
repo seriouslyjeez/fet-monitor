@@ -430,7 +430,7 @@ and carries its targets' signed lines; deepTENS scores them and is the authority
   run lies within the window; the entrant must have a run left. `supervised`: a Range Officer or Match Director had
   the RO console open throughout (gaps under 60 s ignored).
 
-## Lane displays: a CYD at a firing point (built 2026-11-14; not yet tried with a display)
+## Lane displays: a CYD at a firing point (built 2026-11-14; tried with the user's CYD, simulated targets)
 
 A lane display is a small screen (the ESP32 "Cheap Yellow Display") paired with one target by Range Control. It draws
 what a phone on that lane shows and has the shooter's buttons; nothing is scored on it (fetserver/lanedisplays.py).
@@ -478,3 +478,25 @@ the match log names the display). Holding the target's display token stands for 
 "target_name", "lane", "online", "last_seen_ms", "fw", "ip", "created_ms"}], "waiting": <displays showing a code>}`;
 `POST /api/v1/admin/lane-displays/<id>` `{"device_id"?, "name"?}` (another target replaces the display there);
 `POST /api/v1/admin/lane-displays/<id>/delete`. Each answers with the list.
+
+### A portable kit: the target reports to the display (built 2026-11-14; tried on the user's CYD with simulated targets)
+
+A display set up as a portable kit is the target's server: the target reports to it with this document's target
+protocol (`POST /api/v1/events`, `POST /api/v1/heartbeat`, `X-FET-Token`: the kit's token), on the display's own WPA2
+network (`FeT-Kit-<last 6>`, the display at 192.168.4.1, port 8080). The display stores every line before it
+acknowledges it and scores with fetcore (firmware/display/lib/kit.py, kitview.py). Practice only.
+
+With internet (a WiFi set up as well), the kit forwards the stored lines to deepTENS (firmware/display/lib/forward.py;
+deepTENS devices/ingest.py `handle_kit_lines`). It pairs like a home display, saying it is a kit:
+`POST /api/v1/display/pair` `{"hw_id", "fw", "kit": true}`; the owner types the code at deeptens.com/display (a kit
+shows no deepTENS target). Then `POST /api/v1/display/lines` (Bearer: the kit's display token)
+`{"lines": [{"device_id", "boot_count", "seq", "type", "uptime_ms", "raw", "face_id", "boot_start_ms"?}]}`, at most 50
+(the kit sends 20): types `shot`, `target_shot`, `target_hello`, `arduino_boot`, each line as the target sent it.
+`face_id`: the face chosen on the kit when the line arrived (deepTENS scores it on that face). `boot_start_ms`: the
+target boot's start in real time (the arrival time minus the request's `uptime_ms`) when the display knew the real
+time; without it deepTENS takes a start it knows for that boot, else the time is unknown (`time_quality`). Answer:
+`{"acked": [[device_id, boot_count, seq]], "rejected": [{"device_id", "boot_count", "seq", "why"}], "server_time_ms"}`.
+Lines are stored once by identity (a repeat is acknowledged again; other content is kept as a conflict). Only the
+owner's own targets on deepTENS are taken; others are refused, and the kit counts them and does not send them again.
+401 `pending` until the code is typed, `none` when the kit was removed (it asks for a new code); 400: not a kit, or a
+malformed request.

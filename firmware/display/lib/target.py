@@ -389,8 +389,9 @@ def face_screen(s, faces, current, page=0):
     return out
 
 
-def kit_info(s, net, password, token, port, footer):
-    """A kit waiting for its target: what to put in the target's setup. Its X goes to the target screen."""
+def kit_info(s, net, password, token, port, footer, status=None):
+    """A kit waiting for its target: what to put in the target's setup. Its X goes to the target screen. status: a
+    line about deepTENS (the code to type, or how sending goes)."""
     s.fill(0, 0, W, H, ui.BG)
     forget()
     _text(s, "SET UP THE TARGET", 6, 16, 2, ui.WARN, W - 70)
@@ -400,6 +401,9 @@ def kit_info(s, net, password, token, port, footer):
         _text(s, label, 6, y, 1, ui.DIM, W - 12)
         _text(s, value, 6, y + 11, 2 if len(value) * 16 <= W - 12 else 1, ui.GOOD, W - 12)
         y += 40
+    if status:
+        for i, line in enumerate(ui.wrap(status, W // 8 - 1)[:2]):
+            _text(s, line, 6, y + 2 + 11 * i, 1, ui.WARN, W - 12)
     _text(s, footer[:40], 0, H - 8, 1, ui.DIM, W)
     return out
 
