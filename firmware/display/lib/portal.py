@@ -94,8 +94,8 @@ class Portal:
     """The setup page. name: the network's name; current: the settings now (or None); scan(): network names, best
     first; saved(settings): called after the answer page is sent (it saves and restarts)."""
 
-    def __init__(self, name, current=None, scan=lambda: [], saved=lambda c: None, ip=AP_IP):
-        self.name, self.current, self.scan, self.saved, self.ip = name, current or {}, scan, saved, ip
+    def __init__(self, name, current=None, scan=lambda: [], saved=lambda c: None, ip=AP_IP, kit_net=""):
+        self.name, self.current, self.scan, self.saved, self.ip, self.kit_net = name, current or {}, scan, saved, ip, kit_net
 
     def page(self, title, body):
         return ("<!doctype html><html><head><title>FeT Display setup</title>" + STYLE + "</head><body><h1>" + html(title) +
@@ -104,7 +104,7 @@ class Portal:
     def setup_page(self, err=None, values=None):
         v = values or self.current
         if v.get("where"):
-            v = dict(v, home=v["where"] == "home")      # what was just chosen, shown again with the error
+            v = dict(v, home=v["where"] == "home", kit=v["where"] == "kit")   # what was just chosen, shown with the error
         nets = self.scan()
         server = v.get("server", "")
         return self.page("FeT Display setup", (
@@ -112,7 +112,7 @@ class Portal:
             "<p>This display shows one target's shots at a firing point. It joins the range WiFi and asks FeT Monitor for "
             "a code; Range Control then chooses its target.</p>"
             "<form method=post action=/save>"
-            "<label>WiFi network</label><input name=ssid list=nets maxlength=32 required autocapitalize=off value=\"" +
+            "<label>WiFi network</label><input name=ssid list=nets maxlength=32 autocapitalize=off value=\"" +
             html(v.get("ssid", "")) + "\"><datalist id=nets>" + "".join("<option value=\"" + html(n) + "\">" for n in nets) + "</datalist>"
             "<p class=note>" + ("Networks heard: " + html(", ".join(nets[:8])) if nets else "No networks heard: type its name.") +
             " 2.4 GHz only.</p>"
@@ -120,10 +120,13 @@ class Portal:
             ("unchanged" if v.get("password") else "") + "\">"
             "<label style='font-weight:400'><input type=checkbox name=open value=1 style='width:auto'> This network has no password</label>"
             "<label>This display shows</label>"
-            "<label style='font-weight:400'><input type=radio name=where value=range style='width:auto'" + ("" if v.get("home") else " checked") +
+            "<label style='font-weight:400'><input type=radio name=where value=range style='width:auto'" + ("" if v.get("home") or v.get("kit") else " checked") +
             "> A target at a range (FeT Monitor)</label>"
             "<label style='font-weight:400'><input type=radio name=where value=home style='width:auto'" + (" checked" if v.get("home") else "") +
             "> My own targets (deepTENS)</label>"
+            "<label style='font-weight:400'><input type=radio name=where value=kit style='width:auto'" + (" checked" if v.get("kit") else "") +
+            "> A portable kit: my target reports to this display (no FeT Monitor, no internet needed; it forwards the "
+            "shots to deepTENS when the WiFi above has internet, or leave the WiFi empty)</label>"
             "<label>Address</label><input name=server maxlength=64 autocapitalize=off "
             "placeholder='192.168.1.20:8080' value=\"" + html(server) + "\">"
             "<p class=note>At a range: FeT Monitor's IP address and port, as Range Control shows it (e.g. 192.168.1.20:8080). "
@@ -147,9 +150,17 @@ class Portal:
                 c = config.check(f)
             except ValueError as exc:
                 return 200, {}, self.setup_page(str(exc), dict(f, password="")).encode(), None
-            for k in ("token", "invert", "zoom"):
-                if k in self.current and c["server"] == self.current.get("server") and c.get("home") == self.current.get("home"):
+            for k in ("token", "invert", "zoom", "face"):
+                if k in self.current and c["server"] == self.current.get("server") and c.get("home") == self.current.get("home") \
+                        and c.get("kit") == self.current.get("kit"):
                     c[k] = self.current[k]                           # still the same FeT Monitor: keep the pairing
+            if c.get("kit"):                                         # the kit's network password and the target's token
+                c["kit_pass"] = self.current.get("kit_pass") or config.secret(10)
+                c["kit_token"] = self.current.get("kit_token") or "kit_" + config.secret(16)
+                return 200, {}, self.page("Saved", "<p>The display restarts as a kit. In the target's setup enter:</p><ul>"
+                                          "<li>WiFi network <b>" + html(self.kit_net) + "</b>, password <b>" + html(c["kit_pass"]) + "</b></li>"
+                                          "<li>Server <b>192.168.4.1</b>, port <b>8080</b></li><li>Token <b>" + html(c["kit_token"]) + "</b></li></ul>"
+                                          "<p>The display shows them too until the target reports.</p>").encode(), c
             where = ("at deeptens.com/display/ (signed in)" if c.get("home") else "in FeT Monitor, Range Control &rarr; Lane displays")
             return 200, {}, self.page("Saved", "<p>The display restarts and joins <b>" + html(c["ssid"]) +
                                       "</b>. Then it shows a code: type it " + where + ".</p>").encode(), c

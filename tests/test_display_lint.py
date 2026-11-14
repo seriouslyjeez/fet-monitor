@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parent.parent
 @unittest.skipUnless(importlib.util.find_spec("pyflakes"), "pyflakes not installed (pip install pyflakes)")
 class Pyflakes(unittest.TestCase):
     def test_clean(self):
-        files = [str(p) for p in sorted((ROOT / "firmware" / "display").rglob("*.py"))]
+        files = [str(p) for p in sorted((ROOT / "firmware" / "display").rglob("*.py"))
+                 if p.name != "manifest.py"]                 # a MicroPython build manifest: its names come from the build
         self.assertGreater(len(files), 10)
         r = subprocess.run([sys.executable, "-m", "pyflakes", *files], capture_output=True, text=True)
         self.assertEqual(r.stdout + r.stderr, "", "pyflakes")

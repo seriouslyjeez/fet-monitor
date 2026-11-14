@@ -6,14 +6,24 @@ import os
 import random
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "firmware/display/lib"))
-import qr  # noqa: E402
+
+
+def _load(name):
+    """A display module by its path: the display's lib never goes on this process's sys.path (its http.py would hide
+    the standard library's http for every test after this one)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("display_" + name, ROOT / "firmware/display/lib" / (name + ".py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+qr = _load("qr")
 
 NODE = r"""
 const fs = require('fs');

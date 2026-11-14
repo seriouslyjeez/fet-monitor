@@ -2,14 +2,13 @@
 FeT Monitor: the real screen driver on a stand-in SPI bus, so drawing off the 320x240 screen fails here as it would on
 the CYD (2026-11-14: the keypad's last row did, and froze the display). Skipped without `micropython`."""
 import json
-import os
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
-from tests.test_athletes import AL, JO, Case as LinkedCase
+from tests.test_athletes import Case as LinkedCase
 
 ROOT = Path(__file__).resolve().parent.parent
 MP = shutil.which("micropython")
@@ -150,6 +149,34 @@ assert [x[4] for x in b] == ["targets", "dismiss"], [x[4] for x in b]
 assert target.short_name("C. D.") == "C.D." and target.short_name("J. Q. S.") == "J.Q.S."
 assert target.short_name("Al Aim") == "Al Aim" and target.short_name("") == "" and target.short_name(None) == ""
 check("confirm", target.confirm_screen(s, "Sign out A Very Long Public Name Indeed?", "SIGN OUT", "signout"))
+sys.path.insert(0, %r)                                 # fetcore: a kit scores on the display
+import kitview
+kv = kitview.KitView("issf-ar10", "Kit")
+kit = [kv.view(False, 0)]
+check("kit empty", target.target_with_button(s, kit[0]))
+SHOT = '{"shot":%%d, "miss":0, "x":%%s, "y":%%s, "N":0, "E":0, "S":0, "W":0}'
+for i, (x, y) in enumerate((("1.00", "0.50"), ("-3.20", "2.10"), ("0.10", "-0.30"), ("12.0", "9.0"))):
+    kv.line({"d": "fet-kit", "b": 1, "q": i + 1, "t": "shot", "u": 1000 * (i + 1), "r": SHOT %% (i + 1, x, y)})
+    kit.append(kv.view(True, 0))
+for fid, _ in kitview.KIT_FACES:                       # every face a kit offers, with shots on it
+    kv.set_face(fid)
+    kv.line({"d": "fet-kit", "b": 1, "q": 99, "t": "shot", "u": 9000, "r": SHOT %% (1, "8.0", "-6.0")})
+    kit.append(kv.view(True, 0))
+for v in kit:
+    for z in target.ZOOMS:
+        check("kit " + v["face"]["id"], target.target_with_button(s, v, zoom=z))
+for a in kit:                                          # a kit's views over each other: the picture a full drawing gives
+    for b in kit:
+        prev = target.target_with_button(s, a)
+        target.target_with_button(s, b, None, (a, None, "full"), prev)
+        same((a["face"]["id"], b["face"]["id"]), lambda: target.target_with_button(s, b))
+        n += 1
+assert target.panel_button(kit[0]) == ("FACE", "faces")
+for pg in range(4):
+    b = target.face_screen(s, list(kitview.KIT_FACES), "nra-a17", pg)
+    check("faces", b)
+    assert {x[4] for x in b} >= {"faces_close", "info", "faces_more"}, [x[4] for x in b]
+check("kit info", target.kit_info(s, "FeT-Kit-7e08f8", "abcdefghjk", "kit_abcdefghjkmnpqrs", 8080, "FeT Display 0.1.0  cyd-7e08f8"))
 print("SCREENS", n)
 """
 
@@ -192,7 +219,7 @@ class EveryScreen(LinkedCase):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "machine.py").write_text(FAKE_MACHINE)
             Path(tmp, "views.json").write_text(json.dumps(views))
-            Path(tmp, "run.py").write_text(RUNNER % (str(ROOT / "firmware/display/lib"), tmp, str(Path(tmp, "views.json"))))
+            Path(tmp, "run.py").write_text(RUNNER % (str(ROOT / "firmware/display/lib"), tmp, str(Path(tmp, "views.json")), str(ROOT)))
             r = subprocess.run([MP, "-X", "heapsize=16m", str(Path(tmp, "run.py"))], capture_output=True, text=True, timeout=300)
         self.assertIn("SCREENS", r.stdout, r.stdout[-2000:] + r.stderr[-2000:])
         self.assertGreater(int(r.stdout.split("SCREENS")[1]), 250, "every view over every other (with and without a problem), keypad states and typing, the question")

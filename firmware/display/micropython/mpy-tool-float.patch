@@ -1,0 +1,51 @@
+diff --git a/tools/mpy-tool.py b/tools/mpy-tool.py
+index efe9bfe..028162d 100755
+--- a/tools/mpy-tool.py
++++ b/tools/mpy-tool.py
+@@ -49,6 +49,16 @@ import makeqstrdata as qstrutil
+ PERSISTENT_STR_INTERN_THRESHOLD = 25
+ 
+ 
++
++def c_float(x):
++    """A float constant in C: 17 significant digits (a double needs them all to come back to the same bits) and
++    infinities and NaN by name (Python prints them as inf and nan, which C does not know)."""
++    if x != x:
++        return "NAN"
++    if x in (float("inf"), float("-inf")):
++        return "INFINITY" if x > 0 else "(-INFINITY)"
++    return "%.17g" % x
++
+ class MPYReadError(Exception):
+     def __init__(self, filename, msg):
+         self.filename = filename
+@@ -793,8 +803,8 @@ class CompiledModule:
+                 "#if MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_A || MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_B"
+             )
+             print(
+-                "static const mp_obj_float_t %s = {{&mp_type_float}, (mp_float_t)%.16g};"
+-                % (obj_name, obj)
++                "static const mp_obj_float_t %s = {{&mp_type_float}, (mp_float_t)%s};"
++                % (obj_name, c_float(obj))
+             )
+             print("#define %s MP_ROM_PTR(&%s)" % (macro_name, obj_name))
+             print("#elif MICROPY_OBJ_REPR == MICROPY_OBJ_REPR_C")
+@@ -810,8 +820,8 @@ class CompiledModule:
+             return macro_name
+         elif isinstance(obj, complex):
+             print(
+-                "static const mp_obj_complex_t %s = {{&mp_type_complex}, (mp_float_t)%.16g, (mp_float_t)%.16g};"
+-                % (obj_name, obj.real, obj.imag)
++                "static const mp_obj_complex_t %s = {{&mp_type_complex}, (mp_float_t)%s, (mp_float_t)%s};"
++                % (obj_name, c_float(obj.real), c_float(obj.imag))
+             )
+             return "MP_ROM_PTR(&%s)" % obj_name
+         elif type(obj) is tuple:
+@@ -1599,6 +1609,7 @@ def freeze_mpy(firmware_qstr_idents, compiled_modules):
+     # Sort by string value (because this is a sorted pool).
+     new = sorted(new.values(), key=lambda x: x[2])
+ 
++    print("#include <math.h>")
+     print('#include "py/mpconfig.h"')
+     print('#include "py/objint.h"')
+     print('#include "py/objstr.h"')

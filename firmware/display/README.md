@@ -6,9 +6,13 @@ the current bull's shots, the last score, the total, the mode, the match clock a
 and lets an athlete sign in (the lane's QR code, or athlete number and PIN). Nothing is scored on it: the scores come
 from FeT Monitor. The protocol: docs/PROTOCOL.md, "Lane displays".
 
-Status (2026-11-14): tried on one CYD against FeT Monitor on a Mac with simulated targets and a fake deepTENS. Not yet
-tried at a range, with real targets, or with a phone scanning its QR code. Home targets (deepTENS) and a portable mode
-(no FeT Monitor) are planned.
+Three ways to use it (chosen on its setup page): **a target at a range** (FeT Monitor), **my own targets**
+(deepTENS) and **a portable kit**: the target reports to the display itself, which scores with fetcore (the same code
+and the same bits as FeT Monitor and deepTENS), with no FeT Monitor and no internet. Practice only.
+
+Status (2026-11-14): tried on one CYD against FeT Monitor on a Mac with simulated targets and a fake deepTENS, and as a
+kit with a simulated target over WiFi (FeT Monitor's protocol check passes against it). Not yet tried at a range,
+with real targets, or with a phone scanning its QR code; a kit does not yet forward its shots to deepTENS.
 
 ## Hardware
 
@@ -21,20 +25,21 @@ tried at a range, with real targets, or with a phone scanning its QR code. Home 
 
 ## Putting it on a CYD
 
-1. **MicroPython, once.** FeT Display needs MicroPython built with double-precision floats (fetcore gives the same
-   bits as on the Pi and deepTENS: tests/test_micropython.py). Build it with ESP-IDF v5.5.2:
-   `python3 firmware/display/micropython/build.py` (it says what it needs). Then flash, erasing the whole chip the
-   first time:
+One image holds everything: MicroPython built with double-precision floats (fetcore gives the same bits as on the
+Pi and deepTENS: tests/test_micropython.py) with FeT Display (`main.py`, `lib/`) and fetcore's portable modules frozen
+in (they run from flash: with them loaded into memory, a kit ran out of it). Build it with ESP-IDF v5.5.2:
+`python3 firmware/display/micropython/build.py` (it says what it needs). Then flash it, erasing the whole chip the
+first time:
 
-       esptool --port /dev/cu.usbserial-XXXX erase-flash
-       esptool --port /dev/cu.usbserial-XXXX --baud 460800 write-flash 0x1000 dist/display/micropython-cyd-double-1.29.0.bin
+    esptool --port /dev/cu.usbserial-XXXX erase-flash
+    esptool --port /dev/cu.usbserial-XXXX --baud 460800 write-flash 0x1000 dist/display/micropython-cyd-double-1.29.0.bin
 
-2. **FeT Display.** `pip install mpremote`, then
+Flashing again later (without erasing) keeps the display's settings (`/config.json`), its touch calibration
+(`/touch.json`) and a kit's shots (`/kit-data`). A change to the display's code or to fetcore needs the build again.
 
-       MPY_CROSS=dist/display/mpy-cross python3 firmware/display/deploy.py /dev/cu.usbserial-XXXX
-
-   It copies `main.py` and `lib/` (and the parts of fetcore that place and score a shot) and restarts the display. It
-   never touches the display's settings (`/config.json`) or its touch calibration (`/touch.json`).
+While developing: `deploy.py` copies changed modules over the frozen ones (`pip install mpremote`;
+`MPY_CROSS=dist/display/mpy-cross python3 firmware/display/deploy.py /dev/cu.usbserial-XXXX app kit`; `--clear`
+goes back to the frozen code). Copied modules take memory: copy only what you change.
 
 ## On the display
 
@@ -44,18 +49,26 @@ tried at a range, with real targets, or with a phone scanning its QR code. Home 
   Monitor, it opens an open WiFi network `FeT-Display-<last 6 of its MAC>`. Join it with a phone: the setup page opens
   (or open http://192.168.4.1). Enter the range WiFi, its password and FeT Monitor's address with its port, e.g.
   `192.168.1.20:8080` (an IP address: `.local` names do not work on every network).
+- **A portable kit:** choose it on the setup page (the WiFi is optional: only for the clock and, later, forwarding to
+  deepTENS). The display opens its own WPA2 network `FeT-Kit-<last 6>` and shows what to enter in the target's setup:
+  that network and its password, server `192.168.4.1` port `8080`, and a token. **FACE** on the target screen chooses
+  the face (its projectile comes with it: air rifle and pistol, 50 m rifle, the NRA smallbore faces); a new face
+  starts a new series. Its shots are kept on the display (`/kit-data`) and it shows the same screen after a restart.
 - **Pairing:** it shows a 6-character code. In FeT Monitor, Range Control → Lane displays: type the code and choose
   the target. One display per target: pairing another replaces it. Range Control can move, rename or remove it.
 
 ## The code
 
-`main.py` starts it: setup, WiFi, pairing, then two tasks (asyncio): the network (a long poll: FeT Monitor answers as
+`main.py` imports `lib/app.py`: setup, WiFi, pairing, then two tasks (asyncio): the network (a long poll: FeT Monitor answers as
 soon as anything on the target changes) and the screen (drawing, touch, BOOT, clocks). `lib/`: `ili9341.py` (screen),
 `xpt2046.py` and `calibrate.py` (touch), `config.py` and `portal.py` (settings, setup), `http.py` and `client.py`
 (FeT Monitor), `target.py` and `ui.py` (screens), `qr.py` (QR codes, as FeT Monitor's pages draw them), `text.py`
-(scaled font). Only what changed is drawn again, character by character. `screen_test.py`: a test pattern.
+(scaled font), `kit.py` (a kit's server: FeT Monitor's target protocol, every line stored before it is acknowledged)
+and `kitview.py` (a kit's scoring with fetcore, in the shape of FeT Monitor's views). Only what changed is drawn
+again, character by character. `screen_test.py`: a test pattern.
 
 Tests (under MicroPython on a computer: `brew install micropython`): tests/test_display_portal.py,
-test_display_client.py, test_display_qr.py, test_display_screens.py, test_micropython.py.
+test_display_client.py, test_display_qr.py, test_display_screens.py, test_display_kit.py, test_display_kitview.py,
+test_micropython.py.
 
 Credits: NOTICE.

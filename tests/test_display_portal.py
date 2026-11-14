@@ -161,6 +161,58 @@ class Portal(unittest.TestCase):
         saved = json.loads(out.split("SAVED ", 1)[1])
         self.assertEqual(saved, {"ssid": "Guest", "password": "", "server": "10.0.0.5:8080"})
 
+    def test_a_portable_kit(self):
+        self.start()
+        st, _, body = self.req("GET", "/")
+        self.assertIn("A portable kit", body)
+        st, _, body = self.req("POST", "/save", urllib.parse.urlencode({"ssid": "", "where": "kit"}))
+        out, _ = self.proc.communicate(timeout=5)
+        saved = json.loads(out.split("SAVED ", 1)[1])
+        self.assertEqual({k: saved[k] for k in ("kit", "ssid", "password")}, {"kit": True, "ssid": "", "password": ""}, "no WiFi needed")
+        self.assertRegex(saved["kit_pass"], r"^[a-hjkmnp-z2-9]{10}$", "WPA2: 8 or more; no 0/o, 1/l/i to misread")
+        self.assertRegex(saved["kit_token"], r"^kit_[a-hjkmnp-z2-9]{16}$")
+        for v in (saved["kit_pass"], saved["kit_token"], "192.168.4.1", "8080"):
+            self.assertIn(v, body, "the Saved page says what to put in the target's setup")
+
+    def test_a_kit_set_up_again_keeps_its_network_and_token(self):
+        cur = {"kit": True, "ssid": "", "password": "", "server": "deeptens.com:8443", "kit_pass": "abcdefghjk",
+               "kit_token": "kit_abcdefghjkmnpqrs", "face": "issf-r50", "zoom": "bull"}
+        self.start(cur)
+        st, _, body = self.req("GET", "/")
+        self.assertIn("value=kit style='width:auto' checked", body)
+        self.assertNotIn("abcdefghjk", body, "the setup page never shows the kit's password")
+        self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Home", "password": "short", "where": "kit"}))
+        self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Home", "password": "longenough", "where": "kit"}))
+        out, _ = self.proc.communicate(timeout=5)
+        saved = json.loads(out.split("SAVED ", 1)[1])
+        self.assertEqual(saved, dict(cur, ssid="Home", password="longenough"), "the target need not be set up again")
+
+    def test_a_kit_needs_its_own_network(self):
+        self.start({"ssid": "Club WiFi", "password": "longenough", "server": "192.168.1.20:8080", "token": "fetd_x"})
+        st, _, body = self.req("POST", "/save", urllib.parse.urlencode({"ssid": "", "where": "range", "server": "192.168.1.20:8080"}))
+        self.assertIn("1 to 32 characters", body, "a range or home display still needs its WiFi")
+        self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Club WiFi", "where": "kit"}))
+        out, _ = self.proc.communicate(timeout=5)
+        saved = json.loads(out.split("SAVED ", 1)[1])
+        self.assertNotIn("token", saved, "from a range to a kit: not paired with anything")
+        self.assertTrue(saved["kit"] and saved["kit_pass"] and saved["kit_token"])
+
+
+class SettingsFile(unittest.TestCase):
+    def test_load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("display_config", ROOT / "firmware/display/lib/config.py")
+        config = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(config)
+        with tempfile.TemporaryDirectory() as tmp:
+            config.CONFIG_FILE = os.path.join(tmp, "config.json")
+            for c, ok in (({"kit": True, "ssid": "", "kit_pass": "abcdefghjk", "kit_token": "kit_x"}, True),
+                          ({"kit": True, "ssid": "", "kit_pass": "abcdefghjk"}, False),
+                          ({"ssid": "", "server": "1.2.3.4:8080"}, False),
+                          ({"ssid": "Club", "server": "1.2.3.4:8080"}, True)):
+                config.save(c)
+                self.assertEqual(config.load(), c if ok else None, c)
+
 
 if __name__ == "__main__":
     unittest.main()

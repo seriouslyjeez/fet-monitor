@@ -96,6 +96,16 @@ def half_mm(v, zoom):
     return full
 
 
+_STRIP = []
+
+
+def strip():
+    """The face's strip: one buffer for the display's whole life (made early, before memory is in pieces)."""
+    if not _STRIP:
+        _STRIP.append(Strip(FACE, STRIP_H))
+    return _STRIP[0]
+
+
 def face(s, v, zoom="full"):
     """The face and the current bull's shots (the last one red), in strips, at this zoom (ZOOMS)."""
     f = v["face"]
@@ -105,7 +115,7 @@ def face(s, v, zoom="full"):
     black = f.get("black_mm") or 0
     shots = [sh for sh in v["shots"] if not sh["miss"] and sh["x_h"] is not None]
     pr = max(2, int((f.get("projectile_mm") or 4.5) / 2 * k + 0.5))
-    st = Strip(FACE, STRIP_H)
+    st = strip()
     for y0 in range(0, FACE, STRIP_H):
         cy = c - y0
         st.fill(WHITE)
@@ -254,7 +264,9 @@ def press(s, b, down):
 
 
 def panel_button(v):
-    """What the panel's button does now: a match button, Not you?, sign out, sign in, or nothing."""
+    """What the panel's button does now: a match button, Not you?, sign out, sign in, the face (a kit), or nothing."""
+    if v.get("kit"):
+        return ("FACE", "faces")
     m = v.get("match")
     if m and m.get("buttons"):
         b = m["buttons"][0]
@@ -357,6 +369,38 @@ def choose_screen(s, targets, page=0):
         out.append(button(s, 6, y, W - 12, 46, t["name"] + ("" if t.get("online") else " (silent)"), "pick:" + t["device_id"]))
     if len(targets) > per:
         out.append(button(s, 6, H - 50, W - 12, 46, "MORE (%d of %d)" % (page + 1, (len(targets) + per - 1) // per), "more"))
+    return out
+
+
+def face_screen(s, faces, current, page=0):
+    """A kit: which face is on the target (its projectile comes with it). faces: [(id, name)]. Three a page and MORE:
+    four rows of 44 px below the title (y 50..238)."""
+    s.fill(0, 0, W, H, ui.BG)
+    forget()
+    _text(s, "WHICH FACE?", 6, 14, 2, ui.FG, W - 130)
+    out = [button(s, W - 58, 2, 54, 44, "X", "faces_close"), button(s, W - 118, 2, 56, 44, "INFO", "info")]
+    per, top, bh, gap = 3, 50, 44, 4
+    pages = max(1, (len(faces) + per - 1) // per)
+    page = page % pages
+    for i, (fid, name) in enumerate(faces[page * per:(page + 1) * per]):
+        out.append(button(s, 6, top + i * (bh + gap), W - 12, bh, name, "face:" + fid, ui.GOOD if fid == current else None))
+    if pages > 1:
+        out.append(button(s, 6, top + per * (bh + gap), W - 12, bh, "MORE (%d of %d)" % (page + 1, pages), "faces_more"))
+    return out
+
+
+def kit_info(s, net, password, token, port, footer):
+    """A kit waiting for its target: what to put in the target's setup. Its X goes to the target screen."""
+    s.fill(0, 0, W, H, ui.BG)
+    forget()
+    _text(s, "SET UP THE TARGET", 6, 16, 2, ui.WARN, W - 70)
+    out = [button(s, W - 58, 2, 54, 44, "X", "info_close")]
+    y = 50
+    for label, value in (("WiFi network", net), ("WiFi password", password), ("Server", "192.168.4.1 port %d" % port), ("Token", token)):
+        _text(s, label, 6, y, 1, ui.DIM, W - 12)
+        _text(s, value, 6, y + 11, 2 if len(value) * 16 <= W - 12 else 1, ui.GOOD, W - 12)
+        y += 40
+    _text(s, footer[:40], 0, H - 8, 1, ui.DIM, W)
     return out
 
 

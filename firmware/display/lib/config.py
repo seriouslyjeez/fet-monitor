@@ -13,7 +13,11 @@ def load():
     try:
         with open(CONFIG_FILE) as fh:
             c = json.load(fh)
-        return c if isinstance(c, dict) and c.get("ssid") and c.get("server") else None
+        if not isinstance(c, dict):
+            return None
+        if c.get("kit"):                     # a kit needs no WiFi (only its own network for the target)
+            return c if c.get("kit_token") and c.get("kit_pass") else None
+        return c if c.get("ssid") and c.get("server") else None
     except (OSError, ValueError):
         return None
 
@@ -38,6 +42,14 @@ def check(form):
     pw = form.get("password", "")
     open_net = form.get("open") == "1"
     home = form.get("where") == "home"
+    if form.get("where") == "kit":                     # a portable kit: the target reports to this display; WiFi only
+        if not ssid:                                   # for the internet (forwarding to deepTENS), and optional
+            return {"kit": True, "ssid": "", "password": "", "server": DEEPTENS}
+        if not 1 <= len(ssid.encode()) <= 32:
+            raise ValueError("The WiFi network's name: 1 to 32 characters.")
+        if not open_net and not 8 <= len(pw) <= 63:
+            raise ValueError("The WiFi password: 8 to 63 characters (or tick 'no password').")
+        return {"kit": True, "ssid": ssid, "password": "" if open_net else pw, "server": DEEPTENS}
     server = form.get("server", "").strip() or (DEEPTENS if home else "")
     if not 1 <= len(ssid.encode()) <= 32:
         raise ValueError("The WiFi network's name: 1 to 32 characters.")
@@ -61,6 +73,14 @@ def check(form):
     if not port.isdigit() or not 1 <= int(port) <= 65535:
         raise ValueError("The port: a number from 1 to 65535 (FeT Monitor uses 8080).")
     return {"ssid": ssid, "password": pw, "server": "%s:%d" % (host, int(port))}
+
+
+_READABLE = "abcdefghjkmnpqrstuvwxyz23456789"           # no 0/o, 1/l/i: typed into a target's setup
+
+
+def secret(n):
+    import os
+    return "".join(_READABLE[b % len(_READABLE)] for b in os.urandom(n))
 
 
 class QuickBoot:
