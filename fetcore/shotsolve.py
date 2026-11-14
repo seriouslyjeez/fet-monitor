@@ -215,10 +215,10 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
         return res, jac
 
     res, jac = model(x, y, t0)
-    cost = sum(r * r for r in res)
+    cost = fmath.total(r * r for r in res)
     for it in range(1, max_iter + 1):
-        jtj = [[sum(jac[n][a] * jac[n][b] for n in range(len(res))) for b in range(3)] for a in range(3)]
-        jtr = [sum(jac[n][a] * res[n] for n in range(len(res))) for a in range(3)]
+        jtj = [[fmath.total(jac[n][a] * jac[n][b] for n in range(len(res))) for b in range(3)] for a in range(3)]
+        jtr = [fmath.total(jac[n][a] * res[n] for n in range(len(res))) for a in range(3)]
         for _ in range(40):                                              # raise the damping until a step helps
             damped = [[jtj[a][b] * (1 + lam if a == b else 1) for b in range(3)] for a in range(3)]
             step = _solve3(damped, [-v for v in jtr])
@@ -226,7 +226,7 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
                 return Solution(False, "geometry is degenerate", used=used, iterations=it)
             nx, ny, nt = x + step[0], y + step[1], t0 + step[2]
             nres, njac = model(nx, ny, nt)
-            ncost = sum(r * r for r in nres)
+            ncost = fmath.total(r * r for r in nres)
             if ncost <= cost or lam > 1e6:
                 break
             lam *= 10

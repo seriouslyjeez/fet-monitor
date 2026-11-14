@@ -16,4 +16,5 @@ exact for numbers from text (not float() or decimal); squares as x * x (not ** 2
 plain classes (no dataclasses); no reliance on dict order; no regular expressions beyond MicroPython's.
 tests/test_micropython.py checks it. The others (groupstats, sightadj, the match engine) are not ported yet.
 """
-__version__ = "0.3.0"   # 0.3.0 (2026-11-13): the same bits on every machine (fmath, exact); runs on MicroPython
+__version__ = "0.3.1"   # 0.3.1 (2026-11-14): the solver's sums the same on every Python (fmath.total)
+#                         0.3.0 (2026-11-13): the same bits on every machine (fmath, exact); runs on MicroPython

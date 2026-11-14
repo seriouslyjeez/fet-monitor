@@ -10,6 +10,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +18,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 MICROPYTHON = shutil.which("micropython")
 PORTABLE = ("exact", "faces", "fmath", "lineparse", "scoring", "shotsolve", "targetproto")   # what the CYD runs
+
+
+def pythons():
+    """Every CPython 3.9 or later on this machine (this one first), each once."""
+    found, seen = [], set()
+    names = [sys.executable, "python3", "/usr/bin/python3"] + ["python3.%d" % n for n in range(9, 20)]
+    for name in names:
+        path = shutil.which(name) or (name if os.path.exists(name) else None)
+        if not path or os.path.realpath(path) in seen:
+            continue
+        r = subprocess.run([path, "-c", "import sys; print(sys.version_info >= (3, 9))"], capture_output=True, text=True)
+        if r.stdout.strip() == "True":
+            seen.add(os.path.realpath(path))
+            found.append(path)
+    return found
 
 
 def run(cmd, *args):
@@ -27,17 +43,22 @@ def run(cmd, *args):
 @unittest.skipUnless(MICROPYTHON, "micropython not installed (brew install micropython)")
 class OnMicroPython(unittest.TestCase):
     def test_same_output_as_cpython(self):
+        """Every Python found here, not only one: sum() of floats changed in Python 3.12 (2026-11-14: the solver gave
+        other bits on 3.15 than on 3.9 and the CYD, and this test ran only the Mac's python3, 3.9)."""
         script = str(ROOT / "tests" / "mp_conformance.py")
-        cp = run(["python3"], script, str(ROOT))
         mp = run([MICROPYTHON, "-X", "heapsize=64m"], script, str(ROOT))
-        self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
         self.assertEqual(mp.returncode, 0, (mp.stdout + mp.stderr)[-2000:])
-        self.assertIn("values 6", cp.stdout)
-        self.assertIn("mismatches 0", cp.stdout)
-        a, b = cp.stdout.splitlines(), mp.stdout.splitlines()
-        first = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), None)
-        self.assertEqual(len(a), len(b), "line counts differ")
-        self.assertIsNone(first, None if first is None else "line %d:\nCPython     %s\nMicroPython %s" % (first + 1, a[first][:300], b[first][:300]))
+        b = mp.stdout.splitlines()
+        for py in pythons():
+            with self.subTest(py):
+                cp = run([py], script, str(ROOT))
+                self.assertEqual(cp.returncode, 0, cp.stderr[-2000:])
+                self.assertIn("values 6", cp.stdout)
+                self.assertIn("mismatches 0", cp.stdout)
+                a = cp.stdout.splitlines()
+                first = next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), None)
+                self.assertEqual(len(a), len(b), "line counts differ")
+                self.assertIsNone(first, None if first is None else "line %d:\n%s %s\nMicroPython %s" % (first + 1, py, a[first][:300], b[first][:300]))
 
     def test_every_float_literal_reads_the_same(self):
         """A literal MicroPython reads differently changes results silently (it did for 5 of fdlibm's constants)."""

@@ -34,6 +34,16 @@ _DEG = pi / 180.0
 _RAD = 180.0 / pi
 
 
+def total(values):
+    """The sum of floats, left to right, one rounding per addition: Python before 3.12 and MicroPython (the CYD) do
+    this in sum(); Python 3.12 and later compensate in sum() and give other bits (deepTENS runs 3.13; a Pi 3.11 on
+    Bookworm, 3.13 on Trixie). Found 2026-11-14: the CYD agreed with Python 3.9, not with 3.15."""
+    t = 0.0
+    for v in values:
+        t = t + v
+    return t
+
+
 def radians(x):
     return x * _DEG
 

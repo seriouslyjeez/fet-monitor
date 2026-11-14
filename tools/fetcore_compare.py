@@ -10,7 +10,7 @@ same-bits change for the CYD display, docs/PLAN-cyd.md).
 
 The databases are opened read-only: a copy of the Pi's /var/lib/fet-monitor/fetserver.db (its backup service
 writes consistent ones to /var/backups/fet-monitor/), or a CSV from deepTENS with the header id,device_id,type,raw,
-board_rev (devices_deviceevent joined to devices_device; psql's \copy ... WITH CSV HEADER).
+board_rev (devices_deviceevent joined to devices_device; psql's \\copy ... WITH CSV HEADER).
 """
 import argparse
 import csv
