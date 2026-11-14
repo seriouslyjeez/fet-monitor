@@ -6,6 +6,16 @@ protected). The Pi installs only releases whose `SHA256SUMS` carries a valid sig
 
 Fingerprint: `SHA256:X50vi9/xw7zvNVO6SyaLsVb7yWCg/Uoe2Yy0am0J6B8`.
 
+## Before any release: what is out
+
+`python3 tools/release_status.py` shows, per product (FeT Monitor, FeT Bridge, the Mega and ESP32 target firmware, FeT
+Display): the newest release on GitHub, the version in the code, and the commits since. "ready to release" means the
+code has a new version; "bump the version" means the code changed after its published version. Commits that were
+checked and need no release (the built image is the same, or nothing that product uses changed) are recorded in
+`tools/release_reviewed.json` with why; a later commit shows again. It also says whether the newest server release's SD
+card image is signed. `tools/release.py` refuses, before asking for the passphrase, any version already tagged here or
+on GitHub, or already published.
+
 ## Server release (tag `v<version>`)
 
 1. Bump `__version__` in `fetserver/__init__.py`, run the tests, commit and push.
@@ -45,6 +55,17 @@ Range Control's *Check GitHub for FeT target firmware* (flash station) downloads
 Firmware releases are never marked GitHub's "Latest" (that is always the newest FeT Monitor release, which
 docs/INSTALL.md links to).
 
+## FeT Display (tag `display-<version>`)
+
+1. Bump `VERSION` and `MARKER` in `firmware/display/lib/fetdisplay.py`, commit.
+2. `python3 firmware/display/micropython/build.py` builds `dist/display/fet-display-<version>.bin` (MicroPython with the
+   display and fetcore frozen in, written at 0x1000).
+3. `python3 tools/release.py display <version> --notes notes.md [--publish]`.
+
+deepTENS's daily firmware fetch picks it up for "Program a display" (or on the server:
+`sudo deeptens-compose exec app python manage.py fetch_firmware`); a Pi gets it with Firmware → Check GitHub for FeT
+Display, for the flash station.
+
 ## FeT target firmware for the ESP32 board (tag `esp32-<version>`)
 
 1. Bump `FW_VERSION` in `firmware/target/esp32/fet_target_esp32/fet_target_esp32.ino`, commit.
@@ -57,7 +78,9 @@ Update), signed by the Pi with each target's own key.
 
 ## Rules
 
-- Never publish an unsigned release, and never re-use a version number (the Pi compares versions).
+- Never publish an unsigned release, and never re-use a version number (the Pi compares versions). Never rebuild a
+  published version either: a change after a release is a new version (2026-11-14: a FeT Display 0.2.0 image was
+  rebuilt with other contents after 0.2.0 was published; it became 0.2.1).
 - The repository must be public for the Pi to see releases (GitHub answers 404 to anonymous requests otherwise).
 - Changing the key: add the new key to `fetserver/release_signers`, release that with the OLD key, and only then
   sign with the new one. Pis that missed that release need a manual install. If the private key is lost, every Pi

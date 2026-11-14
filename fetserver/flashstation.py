@@ -412,7 +412,7 @@ class FlashStation:
         res = {"port": port, "device": "display", "chip": chip, "mac": mac, "flash_size": size, "hw_id": "cyd-" + mac.replace(":", "")[-6:],
                "running": running, "micropython": info is not None, "configured": bool(info and info["configured"]),
                "label": f"CYD shot monitor ({chip}, {flash_label(size)} flash), " + (
-                   f"FeT Display {running}" if running else "FeT Display before 0.2.0" if info else "not FeT Display (first install)"),
+                   f"FeT Display {running}" if running else "FeT Display 0.2.0 or older" if info else "not FeT Display (first install)"),
                "configurable": info is not None}
         best = self.display_images.best() if self.display_images is not None else None
         if size != CYD_FLASH:

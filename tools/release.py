@@ -42,6 +42,23 @@ from fetserver.releases import SIGN_NAMESPACE, SIGNERS, ReleaseError, check_arch
 KEY = Path.home() / ".ssh" / "fet-monitor-release"
 
 
+def published(tag: str) -> str:
+    """"" if tag is new everywhere; else where it already is (a local tag, GitHub's tags, or a GitHub release). A version
+    is never released twice (the Pi compares versions; 2026-11-14: a 0.2.0 was rebuilt after it was published). It must
+    be able to ask GitHub: without an answer nothing is signed."""
+    if subprocess.run(["git", "-C", str(ROOT), "tag", "-l", tag], capture_output=True, text=True).stdout.strip():
+        return f"{tag} is already a tag in this repository"
+    r = subprocess.run(["git", "-C", str(ROOT), "ls-remote", "--tags", "origin", "refs/tags/" + tag], capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise ReleaseError("cannot ask GitHub whether " + tag + " exists (git ls-remote failed): try again online")
+    if r.stdout.strip():
+        return f"{tag} is already a tag on GitHub"
+    r = subprocess.run(["gh", "release", "view", tag, "--json", "publishedAt", "-q", ".publishedAt"], capture_output=True, text=True, timeout=60)
+    if r.returncode == 0:
+        return f"{tag} is already published on GitHub ({r.stdout.strip()})"
+    return ""
+
+
 def sums_for(folder: Path, names) -> Path:
     lines = [f"{hashlib.sha256((folder / n).read_bytes()).hexdigest()}  {n}" for n in sorted(names)]
     p = folder / "SHA256SUMS"
@@ -212,6 +229,9 @@ def main() -> int:
             return 1
     try:
         folder, names, tag, title = {"server": server, "firmware": firmware, "target": target, "esp32": esp32, "display": display}[a.kind](a)
+        where = published(tag)
+        if where:
+            raise ReleaseError(where + ": bump the version and build again (tools/release_status.py shows what is out)")
         sums = sums_for(folder, names)
         sign(sums, Path(a.key))
         assert set(parse_sums(sums.read_bytes())) == set(names)

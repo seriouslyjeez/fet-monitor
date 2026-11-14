@@ -23,11 +23,45 @@ class LatestMark(unittest.TestCase):
             sums.write_bytes(b"")
             built = lambda a: (folder, ["x.bin"], {"server": "v9.9.9", "firmware": "fw-9.9.9", "target": "tgt-9.9.9", "esp32": "esp32-9.9.9", "display": "display-9.9.9"}[kind], "T")
             out = io.StringIO()
-            with mock.patch.object(rt, kind, built), mock.patch.object(rt, "sums_for", lambda f, n: sums), \
+            with mock.patch.object(rt, kind, built), mock.patch.object(rt, "sums_for", lambda f, n: sums), mock.patch.object(rt, "published", lambda t: ""), \
                     mock.patch.object(rt, "sign", lambda s, k: None), mock.patch.object(rt, "parse_sums", lambda b: {"x.bin": ""}), \
                     mock.patch.object(sys, "argv", ["release.py", kind, "9.9.9"]), contextlib.redirect_stdout(out):
                 self.assertEqual(rt.main(), 0)
         return out.getvalue().split("Publish with:\n", 1)[1].split()
+
+    def test_a_published_version_is_never_signed_again(self):
+        signed = []
+        with tempfile.TemporaryDirectory() as tmp:
+            built = lambda a: (Path(tmp), ["x.bin"], "display-0.2.0", "T")
+            err = io.StringIO()
+            with mock.patch.object(rt, "display", built), mock.patch.object(rt, "published", lambda t: t + " is already published on GitHub (2026-11-14)"), \
+                    mock.patch.object(rt, "sign", lambda s, k: signed.append(s)), mock.patch.object(sys, "argv", ["release.py", "display", "0.2.0"]), \
+                    contextlib.redirect_stderr(err):
+                self.assertEqual(rt.main(), 1)
+        self.assertEqual(signed, [], "refused before the passphrase is asked")
+        self.assertIn("already published", err.getvalue())
+        self.assertIn("bump the version", err.getvalue())
+
+    def test_published_asks_git_and_github(self):
+        calls = []
+
+        def run(argv, **kw):
+            calls.append(argv[:3] if argv[0] == "git" else argv[:3])
+            out = {"tag": "", "ls-remote": "", "release": ""}
+            if argv[0] == "git" and argv[3] == "tag":
+                return mock.Mock(returncode=0, stdout=self.local)
+            if argv[0] == "git":
+                return mock.Mock(returncode=self.remote_rc, stdout=self.remote)
+            return mock.Mock(returncode=self.gh_rc, stdout="2026-11-14T21:14:30Z\n")
+        for local, remote_rc, remote, gh_rc, want in (("", 0, "", 1, ""), ("v9.9.9\n", 0, "", 1, "a tag in this repository"),
+                                                      ("", 0, "abc refs/tags/v9.9.9\n", 1, "a tag on GitHub"), ("", 0, "", 0, "published on GitHub (2026-11-14")):
+            self.local, self.remote_rc, self.remote, self.gh_rc = local, remote_rc, remote, gh_rc
+            with mock.patch.object(rt.subprocess, "run", run):
+                got = rt.published("v9.9.9")
+            self.assertTrue(want in got if want else got == "", (want, got))
+        self.local, self.remote_rc, self.remote = "", 128, ""
+        with mock.patch.object(rt.subprocess, "run", run), self.assertRaisesRegex(rt.ReleaseError, "cannot ask GitHub"):
+            rt.published("v9.9.9")
 
     def test_server_releases_are_latest(self):
         cmd = self.command("server")

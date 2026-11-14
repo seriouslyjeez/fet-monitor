@@ -1,0 +1,7 @@
+{
+  "_": "Commits after a product's newest release that were checked and need no new release (tools/release_status.py). Per product: the release tag, the last commit reviewed, and why. A later commit to the product's files shows again.",
+  "FeT Bridge (ESP-01)": {"tag": "fw-0.5.0", "through": "16ee65c", "date": "2026-11-14",
+    "why": "16ee65c moved two certificate headers to src/core and changed a comment; the built image is the same"},
+  "FeT target (Mega)": {"tag": "tgt-0.1.4", "through": "2b94bcf", "date": "2026-11-14",
+    "why": "ESP32 features in the shared core (ps= 12 V reading, r= count rate, a longer line buffer) that a Mega never uses; vref_mv accepts up to 4675 instead of 3300 (both above a Mega's 0.35-1.30 V)"}
+}

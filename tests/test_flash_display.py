@@ -145,7 +145,7 @@ class Identify(Base):
         self.assertEqual((r["running"], r["same"], r["first_install"], r["configured"], r["configurable"]), ("0.2.0", True, False, True, True))
         self.assertEqual((board.stops, board.resets), (1, 1), "stopped to be asked, running again after")
         r = self.station(FakeCyd("fet", None)).identify("/dev/ttyUSB0")
-        self.assertIn("FeT Display before 0.2.0", r["label"])
+        self.assertIn("FeT Display 0.2.0 or older", r["label"], "0.2.0 (published 2026-11-14) has no version module yet")
         self.assertFalse(r["first_install"], "MicroPython already: an update keeps its settings unless asked")
 
     def test_not_a_cyd(self):
