@@ -429,3 +429,52 @@ and carries its targets' signed lines; deepTENS scores them and is the authority
   stream from them, as at home; a newer revision replaces them. A synchronized run starts at the match's start; a window
   run lies within the window; the entrant must have a run left. `supervised`: a Range Officer or Match Director had
   the RO console open throughout (gaps under 60 s ignored).
+
+## Lane displays: a CYD at a firing point (built 2026-11-14; not yet tried with a display)
+
+A lane display is a small screen (the ESP32 "Cheap Yellow Display") paired with one target by Range Control. It draws
+what a phone on that lane shows and has the shooter's buttons; nothing is scored on it (fetserver/lanedisplays.py).
+JSON over HTTP on the range network; the display's token goes in `Authorization: Bearer <token>`.
+
+**Pairing.** `POST /api/v1/display/pair` `{"hw_id": "cyd-7e08f8", "fw": "0.1.0"}` (no login) →
+`{"code": "K7M2QX", "token": "fetd_…", "expires_ms", "expires_in_s": 600}`. The display shows the code and keeps the
+token. Range Control types the code and chooses the target (`POST /api/v1/admin/lane-displays` `{"code", "device_id",
+"name"}`); from then on the token is the display's key. Codes last 10 minutes and live only in memory (at most 20
+waiting); asking again gives a new code and ends the old one. One display per target and one target per display: a
+new display on a target replaces the old; a display paired again leaves its old target.
+
+**The view.** `GET /api/v1/display/view?rev=<rev>&wait=<s>`. Without rev it answers at once; with the rev it has, it
+answers as soon as what is drawn changes, or after `wait` seconds (at most 30) with the same view: ask again at once.
+A shot reaches the display as soon as the server has it. Optional header `X-FET-Display-FW: <version>`.
+`401 {"error": "not assigned", "pairing": "pending"}`: Range Control has not typed the code yet (ask every few
+seconds). `"pairing": "none"`: the token is no display's (removed, replaced, expired, its target removed): pair again.
+200:
+
+    {"v": 1, "rev", "server_time_ms", "display": {"id", "name"},
+     "target": {"device_id", "name", "lane", "online"},
+     "athlete": {"public_name", "via", "started_ms"} | null,      the name the athlete chose for public pages, only
+     "signin_url": "<deepTENS>/t/…/" | null,                       draw it as a QR code (it changes: redraw on a new rev)
+     "pin_signin": bool,                                            show "Use athlete number and PIN"
+     "claim": {"public_name", "until_ms", "left_ms"} | null,       "fire a shot to claim this lane", "Not you? Cancel"
+     "can_sign_out": bool,                                          never in a match
+     "mode", "kind", "stream", "label",
+     "face": {"id", "name", "decimal", "rings": [{"value", "dia_mm"}], "black_mm", "white_ten", "inner_mm", "projectile_mm"},
+     "shots": [{"n", "x_h", "y_h", "score", "inner", "miss"}],     the current bull; x_h/y_h hundredths of a mm (null: miss)
+     "count", "bull", "bulls", "last": {"n", "score", "inner", "miss"} | null,
+     "totals": {"shots", "score", "x", "misses"},
+     "match": {"match_id", "name", "competitor", "fp", "label", "state", "kind", "remaining_ms", "ends_at_ms", "next",
+               "in_record", "sighting", "position", "buttons": ["start_record", "back_to_sighters"]} | null}
+
+Scores are text, as the screens write them ("10.4"; whole rings on a conventional face; "M" for a miss). `rev` does not
+change as clocks count down: count from `ends_at_ms` against `server_time_ms` (when `state` is running) and from
+`until_ms` for a claim.
+
+**Buttons.** `POST /api/v1/display/action` `{"action": …}` → the new view, or 400 `{"error"}` to show:
+`signin` (with `"number"`, `"pin"`: the lane's PIN rules, five wrong tries lock a number for 15 minutes), `signout`
+(not in a match), `claim_cancel`, `start_record` and `back_to_sighters` (only when the view's `match.buttons` has them;
+the match log names the display). Holding the target's display token stands for being at the firing point.
+
+**Range Control.** `GET /api/v1/admin/lane-displays` → `{"displays": [{"id", "name", "hw_id", "device_id",
+"target_name", "lane", "online", "last_seen_ms", "fw", "ip", "created_ms"}], "waiting": <displays showing a code>}`;
+`POST /api/v1/admin/lane-displays/<id>` `{"device_id"?, "name"?}` (another target replaces the display there);
+`POST /api/v1/admin/lane-displays/<id>/delete`. Each answers with the list.

@@ -127,7 +127,10 @@ class DashboardLogic(unittest.TestCase):
             store.errors["nra-par-2025"] = "cannot reach <b>competitions.nra.org</b>"
             rulebooks = {"docs": store.status(), "repositories": [{"name": n, "url": u} for n, u in REPOSITORIES]}
             from fetcore import faces as F
-            payload = {"faces": [F.view(f) for f in F.FACES.values()], "targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15),
+            ld = core.lane_displays                       # Range Control → Lane displays: one paired, one showing its code
+            ld.approve(ld.pair("cyd-7e08f8", "0.1.0")["code"], "lane-1", "<b>Front</b>")
+            ld.pair("cyd-waiting")
+            payload = {"faces": [F.view(f) for f in F.FACES.values()], "ldisp": ld.list(), "targets": targets, "series": series, "review": core.series_view(closed, "scored", None, 15),
                        "sight": core.sight_suggestion(lane2["view"]["series_id"], 0), "comp": comp,
                        "moving": moving, "ready": ready, "cdetail": cdetail, "mtargets": mtargets, "movedTarget": moved_target,
                        "single": single, "saved": saved, "listing": listing, "laneShots": lane_shots,

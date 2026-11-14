@@ -367,7 +367,7 @@ label.tick{display:inline-flex;align-items:center;gap:8px;min-height:44px}label.
 .signin{max-width:480px;margin:12px auto;display:flex;flex-direction:column;gap:10px}.signin h2{margin:0;font-size:24px}.signbtn{width:100%}
 .signform{display:flex;flex-direction:column;gap:10px;margin-top:8px}.signform button{align-self:flex-start}
 .dvcards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}.dvcards>li{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}
-.dvtop{display:flex;align-items:center;gap:10px}.dvtop .lmain{display:flex;flex-direction:column;flex:1;min-width:0}.dvtop .mut{font-size:13px}
+.dvtop{display:flex;align-items:center;gap:10px}.dvtop .lmain{display:flex;flex-direction:column;flex:1;min-width:0}.dvtop .mut{font-size:13px}.dvtop .st{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .dvtv{width:64px;height:36px;border-radius:6px;background:#0E161E;flex:none;display:flex;align-items:center;justify-content:center}.dvtv span{width:44px;height:3px;background:#FF8A4C;border-radius:2px}
 .about{max-width:720px;margin:0 auto}.about h2{margin:2px 0 6px;font-size:26px}
 .rc details.tap>summary{min-height:44px;display:flex;align-items:center;cursor:pointer}.wizpick{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 6px}.wiz .wizhead{display:flex;align-items:center;gap:12px}.wiz .wizhead h3{flex:1;margin:0}.wizbar{height:4px;background:var(--line2);border-radius:2px;margin:10px 0 14px}.wizbar>span{display:block;height:100%;background:var(--fg);border-radius:2px}.wizh{font-size:20px;margin:0 0 8px}.wizh:focus{outline:none}.wizfoot{display:flex;justify-content:space-between;gap:10px;margin-top:16px;border-top:1px solid var(--line2);padding-top:12px}.wizform{border-top:1px solid var(--line2);margin-top:12px;padding-top:4px}.wizform h3{font-size:15px}.wizwatch{background:var(--hi);border-radius:12px;padding:10px 14px;margin-top:10px}
@@ -716,6 +716,41 @@ function tvUrl(cfg) {
   if (cfg.match) q.push('m=' + cfg.match);
   if (cfg.targets && cfg.targets.length) q.push('t=' + cfg.targets.map(encodeURIComponent).join(','));
   return '#/tv/targets' + (q.length ? '?' + q.join('&') : '');
+}
+// ---- Lane displays: a small screen (CYD) at a firing point, paired with one target (fetserver/lanedisplays.py) ----
+function ldTargetLabel(t, name) {               // "Lane 4 · North"; just "Lane 4" when that is its name
+  const n = name != null ? name : t.name, l = t.lane != null ? 'Lane ' + t.lane : '';
+  return !l ? n : !n || n === l || n === t.device_id ? l : l + ' · ' + n;
+}
+function laneDisplaysTab(rc) {                    // Range Control → Lane displays: pair one by its code; move, rename, remove
+  const L = rc.ldisp;
+  if (!L) return '<div class="panel"><p class="mut">Loading…</p></div>';
+  const list = L.displays || [], targets = ((rc.data || {}).targets || []).slice().sort(byLane), f = rc.ldp || {};
+  const on = {};
+  list.forEach(d => { on[d.device_id] = d; });
+  const opt = (t, cur, self) => '<option value="' + esc(t.device_id) + '"' + (t.device_id === cur ? ' selected' : '') + '>' + esc(ldTargetLabel(t)) +
+    (on[t.device_id] && on[t.device_id].id !== self ? ' (replaces ' + esc(on[t.device_id].name) + ')' : '') + '</option>';
+  let h = '<div class="panel"><h3>Add a lane display</h3>' +
+    '<p class="mut">A lane display is a small screen at a firing point. It shows one target: the shots and scores, the sign-in code, the match clock and the shooter\'s own buttons. ' +
+    'Switch it on: it joins the range WiFi and shows a 6-character code. Type the code here and choose its target. It keeps that target until you move or remove it.</p>' +
+    (targets.length ? '<div class="signform"><label class="fld">Code on the display<input id="ld_code" data-ldk="code" value="' + esc(f.code || '') + '" maxlength="8" size="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7M2QX" style="text-transform:uppercase"></label>' +
+      '<label class="fld">Target<select id="ld_target" data-ldk="target"><option value="">Choose the target</option>' + targets.map(t => opt(t, f.target)).join('') + '</select></label>' +
+      '<label class="fld">Name (optional)<input id="ld_name" data-ldk="name" value="' + esc(f.name || '') + '" maxlength="40" placeholder="e.g. Lane 4 screen"></label>' +
+      '<button class="pri" data-act="rcldpair">Pair</button></div>' +
+      (f.msg ? '<p class="bad">' + esc(f.msg) + '</p>' : '')
+      : '<p class="mut">No targets yet: a display shows one of the range\'s targets.</p>') +
+    '<p class="mut">' + (L.waiting ? L.waiting + ' display' + (L.waiting === 1 ? ' is' : 's are') + ' showing a code now.' : 'No display is showing a code right now.') +
+    ' A code lasts 10 minutes; a display shows a new one by itself. A target has one display: pairing another replaces it.</p></div>';
+  h += '<div class="panel"><h3>Lane displays</h3>' + (list.length ? '<ul class="dvcards">' + list.map(d => {
+    const mv = (rc.ldmv || {})[d.id] || d.device_id;
+    return '<li><div class="dvtop"><span class="lmain"><b>' + esc(d.name) + '</b><span class="mut">' + esc(ldTargetLabel({lane: d.lane, device_id: d.device_id}, d.target_name)) + '</span></span>' +
+      '<span class="st"><span class="livedot' + (d.online ? ' on' : '') + '" aria-hidden="true"></span>' + (d.online ? 'Online' : d.last_seen_ms ? 'Last seen ' + esc(ago(new Date(d.last_seen_ms).toISOString())) + ' ago' : 'Not seen yet') + '</span></div>' +
+      '<div class="fact"><span>Display</span><span class="num">' + esc(d.hw_id) + (d.fw ? ' · ' + esc(d.fw) : '') + (d.ip ? ' · ' + esc(d.ip) : '') + '</span></div>' +
+      '<div class="bulk"><select data-ldmv="' + d.id + '" aria-label="Move ' + esc(d.name) + ' to">' + targets.map(t => opt(t, mv, d.id)).join('') + '</select>' +
+      '<button data-act="rcldmove" data-id="' + d.id + '"' + (mv === d.device_id ? ' disabled' : '') + '>Move</button>' +
+      '<button data-act="rcldname" data-id="' + d.id + '">Rename</button><button class="danger" data-act="rcldrm" data-id="' + d.id + '">Remove</button></div></li>';
+  }).join('') + '</ul>' : '<p class="mut">No lane displays yet.</p>') + '</div>';
+  return h;
 }
 // ---- TV displays: saved views (Range Control → TV displays) at http://<pi>/<code>; read only (fetserver/displays.py) ----
 const DISPLAY_RE = /^\/([A-Za-z0-9]{5})\/?$/;
@@ -2027,8 +2062,8 @@ const ago = iso => { const s = Math.max(0, Math.round((Date.now() - new Date(iso
 const RC_NEEDS = {                              // what each tab asks the Pi for (the updates: a new version reloads the page)
   targets: ['/targets', '/athletes', '/updates', '/deeptens'], settings: ['/targets', '/updates'], flash: ['/flash', '/target-firmware', '/esp32-firmware', '/updates'],
   firmware: ['/targets', '/firmware', '/target-firmware', '/esp32-firmware', '/updates'], updates: ['/updates'], pi: ['/system', '/deeptens', '/updates'],
-  users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates']};
-const RC_TABS = [['targets', 'Targets'], ['firmware', 'Firmware'], ['flash', 'Flash station'], ['tv', 'TV displays'], ['pi', 'This Pi'], ['users', 'Staff']];
+  users: ['/match-users', '/updates'], tv: ['/displays', '/targets', '/updates'], lanes: ['/lane-displays', '/targets', '/updates']};
+const RC_TABS = [['targets', 'Targets'], ['firmware', 'Firmware'], ['flash', 'Flash station'], ['tv', 'TV displays'], ['lanes', 'Lane displays'], ['pi', 'This Pi'], ['users', 'Staff']];
 const RC_OLD = {settings: 'targets', updates: 'pi'};   // older addresses still open the right tab
 const rcTab = hash => {                         // #/range/<tab>; Targets when none (or an unknown one) is named
   if (hash == null) hash = typeof location !== 'undefined' ? location.hash : '';
@@ -2049,7 +2084,7 @@ function rangeView(S) {                          // Range Control: one tab at a 
   h += tabStrip(RC_TABS, tab, k => '#/range' + (k === 'targets' ? '' : '/' + k), 'Range Control') + '</div>';
   const d = rc.data || {targets: [], banned: []};
   const body = tab === 'flash' ? flashPanel(rc.flash, rc) : tab === 'firmware' ? firmwareTab(d, rc)
-    : tab === 'tv' ? displaysTab(rc) : tab === 'pi' ? (rc.dt && rc.dt.linking ? deeptensPanel(rc.dt) + updatesPanel(rc.updates) : updatesPanel(rc.updates) + deeptensPanel(rc.dt)) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
+    : tab === 'tv' ? displaysTab(rc) : tab === 'lanes' ? laneDisplaysTab(rc) : tab === 'pi' ? (rc.dt && rc.dt.linking ? deeptensPanel(rc.dt) + updatesPanel(rc.updates) : updatesPanel(rc.updates) + deeptensPanel(rc.dt)) + systemPanel(rc.system, rc) : tab === 'users' ? matchUsersPanel(rc.musers || [], rc.muMsg)
     : targetsTab(d, rc);
   return h + (body || '<div class="panel"><p class="mut">Loading…</p></div>') + '</div>';
 }
@@ -3006,6 +3041,7 @@ async function refresh() {
         if (ok('/system')) S.rc.system = r['/system'].data;
         if (ok('/deeptens')) S.rc.dt = r['/deeptens'].data;
         if (ok('/displays')) S.rc.displays = r['/displays'].data;
+        if (ok('/lane-displays')) S.rc.ldisp = r['/lane-displays'].data;
         const up = r['/updates'];
         if (up && up.status === 200) {
           const msg = S.rc.updates && S.rc.updates.msg, check = S.rc.updates && S.rc.updates.last_check;
@@ -3440,6 +3476,41 @@ async function rangeAct(el, a) {
     else toast(res.data.error || 'Factory reset not sent');
     rc.tsOpen = null;
     return refresh();
+  }
+  if (/^rcld/.test(a)) {                            // Lane displays (laneDisplaysTab)
+    const L = rc.ldisp || {}, d = (L.displays || []).find(x => String(x.id) === el.dataset.id);
+    let res = null;
+    if (a === 'rcldpair') {
+      const f = rc.ldp = rc.ldp || {};
+      const code = (f.code || '').replace(/[\s-]/g, '').toUpperCase();
+      if (!code) { f.msg = 'Type the code the display shows'; return render(true); }
+      if (!f.target) { f.msg = 'Choose the target it shows'; return render(true); }
+      res = await adminCall('/lane-displays', {code: code, device_id: f.target, name: f.name || ''});
+      if (res.status !== 200) { f.msg = res.data.error || 'Not paired'; return render(true); }
+      const nd = (res.data.displays || []).find(x => x.device_id === f.target);
+      rc.ldp = null;
+      toast('Paired' + (nd ? ': ' + nd.name : '') + '. The display shows its target in a few seconds.');
+    }
+    if (a === 'rcldmove' && d) {
+      const to = (rc.ldmv || {})[d.id];
+      const other = (L.displays || []).find(x => x.device_id === to && x.id !== d.id);
+      if (!to || to === d.device_id) return;
+      if (other && !confirm('Move ' + d.name + '? ' + other.name + ' is on that target: it will be removed and show "Not assigned".')) return;
+      res = await adminCall('/lane-displays/' + d.id, {device_id: to});
+      if (res.status === 200) { delete rc.ldmv[d.id]; toast(d.name + ' moved'); }
+    }
+    if (a === 'rcldname' && d) {
+      const nm = prompt('Name for ' + d.name + ' (up to 40 characters):', d.name);
+      if (nm === null || !nm.trim()) return;
+      res = await adminCall('/lane-displays/' + d.id, {name: nm.trim()});
+    }
+    if (a === 'rcldrm' && d) {
+      if (!confirm('Remove ' + d.name + '? It will show "Not assigned" and a new code; type that code here to pair it again.')) return;
+      res = await adminCall('/lane-displays/' + d.id + '/delete', {});
+    }
+    if (res && res.status !== 200) toast(res.data.error || 'Not changed');
+    else if (res) rc.ldisp = res.data;
+    return render(true);
   }
   if (/^rcdv/.test(a)) {                            // TV displays: the saved views
     const D = rc.displays || {}, dv = rc.dv;
@@ -4281,6 +4352,13 @@ function boot() {
     if (el.dataset.dvsel && e.type === 'change') { dv[el.dataset.dvsel] = el.value ? +el.value : null; render(true); }
   };
   document.addEventListener('input', dvField); document.addEventListener('change', dvField);
+  const ldField = e => {                          // Range Control → Lane displays: the pairing form and the Move choices
+    const el = e.target;
+    if (!S.rc || !el.dataset) return;
+    if (el.dataset.ldk) { S.rc.ldp = S.rc.ldp || {}; S.rc.ldp[el.dataset.ldk] = el.value; S.rc.ldp.msg = ''; }
+    if (el.dataset.ldmv && e.type === 'change') { S.rc.ldmv = S.rc.ldmv || {}; S.rc.ldmv[el.dataset.ldmv] = el.value; render(true); }
+  };
+  document.addEventListener('input', ldField); document.addEventListener('change', ldField);
   setInterval(clockTick, 250);
   let pauseUntil = 0;
   setInterval(() => {                               // the scoreboard scrolls itself when it is taller than the screen
@@ -4350,7 +4428,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

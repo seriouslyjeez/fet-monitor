@@ -25,6 +25,7 @@ from .resultstore import ResultStore
 from .athletes import Athletes
 from .corrections import Corrections
 from .displays import Displays
+from .lanedisplays import LaneDisplays
 
 log = logging.getLogger("fetserver.core")
 STATUS_KEYS = ("up", "d", "q", "vr", "sl", "ps")      # a FeT target's status reply: counts, the measured trip point, asleep, the 12 V supply
@@ -166,6 +167,7 @@ class Core:
         self.displays = Displays(self)
         self.corrections = Corrections(self)
         self.athletes = Athletes(self)        # target sign-in (P2): deepTENS athletes signed in at lanes
+        self.lane_displays = LaneDisplays(self)   # CYD shot monitors, one per target (docs/PLAN-cyd.md)
         self.deeptens = None                  # the link to deepTENS (fetserver/deeptens.py), set by the server when it runs
 
     # ---- target bookkeeping -------------------------------------------------
@@ -1255,40 +1257,41 @@ class Core:
         rows = c.execute(
             """SELECT t.*, (SELECT COUNT(*) FROM shots s WHERE s.device_id=t.device_id) AS shot_count
                FROM targets t WHERE t.removed=0 AND t.banned=0 ORDER BY COALESCE(t.name, t.device_id), t.device_id""").fetchall()
-        out = []
-        for r in rows:
-            did = r["device_id"]
-            seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
-                            (did,)).fetchone()
-            ser = c.execute("SELECT * FROM series WHERE id=?", (seg["series_id"],)).fetchone() if seg and seg["series_id"] else None
-            mode = seg["mode"] if seg else "practice"
-            if ser is not None:
-                view = self._stream_view(c, ser, "sighter" if mode == "sighter" else "scored")
-            else:
-                view = self._empty_view(r, KIND_OF_MODE.get(mode, "match"))
-            lease = c.execute("SELECT * FROM leases WHERE device_id=?", (did,)).fetchone()
-            out.append({
-                "device_id": did, "name": r["name"] or did, "lane": r["lane"],
-                "online": (now - r["last_seen_ms"]) <= self.offline_after_ms,
-                "last_seen": iso(r["last_seen_ms"]), "last_seen_ms": r["last_seen_ms"],
-                "arduino_version": r["arduino_version"], "arduino_sn": r["arduino_sn"],
-                "bridge_fw": r["bridge_fw"], "rssi": r["rssi"], "queue_depth": r["queue_depth"],
-                "overflow_count": r["overflow_count"], "ip": r["last_ip"], "shot_count": r["shot_count"],
-                "calibre_x10": r["calibre_x10"],
-                "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "label": view["label"], "series_id": view["series_id"],
-                "settings": self._settings_view(r),
-                "lease": self._lease_view(lease, now, client_id), "view": view,
-                "match": self._match_info(c, did, now),
-                "v_ref": self._v_ref(c, r),
-                "power": self._power(r),
-                "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
-                # who is signed in (P2): everyone sees the name the athlete chose for public pages; only staff (Range
-                # Control, Match Control) and the deepTENS link see their full name, number and id (user, 2026-11-10)
-                "athlete": self.athletes.on(c, did) if staff else self.athletes.public_view(self.athletes.on(c, did)),
-                "signin_url": self.athletes.signin_url(did, r["lane"], now) if self.athletes.on(c, did) is None else None,
-                "claim": self.athletes.claim_view(did),             # a poster's claim waiting for a shot here (public name only)
-            })
-        return out
+        return [self.target_entry(c, r, now, client_id, staff) for r in rows]
+
+    def target_entry(self, c, r, now: int, client_id: Optional[str] = None, staff: bool = False) -> dict:
+        """One target as the screens see it (list_targets); r: its targets row with shot_count."""
+        did = r["device_id"]
+        seg = c.execute("SELECT * FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1",
+                        (did,)).fetchone()
+        ser = c.execute("SELECT * FROM series WHERE id=?", (seg["series_id"],)).fetchone() if seg and seg["series_id"] else None
+        mode = seg["mode"] if seg else "practice"
+        if ser is not None:
+            view = self._stream_view(c, ser, "sighter" if mode == "sighter" else "scored")
+        else:
+            view = self._empty_view(r, KIND_OF_MODE.get(mode, "match"))
+        lease = c.execute("SELECT * FROM leases WHERE device_id=?", (did,)).fetchone()
+        return {
+            "device_id": did, "name": r["name"] or did, "lane": r["lane"],
+            "online": (now - r["last_seen_ms"]) <= self.offline_after_ms,
+            "last_seen": iso(r["last_seen_ms"]), "last_seen_ms": r["last_seen_ms"],
+            "arduino_version": r["arduino_version"], "arduino_sn": r["arduino_sn"],
+            "bridge_fw": r["bridge_fw"], "rssi": r["rssi"], "queue_depth": r["queue_depth"],
+            "overflow_count": r["overflow_count"], "ip": r["last_ip"], "shot_count": r["shot_count"],
+            "calibre_x10": r["calibre_x10"],
+            "mode": mode, "kind": view["kind"], "shooter": view["shooter"], "label": view["label"], "series_id": view["series_id"],
+            "settings": self._settings_view(r),
+            "lease": self._lease_view(lease, now, client_id), "view": view,
+            "match": self._match_info(c, did, now),
+            "v_ref": self._v_ref(c, r),
+            "power": self._power(r),
+            "installed_face": F.face(r["face_id"]).id,          # the mask and faceplate on the target (Range Control)
+            # who is signed in (P2): everyone sees the name the athlete chose for public pages; only staff (Range
+            # Control, Match Control) and the deepTENS link see their full name, number and id (user, 2026-11-10)
+            "athlete": self.athletes.on(c, did) if staff else self.athletes.public_view(self.athletes.on(c, did)),
+            "signin_url": self.athletes.signin_url(did, r["lane"], now) if self.athletes.on(c, did) is None else None,
+            "claim": self.athletes.claim_view(did),             # a poster's claim waiting for a shot here (public name only)
+        }
 
     @staticmethod
     def _power(r) -> Optional[dict]:

@@ -160,3 +160,14 @@ Phones of different sizes (a small one, a large one, iPhone and Android) and a t
 - [ ] Linking to deepTENS: the code and its QR scan on a phone and link the Pi.
 - [ ] **TV**: a saved display on the range TV (dark): twelve or more lanes on one screen, readable from the back of
       the range; a final shows who goes out next.
+
+## Lane displays (Range Control → Lane displays; needs the CYD firmware, docs/PLAN-cyd.md step 3)
+- [ ] A display switched on shows a 6-character code; *Lane displays* says "1 display is showing a code now"; typing
+      the code (any case) and choosing a target pairs it, and the display shows that target within a few seconds.
+- [ ] A shot appears on the display within 5 seconds of the shot (stopwatch), with the same score as a phone on that lane.
+- [ ] Sign in at the display with athlete number and PIN; the QR code on the display signs in from a phone; a poster
+      claim shows its countdown and *Not you? Cancel* works.
+- [ ] In a match: the clock agrees with Match Control; *Start record* (and *Back to sighters* in an NRA Smallbore stage)
+      work from the display; sign out is refused until after the match.
+- [ ] Pair a second display on the same target: the first shows "Not assigned" and a new code. *Move* and *Remove* too.
+- [ ] Power the Pi off and on: the display reconnects by itself and keeps its target.

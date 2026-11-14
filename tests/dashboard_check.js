@@ -700,6 +700,30 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
   assert(X.linkLines({rssi: -60, fet_target: {asleep: true}, link: {phy_name: '802.11b', ps: 0, ps_name: 'off'}}).includes('Board: 802.11b · asleep (10 MHz clock off) · WiFi power save off'));
   assert(!X.linkLines({rssi: -55, link: null}).includes('drop') && X.linkLines({rssi: null, link: null}) === '', 'an ESP-01: the signal only');
 }
+// Lane displays: a CYD paired with one target (Range Control → Lane displays), from the real list
+{
+  assert(X.RC_TABS.some(t => t[0] === 'lanes' && t[1] === 'Lane displays') && X.rcTab('#/range/lanes') === 'lanes', 'a Range Control tab');
+  const L = D.ldisp, d1 = L.displays[0];
+  assert.strictEqual(L.waiting, 1);
+  const tab = X.laneDisplaysTab({ldisp: L, data: {targets: D.targets}});
+  assert(tab.includes('data-act="rcldpair"') && tab.includes('id="ld_code"') && tab.includes('1 display is showing a code now'), 'the pairing form and how many are waiting');
+  assert(tab.includes('&lt;b&gt;Front&lt;/b&gt;') && !tab.includes('<b>Front'), 'names escaped');
+  assert(!tab.includes('<img src=x'), 'target names escaped');
+  assert(tab.includes('(replaces &lt;b&gt;Front&lt;/b&gt;)'), 'a target that has a display says it will be replaced');
+  assert(tab.includes('cyd-7e08f8 · 0.1.0') && tab.includes('livedot on'), 'the display, its version, online');
+  assert(new RegExp('data-act="rcldmove" data-id="' + d1.id + '" disabled').test(tab), 'Move waits for another target');
+  const moved = X.laneDisplaysTab({ldisp: L, data: {targets: D.targets}, ldmv: {[d1.id]: 'lane-3'}});
+  assert(!new RegExp('data-act="rcldmove" data-id="' + d1.id + '" disabled').test(moved) && /value="lane-3" selected/.test(moved), 'another target chosen: Move');
+  assert(new RegExp('data-ldmv="' + d1.id + '"[^]*?value="lane-1" selected').test(tab), 'its own target chosen');
+  const typed = X.laneDisplaysTab({ldisp: L, data: {targets: D.targets}, ldp: {code: 'k7m2qx', target: 'lane-2', name: 'x', msg: 'no display is showing that code'}});
+  assert(typed.includes('value="k7m2qx"') && /value="lane-2" selected/.test(typed) && typed.includes('class="bad">no display is showing that code'), 'what was typed survives a redraw; the error shows');
+  assert(X.laneDisplaysTab({ldisp: {displays: [], waiting: 0}, data: {targets: []}}).includes('No targets yet'));
+  assert(X.laneDisplaysTab({ldisp: {displays: [], waiting: 0}, data: {targets: D.targets}}).includes('No lane displays yet'));
+  assert(X.laneDisplaysTab({}).includes('Loading'));
+  assert.deepStrictEqual([X.ldTargetLabel({lane: 4, name: 'Lane 4'}), X.ldTargetLabel({lane: 4, name: 'North'}), X.ldTargetLabel({lane: null, name: 'Spare'}),
+                         X.ldTargetLabel({lane: 2, device_id: 'fet-704131', name: 'fet-704131'})], ['Lane 4', 'Lane 4 · North', 'Spare', 'Lane 2'], 'no "Lane 4 · Lane 4"');
+  assert(X.laneDisplaysTab({ldisp: {displays: [Object.assign({}, d1, {online: false, last_seen_ms: null})], waiting: 0}, data: {targets: D.targets}}).includes('Not seen yet'));
+}
 // TV displays: saved views (Range Control → TV displays), read only at http://<pi>/<code>
 {
   assert(X.RC_TABS.some(t => t[0] === 'tv' && t[1] === 'TV displays'), 'a Range Control tab');

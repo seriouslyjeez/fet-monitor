@@ -535,6 +535,21 @@ MIGRATIONS = [
     ALTER TABLE shot_decisions ADD COLUMN note TEXT;
     ALTER TABLE unplaced ADD COLUMN decision_note TEXT;
     """,
+    """
+    -- Lane displays (docs/PLAN-cyd.md, user 2026-11-13): a CYD shot monitor paired with one target by Range Control.
+    -- One per target (a new one replaces it) and one target per display. Only the token's SHA-256 is kept.
+    CREATE TABLE lane_displays (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT NOT NULL,
+        hw_id       TEXT NOT NULL,
+        device_id   TEXT NOT NULL,
+        token_hash  TEXT NOT NULL UNIQUE,
+        created_ms  INTEGER NOT NULL,
+        updated_ms  INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX lane_displays_target ON lane_displays (device_id);
+    CREATE UNIQUE INDEX lane_displays_hw ON lane_displays (hw_id);
+    """,
 ]
 
 

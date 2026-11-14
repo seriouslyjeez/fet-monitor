@@ -19,6 +19,7 @@ from .admin import ADMIN_MAX_S, COOKIE, COOKIE_PATH, MATCH_COOKIE, MATCH_COOKIE_
 from .corrections import OFFICER_KINDS
 from .matches import MatchError
 from .athletes import SigninError
+from .lanedisplays import DisplayError, NotAssigned
 from .core import BadRequest, Core, Forbidden, LaneTaken, NotFound, iso
 from .deeptens import DeepTens, LinkError
 from fetcore import faces as F
@@ -55,6 +56,7 @@ ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$
 ADMIN_TFW_DELETE_RE = re.compile(r"^/api/v1/admin/target-firmware/([0-9a-f]{64})/delete$")
 DISPLAY_PAGE_RE = re.compile(r"^/([A-Za-z0-9]{5})/?$")                    # a TV display's address (displays.py)
 DISPLAY_RE = re.compile(r"^/api/v1/displays/([A-Za-z0-9]{5})$")
+ADMIN_LANE_DISPLAY_RE = re.compile(r"^/api/v1/admin/lane-displays/(\d{1,9})(/delete)?$")
 ADMIN_DISPLAY_RE = re.compile(r"^/api/v1/admin/displays/([A-Za-z0-9]{5})(/delete)?$")
 DEVICE_FW_RE = re.compile(r"^/api/v1/firmware/([0-9a-f]{64})$")
 DEVICE_FW_CHUNK = 16 * 1024
@@ -194,6 +196,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def _bearer(self) -> Optional[str]:
+        h = self.headers.get("Authorization", "")
+        return h[7:].strip() if h.startswith("Bearer ") else None
+
+    def _lane_display(self, fn):
+        """A lane display's request (lanedisplays.py): 401 with "pairing" when its token is not (yet) a display's."""
+        try:
+            return self._send(200, fn())
+        except NotAssigned as exc:
+            return self._send(401, {"error": "not assigned", "pairing": exc.pairing})
+        except (DisplayError, SigninError, MatchError) as exc:
+            return self._send(400, {"error": str(exc)})
 
     def _admin_request_ok(self) -> bool:
         """Only our own page may call the admin API: a custom header (a cross-site page cannot send one without a
@@ -762,6 +777,24 @@ class Handler(BaseHTTPRequestHandler):
             log.info("Range Control from %s: TV display %s %s", self.client_address[0], ad.group(1) if ad else code,
                      "deleted" if code is None else "saved")
             return self._send(200, {"code": code, "displays": core.displays.list()})
+        if path == "/api/v1/admin/lane-displays" and method == "GET":     # lane displays (CYD), lanedisplays.py
+            return self._send(200, core.lane_displays.list())
+        ld = ADMIN_LANE_DISPLAY_RE.match(path)
+        if (path == "/api/v1/admin/lane-displays" or ld) and method == "POST":
+            try:
+                if ld and ld.group(2):
+                    core.lane_displays.remove(int(ld.group(1)))
+                    what = "removed"
+                elif ld:
+                    core.lane_displays.change(int(ld.group(1)), payload.get("device_id"), payload.get("name"))
+                    what = "changed"
+                else:
+                    d = core.lane_displays.approve(payload.get("code"), payload.get("device_id"), payload.get("name"))
+                    what = "paired: %s on %s" % (d["hw_id"], d["device_id"])
+            except DisplayError as exc:
+                return self._send(404 if str(exc) == "no such display" else 400, {"error": str(exc)})
+            log.info("Range Control from %s: lane display %s", self.client_address[0], what)
+            return self._send(200, core.lane_displays.list())
         if path == "/api/v1/admin/match-users" and method == "GET":
             return self._send(200, {"users": core.matches.users()})
         if path == "/api/v1/admin/match-users" and method == "POST":
@@ -961,6 +994,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._device_firmware(dm.group(1))
         if url.path == "/api/v1/stream":
             return self._stream()
+        if url.path == "/api/v1/display/view":         # a lane display (CYD): its target's view, long poll with ?rev=&wait=
+            try:
+                wait = float(q.get("wait", ["0"])[0])
+            except ValueError:
+                raise BadRequest("wait: seconds")
+            ld = core.lane_displays
+            return self._lane_display(lambda: ld.wait_view(self._bearer(), q.get("rev", [None])[0], wait,
+                                                           fw=self.headers.get("X-FET-Display-FW"), ip=self.client_address[0],
+                                                           stopping=lambda: self.server.stopping))
         if url.path == "/api/v1/faces":                # public: the target faces (fetcore/faces.py)
             return self._send(200, {"faces": [F.view(f) for f in F.FACES.values()], "default": F.DEFAULT_FACE})
         if url.path == "/api/v1/rulebooks":            # public: the rulebooks, their local copies and the publishers' pages
@@ -1106,6 +1148,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._admin(url.path, "POST")
         if url.path.startswith("/api/v1/match/"):
             return self._match(url.path, "POST")
+        if url.path == "/api/v1/display/pair":         # a lane display asks for a code to show (no login: Range Control types it)
+            payload = self._read_json()
+            if not isinstance(payload, dict):
+                raise BadRequest("body must be an object")
+            return self._lane_display(lambda: core.lane_displays.pair(payload.get("hw_id"), payload.get("fw")))
+        if url.path == "/api/v1/display/action":       # a lane display's button (its token)
+            payload = self._read_json()
+            return self._lane_display(lambda: core.lane_displays.act(self._bearer(), payload, ip=self.client_address[0]))
         if url.path == "/api/v1/signin/offline":
             if not self._admin_request_ok():
                 self.rfile.read(min(int(self.headers.get("Content-Length", "0") or 0), MAX_BODY))

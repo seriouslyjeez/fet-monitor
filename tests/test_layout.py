@@ -322,7 +322,10 @@ return {labels, overflow: overflow(), msg: (document.querySelector('.fmted .bad'
     def test_range_control_on_a_phone_and_a_tablet(self):
         self.range_of(3)
         cookie = self.range_manager()
-        pages = [("/#/range/" + t, "") for t in ("targets", "firmware", "flash", "tv", "pi", "users")] + [
+        ld = self.core.lane_displays                          # Lane displays: one paired (its card), one showing a code
+        ld.approve(ld.pair("cyd-7e08f8", "0.1.0")["code"], "lane-2", "Lane 2 screen")
+        ld.pair("cyd-waiting")
+        pages = [("/#/range/" + t, "") for t in ("targets", "firmware", "flash", "tv", "lanes", "pi", "users")] + [
             ("/#/range", "document.querySelector('[data-act=rctopen]').click(); await sleep(400);"), ("/#/about", "")] + [
             ("/#/range/flash", "document.querySelector('[data-act=rcwiz][data-k=%s]').click(); await sleep(300);" % k +     # the flash station step by step
              "for (let i = 0; i < %d; i++) { document.querySelector('[data-act=rcwizstep][data-d=\"1\"]').click(); await sleep(250); }" % n)
@@ -338,6 +341,46 @@ return {labels, overflow: overflow(), msg: (document.querySelector('.fmted .bad'
                 v = self.look(path, PHONE, "light", "await sleep(800);" + self.RC_SMALL)
                 self.assertFalse(v["overflow"])
                 self.assertEqual(v["small"], [])
+
+    def test_pairing_a_lane_display(self):
+        """Range Control → Lane displays: the code the display shows and its target, Pair: it is on the list, and the
+        display's token shows that target. Then moved to another target, which says it replaces the display there."""
+        self.range_of(3)
+        cookie = self.range_manager()
+        ld = self.core.lane_displays
+        p = ld.pair("cyd-7e08f8", "0.1.0")
+        other = ld.pair("cyd-other")
+        ld.approve(other["code"], "lane-3", "Other")
+        code = p["code"][:3].lower() + "-" + p["code"][3:].lower()      # as someone might type it
+        v = self.look("/#/range/lanes", PHONE, "light", r"""
+            await sleep(1200);
+            const set = (sel, val) => { const el = document.querySelector(sel); el.value = val; el.dispatchEvent(new Event('input', {bubbles: true})); el.dispatchEvent(new Event('change', {bubbles: true})); };
+            set('#ld_code', %s); set('#ld_target', 'lane-1'); set('#ld_name', 'Lane 1 screen');
+            document.querySelector('[data-act=rcldpair]').click();
+            await sleep(800);
+            const cards = Array.from(document.querySelectorAll('.dvcards li')).map(li => li.textContent);
+            const sel = document.querySelector('.dvcards [data-ldmv]');
+            return {cards: cards, codeLeft: document.querySelector('#ld_code').value, err: (document.querySelector('.rc .bad') || {}).textContent || '',
+                    replaces: Array.from(document.querySelectorAll('#ld_target option')).map(o => o.textContent).filter(t => t.includes('replaces'))};
+        """ % json.dumps(code), cookie=cookie)
+        self.assertEqual(v["err"], "")
+        self.assertTrue(any("Lane 1 screen" in c and "cyd-7e08f8" in c for c in v["cards"]), v["cards"])
+        self.assertEqual(v["codeLeft"], "", "the form is cleared after pairing")
+        self.assertTrue(any("Other" in t for t in v["replaces"]), "a target with a display says pairing replaces it")
+        st = ld.view(ld.auth(p["token"]))
+        self.assertEqual((st["target"]["device_id"], st["display"]["name"]), ("lane-1", "Lane 1 screen"), "the display shows its target")
+        did = next(d["id"] for d in ld.list()["displays"] if d["hw_id"] == "cyd-7e08f8")
+        v = self.look("/#/range/lanes", PHONE, "light", r"""
+            await sleep(1200);
+            const set = (sel, val) => { const el = document.querySelector(sel); el.value = val; el.dispatchEvent(new Event('change', {bubbles: true})); };
+            set('.dvcards [data-ldmv="%d"]', 'lane-2');
+            await sleep(300);
+            document.querySelector('[data-act=rcldmove][data-id="%d"]').click();
+            await sleep(800);
+            return {cards: Array.from(document.querySelectorAll('.dvcards li')).map(li => li.textContent)};
+        """ % (did, did), cookie=cookie)
+        self.assertEqual(ld.view(ld.auth(p["token"]))["target"]["device_id"], "lane-2", "moved")
+        self.assertTrue(any("Lane 2" in c and "Lane 1 screen" in c for c in v["cards"]), v["cards"])
 
     def test_one_target_changed_from_its_sheet(self):
         self.range_of(2)
