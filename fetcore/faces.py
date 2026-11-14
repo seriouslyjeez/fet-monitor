@@ -21,28 +21,30 @@ International Pistol Rules 2025 (B-40 = the ISSF air pistol target).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from decimal import Decimal
 from typing import Dict, Optional, Tuple
+
+from .exact import parts
 
 TU_PER_MM = 10_000
 TU_PER_INCH = 254_000
 TU_PER_H = 100                     # a shot's coordinates: hundredths of a millimetre
 
 
+def _tu(v: str, per: int, unit: str) -> int:
+    neg, mant, exp = parts(v)                       # exact: integer mantissa and power of ten
+    num, den = mant * per * 10 ** max(exp, 0), 10 ** max(-exp, 0)
+    if num % den:
+        raise ValueError(f"{v} {unit} is finer than 0.1 um")
+    return -(num // den) if neg else num // den
+
+
 def mm(v: str) -> int:
     """A length in millimetres, as printed in the rulebook, to tu (exact)."""
-    t = Decimal(v) * TU_PER_MM
-    if t != t.to_integral_value():
-        raise ValueError(f"{v} mm is finer than 0.1 um")
-    return int(t)
+    return _tu(v, TU_PER_MM, "mm")
 
 
 def inch(v: str) -> int:
-    t = Decimal(v) * TU_PER_INCH
-    if t != t.to_integral_value():
-        raise ValueError(f"{v} in is finer than 0.1 um")
-    return int(t)
+    return _tu(v, TU_PER_INCH, "in")
 
 
 # How the inner ten (X, center shot) is decided:
@@ -55,24 +57,40 @@ def inch(v: str) -> int:
 INNER_KINDS = ("touch", "cover", "a17")
 
 
-@dataclass(frozen=True)
 class Face:
-    id: str
-    name: str
-    rule: str                                   # where the dimensions come from
-    rings: Tuple[Tuple[int, int], ...]          # (ring value, outer diameter in tu), 10 first, down to the lowest ring
-    projectile: int                             # the projectile (gauge) diameter this face is scored with, tu
-    black: int                                  # diameter of the aiming black, tu
-    inner: Optional[Tuple[str, int]] = None     # (kind, diameter tu); None: no inner ten / X on this face
-    white_ten: bool = False                     # the ten is a white dot in the black (10 m air rifle)
-    decimal: bool = True                        # the rulebook scores this face in tenths on electronic targets
-    unit: str = "mm"                            # the unit the rulebook gives it in (for showing its dimensions)
-    note: str = ""
-    bull: int = 10                              # record shots per bull on the paper target (NRA tie-breaks by bull, 15.7)
-    higher: Optional[str] = None                # X's of higher value (NRA 14.3 e, g): "inside" the X ring, or the hole "covers" the ten
-    by_value: Dict[int, int] = field(default_factory=dict, compare=False, repr=False)
+    """A target face (read only once made). A plain class, not a dataclass: fetcore also runs on MicroPython.
+    rule: where the dimensions come from; rings: (ring value, outer diameter in tu), 10 first, down to the lowest
+    ring; projectile: the projectile (gauge) diameter this face is scored with, tu; black: diameter of the aiming
+    black, tu; inner: (kind, diameter tu), None: no inner ten / X on this face; white_ten: the ten is a white dot in
+    the black (10 m air rifle); decimal: the rulebook scores this face in tenths on electronic targets; unit: the unit
+    the rulebook gives it in (for showing its dimensions); bull: record shots per bull on the paper target (NRA
+    tie-breaks by bull, 15.7); higher: X's of higher value (NRA 14.3 e, g): "inside" the X ring, or the hole "covers"
+    the ten."""
+    FIELDS = ("id", "name", "rule", "rings", "projectile", "black", "inner", "white_ten", "decimal", "unit", "note",
+              "bull", "higher")
 
-    def __post_init__(self):
+    def __init__(self, id: str, name: str, rule: str, rings: Tuple[Tuple[int, int], ...], projectile: int, black: int,
+                 inner: Optional[Tuple[str, int]] = None, white_ten: bool = False, decimal: bool = True,
+                 unit: str = "mm", note: str = "", bull: int = 10, higher: Optional[str] = None):
+        self.id, self.name, self.rule, self.rings = id, name, rule, rings
+        self.projectile, self.black, self.inner, self.white_ten = projectile, black, inner, white_ten
+        self.decimal, self.unit, self.note, self.bull, self.higher = decimal, unit, note, bull, higher
+        self.by_value: Dict[int, int] = {}
+        self._check()
+
+    def _key(self):
+        return tuple(getattr(self, k) for k in self.FIELDS)
+
+    def __eq__(self, other):
+        return isinstance(other, Face) and self._key() == other._key()
+
+    def __hash__(self):
+        return hash(self._key())
+
+    def __repr__(self):
+        return "Face(%s)" % ", ".join("%s=%r" % (k, getattr(self, k)) for k in self.FIELDS)
+
+    def _check(self):
         vals = [v for v, _ in self.rings]
         dias = [d for _, d in self.rings]
         if vals != list(range(10, 10 - len(vals), -1)) or not vals:
@@ -95,11 +113,24 @@ class Face:
         return (self.by_value[8] - self.by_value[9]) // 2 if 8 in self.by_value else self.by_value[9] // 2
 
 
-@dataclass(frozen=True)
 class FaceScore:
-    ring: int          # 0 = a miss (off the scoring rings)
-    tenths: int        # decimal x 10 (0 for a miss); 109 at the centre
-    inner: bool        # inner ten / X / center shot
+    """ring: 0 = a miss (off the scoring rings); tenths: decimal x 10 (0 for a miss), 109 at the centre; inner: inner
+    ten / X / center shot."""
+    __slots__ = ("ring", "tenths", "inner")
+
+    def __init__(self, ring: int, tenths: int, inner: bool):
+        self.ring = ring
+        self.tenths = tenths
+        self.inner = inner
+
+    def __eq__(self, other):
+        return isinstance(other, FaceScore) and (self.ring, self.tenths, self.inner) == (other.ring, other.tenths, other.inner)
+
+    def __hash__(self):
+        return hash((self.ring, self.tenths, self.inner))
+
+    def __repr__(self):
+        return "FaceScore(ring=%r, tenths=%r, inner=%r)" % (self.ring, self.tenths, self.inner)
 
     @property
     def decimal(self) -> float:

@@ -14,8 +14,7 @@ Rules implemented (see the project spec, section 7):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from .exact import to_hundredths  # noqa: F401  (exact text to hundredths; was decimal ROUND_HALF_UP here)
 
 SCORING_VERSION = 1
 # Inner ten (X) for 10 m air rifle: a 4.5 mm pellet covers the whole 0.5 mm ten dot when its centre is within
@@ -24,10 +23,22 @@ INNER_TEN_MIN_TENTHS = 102
 DEFAULT_PELLET_DIA_H = 450  # 4.5 mm in hundredths of a millimetre
 
 
-@dataclass(frozen=True)
 class Score:
-    ring: int    # 0..10; 0 means off the scoring rings (a miss)
-    tenths: int  # decimal score x 10, 0..109
+    """ring: 0..10, 0 means off the scoring rings (a miss); tenths: decimal score x 10, 0..109."""
+    __slots__ = ("ring", "tenths")
+
+    def __init__(self, ring: int, tenths: int):
+        self.ring = ring
+        self.tenths = tenths
+
+    def __eq__(self, other):
+        return isinstance(other, Score) and (self.ring, self.tenths) == (other.ring, other.tenths)
+
+    def __hash__(self):
+        return hash((self.ring, self.tenths))
+
+    def __repr__(self):
+        return "Score(ring=%r, tenths=%r)" % (self.ring, self.tenths)
 
     @property
     def decimal(self) -> float:
@@ -35,12 +46,6 @@ class Score:
 
 
 MISS = Score(0, 0)
-
-
-def to_hundredths(value) -> int:
-    """Convert a millimetre value (Decimal, int, float or str) to integer hundredths."""
-    d = value if isinstance(value, Decimal) else Decimal(str(value))
-    return int((d * 100).to_integral_value(rounding=ROUND_HALF_UP))
 
 
 def ring_outer_radius_h(ring: int) -> int:

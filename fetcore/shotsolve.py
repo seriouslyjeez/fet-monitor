@@ -18,12 +18,16 @@ the yardstick, and the way to read shots FeT Monitor has stored from upstream fi
 """
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
+
+from . import fmath
 
 N, E, S, W = 0, 1, 2, 3
 NAMES = "NESW"
+
+
+def _sq(v: float) -> float:
+    return v * v                     # not v ** 2: float ** goes to the C library's pow, which differs by machine
 
 
 def speed_of_sound(temp_c: float, rh: float = 50.0) -> float:
@@ -32,26 +36,53 @@ def speed_of_sound(temp_c: float, rh: float = 50.0) -> float:
     if temp_c < 0:
         rh = 0
     tk = 273.15 + temp_c
-    vp = math.exp((-7511.52 / tk) + 96.5389644 + 0.02399897 * tk - 0.000011654551 * tk * tk
-                  - 0.000000012810336 * tk ** 3 + 0.000000000020998405 * tk ** 4 - 12.150799 * math.log(tk))
+    tk2 = tk * tk
+    vp = fmath.exp((-7511.52 / tk) + 96.5389644 + 0.02399897 * tk - 0.000011654551 * tk2
+                   - 0.000000012810336 * (tk2 * tk) + 0.000000000020998405 * (tk2 * tk2) - 12.150799 * fmath.log(tk))
     mf = 0.01 * rh * vp / 101325.0
     shr = (7.0 + mf) / (5.0 + mf)
     mmw = m - (m - 18.01528) * mf
-    change = (1.0 / math.sqrt(1.4 / m) * 100.0) * math.sqrt(shr / mmw) - 100.0
+    change = (1.0 / fmath.sqrt(1.4 / m) * 100.0) * fmath.sqrt(shr / mmw) - 100.0
     gamma = 1.40092 - 0.0000196395 * temp_c - 0.000000162593 * temp_c * temp_c
-    return (math.sqrt(gamma * r * tk / m) + (c0 / 100.0) * change) / 1000.0
+    return (fmath.sqrt(gamma * r * tk / m) + (c0 / 100.0) * change) / 1000.0
 
 
-@dataclass
 class Geometry:
     """Where the microphones are (sensor frame, mm: N on +y, E on +x) and how the target turns that into the target
     frame (angle_deg, counter-clockwise). clock_mhz: counter clock (Mega 8). walk_ticks: threshold delay at 100 mm
-    in counter ticks (freETarget's DOPPLER)."""
-    sensors: List[Tuple[float, float]]
-    z_mm: float = 13.0
-    angle_deg: float = 45.0
-    clock_mhz: float = 8.0
-    walk_ticks: float = 50.0
+    in counter ticks (freETarget's DOPPLER). A plain class (no dataclass): fetcore also runs on MicroPython."""
+    FIELDS = ("sensors", "z_mm", "angle_deg", "clock_mhz", "walk_ticks")
+
+    def __init__(self, sensors: List[Tuple[float, float]], z_mm: float = 13.0, angle_deg: float = 45.0,
+                 clock_mhz: float = 8.0, walk_ticks: float = 50.0):
+        self.sensors = sensors
+        self.z_mm = z_mm
+        self.angle_deg = angle_deg
+        self.clock_mhz = clock_mhz
+        self.walk_ticks = walk_ticks
+
+    def __eq__(self, other):
+        return isinstance(other, Geometry) and all(getattr(self, k) == getattr(other, k) for k in self.FIELDS)
+
+    def __repr__(self):
+        return "Geometry(%s)" % ", ".join("%s=%r" % (k, getattr(self, k)) for k in self.FIELDS)
+
+    def replace(self, **changes) -> "Geometry":
+        """A copy with some fields changed (dataclasses.replace)."""
+        kw = {k: getattr(self, k) for k in self.FIELDS}
+        for k, v in changes.items():
+            if k not in kw:
+                raise TypeError("Geometry has no field %r" % k)
+            kw[k] = v
+        return Geometry(**kw)
+
+    def at_rate(self, rate_hz: Optional[int]) -> "Geometry":
+        """The geometry for counts at rate_hz (a shot line's r=): that clock, and the threshold delay walk_ticks kept
+        the same in microseconds. None: unchanged (the board revision's clock)."""
+        if rate_hz is None:
+            return self
+        mhz = rate_hz / 1e6
+        return self.replace(clock_mhz=mhz, walk_ticks=self.walk_ticks * mhz / self.clock_mhz)
 
     @classmethod
     def from_upstream(cls, settings: Optional[dict] = None, clock_mhz: float = 8.0) -> "Geometry":
@@ -66,30 +97,44 @@ class Geometry:
                    clock_mhz=clock_mhz, walk_ticks=float(s.get("DOPPLER", 50)))
 
     def to_target(self, x: float, y: float) -> Tuple[float, float]:
-        a = math.radians(self.angle_deg)
-        return x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)
+        a = fmath.radians(self.angle_deg)
+        return x * fmath.cos(a) - y * fmath.sin(a), x * fmath.sin(a) + y * fmath.cos(a)
 
     def to_sensor(self, x: float, y: float) -> Tuple[float, float]:
-        a = math.radians(-self.angle_deg)
-        return x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)
+        a = fmath.radians(-self.angle_deg)
+        return x * fmath.cos(a) - y * fmath.sin(a), x * fmath.sin(a) + y * fmath.cos(a)
 
 
-@dataclass
 class Solution:
-    ok: bool
-    reason: str = ""                       # why not ok
-    x: float = 0.0                         # target frame, mm
-    y: float = 0.0
-    sensor_xy: Tuple[float, float] = (0.0, 0.0)
-    residual_us: Optional[float] = None    # largest misfit of one microphone; None with only three microphones
-    residual_mm: Optional[float] = None    # the same as a distance
-    used: str = ""                         # microphones used, e.g. "NESW"
-    iterations: int = 0
-    residuals: List[float] = field(default_factory=list)
+    """ok; reason (why not ok); x, y (target frame, mm); sensor_xy; residual_us (the largest misfit of one microphone,
+    None with only three microphones) and residual_mm (the same as a distance); used (microphones, e.g. "NESW");
+    iterations; residuals."""
+    FIELDS = ("ok", "reason", "x", "y", "sensor_xy", "residual_us", "residual_mm", "used", "iterations", "residuals")
+
+    def __init__(self, ok: bool, reason: str = "", x: float = 0.0, y: float = 0.0,
+                 sensor_xy: Tuple[float, float] = (0.0, 0.0), residual_us: Optional[float] = None,
+                 residual_mm: Optional[float] = None, used: str = "", iterations: int = 0,
+                 residuals: Optional[List[float]] = None):
+        self.ok = ok
+        self.reason = reason
+        self.x = x
+        self.y = y
+        self.sensor_xy = sensor_xy
+        self.residual_us = residual_us
+        self.residual_mm = residual_mm
+        self.used = used
+        self.iterations = iterations
+        self.residuals = [] if residuals is None else residuals
+
+    def __eq__(self, other):
+        return isinstance(other, Solution) and all(getattr(self, k) == getattr(other, k) for k in self.FIELDS)
+
+    def __repr__(self):
+        return "Solution(%s)" % ", ".join("%s=%r" % (k, getattr(self, k)) for k in self.FIELDS)
 
     @property
     def radius(self) -> float:
-        return math.hypot(self.x, self.y)
+        return fmath.hypot(self.x, self.y)
 
 
 def forward(x: float, y: float, geom: Geometry, temp_c: float = 20.0, rh: float = 50.0,
@@ -99,8 +144,8 @@ def forward(x: float, y: float, geom: Geometry, temp_c: float = 20.0, rh: float 
     k_us = geom.walk_ticks / geom.clock_mhz
     out = []
     for (sx, sy) in geom.sensors:
-        d = math.hypot(x - sx, y - sy)
-        arrival_us = math.sqrt(d * d + geom.z_mm ** 2) / c + k_us * (d / 100.0) ** 2
+        d = fmath.hypot(x - sx, y - sy)
+        arrival_us = fmath.sqrt(d * d + geom.z_mm * geom.z_mm) / c + k_us * (d / 100.0) * (d / 100.0)
         v = t0_ticks - arrival_us * geom.clock_mhz
         out.append(float(round(v)) if quantise else v)
     return out
@@ -130,7 +175,7 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
     if len(idx) < 3:
         return Solution(False, f"only {len(idx)} microphones triggered", used=used)
     for i in idx:
-        if not math.isfinite(timers[i]):
+        if not fmath.isfinite(timers[i]):
             return Solution(False, "a counter value is not a number", used=used)
     c = speed_of_sound(temp_c, rh)
     k = geom.walk_ticks / geom.clock_mhz                                 # us at 100 mm
@@ -145,16 +190,16 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
     for j in range(1, len(idx)):
         xj, yj = p[j]
         rows.append([-2 * (xj - x0), -2 * (yj - y0), 2 * c * c * (tau[j] - tau[0])])
-        rhs.append(c * c * (tau[j] ** 2 - tau[0] ** 2) - (xj * xj + yj * yj - x0 * x0 - y0 * y0))
+        rhs.append(c * c * (tau[j] * tau[j] - tau[0] * tau[0]) - (xj * xj + yj * yj - x0 * x0 - y0 * y0))
     if len(rows) == 3:
         start = _solve3(rows, rhs)
     else:                                                                # three microphones: least squares in x, y
         start = None
     if start is None:                                                    # with three, or degenerate: from the centre
-        start = [0.0, 0.0, min(t - math.hypot(px, py) / c for t, (px, py) in zip(tau, p))]
+        start = [0.0, 0.0, min(t - fmath.hypot(px, py) / c for t, (px, py) in zip(tau, p))]
     x, y, t0 = start
-    if not all(map(math.isfinite, (x, y, t0))) or math.hypot(x, y) > 10 * max(math.hypot(*s) for s in p):
-        x, y, t0 = 0.0, 0.0, min(t - math.hypot(px, py) / c for t, (px, py) in zip(tau, p))
+    if not all(map(fmath.isfinite, (x, y, t0))) or fmath.hypot(x, y) > 10 * max(fmath.hypot(*s) for s in p):
+        x, y, t0 = 0.0, 0.0, min(t - fmath.hypot(px, py) / c for t, (px, py) in zip(tau, p))
 
     lam = 1e-6
     it = 0
@@ -163,9 +208,9 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
         res, jac = [], []
         for (px, py), t in zip(p, tau):
             dx, dy = x - px, y - py
-            d = math.hypot(dx, dy)
-            sl = math.sqrt(d * d + geom.z_mm ** 2)
-            res.append(t0 + sl / c + k * (d / 100.0) ** 2 - t)
+            d = fmath.hypot(dx, dy)
+            sl = fmath.sqrt(d * d + geom.z_mm * geom.z_mm)
+            res.append(t0 + sl / c + k * (d / 100.0) * (d / 100.0) - t)
             jac.append([dx / (c * sl) + 2 * k * dx / 1e4, dy / (c * sl) + 2 * k * dy / 1e4, 1.0])
         return res, jac
 
@@ -187,11 +232,11 @@ def solve(timers: Sequence[Optional[float]], geom: Geometry, temp_c: float = 20.
             lam *= 10
         x, y, t0, res, jac, cost = nx, ny, nt, nres, njac, ncost
         lam = max(lam / 10, 1e-9)
-        if math.hypot(step[0], step[1]) < 1e-7:
+        if fmath.hypot(step[0], step[1]) < 1e-7:
             break
     else:
         return Solution(False, "did not converge", used=used, iterations=it)
-    if not all(map(math.isfinite, (x, y))):
+    if not all(map(fmath.isfinite, (x, y))):
         return Solution(False, "did not converge", used=used, iterations=it)
     tx, ty = geom.to_target(x, y)
     worst = max(abs(r) for r in res) if len(idx) == 4 else None
@@ -211,59 +256,59 @@ def upstream_solve(timers: Sequence[float], geom: Geometry, temp_c: float = 20.0
     sy = [py / c * osc for _, py in geom.sensors]
     zc = geom.z_mm * osc / c
     ctm = c / osc
-    dia = 2 * math.hypot(*geom.sensors[N])                     # SENSOR (nominal ring); offsets are small
+    dia = 2 * fmath.hypot(*geom.sensors[N])                     # SENSOR (nominal ring); offsets are small
     shx = shy = 0.0
     est = dia / 2 * osc
     err, n = 1e9, 0
     cnt = list(timers)
     while err > 0.001:
-        dop = [int(geom.walk_ticks * (math.hypot(px - shx, py - shy) / 100.0) ** 2 + 0.5) for px, py in geom.sensors]
+        dop = [int(geom.walk_ticks * _sq(fmath.hypot(px - shx, py - shy) / 100.0) + 0.5) for px, py in geom.sensors]
         cnt = [timers[i] + dop[i] for i in range(4)]
         largest = max(cnt)
         trig = cnt.index(largest)
         cnt = [largest - v for v in cnt]
         b = cnt[:]
-        cc = [math.hypot(sx[i] - sx[(i + 1) % 4], sy[i] - sy[(i + 1) % 4]) for i in range(4)]
+        cc = [fmath.hypot(sx[i] - sx[(i + 1) % 4], sy[i] - sy[(i + 1) % 4]) for i in range(4)]
         a = [b[(i + 1) % 4] for i in range(4)]
         last = est
         xa = ya = 0.0
         for i in range(4):
-            va = (a[i] + est) ** 2 - zc ** 2
-            vb = (b[i] + est) ** 2 - zc ** 2
-            ae = math.sqrt(va) if va >= 0 else math.nan       # upstream: sqrt of a negative, its "fix" is a no-op
-            be = math.sqrt(vb) if vb >= 0 else math.nan
+            va = _sq(a[i] + est) - zc * zc
+            vb = _sq(b[i] + est) - zc * zc
+            ae = fmath.sqrt(va) if va >= 0 else fmath.nan       # upstream: sqrt of a negative, its "fix" is a no-op
+            be = fmath.sqrt(vb) if vb >= 0 else fmath.nan
             if ae + be < cc[i]:
                 ang = 0.0
             else:
-                q = (ae * ae - be * be - cc[i] ** 2) / (-2 * be * cc[i])
-                ang = math.acos(q) if -1 <= q <= 1 else math.nan
+                q = (ae * ae - be * be - cc[i] * cc[i]) / (-2 * be * cc[i])
+                ang = fmath.acos(q) if -1 <= q <= 1 else fmath.nan
             if i == N:
-                r = math.pi / 4 - ang
-                xr, yr = sx[i] + be * math.sin(r), sy[i] - be * math.cos(r)
+                r = fmath.pi / 4 - ang
+                xr, yr = sx[i] + be * fmath.sin(r), sy[i] - be * fmath.cos(r)
             elif i == E:
-                r = ang - math.pi / 4
-                xr, yr = sx[i] - be * math.cos(r), sy[i] + be * math.sin(r)
+                r = ang - fmath.pi / 4
+                xr, yr = sx[i] - be * fmath.cos(r), sy[i] + be * fmath.sin(r)
             elif i == S:
-                r = ang + math.pi / 4
-                xr, yr = sx[i] - be * math.cos(r), sy[i] + be * math.sin(r)
+                r = ang + fmath.pi / 4
+                xr, yr = sx[i] - be * fmath.cos(r), sy[i] + be * fmath.sin(r)
             else:
-                r = math.pi / 4 - ang
-                xr, yr = sx[i] + be * math.cos(r), sy[i] + be * math.sin(r)
+                r = fmath.pi / 4 - ang
+                xr, yr = sx[i] + be * fmath.cos(r), sy[i] + be * fmath.sin(r)
             xa += xr
             ya += yr
         xa /= 4
         ya /= 4
         shx, shy = xa * ctm, ya * ctm
-        est = math.hypot(sx[trig] - xa, sy[trig] - ya)
+        est = fmath.hypot(sx[trig] - xa, sy[trig] - ya)
         err = abs(last - est)
         n += 1
         if n > 20:
             break                                               # (a NaN error also ends the loop, as in C)
-    rad = math.hypot(shx, shy)
+    rad = fmath.hypot(shx, shy)
     if rad > dia / 2:
         return {"miss": True, "reason": "outside the sensor circle", "sensor_xy": (shx, shy), "iterations": n}
-    angle = math.degrees(math.atan2(shy, shx)) + geom.angle_deg
-    return {"miss": False, "x": rad * math.cos(math.radians(angle)), "y": rad * math.sin(math.radians(angle)),
+    angle = fmath.degrees(fmath.atan2(shy, shx)) + geom.angle_deg
+    return {"miss": False, "x": rad * fmath.cos(fmath.radians(angle)), "y": rad * fmath.sin(fmath.radians(angle)),
             "sensor_xy": (shx, shy), "counts": [int(v) for v in cnt], "iterations": n}
 
 
@@ -271,5 +316,5 @@ def timers_from_reported(counts: Sequence[int], x: float, y: float, geom: Geomet
     """Counter values that make upstream print these N/E/S/W counts for a shot it reported at (x, y): the counts it
     prints are `largest - (counter + walk)`, with the walk taken at the final position. For re-solving stored shots."""
     px, py = geom.to_sensor(x, y)
-    dop = [int(geom.walk_ticks * (math.hypot(sx - px, sy - py) / 100.0) ** 2 + 0.5) for sx, sy in geom.sensors]
+    dop = [int(geom.walk_ticks * _sq(fmath.hypot(sx - px, sy - py) / 100.0) + 0.5) for sx, sy in geom.sensors]
     return [base - counts[i] - dop[i] for i in range(4)]

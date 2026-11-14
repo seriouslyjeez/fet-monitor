@@ -8,5 +8,12 @@ matchrun: the commands). One scoring standard: a remote match records the fetcor
 scored with.
 
 MIT License, like FeT Monitor. deeptens pins fetcore to a tagged fet-monitor release.
+
+What places and scores a shot gives the same results to the bit on every machine (0.3.0): the Pi, deepTENS and the
+CYD display, which runs it on MicroPython (docs/PLAN-cyd.md). In those modules (exact, fmath, shotsolve, faces,
+scoring, lineparse, targetproto): fmath for exp, log, sin, cos, atan2, acos, hypot (not math: C libraries differ);
+exact for numbers from text (not float() or decimal); squares as x * x (not ** 2); long float constants as bits;
+plain classes (no dataclasses); no reliance on dict order; no regular expressions beyond MicroPython's.
+tests/test_micropython.py checks it. The others (groupstats, sightadj, the match engine) are not ported yet.
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"   # 0.3.0 (2026-11-13): the same bits on every machine (fmath, exact); runs on MicroPython

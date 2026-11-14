@@ -8,7 +8,7 @@ from pathlib import Path
 FETCORE = Path(__file__).resolve().parent.parent / "fetcore"
 STDLIB = set(getattr(sys, "stdlib_module_names", ())) or {
     "__future__", "math", "re", "json", "hmac", "hashlib", "typing", "dataclasses", "decimal", "functools", "itertools",
-    "statistics", "collections", "enum", "fractions", "copy", "bisect", "string", "datetime", "time"}
+    "statistics", "collections", "enum", "fractions", "copy", "bisect", "string", "datetime", "time", "struct"}
 FORBIDDEN = {"sqlite3", "socket", "http", "urllib", "threading", "subprocess", "os", "shutil", "asyncio", "ssl"}
 
 

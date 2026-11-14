@@ -1,7 +1,6 @@
 """Ingest and query logic, independent of HTTP so it can be tested directly."""
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 import re
@@ -406,12 +405,8 @@ class Core:
 
     @staticmethod
     def at_rate(g: Geometry, rate_hz: Optional[int]) -> Geometry:
-        """The geometry for counts at rate_hz (a shot's r=): the clock, and the threshold delay walk_ticks kept the same
-        in microseconds. None: unchanged (the board revision's clock)."""
-        if rate_hz is None:
-            return g
-        mhz = rate_hz / 1e6
-        return dataclasses.replace(g, clock_mhz=mhz, walk_ticks=g.walk_ticks * mhz / g.clock_mhz)
+        """The geometry for counts at rate_hz (a shot's r=): fetcore's Geometry.at_rate (deepTENS uses the same)."""
+        return g.at_rate(rate_hz)
 
     def _derive_target_shot(self, c, event_id, device_id, event_ms, raw) -> None:
         """A signed shot: wrong signature -> no shot at all (ProtoError); no key here -> stored, auth 0."""
