@@ -33,3 +33,11 @@ Microsystems), so a shot's position is the same bits on every machine (the Pi, d
 notice: "Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved. Developed at SunSoft, a Sun Microsystems,
 Inc. business. Permission to use, copy, modify, and distribute this software is freely granted, provided that this
 notice is preserved."
+
+firmware/display/ is FeT Display, the shot monitor for the ESP32 "Cheap Yellow Display" (ESP32-2432S028R):
+- lib/ili9341.py: the pins and the panel's start-up sequence come from mrjerkface/freetarget-display (MIT,
+  Copyright (c) 2026 Ejovi Nuwere and 10point9.com), which took the sequence from Bodmer's TFT_eSPI ("ILI9341_2_DRIVER",
+  as the ESP32 Cheap Yellow Display community reference by witnessmenow chooses it).
+- lib/qr.py: a port to MicroPython of the parts it needs of "QR Code Generator for JavaScript" by Kazuhiko Arase (MIT,
+  as fetserver/web/qrcode.js above). "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+It runs on MicroPython (MIT, https://micropython.org).
