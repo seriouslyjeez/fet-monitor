@@ -18,6 +18,7 @@ changed modules over the frozen ones while developing).
 """
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,9 @@ def main():
          "0x1000", str(out / "bootloader" / "bootloader.bin"), "0x8000", str(out / "partition_table" / "partition-table.bin"),
          "0x10000", str(out / "micropython.bin")])
     shutil.copy(mp / "mpy-cross" / "build" / "mpy-cross", dist / "mpy-cross")
+    version = re.search(r'^VERSION = "([0-9.]+)"', (HERE.parent / "lib" / "app.py").read_text(), re.M).group(1)
+    shutil.copy(image, dist / ("fet-display-%s.bin" % version))       # the same image under its release name
+    print("FeT Display", version, "->", dist / ("fet-display-%s.bin" % version), "(tools/release.py display %s)" % version)
     print("\nbuilt", image, "(flash at 0x1000) and", dist / "mpy-cross", "(for deploy.py: MPY_CROSS=%s)" % (dist / "mpy-cross"))
 
 

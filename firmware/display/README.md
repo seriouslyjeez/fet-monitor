@@ -26,6 +26,10 @@ deeptens.com over HTTPS.
 
 ## Putting it on a CYD
 
+The easiest way: **deeptens.com/displays → Program a display** (Chrome or Edge, over the CYD's USB cable): it installs
+the signed release, adds the display to your account and writes its settings, with no code to type. For a display
+at a range, or to build it yourself:
+
 One image holds everything: MicroPython built with double-precision floats (fetcore gives the same bits as on the
 Pi and deepTENS: tests/test_micropython.py) with FeT Display (`main.py`, `lib/`) and fetcore's portable modules frozen
 in (they run from flash: with them loaded into memory, a kit ran out of it). Build it with ESP-IDF v5.5.2:

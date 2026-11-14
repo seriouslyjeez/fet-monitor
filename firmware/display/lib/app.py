@@ -17,7 +17,8 @@ import ui
 from ili9341 import Screen
 from xpt2046 import Touch
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+MARKER = "fet-display/0.2.0"          # found in the firmware image by tools/release.py and deepTENS (devices/firmware.py)
 
 s = Screen()
 s.light(True)

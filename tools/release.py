@@ -6,19 +6,23 @@
     python3 tools/release.py image 0.6.30 [--publish]
     python3 tools/release.py target 0.1.2 [--notes NOTES.md] [--publish]
     python3 tools/release.py esp32 0.1.1 [--notes NOTES.md] [--publish]
+    python3 tools/release.py display 0.2.0 [--notes NOTES.md] [--publish]
 
 server   : the server archive from the committed tree (tools/make_release.py) -> dist/server-<ver>/
 firmware : the collected images dist/firmware/fet-bridge-<ver>-*.bin (tools/collect_firmware.py) -> dist/fw-<ver>/
 target   : the FeT target firmware for the Arduino Mega, dist/target-firmware/fet-target-mega-<ver>.hex -> dist/tgt-<ver>/
 esp32    : the FeT target firmware for the ESP32 board, dist/target-firmware/fet-target-esp32-<ver>.bin (the full 8 MB
            image, fet_target_esp32.ino.merged.bin) -> dist/esp32-<ver>/
+display  : FeT Display for the CYD, dist/display/fet-display-<ver>.bin (firmware/display/micropython/build.py: one image
+           with MicroPython, the display and fetcore, flashed at 0x1000) -> dist/display-<ver>/
 image    : the SD card image GitHub Actions built for server release v<ver> (.github/workflows/image.yml): downloads it
            and its IMAGE-SHA256SUMS, checks the hash here, signs -> IMAGE-SHA256SUMS.sig, uploads that (with --publish)
 
 Each folder gets SHA256SUMS and SHA256SUMS.sig (ssh-keygen -Y sign with your release key; it asks for the key's
 passphrase), and the signature is checked against fetserver/release_signers before anything is published. Without
 --publish it prints the `gh release create` command; with --publish it runs it after you confirm. Tags: v<ver> for the
-server, fw-<ver> for FeT Bridge firmware, tgt-<ver> / esp32-<ver> for FeT target firmware (what the Pi looks for).
+server, fw-<ver> for FeT Bridge firmware, tgt-<ver> / esp32-<ver> for FeT target firmware (what the Pi looks for), display-<ver> for FeT Display (what
+deepTENS's "Program a display" installs).
 """
 from __future__ import annotations
 
@@ -134,6 +138,36 @@ def esp32(args) -> tuple:
     return folder, [name], f"esp32-{v}", f"FeT target firmware {v} (ESP32 board)"
 
 
+DISPLAY_MAX = 0x200000 - 0x1000          # the image ends before the display's file system (0x200000)
+
+
+def check_display(data: bytes, v: str) -> None:
+    """FeT Display's image (flashed at 0x1000): an ESP32 boot loader first (0xE9, chip id 0: the ESP32, not the S3),
+    the version's marker inside (firmware/display/lib/app.py MARKER), and short of the file system."""
+    if len(data) < 0x10000 or data[0] != 0xE9 or data[12:14] != b"\0\0":
+        raise ReleaseError("not an ESP32 image to flash at 0x1000")
+    if b"fet-display/" + v.encode() not in data:
+        raise ReleaseError(f"not FeT Display {v} (no fet-display/{v} inside: build it again)")
+    if len(data) > DISPLAY_MAX:
+        raise ReleaseError("larger than the room before the display's file system")
+
+
+def display(args) -> tuple:
+    v = args.version
+    if not re.fullmatch(r"\d{1,3}\.\d{1,3}\.\d{1,3}", v or ""):
+        sys.exit("give the FeT Display version, e.g. 0.2.0")
+    name = f"fet-display-{v}.bin"
+    src = ROOT / "dist/display" / name
+    if not src.is_file():
+        sys.exit(f"no dist/display/{name}: python3 firmware/display/micropython/build.py")
+    check_display(src.read_bytes(), v)
+    folder = ROOT / "dist" / f"display-{v}"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    shutil.copyfile(src, folder / name)
+    return folder, [name], f"display-{v}", f"FeT Display {v} (the CYD shot monitor)"
+
+
 def image(a) -> int:
     """Sign the image the workflow attached to release v<version>, after checking its hash on this computer."""
     if not a.version or not re.fullmatch(r"\d+\.\d+\.\d+", a.version):
@@ -164,7 +198,7 @@ def image(a) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("kind", choices=["server", "firmware", "target", "esp32", "image"])
+    ap.add_argument("kind", choices=["server", "firmware", "target", "esp32", "display", "image"])
     ap.add_argument("version", nargs="?", help="firmware version (firmware), server version (image)")
     ap.add_argument("--notes", help="release notes (Markdown); shown in Range Control before updating")
     ap.add_argument("--key", default=str(KEY))
@@ -177,7 +211,7 @@ def main() -> int:
             print(f"not signed: {exc}", file=sys.stderr)
             return 1
     try:
-        folder, names, tag, title = {"server": server, "firmware": firmware, "target": target, "esp32": esp32}[a.kind](a)
+        folder, names, tag, title = {"server": server, "firmware": firmware, "target": target, "esp32": esp32, "display": display}[a.kind](a)
         sums = sums_for(folder, names)
         sign(sums, Path(a.key))
         assert set(parse_sums(sums.read_bytes())) == set(names)
