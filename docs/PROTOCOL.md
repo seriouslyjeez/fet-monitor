@@ -458,7 +458,7 @@ seconds). `"pairing": "none"`: the token is no display's (removed, replaced, exp
      "claim": {"public_name", "until_ms", "left_ms"} | null,       "fire a shot to claim this lane", "Not you? Cancel"
      "can_sign_out": bool,                                          never in a match
      "mode", "kind", "stream", "label",
-     "face": {"id", "name", "decimal", "rings": [{"value", "dia_mm"}], "black_mm", "white_ten", "inner_mm", "projectile_mm"},
+     "face": {"id", "name", "decimal", "rings": [{"value", "dia_mm"}], "black_mm", "white_ten", "inner_mm", "projectile_mm", "ring_mm"},
      "shots": [{"n", "x_h", "y_h", "score", "inner", "miss"}],     the current bull; x_h/y_h hundredths of a mm (null: miss)
      "count", "bull", "bulls", "last": {"n", "score", "inner", "miss"} | null,
      "totals": {"shots", "score", "x", "misses"},

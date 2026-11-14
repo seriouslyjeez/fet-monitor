@@ -266,7 +266,7 @@ class LaneDisplays:
             "claim": t["claim"],
             "can_sign_out": t["athlete"] is not None and info is None,
             "mode": t["mode"], "kind": v["kind"], "stream": v["stream"], "label": v["label"],
-            "face": {k: face.get(k) for k in ("id", "name", "decimal", "rings", "black_mm", "white_ten", "inner_mm", "projectile_mm")},
+            "face": {k: face.get(k) for k in ("id", "name", "decimal", "rings", "black_mm", "white_ten", "inner_mm", "projectile_mm", "ring_mm")},
             "shots": shots, "count": v["count"], "bull": v["bull_index"] + 1, "bulls": v["bull_count"],
             "last": None if not last else {"n": last["n"], "score": score_text(last, whole), "inner": last["inner"], "miss": last["miss"]},
             "totals": {"shots": agg["shots"], "score": str(agg["integer"]) if whole else "%.1f" % agg["decimal"],

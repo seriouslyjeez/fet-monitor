@@ -104,8 +104,10 @@ def paired(cfg):
     import target
 
     cl = client.Client(cfg["server"], HW_ID, VERSION, cfg.get("token"))
+    boot = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
     st = {"v": None, "at": 0, "done": False, "problem": None, "dirty": True, "screen": "target", "buttons": [],
-          "dismissed": False, "drawn": (None, None, None), "kp": None, "qr": (None, None), "busy": False, "msg": None, "code": None}
+          "dismissed": False, "drawn": (None, None, None, None), "kp": None,
+          "zoom": cfg.get("zoom") if cfg.get("zoom") in target.ZOOMS else "auto", "boot_down": False, "qr": (None, None), "busy": False, "msg": None, "code": None}
 
     def keep(token):
         if cfg.get("token") != token:
@@ -166,7 +168,7 @@ def paired(cfg):
         if scr == "pairing":
             if st["drawn"] != ("pairing", st["code"], None):
                 target.pairing(s, st["code"] or "", FOOTER)
-                st["buttons"], st["drawn"] = [], ("pairing", st["code"], None)
+                st["buttons"], st["drawn"] = [], ("pairing", st["code"], None, None)
             return
         if v is None:
             if st["problem"]:
@@ -174,13 +176,13 @@ def paired(cfg):
                           footer=FOOTER)
             else:
                 page.show([("CONNECTING", 2, ui.FG), ("FeT Monitor " + cfg["server"], 2, ui.DIM)], footer=FOOTER)
-            st["buttons"], st["drawn"] = [], ("page", None, None)
+            st["buttons"], st["drawn"] = [], ("page", None, None, None)
             return
         if scr == "target":
             scr = st["screen"] = default_screen(v)
         elif scr == "signin" and (v.get("athlete") or v.get("claim") or v.get("match")):
             scr = st["screen"] = "target"              # signed in (a phone, a claim) or a match began meanwhile
-        drawn_scr, drawn_v, drawn_problem = st["drawn"]
+        drawn_scr, drawn_v, drawn_problem, drawn_zoom = st["drawn"]
         if scr == "signin":
             url = v.get("signin_url")
             if drawn_scr != "signin" or (drawn_v or {}).get("signin_url") != url or (drawn_v or {}).get("pin_signin") != v.get("pin_signin"):
@@ -196,8 +198,8 @@ def paired(cfg):
                 name = (v.get("athlete") or {}).get("public_name") or ""
                 st["buttons"] = target.confirm_screen(s, "Sign out %s?" % name, "SIGN OUT", "signout")
         else:
-            prev = (drawn_v, drawn_problem) if drawn_scr == "target" and drawn_v is not None else None
-            st["buttons"] = target.target_with_button(s, v, st["problem"], prev, st["buttons"] if prev else None)
+            prev = (drawn_v, drawn_problem, drawn_zoom) if drawn_scr == "target" and drawn_v is not None else None
+            st["buttons"] = target.target_with_button(s, v, st["problem"], prev, st["buttons"] if prev else None, st["zoom"])
             if st["msg"]:
                 if st["msg"] != st.get("msg_drawn") or prev is None or target._top(drawn_v) != target._top(v):
                     target.message(s, st["msg"][0], st["msg"][1])
@@ -206,7 +208,7 @@ def paired(cfg):
                 target.claim_band(s, v, now_server())
         if scr != "target":
             st["msg_drawn"] = None
-        st["drawn"] = (scr, v, st["problem"])
+        st["drawn"] = (scr, v, st["problem"], st["zoom"])
 
     async def act(action, **fields):
         st["busy"] = True
@@ -298,8 +300,22 @@ def paired(cfg):
 
     last = {"sec": -1}
 
+    def boot_button():
+        """BOOT (on the back): Full, Bull, Auto zoom, in turn, when it is let go. Kept across restarts."""
+        down = boot() == 0
+        if down and not st["boot_down"]:
+            st["boot_down"] = True
+        elif not down and st["boot_down"]:
+            st["boot_down"] = False
+            z = target.ZOOMS[(target.ZOOMS.index(st["zoom"]) + 1) % len(target.ZOOMS)]
+            st["zoom"], cfg["zoom"] = z, z
+            config.save(cfg)
+            if st["screen"] == "target" and st["v"]:
+                st["msg"], st["dirty"] = ("Zoom: " + {"full": "Full", "bull": "Bull", "auto": "Auto"}[z], ui.DIM), True
+
     async def screen_once():
         tick()
+        boot_button()
         if st["dirty"] and not st["busy"]:
             draw()
         p = t.point() if not st["busy"] else None

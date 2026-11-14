@@ -9,6 +9,8 @@ SHOT, SHOT_LAST, SHOT_EDGE = rgb(40, 140, 255), rgb(255, 50, 50), rgb(255, 255, 
 FACE, FX, FY, STRIP_H = 208, 4, 30, 16             # the face: 208 px square at (4, 30), drawn 16 rows at a time
 PX = FX + FACE + 6                                 # the panel on the right: x 218..319
 PW = W - PX
+ZOOMS = ("full", "bull", "auto")                   # the BOOT button cycles through them (main.py)
+AUTO_START = 8                                     # Auto never zooms closer than the 8 ring (as the phone)
 MODES = {"practice": "PRACTICE", "sighter": "SIGHTERS", "record": "RECORD", "ammo": "AMMO TEST"}
 
 
@@ -63,12 +65,41 @@ def _text(s, text, x, y, scale, colour, width, key=None):
     _drawn[key] = (text, colour, x, y, scale, width)
 
 
-def face(s, v):
-    """The face and the current bull's shots (the last one red), in strips."""
+def _ring_mm(f):
+    """One ring's width, mm (the phone's ring_mm; worked out from the rings for an older FeT Monitor)."""
+    if f.get("ring_mm"):
+        return f["ring_mm"]
+    d = {r["value"]: r["dia_mm"] for r in f["rings"]}
+    if 8 in d and 9 in d:
+        return (d[8] - d[9]) / 2
+    return (max(d.values()) - min(d.values())) / 2 / max(1, len(d) - 1)
+
+
+def half_mm(v, zoom):
+    """Half the width of what the face area shows, in mm: the phone's fullHalf, zoomHalf and autoRing."""
+    f = v["face"]
+    rr = {r["value"]: r["dia_mm"] / 2 for r in f["rings"]}
+    step = _ring_mm(f)
+    full = max(rr.values()) + 1.3 * step
+    if zoom == "bull":
+        return f["black_mm"] / 2 + 0.6 * step if f.get("black_mm") else full
+    if zoom == "auto":
+        pr = (f.get("projectile_mm") or 4.5) / 2
+        ext = 0
+        for sh in v["shots"]:
+            if not sh["miss"] and sh["x_h"] is not None:
+                ext = max(ext, ((sh["x_h"] / 100) ** 2 + (sh["y_h"] / 100) ** 2) ** 0.5 + pr)
+        for k in range(min(AUTO_START, 9), min(rr) - 1, -1):
+            if k in rr and rr[k] >= ext:
+                return rr[k] + 0.6 * step
+    return full
+
+
+def face(s, v, zoom="full"):
+    """The face and the current bull's shots (the last one red), in strips, at this zoom (ZOOMS)."""
     f = v["face"]
     rings = sorted(f["rings"], key=lambda r: -r["dia_mm"])
-    outer = rings[0]["dia_mm"]
-    k = FACE / (outer * 1.06)                      # mm -> px, a little margin
+    k = (FACE / 2) / half_mm(v, zoom)              # mm -> px
     c = FACE // 2
     black = f.get("black_mm") or 0
     shots = [sh for sh in v["shots"] if not sh["miss"] and sh["x_h"] is not None]
@@ -121,17 +152,17 @@ def top(s, v):
         _text(s, who, 112, 6, 2, ui.GOOD, W - 116)
 
 
-def target(s, v, problem=None, prev=None):
-    """The target screen. prev: (view, problem) drawn before on this screen: only what changed is drawn again."""
+def target(s, v, problem=None, prev=None, zoom="full"):
+    """The target screen. prev: (view, problem, zoom) drawn before on this screen: only what changed is drawn again."""
     full = prev is None
     if full:
         s.fill(0, 0, W, H, ui.BG)
         forget()
-    pv, pp = prev if prev else (None, None)
+    pv, pp, pz = (tuple(prev) + ("full",))[:3] if prev else (None, None, None)
     if full or _top(pv) != _top(v):
         top(s, v)
-    if full or _face_key(pv) != _face_key(v):
-        face(s, v)
+    if full or _face_key(pv) != _face_key(v) or pz != zoom:
+        face(s, v, zoom)
     if full or _panel_key(pv, pp) != _panel_key(v, problem):
         panel(s, v, problem)
         return True
@@ -223,9 +254,9 @@ def panel_button(v):
     return None
 
 
-def target_with_button(s, v, problem=None, prev=None, buttons=None):
+def target_with_button(s, v, problem=None, prev=None, buttons=None, zoom="full"):
     """The target screen and its panel button; prev/buttons: what was drawn before (only changes are drawn)."""
-    panel_drawn = target(s, v, problem, prev)
+    panel_drawn = target(s, v, problem, prev, zoom)
     pb = panel_button(v)
     if not panel_drawn and prev is not None and buttons is not None and pb == panel_button(prev[0]):
         return buttons

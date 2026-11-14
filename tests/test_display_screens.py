@@ -119,6 +119,25 @@ def full_then_tick():
     target.target_with_button(s, mv)
     target.clock(s, mv, mv["server_time_ms"] + 4 * 1000 + 999)
 same("clock", full_then_tick)
+# zoom (the BOOT button): the phone's rules; then every change of zoom gives the picture a full drawing gives
+AR = {"id": "issf-ar10", "rings": [{"value": 10 - i, "dia_mm": 0.5 + 5 * i} for i in range(10)], "black_mm": 30.5, "projectile_mm": 4.5, "ring_mm": 2.5}
+AP = {"id": "issf-ap10", "rings": [{"value": 10 - i, "dia_mm": 11.5 + 16 * i} for i in range(10)], "black_mm": 59.5, "projectile_mm": 4.5}
+def hv(face, shots, zoom):
+    return round(target.half_mm({"face": face, "shots": shots}, zoom), 6)
+shot = [{"n": 1, "miss": False, "x_h": 1000, "y_h": 0}]
+assert hv(AR, [], "full") == 26.0, hv(AR, [], "full")           # the phone's FULL for the air rifle face
+assert hv(AR, [], "auto") == 6.75, hv(AR, [], "auto")           # Auto starts at the 8 ring
+assert hv(AR, shot, "auto") == 14.25, hv(AR, shot, "auto")      # a shot 10 mm out: the 5 ring holds it
+assert hv(AR, [], "bull") == 16.75, hv(AR, [], "bull")
+assert hv(AP, [], "bull") == 34.55, hv(AP, [], "bull")          # no ring_mm (an older FeT Monitor): from the rings
+assert hv(dict(AR, black_mm=None), [], "bull") == 26.0, "no black: the whole face"
+for name in ("shots", "whole rings", "match"):
+    for za in target.ZOOMS:
+        for zb in target.ZOOMS:
+            prev = target.target_with_button(s, views[name], zoom=za)
+            target.target_with_button(s, views[name], None, (views[name], None, za), prev, zb)
+            same((name, za, zb), lambda: target.target_with_button(s, views[name], zoom=zb))
+            n += 1
 check("confirm", target.confirm_screen(s, "Sign out A Very Long Public Name Indeed?", "SIGN OUT", "signout"))
 print("SCREENS", n)
 """
