@@ -103,11 +103,11 @@ def paired(cfg):
     import qr
     import target
 
-    cl = client.Client(cfg["server"], HW_ID, VERSION, cfg.get("token"))
+    cl = client.Client(cfg["server"], HW_ID, VERSION, cfg.get("token"), secure=bool(cfg.get("home")) and not cfg.get("plain_http"))
     boot = machine.Pin(0, machine.Pin.IN, machine.Pin.PULL_UP)
     st = {"v": None, "at": 0, "done": False, "problem": None, "dirty": True, "screen": "target", "buttons": [],
           "dismissed": False, "drawn": (None, None, None, None), "kp": None,
-          "zoom": cfg.get("zoom") if cfg.get("zoom") in target.ZOOMS else "auto", "boot_down": False, "qr": (None, None), "busy": False, "msg": None, "code": None}
+          "zoom": cfg.get("zoom") if cfg.get("zoom") in target.ZOOMS else "auto", "boot_down": False, "choose_page": 0, "qr": (None, None), "busy": False, "msg": None, "code": None}
 
     def keep(token):
         if cfg.get("token") != token:
@@ -167,7 +167,7 @@ def paired(cfg):
         st["dirty"] = False
         if scr == "pairing":
             if st["drawn"] != ("pairing", st["code"], None):
-                target.pairing(s, st["code"] or "", FOOTER)
+                target.pairing(s, st["code"] or "", FOOTER, bool(cfg.get("home")))
                 st["buttons"], st["drawn"] = [], ("pairing", st["code"], None, None)
             return
         if v is None:
@@ -178,11 +178,19 @@ def paired(cfg):
                 page.show([("CONNECTING", 2, ui.FG), ("FeT Monitor " + cfg["server"], 2, ui.DIM)], footer=FOOTER)
             st["buttons"], st["drawn"] = [], ("page", None, None, None)
             return
+        drawn_scr, drawn_v, drawn_problem, drawn_zoom = st["drawn"]
+        if v.get("state") == "choose":                 # home: no target chosen yet
+            scr = st["screen"] = "choose"
+            if drawn_scr != "choose" or drawn_v is not v:
+                st["buttons"] = target.choose_screen(s, v.get("targets") or [], st["choose_page"])
+            st["drawn"] = (scr, v, st["problem"], st["zoom"])
+            return
+        if scr == "choose":
+            scr = st["screen"] = "target"
         if scr == "target":
             scr = st["screen"] = default_screen(v)
         elif scr == "signin" and (v.get("athlete") or v.get("claim") or v.get("match")):
             scr = st["screen"] = "target"              # signed in (a phone, a claim) or a match began meanwhile
-        drawn_scr, drawn_v, drawn_problem, drawn_zoom = st["drawn"]
         if scr == "signin":
             url = v.get("signin_url")
             if drawn_scr != "signin" or (drawn_v or {}).get("signin_url") != url or (drawn_v or {}).get("pin_signin") != v.get("pin_signin"):
@@ -232,9 +240,22 @@ def paired(cfg):
         st["buttons"][-1] = target.keypad_ok(s, kp["phase"], kp["digits"])
 
     async def tap(key):
-        v, scr = st["v"], st["screen"]
+        scr = st["screen"]
         st["msg"] = None
-        if key == "signin_screen":
+        if key.startswith("pick:"):
+            r = await act("choose", device_id=key[5:])
+            st["screen"], st["dismissed"] = "target", False
+            if r is not True:
+                st["msg"] = (r, ui.BAD)
+        elif key == "more":
+            st["choose_page"] += 1
+            st["drawn"] = (None, None, None, None)
+        elif key == "targets":
+            r = await act("targets")
+            st["choose_page"] = 0
+            if r is not True:
+                st["msg"] = (r, ui.BAD)
+        elif key == "signin_screen":
             st["screen"] = "signin"
         elif key == "dismiss":
             st["screen"], st["dismissed"] = "target", True
@@ -351,6 +372,25 @@ def paired(cfg):
     asyncio.run(both())
 
 
+def set_clock():
+    """HTTPS needs the right time (certificates have dates): from NTP, several servers (pool.ntp.org did not answer on
+    one home network). False: the person chose Set up."""
+    import ntptime
+    while True:
+        page.show([("SETTING THE CLOCK", 2, ui.FG)], footer=FOOTER)
+        for host in ("time.cloudflare.com", "time.google.com", "pool.ntp.org"):
+            try:
+                ntptime.host = host
+                ntptime.settime()
+                return True
+            except OSError:
+                pass
+        page.show([("CAN'T SET THE CLOCK", 2, ui.BAD), ("No time server answered (UDP port 123).", 1, ui.WARN)],
+                  [("TRY AGAIN", "again"), ("SET UP", "setup")], footer=FOOTER)
+        if page.wait(30_000, tick) == "setup":
+            return False
+
+
 def reach(cfg):
     """Check that FeT Monitor answers; then show it. False: the person chose Set up."""
     host, _, port = cfg["server"].partition(":")
@@ -380,7 +420,8 @@ def run():
     if quick or cfg is None:
         setup(cfg)
     while True:
-        if not join(cfg) or not reach(cfg):
+        home = cfg.get("home")                         # deepTENS: the clock (HTTPS checks dates); a range: FeT Monitor answers
+        if not join(cfg) or not ((cfg.get("plain_http") or set_clock()) if home else reach(cfg)):
             setup(cfg)
         if sta.isconnected():
             paired(cfg)                                # returns when the WiFi is lost: join it again

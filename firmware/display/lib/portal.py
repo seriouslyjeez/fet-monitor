@@ -103,6 +103,8 @@ class Portal:
 
     def setup_page(self, err=None, values=None):
         v = values or self.current
+        if v.get("where"):
+            v = dict(v, home=v["where"] == "home")      # what was just chosen, shown again with the error
         nets = self.scan()
         server = v.get("server", "")
         return self.page("FeT Display setup", (
@@ -117,9 +119,15 @@ class Portal:
             "<label>WiFi password</label><input name=password type=password maxlength=63 placeholder=\"" +
             ("unchanged" if v.get("password") else "") + "\">"
             "<label style='font-weight:400'><input type=checkbox name=open value=1 style='width:auto'> This network has no password</label>"
-            "<label>FeT Monitor's address (the Raspberry Pi)</label><input name=server maxlength=21 required autocapitalize=off "
+            "<label>This display shows</label>"
+            "<label style='font-weight:400'><input type=radio name=where value=range style='width:auto'" + ("" if v.get("home") else " checked") +
+            "> A target at a range (FeT Monitor)</label>"
+            "<label style='font-weight:400'><input type=radio name=where value=home style='width:auto'" + (" checked" if v.get("home") else "") +
+            "> My own targets (deepTENS)</label>"
+            "<label>Address</label><input name=server maxlength=64 autocapitalize=off "
             "placeholder='192.168.1.20:8080' value=\"" + html(server) + "\">"
-            "<p class=note>Its IP address and port, as Range Control shows it: e.g. 192.168.1.20:8080.</p>"
+            "<p class=note>At a range: FeT Monitor's IP address and port, as Range Control shows it (e.g. 192.168.1.20:8080). "
+            "For your own targets: leave it empty (deepTENS).</p>"
             "<button>Save and restart</button></form>"
             "<p class=note>To come back here later: switch the display off and on 3 times quickly, or tap Setup on its "
             "screen when it cannot reach the WiFi or FeT Monitor.</p>"))
@@ -139,11 +147,12 @@ class Portal:
                 c = config.check(f)
             except ValueError as exc:
                 return 200, {}, self.setup_page(str(exc), dict(f, password="")).encode(), None
-            for k in ("token", "invert"):
-                if k in self.current and c["server"] == self.current.get("server"):
+            for k in ("token", "invert", "zoom"):
+                if k in self.current and c["server"] == self.current.get("server") and c.get("home") == self.current.get("home"):
                     c[k] = self.current[k]                           # still the same FeT Monitor: keep the pairing
+            where = ("at deeptens.com/display/ (signed in)" if c.get("home") else "in FeT Monitor, Range Control &rarr; Lane displays")
             return 200, {}, self.page("Saved", "<p>The display restarts and joins <b>" + html(c["ssid"]) +
-                                      "</b>. Then it shows a code: type it in FeT Monitor, Range Control &rarr; Lane displays.</p>").encode(), c
+                                      "</b>. Then it shows a code: type it " + where + ".</p>").encode(), c
         if method == "GET" and path == "/":
             return 200, {}, self.setup_page().encode(), None
         return 302, {"Location": "http://%s/" % self.ip}, b"", None

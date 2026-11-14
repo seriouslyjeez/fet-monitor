@@ -14,12 +14,13 @@ AUTO_START = 8                                     # Auto never zooms closer tha
 MODES = {"practice": "PRACTICE", "sighter": "SIGHTERS", "record": "RECORD", "ammo": "AMMO TEST"}
 
 
-def pairing(s, code, footer):
+def pairing(s, code, footer, home=False):
     s.fill(0, 0, W, H, ui.BG)
     forget()
     big(s, "PAIR THIS DISPLAY", (W - 17 * 16) // 2, 10, 2, ui.WARN, ui.BG)
     y = 40
-    for line in ("In FeT Monitor, open", "Range Control > Lane displays", "and type this code:"):
+    for line in (("On deepTENS (signed in), open", "deeptens.com/display", "and type this code:") if home else
+                 ("In FeT Monitor, open", "Range Control > Lane displays", "and type this code:")):
         big(s, line, (W - 8 * len(line)) // 2, y, 1, ui.FG, ui.BG)
         y += 14
     big(s, code, (W - 40 * len(code)) // 2, 96, 5, ui.GOOD, ui.BG)
@@ -142,14 +143,27 @@ def _panel_key(v, problem):
             {k: x for k, x in (v.get("match") or {}).items() if k not in ("remaining_ms", "ends_at_ms")})
 
 
+def short_name(name):
+    """A name of initials only ("C. D.") without its spaces ("C.D."): the top bar is narrow. Other names as they are."""
+    parts = (name or "").split()
+    if parts and all(len(p) == 2 and p[1] == "." for p in parts):
+        return "".join(parts)
+    return name or ""
+
+
 def top(s, v):
-    """The top bar: the lane, and who is signed in (a claim draws its own band there: claim_band)."""
+    """The top bar: the lane or target name on the left, who is signed in on the right; where they meet, the name of
+    who shoots wins (user 2026-11-14). A claim draws its own band there (claim_band)."""
     title, who, claim = _top(v)
+    who = "" if claim else short_name(who)
     s.fill(0, 0, W, FY - 2, ui.BG)
     forget(0, FY)
-    _text(s, title, 4, 6, 2, ui.FG, 104)
-    if not claim:
-        _text(s, who, 112, 6, 2, ui.GOOD, W - 116)
+    cw = 16
+    who = who[: (W - 8) // cw]
+    wx = W - 4 - len(who) * cw
+    if who:
+        _text(s, who, wx, 6, 2, ui.GOOD, len(who) * cw, "who")
+    _text(s, title, 4, 6, 2, ui.FG, max(0, (wx - 8 if who else W - 8) - 4), "title")
 
 
 def target(s, v, problem=None, prev=None, zoom="full"):
@@ -311,12 +325,38 @@ def signin_screen(s, v, rows):
     t = v["target"]
     _text(s, ("LANE %s" % t["lane"]) if t.get("lane") is not None else t["name"], x, 10, 2, ui.FG, w)
     y = 36
-    for line in (["Scan to sign in", "with deepTENS:", "your shots go", "into your", "history."] if rows else ["Sign in with", "your athlete", "number and PIN."]):
+    lines = (["Scan to say", "who shoots:", "the shots go", "into their", "history."] if v.get("home") else
+             ["Scan to sign in", "with deepTENS:", "your shots go", "into your", "history."]) if rows else ["Sign in with", "your athlete", "number and PIN."]
+    for line in lines:
         _text(s, line, x, y, 1, ui.DIM, w)
         y += 12
     if v.get("pin_signin"):
         out.append(button(s, x, H - 112, w, 48, "NUMBER + PIN", "keypad"))
+    elif v.get("home"):
+        out.append(button(s, x, H - 112, w, 48, "OTHER TARGET", "targets"))
     out.append(button(s, x, H - 56, w, 48, "SHOOT", "dismiss"))
+    return out
+
+
+def choose_screen(s, targets, page=0):
+    """Home (deepTENS): which of the owner's targets this display shows. Three a page, big buttons."""
+    s.fill(0, 0, W, H, ui.BG)
+    forget()
+    _text(s, "WHICH TARGET?", 6, 6, 2, ui.FG, W - 12)
+    out = []
+    if not targets:
+        y = 44
+        for line in ("You have no targets on", "deepTENS yet. Add one at", "deeptens.com/setup: this", "display then shows it."):
+            _text(s, line, 6, y, 1, ui.DIM, W - 12)
+            y += 14
+        return out
+    per = 3
+    page = page % max(1, (len(targets) + per - 1) // per)
+    for i, t in enumerate(targets[page * per:(page + 1) * per]):
+        y = 34 + i * 52
+        out.append(button(s, 6, y, W - 12, 46, t["name"] + ("" if t.get("online") else " (silent)"), "pick:" + t["device_id"]))
+    if len(targets) > per:
+        out.append(button(s, 6, H - 50, W - 12, 46, "MORE (%d of %d)" % (page + 1, (len(targets) + per - 1) // per), "more"))
     return out
 
 

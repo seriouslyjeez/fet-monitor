@@ -63,6 +63,7 @@ def check(name, buttons):
         assert h >= 44 or not key, (name, key, "a button under 44 px")
     n += 1
 target.pairing(s, "K7M2QX", "FeT Display 0.1.0  cyd-7e08f8"); n += 1
+target.pairing(s, "K7M2QX", "FeT Display 0.1.0  cyd-7e08f8", True); n += 1
 for name, v in views.items():
     check(name, target.target_with_button(s, v))
     check(name + " reconnecting", target.target_with_button(s, v, "RECONNECTING"))
@@ -138,6 +139,16 @@ for name in ("shots", "whole rings", "match"):
             target.target_with_button(s, views[name], None, (views[name], None, za), prev, zb)
             same((name, za, zb), lambda: target.target_with_button(s, views[name], zoom=zb))
             n += 1
+T = [{"device_id": "fet-%%06d" %% i, "name": "Target number %%d with a long name" %% i, "online": i %% 2 == 0} for i in range(7)]
+for k in (0, 2, 7):
+    for pg in (0, 1, 2, 5):
+        check("choose", target.choose_screen(s, T[:k], pg))
+home = dict(views["empty"], home=True, pin_signin=False)
+b = target.signin_screen(s, home, qr.encode(home["signin_url"]))
+check("home signin", b)
+assert [x[4] for x in b] == ["targets", "dismiss"], [x[4] for x in b]
+assert target.short_name("C. D.") == "C.D." and target.short_name("J. Q. S.") == "J.Q.S."
+assert target.short_name("Al Aim") == "Al Aim" and target.short_name("") == "" and target.short_name(None) == ""
 check("confirm", target.confirm_screen(s, "Sign out A Very Long Public Name Indeed?", "SIGN OUT", "signout"))
 print("SCREENS", n)
 """

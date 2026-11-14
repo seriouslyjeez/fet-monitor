@@ -57,13 +57,30 @@ def request(method, host, port, path, body=None, headers=None, timeout=10):
         s.close()
 
 
-async def arequest(method, host, port, path, body=None, headers=None, timeout=10):
-    """request() for asyncio: the screen and the touch keep working while FeT Monitor holds a long poll."""
+_ctx = None
+
+
+def tls():
+    """The TLS context for deepTENS: certificates must chain to ISRG Root X1 or X2 and name the host. Made once."""
+    global _ctx
+    if _ctx is None:
+        import ssl
+        import certs
+        c = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        c.verify_mode = ssl.CERT_REQUIRED
+        c.load_verify_locations(cadata=certs.ISRG + b"\0")
+        _ctx = c
+    return _ctx
+
+
+async def arequest(method, host, port, path, body=None, headers=None, timeout=10, secure=False):
+    """request() for asyncio: the screen and the touch keep working while FeT Monitor holds a long poll. secure: HTTPS
+    (deepTENS), the certificate checked (the clock must be right: main.py sets it by NTP first)."""
     import asyncio
-    return await asyncio.wait_for(_arequest(method, host, port, path, body, headers), timeout)
+    return await asyncio.wait_for(_arequest(method, host, port, path, body, headers, secure), timeout)
 
 
-async def _arequest(method, host, port, path, body, headers):
+async def _arequest(method, host, port, path, body, headers, secure=False):
     import asyncio
     data = json.dumps(body).encode() if body is not None else b""
     head = "%s %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\nAccept: application/json\r\n" % (method, path, host, port)
@@ -71,7 +88,10 @@ async def _arequest(method, host, port, path, body, headers):
         head += "Content-Type: application/json\r\nContent-Length: %d\r\n" % len(data)
     for k, v in (headers or {}).items():
         head += "%s: %s\r\n" % (k, v)
-    r, w = await asyncio.open_connection(host, port)
+    if secure:
+        r, w = await asyncio.open_connection(host, port, ssl=tls(), server_hostname=host)
+    else:
+        r, w = await asyncio.open_connection(host, port)
     try:
         w.write((head + "\r\n").encode() + data)
         await w.drain()

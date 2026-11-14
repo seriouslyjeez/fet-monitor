@@ -14,9 +14,9 @@ class NotAssigned(Exception):
 
 
 class Client:
-    def __init__(self, server, hw_id, fw, token=None):
+    def __init__(self, server, hw_id, fw, token=None, secure=False):
         host, _, port = server.partition(":")
-        self.host, self.port = host, int(port or 8080)
+        self.host, self.port, self.secure = host, int(port or (443 if secure else 8080)), secure
         self.hw_id, self.fw, self.token = hw_id, fw, token
         self.code = self.code_expires_ms = None
 
@@ -25,7 +25,7 @@ class Client:
         if self.token:
             hdr["Authorization"] = "Bearer " + self.token
         try:
-            return await http.arequest(method, self.host, self.port, path, body, hdr, timeout)
+            return await http.arequest(method, self.host, self.port, path, body, hdr, timeout, self.secure)
         except Exception as exc:                       # asyncio's TimeoutError is not an OSError on MicroPython
             if isinstance(exc, OSError):
                 raise

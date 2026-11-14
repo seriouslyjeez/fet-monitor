@@ -132,6 +132,28 @@ class Portal(unittest.TestCase):
         saved = json.loads(out.split("SAVED ", 1)[1])
         self.assertEqual((saved["password"], saved.get("token")), ("longenough", "fetd_x"), "empty: unchanged; same FeT Monitor: still paired")
 
+    def test_home_targets_through_deeptens(self):
+        self.start()
+        st, _, body = self.req("GET", "/")
+        self.assertIn("My own targets (deepTENS)", body)
+        st, _, body = self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Home", "password": "longenough", "where": "home", "server": "bad host!"}))
+        self.assertIn("deepTENS&#39;s address", body)
+        self.assertIn("value=home style='width:auto' checked", body, "the choice is kept with the error")
+        self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Home", "password": "longenough", "where": "home", "server": ""}))
+        out, _ = self.proc.communicate(timeout=5)
+        self.assertEqual(json.loads(out.split("SAVED ", 1)[1]), {"ssid": "Home", "password": "longenough", "server": "deeptens.com:8443", "home": True},
+                         "empty: deepTENS (HTTPS)")
+
+    def test_from_a_range_to_home_forgets_the_pairing(self):
+        self.start({"ssid": "Club WiFi", "password": "longenough", "server": "192.168.1.20:8080", "token": "fetd_x", "zoom": "bull"})
+        st, _, body = self.req("GET", "/")
+        self.assertIn('value=range style=\'width:auto\' checked', body)
+        self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Club WiFi", "where": "home", "server": "deeptens.com:8443"}))
+        out, _ = self.proc.communicate(timeout=5)
+        saved = json.loads(out.split("SAVED ", 1)[1])
+        self.assertNotIn("token", saved, "another server: paired again")
+        self.assertEqual(saved["password"], "longenough")
+
     def test_a_new_fet_monitor_forgets_the_pairing(self):
         self.start({"ssid": "Club WiFi", "password": "longenough", "server": "192.168.1.20:8080", "token": "fetd_x"})
         self.req("POST", "/save", urllib.parse.urlencode({"ssid": "Guest", "open": "1", "server": "10.0.0.5:8080"}))
