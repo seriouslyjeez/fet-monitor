@@ -1,0 +1,14 @@
+diff --git a/ports/esp32/mpconfigport.h b/ports/esp32/mpconfigport.h
+index 45d789f..72f7662 100644
+--- a/ports/esp32/mpconfigport.h
++++ b/ports/esp32/mpconfigport.h
+@@ -66,7 +66,9 @@
+ #define MICROPY_ERROR_REPORTING             (MICROPY_ERROR_REPORTING_NORMAL) // Debugging Note: Increase the error reporting level to view
+                                                                              // __FUNCTION__, __LINE__, __FILE__ in check_esp_err() exceptions
+ #define MICROPY_WARNINGS                    (1)
++#ifndef MICROPY_FLOAT_IMPL
+ #define MICROPY_FLOAT_IMPL                  (MICROPY_FLOAT_IMPL_FLOAT)
++#endif
+ #define MICROPY_STREAMS_POSIX_API           (1)
+ #define MICROPY_USE_INTERNAL_ERRNO          (0) // errno.h from xtensa-esp32-elf/sys-include/sys
+ #define MICROPY_USE_INTERNAL_PRINTF         (0) // ESP32 SDK requires its own printf
