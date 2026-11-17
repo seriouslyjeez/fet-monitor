@@ -12,15 +12,22 @@ between the mask and the faceplate and out under the crossbar. It's a larger ver
 - **Mask:** 185 wide × 229 tall. The hole's top edge is 89 mm from the top of the paper and its
   sides 77.25 mm from each edge, so the hole centre is 104.25 mm from the top and 92.5 mm from each side.
   The holder places that centre on the faceplate hole.
-- **Frame:** 216 × 248 mm, 3 mm thick. It's a U, open at the top, with the crossbar at the bottom.
-  The frame overlaps the mask by 5 mm on the sides and bottom; the top of the mask is open, like v17.
+- **Frame:** 216 × 211 mm, 3 mm thick. It's a U, open at the top, with the crossbar at the bottom.
+  The frame overlaps the mask by 5 mm on the sides and bottom.
+- **Open top:** the legs stop 3 mm above the top screw heads (83 mm above the hole centre), so a mask
+  can be slid in from the top past the target's paper guide. The top 21 mm of the mask isn't held.
+- **Crossbar:** 8 mm tall: the 5 mm lip over the mask (1 mm thick) and a 2 mm full-thickness strip
+  below it. It stops 7.75 mm below the faceplate so it clears the paper-feed frame.
+- **Centre-line arrows:** two arrows recessed 0.6 mm into the front of the legs point at the
+  horizontal centre line of the mask hole. Line the hole up with them when you put in a new mask.
+  They're recessed, not raised, because the holder prints front face down.
 - **Pocket (back):** 187 mm wide × 2 mm deep, 1 mm clearance around the mask. Mask and witness paper
   both sit in it.
 - **Witness-paper notch:** 98 mm wide × 1 mm deep through the back of the crossbar, for the 90 mm paper.
-- **Screws:** four slots at the faceplate's #8-32 screw holes (Ø5 at x = ±100 mm, y = +74.5 / −75.5 mm
-  from the hole centre). Each slot is 1 mm long, so the holder fits whichever way up the faceplate is
-  mounted. The holder adds 3 mm to the stack, so the faceplate's #8-32 × 1-3/8" screws may need to
-  become 1-1/2" to keep full thread in their nuts.
+- **Screws:** four 5.5 mm slots at the faceplate's screw holes (x = ±100 mm, y = +74.5 / −75.5 mm from
+  the hole centre): clearance for M5 screws (pan heads with a 3 mm hex socket). Each slot is 1 mm
+  longer than wide, so the holder fits whichever way up the faceplate is mounted. The holder adds 3 mm
+  to the stack, so the faceplate screws may need to be 3 mm longer to keep full thread.
 - **Below the faceplate:** the mask runs 4.75 mm past the faceplate's bottom edge, so the crossbar
   sits just below the plate.
 
@@ -28,12 +35,12 @@ between the mask and the faceplate and out under the crossbar. It's a larger ver
 
 | Folder | Pieces | Bed needed |
 |---|---|---|
-| `onepiece/` | 1 | About 220 × 250 mm (part is 216 × 248) |
-| `split-3-piece/` | Left leg, right leg, crossbar | 200 × 220 mm. The legs come laid on a 45° diagonal (≈190 × 190 mm); print them one at a time |
+| `onepiece/` | 1 | About 220 × 215 mm (part is 216 × 211) |
+| `split-3-piece/` | Crossbar, left leg, right leg | 200 × 220 mm; all three fit at once (crossbar 216 × 74, legs 21 × 143) |
 
-**Assembling the split version:** the crossbar's dovetails press into the legs from the front. Glue
-them with CA (super glue): the crossbar hangs below the faceplate, so nothing behind it holds the joint
-in place.
+**Assembling the split version:** the pieces part 60 mm below the hole centre, between the screws, so
+the crossbar carries both lower screws and each leg carries one upper screw. The crossbar's dovetails
+press into the legs from the front; the screws hold everything in place, so glue is optional.
 
 ## Printing (PLA)
 
