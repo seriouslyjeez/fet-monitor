@@ -299,11 +299,11 @@ def paired(cfg):
                 return
         elif key == "signout?":
             st["screen"] = "confirm"
-        elif key in ("signout", "claim_cancel", "start_record", "back_to_sighters"):
+        elif key in ("signout", "claim_cancel", "start_record", "back_to_sighters", "control_here"):
             st["screen"] = "target"
             r = await act(key)
             st["msg"] = ({"signout": "Signed out", "claim_cancel": "Claim cancelled", "start_record": "Record started",
-                          "back_to_sighters": "Back to sighters"}[key], ui.GOOD) if r is True else (r, ui.BAD)
+                          "back_to_sighters": "Back to sighters", "control_here": "Controls here"}[key], ui.GOOD) if r is True else (r, ui.BAD)
         st["dirty"] = True
 
     def trouble(exc):

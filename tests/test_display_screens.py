@@ -191,6 +191,8 @@ for a in sv:                                           # each over each other: t
             target.sights(s, views[b], pb, views[a], pa)
             same(("sights", a, pa, b, pb), lambda: target.sights(s, views[b], pb))
             n += 1
+assert target.panel_button(views["phone control"]) == ("CONTROL HERE", "control_here")
+assert target.panel_button(views["signed in"])[1] == "signout?"
 assert [w for w, _ in target._click_lines({"x": -2, "y": 1})] == ["UP", "LEFT"]
 assert target._click_lines({"x": 0, "y": 0}) == []
 print("SCREENS", n)
@@ -249,6 +251,7 @@ class EveryScreen(LinkedCase):
         views["sights one way"] = dict(views["sights clicks"], sights=dict(views["sights clicks"]["sights"], clicks={"x": 1, "y": 0}))
         self.assertEqual(views["sights many clicks"]["sights"]["clicks"]["x"], -40, "100 per ring")
         views["sights huge clicks"] = dict(views["sights clicks"], sights=dict(views["sights clicks"]["sights"], clicks={"x": -250, "y": 12345}))
+        views["phone control"] = dict(views["signed in"], control="phone")   # CONTROL HERE (user 2026-11-22)
         views["claim"] = dict(views["empty"], claim={"public_name": "Al Aim", "until_ms": views["empty"]["server_time_ms"] + 90000, "left_ms": 90000})
         self.assertTrue(views["empty"]["signin_url"], "linked: the sign-in address")
         with tempfile.TemporaryDirectory() as tmp:

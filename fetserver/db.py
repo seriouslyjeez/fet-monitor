@@ -563,6 +563,11 @@ MIGRATIONS = [
     ALTER TABLE targets ADD COLUMN sights_json TEXT;
     ALTER TABLE targets ADD COLUMN sights_cpr REAL NOT NULL DEFAULT 4;
     """,
+    """
+    -- Where a signed-in athlete's lane is controlled from (user 2026-11-22): "lane" (the lane display and the lane's own
+    -- screen) or "phone" (their phone, through deepTENS: the lane's lease is then the phone's).
+    ALTER TABLE athlete_sessions ADD COLUMN control TEXT NOT NULL DEFAULT 'lane';
+    """,
 ]
 
 

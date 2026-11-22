@@ -22,6 +22,7 @@ class Fake(FakeDeepTens):
         self.athletes = []                 # roster: the range's athletes
         self.pending = []                  # phone sign-ins waiting for the Pi
         self.acks = []
+        self.actions, self.action_acks = [], []   # the phones' lane actions, and how they went
         self.idle = 15
         self.pin_calls = 0
 
@@ -33,8 +34,10 @@ class Fake(FakeDeepTens):
                 return (200, {"athlete": a}) if a else (403, {"error": "wrong athlete number or PIN"})
             if path == "/api/monitor/v1/signins":
                 self.acks += body.get("acks", [])
+                self.action_acks += body.get("action_acks", [])
                 out, self.pending = self.pending, []
-                return 200, {"signins": out}
+                acts, self.actions = self.actions, []
+                return 200, {"signins": out, "actions": acts}
             if path == "/api/monitor/v1/roster":
                 return 200, {"range": {"id": 3, "name": "Riverside"}, "members": self.members, "athletes": self.athletes,
                              "signin_idle_min": self.idle}
@@ -196,6 +199,111 @@ class Phone(Case):
         self.assertTrue(self.a.code_ok("lane-1", c2, self.clock.t), "the previous one still works for a while")
         self.clock.t += 2 * CODE_LIFE_MS
         self.assertFalse(self.a.code_ok("lane-1", c3, self.clock.t))
+
+
+class PhoneControl(Case):
+    """Where the lane is controlled from (user 2026-11-22): the phone asks, "Where is control, lane display or your
+    device?"; one holder at a time; the lane display keeps its buttons and can take control back; a range officer
+    takes it without asking; 15 minutes without a shot signs out (the range's idle time)."""
+    def signin(self, control="phone", athlete=JO, did="lane-1"):
+        code = self.target(did)["signin_url"].rstrip("/").split("/")[-1]
+        self.fake.pending = [{"id": 9, "kind": "in", "lane": self.target(did)["lane"], "code": code, "athlete": athlete, "control": control}]
+        self.step(); self.step()
+        self.assertTrue(self.fake.acks[-1]["ok"], self.fake.acks)
+
+    def act(self, action, athlete=JO, did="lane-1"):
+        n = 100 + len(self.fake.action_acks)
+        self.fake.actions = [{"id": n, "lane": self.target(did)["lane"], "athlete": athlete, "action": action}]
+        self.step(); self.step()
+        a = next(a for a in self.fake.action_acks if a["id"] == n)
+        return {"ok": a["ok"], "why": a["why"]}
+
+    def lease(self, did="lane-1"):
+        return self.core.db.conn().execute("SELECT client_id, holder_name FROM leases WHERE device_id=?", (did,)).fetchone()
+
+    def control(self, did="lane-1"):
+        return self.a.control_of(self.core.db.conn(), did)
+
+    def test_signed_in_with_the_controls_on_the_phone(self):
+        self.signin("phone")
+        self.assertEqual(self.control(), "phone")
+        sid = self.target()["athlete"]["id"]
+        self.assertEqual(tuple(self.lease()), ("deeptens-phone-%d" % sid, "J. S.'s phone"))
+        self.assertEqual(self.target()["athlete"]["control"], "phone")
+        r = self.core.acquire_control("lane-1", "browser-client-01", "Bob")
+        self.assertFalse(r["granted"], "one holder at a time: a browser does not get it by asking")
+        self.assertEqual(self.act("sighters"), {"ok": True, "why": ""})
+        self.assertEqual(self.target()["mode"], "sighter")
+        before = self.target()["series_id"]
+        self.assertTrue(self.act("new_series")["ok"])
+        self.assertNotEqual(self.target()["series_id"], before)
+        self.assertEqual(self.target()["mode"], "sighter", "New series keeps the mode")
+        self.assertTrue(self.act("practice")["ok"])
+        self.assertEqual(self.target()["mode"], "practice")
+
+    def test_controls_on_the_lane_by_default_and_moving_them(self):
+        self.signin("lane")
+        self.assertEqual((self.control(), self.lease()), ("lane", None))
+        self.assertEqual(self.act("sighters"), {"ok": False, "why": "the controls are on the lane: move them to your phone first"})
+        self.assertTrue(self.act("control_phone")["ok"])
+        self.assertEqual(self.control(), "phone")
+        self.assertTrue(self.act("control_lane")["ok"])
+        self.assertEqual((self.control(), self.lease()), ("lane", None))
+
+    def test_only_the_athlete_signed_in_there(self):
+        self.signin("phone")
+        r = self.act("control_lane", athlete=AL)
+        self.assertEqual((r["ok"], r["why"]), (False, "you are not signed in on this lane"))
+        self.assertEqual(self.act("rings")["why"], "unknown action")
+        self.assertEqual(self.control(), "phone")
+        r = self.act("sighters", athlete=AL)
+        self.assertEqual((r["ok"], self.target()["mode"]), (False, "practice"), "another athlete cannot use J. S.'s controls")
+        with self.assertRaisesRegex(SigninError, "not signed in on this lane"):
+            self.a.set_control("lane-1", AL["athlete_id"], "lane")
+
+    def test_the_lane_display_takes_control_back(self):
+        ld = self.core.lane_displays
+        p = ld.pair("cyd-aaaaaa", "0.2.2")
+        ld.approve(p["code"], "lane-1")
+        self.signin("phone")
+        v = ld.view(ld.auth(p["token"]))
+        self.assertEqual(v["control"], "phone")
+        self.assertIsNone(v["signin_url"], "no QR code while someone is signed in")
+        v = ld.act(p["token"], {"action": "control_here"})
+        self.assertEqual((v["control"], self.lease()), ("lane", None))
+        with self.assertRaisesRegex(Exception, "already here"):
+            ld.act(p["token"], {"action": "control_here"})
+
+    def test_a_range_officer_takes_it_without_asking(self):
+        self.signin("phone")
+        self.assertTrue(self.core.acquire_control("lane-1", "browser-client-01", "RO Bob", takeover=True)["granted"])
+        self.assertEqual(self.control(), "other")
+        self.step(5)
+        self.assertEqual(self.target()["athlete"]["control"], "lane", "the round notices: the phone no longer has it")
+        self.assertFalse(self.act("sighters")["ok"])
+        self.assertEqual(self.lease()["client_id"], "browser-client-01", "the range officer keeps it")
+
+    def test_kept_while_the_session_lasts_and_gone_when_it_ends(self):
+        self.signin("phone")
+        for _ in range(4):                                       # 20 minutes of rounds, shooting
+            self.shoot("lane-1")
+            self.step(5 * 60)
+        self.assertEqual(self.control(), "phone", "renewed each round (a browser's lease lasts a minute)")
+        self.step(16 * 60)                                       # 15 minutes without a shot: signed out
+        self.assertIsNone(self.target()["athlete"])
+        self.assertIsNone(self.lease(), "the phone's control ends with the session")
+
+    def test_signing_out_from_the_phone(self):
+        self.signin("phone")
+        self.assertTrue(self.act("signout")["ok"])
+        self.assertEqual((self.target()["athlete"], self.lease()), (None, None))
+
+    def test_deeptens_learns_where_the_controls_are(self):
+        self.signin("phone")
+        self.shoot("lane-1")
+        self.step(3)
+        lane = {x["lane"]: x for x in self.fake.lane_posts[-1]}[self.target()["lane"]]
+        self.assertEqual((lane["control"], lane["mode"], lane["athlete_id"]), ("phone", "practice", JO["athlete_id"]))
 
 
 class Timeouts(Case):

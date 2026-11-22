@@ -124,6 +124,7 @@ class DeepTens:
         self.next_roster = 0.0
         self.signins = {}                               # state -> (where to, expires): sign-ins started here
         self.lane_board = False                         # the range's public lane board is on (deepTENS says, in heartbeats)
+        self.action_acks = []                            # how the phones' lane actions went, for the next sign-in round
         self.mark_dir = Path(data_dir) if data_dir is not None else None
         self.next_mark = 0.0
         self.next_lanes, self.lanes_sent_at, self.last_lanes = 0.0, 0.0, None
@@ -251,7 +252,7 @@ class DeepTens:
             self.roster = {}                            # nobody signs in through a link that is gone
             if self.roster_path is not None and self.roster_path.exists():
                 self.roster_path.unlink()
-            self.signin_acks = []
+            self.signin_acks, self.action_acks = [], []
             self.hosted_rev, self.registered = None, set()
             if self.hosted_path is not None and self.hosted_path.exists():
                 self.hosted_path.unlink()
@@ -404,6 +405,8 @@ class DeepTens:
                              "proj": f.get("projectile_mm") or 4.5, "decimal": bool(f.get("decimal"))}}
             if t.get("athlete"):                        # for their coaches (P2); deepTENS never shows it on the board
                 lane["athlete_id"] = t["athlete"]["athlete_id"]
+                lane["control"] = self.core.athletes.control_of(c, t["device_id"])   # the athlete's phone (user 2026-11-22)
+                lane["mode"] = t["mode"]
             if mi:
                 m = c.execute("SELECT m.name, m.publish_deeptens, c.publish_deeptens AS cpub, c.name AS cname FROM matches m "
                               "LEFT JOIN competitions c ON c.id=m.competition_id WHERE m.id=?", (mi["match_id"],)).fetchone()
@@ -648,16 +651,17 @@ class DeepTens:
         """Phones signing in or out at a lane (its QR code opens deepTENS): report how the last ones went, take the new."""
         self.next_signins = now + SIGNINS_S
         acks, self.signin_acks = self.signin_acks + self.core.athletes.take_claim_news(), []   # and how posters' claims went
+        done, self.action_acks = self.action_acks, []
         try:
-            st, r = self._call("/signins", {"acks": acks})
+            st, r = self._call("/signins", {"acks": acks, "action_acks": done})
         except OSError:
-            self.signin_acks = acks + self.signin_acks
+            self.signin_acks, self.action_acks = acks + self.signin_acks, done + self.action_acks
             return
         if st == 401:
             self._forget(remotely=True)
             return
         if st != 200:
-            self.signin_acks = acks + self.signin_acks
+            self.signin_acks, self.action_acks = acks + self.signin_acks, done + self.action_acks
             return
         for s in r.get("signins", []) if isinstance(r.get("signins"), list) else []:
             if isinstance(s, dict) and isinstance(s.get("id"), int):
@@ -666,7 +670,11 @@ class DeepTens:
                 if s.get("kind") == "claim":             # a poster's claim: waiting for a shot, or refused (later: confirmed / lapsed / cancelled)
                     ack["state"] = "pending" if ok else "refused"
                 self.signin_acks.append(ack)
-        if self.signin_acks or self.core.athletes.claim_news:
+        for a in r.get("actions", []) if isinstance(r.get("actions"), list) else []:   # the athletes' phones (user 2026-11-22)
+            if isinstance(a, dict) and isinstance(a.get("id"), int):
+                ok, why = self.core.athletes.phone_action(a)
+                self.action_acks.append({"id": a["id"], "ok": ok, "why": why})
+        if self.signin_acks or self.action_acks or self.core.athletes.claim_news:
             self.next_signins = now                      # say how it went at once (the phone is waiting)
 
     def _poll(self, now: float) -> float:

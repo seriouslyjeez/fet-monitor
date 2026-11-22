@@ -36,6 +36,15 @@ class SigninError(ValueError):
     pass
 
 
+PHONE_LEASE_MS = 10 * 60 * 1000                  # renewed every round while the session lasts (tick)
+PHONE_ACTIONS = ("control_phone", "control_lane", "practice", "sighters", "new_series", "signout")
+
+
+def phone_client(session_id: int) -> str:
+    """The lane's lease holder for a phone that controls it through deepTENS (the lease's client id)."""
+    return "deeptens-phone-%d" % session_id
+
+
 class Athletes:
     def __init__(self, core):
         self.core = core
@@ -78,7 +87,7 @@ class Athletes:
     @staticmethod
     def _view(r) -> dict:
         return {"id": r["id"], "athlete_id": r["athlete_id"], "number": r["number"], "name": r["name"], "public_name": r["public_name"],
-                "via": r["via"], "started_ms": r["started_ms"], "ended_ms": r["ended_ms"], "end_why": r["end_why"]}
+                "via": r["via"], "started_ms": r["started_ms"], "ended_ms": r["ended_ms"], "end_why": r["end_why"], "control": r["control"]}
 
     @staticmethod
     def public_view(v: Optional[dict]) -> Optional[dict]:
@@ -196,6 +205,7 @@ class Athletes:
         """Inside a transaction: the session ends now; outside a match the lane starts a fresh series in no one's name."""
         from .core import RANGE_NAME, KIND_OF_MODE, session_name
         c.execute("UPDATE athlete_sessions SET ended_ms=?, end_why=? WHERE id=?", (now, why, r["id"]))
+        c.execute("DELETE FROM leases WHERE device_id=? AND client_id=?", (r["device_id"], phone_client(r["id"])))   # the phone's control ends too
         if not self.core.matches.lock_of(c, r["device_id"]):
             seg = c.execute("SELECT mode FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (r["device_id"],)).fetchone()
             mode = seg["mode"] if seg else "practice"
@@ -268,6 +278,78 @@ class Athletes:
         raise SigninError("not one of this range's athletes (a Range Manager adds them on deepTENS)")
 
     # ------------------------------------------------------------------------------------------- phones (the link)
+    # ------------------------------------------------------------------------- control: the lane or the phone (user 2026-11-22)
+    def set_control(self, device_id: str, athlete_id: int, where: str) -> dict:
+        """Where the signed-in athlete's lane is controlled from: "phone" (the lane's lease becomes their phone's; a
+        browser holding it loses it, as a range officer's takeover would) or "lane" (the lease is let go: the lane
+        display and the lane's own screen). Only the athlete signed in on that lane."""
+        if where not in ("phone", "lane"):
+            raise SigninError("control: phone or lane")
+        core = self.core
+        now = core.now_ms()
+        with core.db.write() as c:
+            r = c.execute("SELECT * FROM athlete_sessions WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (device_id,)).fetchone()
+            if r is None or r["athlete_id"] != athlete_id:
+                raise SigninError("you are not signed in on this lane")
+            c.execute("UPDATE athlete_sessions SET control=? WHERE id=?", (where, r["id"]))
+            if where == "phone":
+                c.execute("INSERT OR REPLACE INTO leases (device_id, client_id, holder_name, acquired_ms, expires_ms) VALUES (?,?,?,?,?)",
+                          (device_id, phone_client(r["id"]), (r["public_name"] + "'s phone")[:40], now, now + PHONE_LEASE_MS))
+            else:
+                c.execute("DELETE FROM leases WHERE device_id=? AND client_id=?", (device_id, phone_client(r["id"])))
+            out = self.on(c, device_id)
+        core.hub.publish({"type": "lease", "device_id": device_id})
+        return out
+
+    def control_of(self, c, device_id: str) -> Optional[str]:
+        """"phone" while the signed-in athlete's phone holds the lane's lease, "lane" while it is the lane's, "other"
+        while someone else's browser holds it (a range officer took it); None: nobody signed in."""
+        r = c.execute("SELECT id, control FROM athlete_sessions WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (device_id,)).fetchone()
+        if r is None:
+            return None
+        lease = c.execute("SELECT client_id FROM leases WHERE device_id=? AND expires_ms>?", (device_id, self.core.now_ms())).fetchone()
+        if r["control"] == "phone" and lease is not None and lease["client_id"] == phone_client(r["id"]):
+            return "phone"
+        return "other" if lease is not None and not lease["client_id"].startswith("deeptens-phone-") else "lane"
+
+    def phone_action(self, a: dict) -> tuple:
+        """One action from the signed-in athlete's phone that deepTENS passed on: (ok, why). Control moves, the lane's
+        mode and New series (only while the phone has control), sign out."""
+        lane, action = a.get("lane"), a.get("action")
+        if action not in PHONE_ACTIONS:
+            return False, "unknown action"
+        c = self.core.db.conn()
+        t = c.execute("SELECT device_id FROM targets WHERE lane=? AND removed=0 AND banned=0", (lane,)).fetchone() if isinstance(lane, int) else None
+        if t is None:
+            return False, f"lane {lane} is not on this FeT Monitor any more"
+        did = t["device_id"]
+        try:
+            aid = self._athlete(a.get("athlete"))["athlete_id"]
+            r = c.execute("SELECT * FROM athlete_sessions WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+            if r is None or r["athlete_id"] != aid:
+                return False, "you are not signed in on this lane"
+            if action == "signout":
+                self.sign_out(did, "signout", athlete_id=aid)
+            elif action in ("control_phone", "control_lane"):
+                self.set_control(did, aid, action[8:])
+            else:
+                if self.control_of(c, did) != "phone":
+                    return False, "the controls are on the lane: move them to your phone first"
+                seg = c.execute("SELECT mode FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (did,)).fetchone()
+                mode = {"practice": "practice", "sighters": "sighter"}.get(action) or (seg["mode"] if seg else "practice")
+                self.core.set_mode(did, phone_client(r["id"]), mode, new_series=action == "new_series")
+                self._renew_phone(did, r["id"])
+            return True, ""
+        except SigninError as exc:
+            return False, str(exc)
+        except Exception as exc:                          # BadRequest, Forbidden (a match): its words for the phone
+            return False, str(exc)
+
+    def _renew_phone(self, device_id: str, session_id: int) -> None:
+        with self.core.db.write() as w:
+            w.execute("UPDATE leases SET expires_ms=? WHERE device_id=? AND client_id=?",
+                      (self.core.now_ms() + PHONE_LEASE_MS, device_id, phone_client(session_id)))
+
     def phone(self, s: dict) -> tuple:
         """A sign-in or sign-out from a phone that deepTENS passed on: (ok, why)."""
         lane = s.get("lane")
@@ -285,7 +367,9 @@ class Athletes:
                 return True, ""
             if not self.code_ok(t["device_id"], s.get("code"), self.core.now_ms()):
                 return False, "that code is old: scan the lane's code again"
-            self.sign_in(t["device_id"], s.get("athlete"), "phone")
+            out = self.sign_in(t["device_id"], s.get("athlete"), "phone")
+            if s.get("control") == "phone":              # the phone asked for the controls (user 2026-11-22)
+                self.set_control(t["device_id"], out["athlete_id"], "phone")
             return True, ""
         except SigninError as exc:
             return False, str(exc)
@@ -399,6 +483,14 @@ class Athletes:
         now = core.now_ms()
         idle = self.idle_ms()
         c = core.db.conn()
+        for r in c.execute("SELECT * FROM athlete_sessions WHERE ended_ms IS NULL AND control='phone'").fetchall():
+            lease = c.execute("SELECT client_id FROM leases WHERE device_id=?", (r["device_id"],)).fetchone()
+            if lease is not None and lease["client_id"] == phone_client(r["id"]):
+                self._renew_phone(r["device_id"], r["id"])  # the phone keeps the lane while the session lasts
+            else:                                        # taken (a range officer) or let go: the controls are the lane's
+                with core.db.write() as w:
+                    w.execute("UPDATE athlete_sessions SET control='lane' WHERE id=?", (r["id"],))
+                core.hub.publish({"type": "lease", "device_id": r["device_id"]})
         for r in c.execute("SELECT * FROM athlete_sessions WHERE ended_ms IS NULL").fetchall():
             if core.matches.lock_of(c, r["device_id"]):
                 with core.db.write() as w:

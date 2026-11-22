@@ -354,6 +354,8 @@ def panel_button(v):
         return ("START RECORD" if b == "start_record" else "SIGHTERS", b)
     if v.get("claim"):
         return ("NOT YOU?", "claim_cancel")
+    if v.get("control") == "phone":                # the athlete's phone has the controls: the lane takes them back
+        return ("CONTROL HERE", "control_here")
     if v.get("athlete"):
         return ("SIGN OUT", "signout?") if v.get("can_sign_out") else None
     if v.get("signin_url") or v.get("pin_signin"):

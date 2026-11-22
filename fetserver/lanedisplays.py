@@ -42,7 +42,7 @@ MAX_WAIT_S = 30
 HW_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,40}$")
 FW_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,20}$")
 NAME_MAX = 40
-ACTIONS = ("signin", "signout", "claim_cancel", "start_record", "back_to_sighters")
+ACTIONS = ("signin", "signout", "claim_cancel", "start_record", "back_to_sighters", "control_here")
 VOLATILE = ("server_time_ms", "left_ms", "remaining_ms")       # change by themselves: not part of rev
 
 
@@ -295,6 +295,7 @@ class LaneDisplays:
             "pin_signin": t["athlete"] is None and dt is not None and bool(dt.linked),
             "claim": t["claim"],
             "can_sign_out": t["athlete"] is not None and info is None,
+            "control": core.athletes.control_of(c, r["device_id"]),     # "phone": CONTROL HERE (user 2026-11-22)
             "mode": t["mode"], "kind": v["kind"], "stream": v["stream"], "label": v["label"],
             "face": {k: face.get(k) for k in ("id", "name", "decimal", "rings", "black_mm", "white_ten", "inner_mm", "projectile_mm", "ring_mm")},
             "shots": shots, "count": v["count"], "bull": v["bull_index"] + 1, "bulls": v["bull_count"],
@@ -345,6 +346,11 @@ class LaneDisplays:
         elif action == "claim_cancel":
             if not core.athletes.cancel_claim(did):
                 raise DisplayError("no claim is waiting here")
+        elif action == "control_here":                 # the lane display is part of the lane: control comes back to it
+            a = core.athletes.on(self.db.conn(), did)
+            if a is None or core.athletes.control_of(self.db.conn(), did) != "phone":
+                raise DisplayError("the controls are already here")
+            core.athletes.set_control(did, a["athlete_id"], "lane")
         else:
             info = core.matches.target_info(self.db.conn(), did, core.now_ms())
             if action not in match_buttons(info):
