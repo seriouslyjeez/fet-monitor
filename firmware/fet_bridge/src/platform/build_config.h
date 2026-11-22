@@ -21,12 +21,12 @@
 #undef FET_HTTPS
 #define FET_HTTPS 1
 #if F_CPU == 160000000L
-#define FET_FW_VERSION "0.5.0-tls160"
+#define FET_FW_VERSION "0.5.1-tls160"
 #else
-#define FET_FW_VERSION "0.5.0-tls80"
+#define FET_FW_VERSION "0.5.1-tls80"
 #endif
 #else
-#define FET_FW_VERSION "0.5.0"
+#define FET_FW_VERSION "0.5.1"
 #endif
 #define FET_TLS_HANDSHAKE_MS 10000   // a handshake (and the first answer on a new connection) may take this long
 // Sent as the User-Agent; the server also finds it inside an uploaded image to recognise our firmware and its version.
