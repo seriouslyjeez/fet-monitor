@@ -14,7 +14,7 @@ from fetcore.groupstats import group_stats
 from .hub import Hub
 from fetcore.lineparse import ParseError, echo_summary, parse_echo, parse_shot_line, shot_from_dict
 from fetcore.shotsolve import Geometry, solve, timers_from_reported
-from fetcore.targetproto import key_fingerprint, make_command, make_update, parse_hello, parse_reply, parse_shot
+from fetcore.targetproto import ProtoError, key_fingerprint, mac, make_command, make_update, parse_hello, parse_reply, parse_shot
 from fetcore.scoring import SCORING_VERSION
 from fetcore import faces as F
 from . import wifilink
@@ -471,14 +471,36 @@ class Core:
                               (device_id, "target", make_command(h["boot"], i, verb, None, key).rstrip("\n"), self.now_ms()))
             elif h["boot"] == t["target_boot"] and self._sleep_wanted(c, device_id):
                 self._queue_target(c, device_id, "status")        # woken by its lights button? (it says hello then)
+            elif h["boot"] < t["target_boot"] and not self._probe_pending(c, device_id):
+                # A lower start with the bound key (its count was reset, or this hello is an old one sent again): the
+                # hello never moves the start back; a status for the start this Pi knows gets a signed "wrong_boot"
+                # reply naming the board's real start, which does (_reanchor).
+                self._queue_target(c, device_id, "status")
         elif t["key_fp"] is None:                       # never from an unsigned hello once a key is bound: the board
             c.execute("UPDATE targets SET arduino_version=?, board_rev=? WHERE device_id=?",   # revision picks the clock
                       (version, h["rev"], device_id))
 
     def _derive_target_reply(self, c, device_id, raw) -> None:
-        r = parse_reply(raw, self._target_key(c, device_id))
+        """A signed reply: its command's answer. A reply this Pi cannot check still says why the target refused, for
+        Range Control (never "ok", never acted on): "key_mismatch" (signed with a key that is not this Pi's: given a
+        new key elsewhere, e.g. at deeptens.com/setup) or "no_key" (unsigned: the board has no key). A signed
+        "wrong_boot" moves this Pi to the start it names (_reanchor)."""
+        key = self._target_key(c, device_id)
+        try:
+            r = parse_reply(raw, key)
+        except ProtoError as exc:
+            if str(exc) != "signature does not match":
+                raise
+            self._note_refusal(c, device_id, parse_reply(raw, None), "key_mismatch")
+            raise ValueError("signature does not match: the target's key is not this Pi's (Flash station, New key)")
         if not r["authenticated"]:
+            if key is not None:                         # (no key here: this Pi signed no command for it)
+                self._note_refusal(c, device_id, r, "no_key")
             raise ValueError("reply not authenticated")
+        t = c.execute("SELECT target_boot FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if r["reason"] == "wrong_boot" and r["boot"] > 0 and t["target_boot"] is not None and r["boot"] != t["target_boot"]:
+            self._reanchor(c, device_id, t["target_boot"], r, key)
+            return
         cmd = c.execute("SELECT id, line FROM commands WHERE device_id=? AND type='target' AND line LIKE ? ORDER BY id DESC LIMIT 1",
                         (device_id, f"FT1 C b={r['boot']} i={r['id']} %")).fetchone()
         if cmd is None:
@@ -742,6 +764,44 @@ class Core:
         if verb in ("sleep", "wake"):
             self.hub.publish({"type": "targets", "device_id": device_id})
         return cmd_id
+
+    @staticmethod
+    def _note_refusal(c, device_id: str, r: dict, why: str) -> None:
+        """A reply this Pi cannot check: noted on the newest unanswered command with its id (any start: the board
+        answers with its own), for Range Control to say why nothing happens."""
+        c.execute("""UPDATE commands SET reply=? WHERE id=(SELECT id FROM commands WHERE device_id=? AND type='target'
+                     AND reply IS NULL AND line LIKE ? ORDER BY id DESC LIMIT 1)""",
+                  (why, device_id, f"FT1 C b=% i={int(r['id'])} %"))
+
+    @staticmethod
+    def _probe_pending(c, device_id: str) -> bool:
+        return c.execute("""SELECT 1 FROM commands WHERE device_id=? AND type='target' AND reply IS NULL AND status IN ('queued','sent')
+                            AND line LIKE '% status h=%'""", (device_id,)).fetchone() is not None
+
+    REANCHOR_RESEND_MS = 10 * 60_000                    # a refused command older than this is not sent again
+
+    def _reanchor(self, c, device_id: str, stale: int, r: dict, key: bytes) -> None:
+        """A signed "wrong_boot": the board runs start r["boot"], not the one this Pi had (its count went back: a
+        board erased and given the same key, or a hello missed). Commands from now on name that start; the refused
+        command is signed again for it (if recent), then its settings and status are asked for, as at a new start.
+        The command ids keep counting up (any id above the last the board took in this start is accepted). An old
+        signed reply sent again could move this Pi to an old start: the next command's own "wrong_boot" moves it back."""
+        cmd = c.execute("SELECT id, line, created_ms FROM commands WHERE device_id=? AND type='target' AND line LIKE ? ORDER BY id DESC LIMIT 1",
+                        (device_id, f"FT1 C b={stale} i={int(r['id'])} %")).fetchone()
+        if cmd is not None:
+            c.execute("UPDATE commands SET reply='wrong_boot' WHERE id=?", (cmd["id"],))
+        c.execute("UPDATE targets SET target_boot=? WHERE device_id=?", (r["boot"], device_id))
+        log.warning("FeT target %s: runs start %d, not %d: commands now name it", device_id, r["boot"], stale)
+        verb = cmd["line"].split(" ")[4] if cmd is not None else None
+        if cmd is not None and verb not in ("get", "status") and self.now_ms() - cmd["created_ms"] <= self.REANCHOR_RESEND_MS:
+            t = c.execute("SELECT target_cmd_id FROM targets WHERE device_id=?", (device_id,)).fetchone()
+            cmd_id = t["target_cmd_id"] + 1
+            head = f"FT1 C b={r['boot']} i={cmd_id} " + cmd["line"].rsplit(" h=", 1)[0].split(" ", 4)[4]
+            c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+            c.execute("INSERT INTO commands (device_id, type, line, created_ms) VALUES (?,?,?,?)",
+                      (device_id, "target", f"{head} h={mac(key, head.encode())}", self.now_ms()))
+        self._queue_target(c, device_id, "get")
+        self._queue_target(c, device_id, "status")
 
     def _queue_target(self, c, device_id: str, verb: str, settings: Optional[dict] = None) -> int:
         """Sign and queue one command for a FeT target whose key and boot are known (checked by the caller)."""

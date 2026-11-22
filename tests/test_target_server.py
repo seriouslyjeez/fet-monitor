@@ -424,8 +424,119 @@ class Commands(Base):
         self.send("target_reply", signed("FT1 R b=3 i=1 r=ok led_pct=99", key=None))
         self.assertEqual(self.last_error(), "reply not authenticated")
         self.send("target_reply", signed("FT1 R b=3 i=1 r=ok led_pct=99", key=bytes(32)))
-        self.assertEqual(self.last_error(), "signature does not match")
-        self.assertIsNone(self.core.db.conn().execute("SELECT reply FROM commands").fetchone()[0])
+        self.assertTrue(self.last_error().startswith("signature does not match"))
+        self.assertEqual(self.core.db.conn().execute("SELECT reply FROM commands").fetchone()[0], "no_key",
+                         "noted as a refusal (Range Control says why), never as ok")
+        self.assertIsNone(self.target()["target_settings_json"], "nothing from them applied")
+
+
+OTHER_KEY = bytes(range(101, 133))                      # e.g. the key deeptens.com/setup gave the board
+
+
+class DeafTarget(Base):
+    """A target that takes no command from this Pi says why (user 2026-11-21: a target set up at deeptens.com/setup kept
+    deepTENS's key through a flash station update; every command was refused in silence), and a board whose start count
+    went back is followed by its own signed word."""
+    def cmds(self):
+        return self.core.db.conn().execute("SELECT line, reply FROM commands ORDER BY id").fetchall()
+
+    def heads(self):
+        return [r["line"].rsplit(" h=", 1)[0] for r in self.cmds()]
+
+    def assert_signed(self, key=KEY):
+        for r in self.cmds():
+            head, _, tag = r["line"].rpartition(" h=")
+            self.assertEqual(tag, mac(key, head.encode()), r["line"])
+
+    def test_a_reply_signed_with_another_key(self):
+        self.bound()
+        self.core.target_command("t1", "sleep")
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=bad_signature", key=OTHER_KEY))
+        self.assertTrue(self.last_error().startswith("signature does not match"))
+        self.assertEqual(self.cmds()[-1]["reply"], "key_mismatch")
+        self.assertEqual(self.target()["target_asleep"], 0)
+        self.assertEqual(self.target()["target_boot"], 3, "an unchecked reply moves nothing")
+
+    def test_an_unsigned_reply_from_a_board_without_a_key(self):
+        self.bound()
+        self.core.target_command("t1", "status")
+        self.send("target_reply", signed("FT1 R b=1 i=3 r=not_provisioned", key=None))     # its own start, not 3
+        self.assertEqual(self.cmds()[-1]["reply"], "no_key")
+        self.assertIsNone(self.target()["target_status_json"])
+
+    def test_a_refusal_is_noted_on_the_newest_unanswered_command_with_that_id(self):
+        self.bound()
+        self.core.target_command("t1", "status")                                        # i=3
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=ok k=1234abcd up=1 d=0 q=0"))
+        self.send("target_hello", hello(4))                                             # a new start: i=1, 2 again
+        self.send("target_reply", signed("FT1 R b=4 i=2 r=bad_signature", key=OTHER_KEY))
+        self.assertEqual([r["reply"] for r in self.cmds()], [None, None, "ok", None, "key_mismatch"])
+        self.send("target_reply", signed("FT1 R b=3 i=3 r=bad_signature", key=None))
+        self.assertEqual(self.cmds()[2]["reply"], "ok", "an answered command keeps its answer")
+
+    def test_an_unsigned_wrong_boot_moves_nothing(self):
+        self.bound(40)
+        self.core.target_command("t1", "sleep")
+        self.send("target_reply", signed("FT1 R b=2 i=3 r=wrong_boot", key=None))
+        self.assertEqual(self.target()["target_boot"], 40)
+        self.assertEqual(len(self.cmds()), 3, "nothing sent again")
+
+    def test_a_signed_wrong_boot_moves_to_the_boards_start(self):
+        self.bound(40)
+        self.core.target_command("t1", "set", {"led_pct": 80})                          # b=40 i=3
+        self.send("target_reply", signed("FT1 R b=2 i=3 r=wrong_boot"))
+        self.assertEqual(self.target()["target_boot"], 2)
+        self.assertEqual(self.cmds()[2]["reply"], "wrong_boot")
+        self.assertEqual(self.heads()[3:], ["FT1 C b=2 i=4 set led_pct=80", "FT1 C b=2 i=5 get", "FT1 C b=2 i=6 status"],
+                         "the refused command signed again for its start, then its settings and status")
+        self.assert_signed()
+        self.send("target_reply", signed("FT1 R b=2 i=4 r=ok k=0a0b0c0d led_pct=80"))
+        self.assertEqual(self.cmds()[3]["reply"], "ok")
+        self.core.target_command("t1", "sleep")
+        self.assertEqual(self.heads()[-1], "FT1 C b=2 i=7 sleep", "and every command after")
+
+    def test_get_or_status_refused_is_not_asked_twice(self):
+        self.bound(40)
+        self.core.target_command("t1", "status")
+        self.send("target_reply", signed("FT1 R b=2 i=3 r=wrong_boot"))
+        self.assertEqual(self.heads()[3:], ["FT1 C b=2 i=4 get", "FT1 C b=2 i=5 status"])
+
+    def test_an_old_refused_command_is_not_sent_again(self):
+        t = [1_000_000_000_000]
+        self.core.now_ms = lambda: t[0]
+        self.bound(40)
+        self.core.target_command("t1", "sleep")
+        t[0] += self.core.REANCHOR_RESEND_MS + 1
+        self.send("target_reply", signed("FT1 R b=2 i=3 r=wrong_boot"))
+        self.assertEqual(self.target()["target_boot"], 2)
+        self.assertEqual(self.heads()[3:], ["FT1 C b=2 i=4 get", "FT1 C b=2 i=5 status"], "a sleep long after is a surprise")
+
+    def test_no_start_count_is_not_followed(self):
+        self.bound(40)
+        self.core.target_command("t1", "status")
+        self.send("target_reply", signed("FT1 R b=0 i=3 r=wrong_boot"))
+        self.assertEqual(self.target()["target_boot"], 40)
+
+    def test_a_lower_start_in_a_hello_is_probed_not_believed(self):
+        self.bound(40)
+        self.send("target_reply", signed("FT1 R b=40 i=1 r=ok k=1234abcd"))            # its first start's get and status,
+        self.send("target_reply", signed("FT1 R b=40 i=2 r=ok k=1234abcd up=1 d=0 q=0"))   # answered long ago
+        self.send("target_hello", hello(2))
+        self.assertEqual(self.target()["target_boot"], 40, "a hello never moves the start back")
+        self.assertEqual(self.heads()[2:], ["FT1 C b=40 i=3 status"], "one status, for the start this Pi knows")
+        self.send("target_hello", hello(2))
+        self.assertEqual(len(self.cmds()), 3, "not again while it is on its way")
+        self.send("target_reply", signed("FT1 R b=2 i=3 r=wrong_boot"))
+        self.assertEqual(self.target()["target_boot"], 2)
+        self.assertEqual(self.heads()[3:], ["FT1 C b=2 i=4 get", "FT1 C b=2 i=5 status"])
+        self.send("target_hello", hello(2))
+        self.assertEqual(len(self.cmds()), 5, "the same start again: nothing new")
+
+    def test_an_unknown_key_hello_with_a_lower_start_is_not_probed(self):
+        self.bound(40)
+        self.send("target_hello", hello(2, OTHER_KEY, key_fingerprint(OTHER_KEY)))
+        self.assertEqual(len(self.cmds()), 2)
+        self.assertEqual(self.target()["hello_key_fp"], key_fingerprint(OTHER_KEY))
 
 
 @unittest.skipUnless(shutil.which("g++"), "g++ not available")
@@ -447,6 +558,30 @@ class EndToEnd(Base):
         tx, ty = GEOM.to_target(4.0, -6.0)
         self.assertEqual(r["auth"], 1)
         self.assertLess(math.hypot(r["x_h"] / 100 - tx, r["y_h"] / 100 - ty), 0.06)
+
+
+    def test_a_board_whose_start_went_back_takes_commands_again(self):
+        """The firmware core (boot 7) against a Pi that has start 40: its own signed wrong_boot moves the Pi."""
+        from tests.test_target_core import KEY as CORE_KEY, Harness, build
+        h = Harness(build())
+        self.addCleanup(h.close)
+        h.run("sload")
+        h.run("ckey " + CORE_KEY.hex())
+        self.core.add_target_key(CORE_KEY)
+        fp = key_fingerprint(CORE_KEY)
+        self.send("target_hello", signed(f"FT1 H b=40 fw=0.1.0 rev=310 k=1234abcd key={fp}", CORE_KEY))
+        lines = lambda: [r[0] for r in self.core.db.conn().execute("SELECT line FROM commands ORDER BY id")]
+        for line in lines():                                    # get, status for start 40: refused
+            self.send("target_reply", h.run("cmd " + line))
+        self.assertEqual(self.target()["target_boot"], 7)
+        self.core.target_command("t1", "paper")
+        for line in lines()[2:]:
+            self.send("target_reply", h.run("cmd " + line))
+        replies = [r[0] for r in self.core.db.conn().execute("SELECT reply FROM commands ORDER BY id")]
+        self.assertEqual(replies[:2], ["wrong_boot", None], "the second, for the old start, never reached a board in it")
+        self.assertEqual(replies[2:], ["ok"] * 3, "its settings, its status, then a paper advance: taken again")
+        self.assertIsNotNone(self.target()["target_settings_json"])
+        self.assertEqual(h.run("acts"), "1 0", "the paper moved once")
 
 
 if __name__ == "__main__":

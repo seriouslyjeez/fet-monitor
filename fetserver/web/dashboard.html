@@ -1690,7 +1690,7 @@ function wizWatch(targets) {                      // the last step: the targets 
     .sort((a, b) => Date.parse(b.last_seen) - Date.parse(a.last_seen)).slice(0, 4);
   return '<div class="wizwatch" aria-live="polite">' + (recent.length ? '<p>Reporting now:</p><ul class="mclist">' + recent.map(t => '<li><span class="lmain"><b><span class="dot' + dotOn(t) + '"></span> ' +
     esc(laneTitle(t)) + '</b><span class="mut">' + (t.fet_target && t.fet_target.version ? 'FeT target ' + esc(t.fet_target.version) : t.bridge_fw ? 'FeT Bridge ' + esc(t.bridge_fw) : '') +
-    (t.fet_target && t.fet_target.key_fp ? ' · its key is known here' : '') + '</span></span>' + powerBadge(t) + '</li>').join('') + '</ul>' +
+    (keyOk(t.fet_target) ? ' · its key is known here' : '') + '</span></span>' + powerBadge(t) + '</li>').join('') + '</ul>' +
     '<p class="mut">Yours is there? Fire a shot: it shows on its lane. Put it on a lane in Targets.</p>'
     : '<p><b>Waiting for your target to report…</b></p><p class="mut">It shows here within a minute of being switched on. Nothing after two minutes? ' +
       'Check its WiFi settings (the name and password, 2.4 GHz) and that the module sits the right way round.</p>') + '</div>';
@@ -1841,12 +1841,13 @@ function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): no
   const su = statusUrl(t.ip);
   const now = '<section class="tsec"><h3>Now</h3>' +
     fact('Firmware', esc(fwOf(t))) +
-    (ft ? fact('Signing key', ft.key_fp ? '<span class="num">' + esc(ft.key_fp) + '</span> <span class="ok">✓</span>' : '<span class="bad">none on this Pi</span>') : '') +
+    (ft ? fact('Signing key', !ft.key_fp ? '<span class="bad">none on this Pi</span>' : '<span class="num">' + esc(ft.key_fp) + '</span> ' +
+      (keyOk(ft) ? '<span class="ok">✓</span>' : '<span class="bad">' + (ft.hello_key_fp === 'none' ? 'the target has no key' : 'the target signs with ' + esc(ft.hello_key_fp)) + '</span>')) : '') +
     (t.rssi ? fact('WiFi signal', esc(t.rssi) + ' dBm' + (t.rssi < -70 ? ' <span class="bad">weak</span>' : '') + (t.link && t.link.ch ? ' · channel ' + esc(t.link.ch) : '')) : '') +
     fact('Shot delivery', deliveryCell(t.delivery)) +
     fact('Last report', esc(ago(t.last_seen)) + ' ago') +
     fact('Address', su ? '<a href="' + su + '" target="_blank" rel="noopener">' + esc(t.ip) + '</a>' : '–') +
-    (ft && ft.asleep ? fact('Lights', '<b>asleep</b>') : '') + '</section>' + (ft && !ft.key_fp ? '<p class="bad">' + noKeyReason(ft) + '</p>' : '');
+    (ft && ft.asleep ? fact('Lights', '<b>asleep</b>') : '') + '</section>' + (ft && !keyOk(ft) ? '<p class="bad">' + noKeyReason(ft) + '</p>' : '');
   const range = '<section class="tsec"><h3>On the range</h3>' +
     fact('Lane', '<button data-act="rclane" data-id="' + eid + '" title="Change the lane">' + esc(t.lane != null ? 'Lane ' + t.lane : 'Spare') + '</button>') +
     '<div class="fact"><span>Face</span><span class="trow2"><select id="tsface" aria-label="Face on ' + esc(t.name) + '">' + (S.faces || [AR10]).map(f => '<option value="' + esc(f.id) + '"' + (f.id === (t.installed_face || AR10.id) ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('') + '</select>' +
@@ -1873,17 +1874,31 @@ function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): no
     : '<p class="mut">Paper, lights and the other target settings appear here once the target runs FeT target firmware (Flash station). Its WiFi module then needs <b>FeT Bridge 0.4.0</b> or newer to carry its messages' +
       (isBridge(t) && !verAtLeast(t.bridge_fw, '0.4.0') ? ': <span class="bad">this one has ' + esc(t.bridge_fw) + ', update it under Firmware</span>' : '') + '.</p>';
   const acts = '<section class="tsec"><h3>Actions</h3><div class="bulk">' +
-    (ft && ft.key_fp ? (ft.asleep ? '<button data-act="rcsleepsel" data-v="wake" data-id="' + eid + '">Wake</button>' : '<button data-act="rcsleepsel" data-v="sleep" data-id="' + eid + '">Sleep</button>') : '') +
+    (keyOk(ft) ? (ft.asleep ? '<button data-act="rcsleepsel" data-v="wake" data-id="' + eid + '">Wake</button>' : '<button data-act="rcsleepsel" data-v="sleep" data-id="' + eid + '">Sleep</button>') : '') +
     '<button data-act="rccmd" data-type="reboot" data-id="' + eid + '">Restart</button>' +
     '<button class="danger" data-act="rcremove" data-id="' + eid + '">Remove from this range</button><button class="danger" data-act="rcban" data-id="' + eid + '">Ban</button></div></section>';
   const cmds = ft && ft.commands.length ? '<details class="rodet"><summary><b>Commands sent</b> <span class="mut">' + ft.commands.length + '</span></summary><ul class="flist">' + ft.commands.map(c =>
-      '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(c.reply || '–') + '</span></span></li>').join('') + '</ul></details>' : '';
+      '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(replyText(c.reply)) + '</span></span></li>').join('') + '</ul></details>' : '';
   return '<div class="sheet wide"><div class="shhead"><span><span class="mut">' + (boardOf(t) ? esc(boardOf(t)) + ' · ' : '') + eid + (ft && ft.boot != null ? ' · start ' + esc(ft.boot) : '') + (ft && ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span>' +
     '<h2><span class="dot' + dotOn(t) + '" aria-hidden="true"></span> ' + esc(laneTitle(t)) + (t.online ? '' : ' <span class="bad">not reporting</span>') + '</h2></span>' +
     '<button class="iconbtn" data-act="rctclose" aria-label="Close">' + LI.close + '</button></div>' + now + range + settings + device + acts + cmds + '</div>';
 }
-function noKeyReason(ft) {                       // why this Pi cannot sign for the target yet, and what to do
+// The target takes this Pi's commands: this Pi has a key for it, and the target's own hello names that key (it may have
+// been given another one since, e.g. at deeptens.com/setup, which a flash station update keeps: user 2026-11-21).
+const keyOk = ft => !!(ft && ft.key_fp) && !(ft.hello_key_fp && ft.hello_key_fp !== ft.key_fp);
+const REPLY_TEXT = {key_mismatch: 'refused: the target has another key', no_key: 'refused: the target has no key',
+  wrong_boot: 'refused: for an earlier start (sent again for this one)', bad_signature: 'refused: not signed with its key',
+  old_command: 'refused: already used', no_boot_count: 'refused: the target could not count this start', not_supported: 'not supported by this board'};
+const replyText = r => !r ? '–' : REPLY_TEXT[r] || r;
+function noKeyReason(ft) {                       // why this Pi cannot sign for the target (or it refuses), and what to do
   const where = ft.esp32 ? 'its ESP32 board' : 'its Arduino Mega';
+  if (ft.key_fp && ft.hello_key_fp === 'none')
+    return 'This target has lost its key (was its memory erased?), so it refuses this Pi\'s commands. Plug ' + where +
+      ' into this Pi\'s flash station (Flash station) and press New key.';
+  if (ft.key_fp && ft.hello_key_fp && ft.hello_key_fp !== ft.key_fp)
+    return 'This target now signs with key ' + esc(ft.hello_key_fp) + ', not this Pi\'s ' + esc(ft.key_fp) + ' (it was given a new key elsewhere, ' +
+      'such as at deeptens.com/setup; a firmware update keeps the key). It refuses this Pi\'s commands and its shots are not scored here. Plug ' + where +
+      ' into this Pi\'s flash station (Flash station) and press New key.';
   if (ft.hello_key_fp && ft.hello_key_fp !== 'none')
     return 'This target signs with key ' + esc(ft.hello_key_fp) + ', which this Pi does not know (set by another Pi?). Plug ' + where +
       ' into this Pi\'s flash station (Flash station) and press New key.';
@@ -1957,7 +1972,7 @@ function esp32Update(t, rc) {                     // an ESP32 target: signed upd
   const best = (rc.e32images || []).reduce((b, m) => !b || verAtLeast(m.version, b.version) && m.version !== b.version ? m : b, null);
   const same = best && ft.version === best.version, newer = best && ft.version && !verAtLeast(best.version, ft.version);
   return (best ? (same ? '<span class="mut">the newest on this Pi</span>'
-      : '<button data-act="rctupd" data-id="' + esc(t.device_id) + '"' + (ft.key_fp ? '' : ' disabled') + '>' + (newer ? 'Go back to ' : 'Update to ') + esc(best.version) + '</button>')
+      : '<button data-act="rctupd" data-id="' + esc(t.device_id) + '"' + (keyOk(ft) ? '' : ' disabled') + '>' + (newer ? 'Go back to ' : 'Update to ') + esc(best.version) + '</button>')
       : '<span class="mut">no ESP32 firmware on this Pi to update to</span>') +
     (rc.updMsg && rc.updMsg.id === t.device_id ? ' <span class="' + (rc.updMsg.ok ? 'ok' : 'bad') + '">' + esc(rc.updMsg.text) + '</span>' : '');
 }
@@ -2144,7 +2159,7 @@ function deliveryCell(D) {                       // the 5-second goal: worst and
     (D.over_goal ? ' · <span class="bad">' + D.over_goal + ' over ' + s(D.goal_ms) + '</span>' : '') + '</div>';
 }
 const faceName = id => ((S.faces || [AR10]).find(f => f.id === (id || AR10.id)) || {name: id}).name;
-const sleepers = d => (d.targets || []).filter(t => t.fet_target && t.fet_target.key_fp);   // targets that can be put to sleep
+const sleepers = d => (d.targets || []).filter(t => keyOk(t.fet_target));   // targets that can be put to sleep
 const boardOf = t => t.fet_target ? (t.fet_target.esp32 ? 'ESP32 board' : 'Arduino Mega' + (isBridge(t) ? ' + ESP-01' : '')) : isBridge(t) ? 'ESP-01 (FeT Bridge)' : '';
 const fwOf = t => { const ft = t.fet_target; return [ft && ft.version ? 'FeT target ' + ft.version : '', isBridge(t) ? 'Bridge ' + t.bridge_fw : !ft && t.bridge_fw ? t.bridge_fw : ''].filter(Boolean).join(' · ') || 'firmware unknown'; };
 function rcAttention(d) {                        // what needs the Range Manager's eye (FmRangePhone "Needs attention")
@@ -2152,6 +2167,7 @@ function rcAttention(d) {                        // what needs the Range Manager
   (d.targets || []).forEach(t => {
     if (!t.online && t.lane != null) out.push([esc(laneTitle(t)) + ' is not reporting', 'Last report ' + esc(ago(t.last_seen)) + ' ago. Check its power and WiFi.', t.device_id]);
     else if (t.fet_target && !t.fet_target.key_fp) out.push([esc(laneTitle(t)) + ': this Pi has no key for it', 'Its settings cannot be changed until it has one (Flash station, New key).', t.device_id]);
+    else if (t.fet_target && !keyOk(t.fet_target)) out.push([esc(laneTitle(t)) + ': its key is not this Pi\'s', 'It refuses commands (sleep, lights, updates) and its shots are not scored here until it has this Pi\'s key (Flash station, New key).', t.device_id]);
     if (t.online && t.delivery && t.delivery.over_goal) out.push([esc(laneTitle(t)) + ': slow shots', t.delivery.over_goal + ' shot(s) took over 5 s in the last 24 h. Check its WiFi signal.', t.device_id]);
   });
   return out;

@@ -1437,6 +1437,26 @@ console.log('OK');
   assert(!p.includes('Trip point') && !fk({status: {vr: 652}}).includes('Trip point'), 'V_REF is on the target\'s page, not here');
   assert(fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('no key yet') && fk({key_fp: null, hello_key_fp: 'none', esp32: true}).includes('ESP32 board'),
          'no key at all (an ESP32 board)');
+  // the target's own key against this Pi's (user 2026-11-21: a target given deepTENS's key took no command, shown with ✓)
+  const other = fk({hello_key_fp: 'ff228850', esp32: true});
+  assert(other.includes('the target signs with ff228850') && other.includes('not this Pi\'s ab12cd34') && other.includes('deeptens.com/setup') &&
+         other.includes('New key') && other.includes('ESP32 board') && !other.includes('✓'), 'another key: named, with where it came from and the fix');
+  assert(!other.includes('data-act="rcsleepsel"'), 'no sleep or wake it would refuse');
+  const lost = fk({hello_key_fp: 'none'});
+  assert(lost.includes('the target has no key') && lost.includes('lost its key') && lost.includes('Arduino Mega') && !lost.includes('✓'), 'its key gone: said so');
+  for (const h of ['ab12cd34', null, undefined]) {
+    const same = fk({hello_key_fp: h});
+    assert(same.includes('<span class="ok">✓</span>') && same.includes('data-act="rcsleepsel"') && !same.includes('New key'), 'the same key (or not said yet): ✓ ' + h);
+  }
+  const said = fk({commands: [{verb: 'sleep', status: 'done', reply: 'key_mismatch'}, {verb: 'status', status: 'done', reply: 'no_key'},
+                              {verb: 'wake', status: 'done', reply: 'wrong_boot'}, {verb: 'get', status: 'sent', reply: null}]});
+  assert(said.includes('class="bad">refused: the target has another key') && said.includes('class="bad">refused: the target has no key') &&
+         said.includes('refused: for an earlier start (sent again for this one)') && said.includes('class="mut">–'), 'why each command was refused');
+  const mis = ft => ({device_id: 'x', name: 'X', online: true, lane: 2, fet_target: Object.assign({key_fp: 'ab12cd34', esp32: true, version: '0.1.1'}, ft)});
+  assert.strictEqual(sleepers({targets: [mis({}), mis({hello_key_fp: 'ab12cd34'}), mis({hello_key_fp: 'ff228850'}), mis({hello_key_fp: 'none'})]}).length, 2,
+    'a target that refuses this Pi\'s key is not offered for sleep or copied settings');
+  assert(esp32Update(mis({hello_key_fp: 'ff228850'}), imgs).includes(' disabled') && !esp32Update(mis({hello_key_fp: 'ab12cd34'}), imgs).includes(' disabled'),
+    'nor for an update');
   assert.deepStrictEqual(targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '50', 'fet-1:paper_ms': '300', 'fet-1:wait_ms': ''}}),
     {settings: {paper_ms: 300}, errors: []}, 'only what changed');
   const bad = targetSettingsChanges(t, {tsf: {'fet-1:led_pct': '101', 'fet-1:face': '1.5', 'fet-1:ring_ms': 'x'}});
@@ -1708,6 +1728,12 @@ console.log('OK');
 // --- 1.0 Range Control: what needs attention, the old tab addresses, staff sign-in, About
 {
   const {rcAttention, staffSignIn, aboutView, rcTab, boardOf} = X;
+  {
+    const at = ft => rcAttention({targets: [{device_id: 'x', name: 'X', online: true, lane: 2, fet_target: Object.assign({key_fp: 'ab12cd34'}, ft)}]});
+    assert(at({hello_key_fp: 'ff228850'}).some(r => r[0].includes('its key is not this Pi') && r[1].includes('New key')), 'another key needs attention');
+    assert(at({hello_key_fp: 'none'}).some(r => r[0].includes('its key is not this Pi')), 'no key on the target too');
+    assert(!at({hello_key_fp: 'ab12cd34'}).length && !at({}).length, 'the same key: nothing to see');
+  }
   const T = o => Object.assign({device_id: 'd', name: 'N', lane: 1, online: true, last_seen: '2026-11-10T10:00:00Z', delivery: null}, o);
   assert.deepStrictEqual(rcAttention({targets: [T({})]}), [], 'all well: nothing');
   assert(rcAttention({targets: [T({online: false})]})[0][0].includes('is not reporting'));
