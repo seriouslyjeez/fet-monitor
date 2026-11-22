@@ -1499,14 +1499,15 @@ console.log('OK');
 
 // --- 1.0 spectators: watching lanes (kept on the device, followed by name), density, order; the ranking, a final, results on a phone
 {
-  const {watchState, watchTargets, watchDensity, placesOf, watchView, watchPick, spectatorView, rankingTab, finalPhone, resultsList, resultsPhone, spectTabs, nameOn} = X;
+  const {watchState, watchToggle, watchTargets, watchDensity, placesOf, watchView, watchPick, spectatorView, rankingTab, finalPhone, resultsList, resultsPhone, spectTabs, nameOn} = X;
   const base = D.targets.find(t => t.view && t.view.count) || D.targets[0];
   const mk = (id, lane, name, extra) => Object.assign(JSON.parse(JSON.stringify(base)), {device_id: id, lane: lane, name: 'Lane ' + lane, match: null, athlete: null, shooter: name || '', online: true, view: Object.assign({}, base.view, {shooter: ''})}, extra || {});
   const store = {}; global.localStorage = {getItem: k => k in store ? store[k] : null, setItem: (k, v) => { store[k] = String(v); }};
   // the stored choice: bad data never breaks the page
   assert.deepStrictEqual(watchState('{bad'), {picks: [], team: [], order: 'lane'});
   assert.deepStrictEqual(watchState(JSON.stringify({picks: [{lane: '4'}, {}, null, {name: 'Ann'}], team: ['Ann'], order: 'place'})),
-    {picks: [{lane: 4, name: ''}, {lane: null, name: 'Ann'}], team: ['Ann'], order: 'place'});
+    {picks: [{lane: 4, name: '', dev: ''}, {lane: null, name: 'Ann', dev: ''}], team: ['Ann'], order: 'place'});
+  assert.deepStrictEqual(watchState(JSON.stringify({picks: [{dev: 's1'}]})).picks, [{lane: null, name: '', dev: 's1'}], 'a spare by its target');
   assert.strictEqual(watchState('{"order":"evil"}').order, 'lane');
   // density: 1-4 panels, 5-8 two columns, 9+ compact (user, 2026-11-10)
   assert.deepStrictEqual([1, 4, 5, 8, 9, 15].map(watchDensity), ['panels', 'panels', 'tiles', 'tiles', 'dense', 'dense']);
@@ -1552,6 +1553,40 @@ console.log('OK');
   assert.strictEqual(count(h, /type="checkbox"/g), 12);
   assert(/data-dev="t2" checked/.test(h) && !/data-dev="t3" checked/.test(h) && h.includes('Watch 1 lane<'), 'ticked by name');
   assert(h.includes('data-name="P4" aria-pressed="true"') && h.includes('data-name="P5" aria-pressed="false"'), 'stars');
+  // one tick, one target (user 2026-11-22: at a new install one tick ticked them all): spares with no lane and nobody
+  // signed in, and the same name on several targets
+  {
+    const tick = (S, dev) => {                       // what the checkbox does, through the page's own handler code
+      const w = watchState(store.fet_watch), x = S.targets.find(y => y.device_id === dev);
+      store.fet_watch = JSON.stringify(watchToggle(w, S.targets, x)); return watchPick(S);
+    };
+    const spares = {targets: [1, 2, 3].map(i => Object.assign(mk('s' + i, null, ''), {view: Object.assign({}, base.view, {shooter: '', count: 3})})), board: []};
+    store.fet_watch = '';
+    let hp = tick(spares, 's2');
+    assert(/data-dev="s2" checked/.test(hp) && !/data-dev="s1" checked/.test(hp) && !/data-dev="s3" checked/.test(hp) && hp.includes('Watch 1 lane<'), 'a spare: only it');
+    hp = tick(spares, 's3');
+    assert(count(hp, / checked/g) === 2 && hp.includes('Watch 2 lanes<'), 'a second spare');
+    hp = tick(spares, 's2');
+    assert(/data-dev="s3" checked/.test(hp) && !/data-dev="s2" checked/.test(hp), 'unticked: only it');
+    assert.deepStrictEqual(watchTargets(watchState(store.fet_watch), spares.targets, {}).map(t => t.device_id), ['s3'], 'and watched: only it');
+    const same = {targets: [1, 2, 3].map(i => mk('j' + i, i, 'Jake')), board: []};
+    store.fet_watch = '';
+    hp = tick(same, 'j2');
+    assert(/data-dev="j2" checked/.test(hp) && count(hp, / checked/g) === 1, 'the same name on three lanes: the one ticked');
+    hp = tick(same, 'j3');
+    assert(/data-dev="j2" checked/.test(hp) && /data-dev="j3" checked/.test(hp) && !/data-dev="j1" checked/.test(hp), 'then another');
+    assert.deepStrictEqual(watchTargets(watchState(store.fet_watch), same.targets, {}).map(t => t.device_id), ['j2', 'j3']);
+    hp = tick(same, 'j2');
+    assert(!/data-dev="j2" checked/.test(hp) && /data-dev="j3" checked/.test(hp), 'unticked: only it');
+    // still followed by name: Ann ticked on lane 5 moves to lane 2
+    const moved = {targets: [mk('m1', 2, 'Ann'), mk('m2', 5, 'Bo')], board: []};
+    store.fet_watch = JSON.stringify({picks: [{lane: 5, name: 'Ann', dev: 'm2'}], team: [], order: 'lane'});
+    assert.deepStrictEqual(watchTargets(watchState(store.fet_watch), moved.targets, {}).map(t => t.device_id), ['m1'], 'a name before its old target');
+    assert(/data-dev="m1" checked/.test(watchPick(moved)) && !/data-dev="m2" checked/.test(watchPick(moved)), 'ticked where Ann is now');
+    const lane3 = watchState(JSON.stringify({picks: [{lane: 3, name: '', dev: 'k1'}], team: [], order: 'lane'}));
+    assert.deepStrictEqual(watchTargets(lane3, [mk('k1', 4, ''), mk('k2', 3, '')], {}).map(t => t.device_id), ['k2'], 'no name: its lane, not the target it was');
+    assert.deepStrictEqual(watchTargets(lane3, [mk('k1', 4, '')], {}).map(t => t.device_id), [], 'its lane empty: nothing');
+  }
   h = watchPick(Object.assign({}, S0, {wfilter: 'p1'}));
   assert.deepStrictEqual(Array.from(h.matchAll(/data-dev="(t\d+)"/g)).map(m => m[1]), ['t1', 't10', 't11', 't12'], 'a search by name');
   h = watchPick(Object.assign({}, S0, {wfilter: '7'}));

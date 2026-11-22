@@ -503,7 +503,7 @@ return {rows: document.querySelectorAll('.wpick').length, small: small('.wpick l
         self.assertEqual(pick["rows"], 4)
         self.assertEqual(pick["small"], [])
         self.assertFalse(pick["overflow"])
-        self.assertEqual(pick["stored"], {"picks": [{"lane": 3, "name": "Shooter number 3"}], "team": ["Shooter number 3"], "order": "lane"})
+        self.assertEqual(pick["stored"], {"picks": [{"lane": 3, "name": "Shooter number 3", "dev": "lane-3"}], "team": ["Shooter number 3"], "order": "lane"})
         self.assertEqual(pick["label"], "Watch 1 lane")
         self.assertGreaterEqual(pick["done"], 0)
         for path in ("/#/", "/#/lanes", "/#/results"):
