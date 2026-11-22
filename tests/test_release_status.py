@@ -28,20 +28,21 @@ class Status(unittest.TestCase):
     def test_every_case(self):
         code = {r["product"]: r["code"] for r in self.run_with([], {}).values()}
         self.assertTrue(all(v != "?" for v in code.values()), "every product's version is read from the code: %s" % code)
-        srv, disp = code["FeT Monitor (server)"], code["FeT Display (CYD)"]
-        rows = self.run_with(["v" + srv, "v1.0.0", "display-" + disp, "fw-0.5.0", "fw-0.4.9", "v1.0.0^{}"],
-                             {"v" + srv: "", "display-" + disp: "abc1234 a display change\n", "fw-0.5.0": "def5678 a bridge change\n"})
+        srv, disp, br = code["FeT Monitor (server)"], code["FeT Display (CYD)"], code["FeT Bridge (ESP-01)"]
+        fw, newer = "fw-" + br, "fw-%d.0.0" % (int(br.split(".")[0]) + 1)
+        rows = self.run_with(["v" + srv, "v1.0.0", "display-" + disp, fw, "fw-0.4.9", "v1.0.0^{}"],
+                             {"v" + srv: "", "display-" + disp: "abc1234 a display change\n", fw: "def5678 a bridge change\n"})
         self.assertEqual(rows["FeT Monitor (server)"]["todo"], "published; nothing new")
         self.assertIn("bump the version", rows["FeT Display (CYD)"]["todo"], "changed after its published version")
-        self.assertEqual(rows["FeT Bridge (ESP-01)"]["published"], "fw-0.5.0", "the newest by version, not by name")
+        self.assertEqual(rows["FeT Bridge (ESP-01)"]["published"], fw, "the newest by version, not by name")
         self.assertIn("not published yet: ready to release", self.run_with(["v1.0.0"], {})["FeT Monitor (server)"]["todo"])
-        rev = {"FeT Bridge (ESP-01)": {"tag": "fw-0.5.0", "through": "def5678", "why": "same image"}}
-        rows = self.run_with(["fw-0.5.0"], {"fw-0.5.0": "def5678 a bridge change\n", "def5678": ""}, rev)
+        rev = {"FeT Bridge (ESP-01)": {"tag": fw, "through": "def5678", "why": "same image"}}
+        rows = self.run_with([fw], {fw: "def5678 a bridge change\n", "def5678": ""}, rev)
         self.assertIn("reviewed: no release needed (same image)", rows["FeT Bridge (ESP-01)"]["todo"])
-        rows = self.run_with(["fw-0.5.0"], {"def5678": "9999999 a later change\n"}, rev)
+        rows = self.run_with([fw], {"def5678": "9999999 a later change\n"}, rev)
         self.assertIn("1 commit(s) since def5678: bump the version", rows["FeT Bridge (ESP-01)"]["todo"], "a later commit shows again")
-        rows = self.run_with(["fw-0.6.0"], {"fw-0.6.0": "", "def5678": "x\n"}, rev)
-        self.assertEqual(rows["FeT Bridge (ESP-01)"]["todo"], "the code says 0.5.0, older than the newest 0.6.0",
+        rows = self.run_with([newer], {newer: "", "def5678": "x\n"}, rev)
+        self.assertEqual(rows["FeT Bridge (ESP-01)"]["todo"], "the code says %s, older than the newest %s" % (br, newer[3:]),
                          "a review of an older release does not count")
 
     def test_the_reviewed_file_names_real_products(self):
