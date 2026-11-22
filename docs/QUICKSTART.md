@@ -48,6 +48,10 @@ installs the firmware, gives the target its own key, and connects it to the rang
 3. **Test:** switch the target on and fire a shot. The last step lists the targets reporting now. A yellow dot
    (*No 12 V*) means an ESP32 target is running from USB alone: connect its 12 V supply.
 4. **Put it on a lane:** Range Control → Targets.
+5. **Give the lane a display (recommended).** A CYD lane display (Range Control → Flash station, then Lane displays)
+   shows the shooter their shots, score and buttons at the firing point. Phones on the line distract shooters (first
+   range day, 2026-11-22): with a display at every firing point, phones are only needed to sign in, then put away.
+   Range Control → Lane displays lists the lanes that have none.
 
 A target set up at home on deepTENS, or at another range, comes to your range the same way: run the steps (it gets
 your range's WiFi and a new key). Its owner sets it up again at home afterwards.

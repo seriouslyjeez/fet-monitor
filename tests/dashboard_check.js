@@ -720,6 +720,13 @@ assert.strictEqual(count(tvTargets(D.targets, [], {}), /class="card/g), D.target
   assert(X.laneDisplaysTab({ldisp: {displays: [], waiting: 0}, data: {targets: []}}).includes('No targets yet'));
   assert(X.laneDisplaysTab({ldisp: {displays: [], waiting: 0}, data: {targets: D.targets}}).includes('No lane displays yet'));
   assert(X.laneDisplaysTab({}).includes('Loading'));
+  {                                                     // CYDs recommended (user 2026-11-22: "the presence of phones on the line was very distracting")
+    const ts = [{device_id: 'a', lane: 1, name: 'A'}, {device_id: 'b', lane: 2, name: 'B'}, {device_id: 'c', lane: null, name: 'Spare'}];
+    const one = X.laneDisplaysTab({ldisp: {displays: [{id: 1, device_id: 'a', name: 'S1', hw_id: 'cyd-1', lane: 1}], waiting: 0}, data: {targets: ts}});
+    assert(/class="warnc">No lane display on lane 2\. Recommended: one at every firing point/.test(one), 'the lanes without one (not spares)');
+    const all = X.laneDisplaysTab({ldisp: {displays: [{id: 1, device_id: 'a', lane: 1, name: 'S1', hw_id: 'h'}, {id: 2, device_id: 'b', lane: 2, name: 'S2', hw_id: 'h'}], waiting: 0}, data: {targets: ts}});
+    assert(/class="mut">Every lane has a display\. Recommended/.test(all));
+  }
   assert.deepStrictEqual([X.ldTargetLabel({lane: 4, name: 'Lane 4'}), X.ldTargetLabel({lane: 4, name: 'North'}), X.ldTargetLabel({lane: null, name: 'Spare'}),
                          X.ldTargetLabel({lane: 2, device_id: 'fet-704131', name: 'fet-704131'})], ['Lane 4', 'Lane 4 · North', 'Spare', 'Lane 2'], 'no "Lane 4 · Lane 4"');
   assert(X.laneDisplaysTab({ldisp: {displays: [Object.assign({}, d1, {online: false, last_seen_ms: null})], waiting: 0}, data: {targets: D.targets}}).includes('Not seen yet'));

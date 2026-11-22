@@ -732,7 +732,11 @@ function laneDisplaysTab(rc) {                    // Range Control → Lane disp
   list.forEach(d => { on[d.device_id] = d; });
   const opt = (t, cur, self) => '<option value="' + esc(t.device_id) + '"' + (t.device_id === cur ? ' selected' : '') + '>' + esc(ldTargetLabel(t)) +
     (on[t.device_id] && on[t.device_id].id !== self ? ' (replaces ' + esc(on[t.device_id].name) + ')' : '') + '</option>';
+  const bare = targets.filter(t => t.lane != null && !on[t.device_id]);     // lanes with no display (user 2026-11-22)
   let h = '<div class="panel"><h3>Add a lane display</h3>' +
+    '<p class="' + (bare.length ? 'warnc' : 'mut') + '">' + (bare.length ? 'No lane display on ' + bare.map(t => 'lane ' + esc(t.lane)).join(', ') + '. '
+      : targets.some(t => t.lane != null) ? 'Every lane has a display. ' : '') +
+    'Recommended: one at every firing point. Shooters then put their phones away: phones on the line distract them.</p>' +
     '<p class="mut">A lane display is a small screen at a firing point. It shows one target: the shots and scores, the sign-in code, the match clock and the shooter\'s own buttons. ' +
     'Switch it on: it joins the range WiFi and shows a 6-character code. Type the code here and choose its target. It keeps that target until you move or remove it.</p>' +
     (targets.length ? '<div class="signform"><label class="fld">Code on the display<input id="ld_code" data-ldk="code" value="' + esc(f.code || '') + '" maxlength="8" size="9" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7M2QX" style="text-transform:uppercase"></label>' +
