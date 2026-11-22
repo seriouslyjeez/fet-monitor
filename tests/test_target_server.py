@@ -540,6 +540,94 @@ class DeafTarget(Base):
 
 
 @unittest.skipUnless(shutil.which("g++"), "g++ not available")
+class SkippingBridge(Base):
+    """A bridge whose saved command number is higher than this Pi's skips every command as "already done" (user
+    2026-11-22: a target set up at deeptens.com/setup took no command from the Pi afterwards: deepTENS numbers its
+    commands higher; replies stayed "-" and its 12 V status never came). A skip in the same bridge start the command
+    was handed over in is told apart from a command run before a restart; the Pi numbers past it and sends again."""
+    def hb(self, boot, results=(), up=60000):
+        return self.core.handle_heartbeat({"device_id": "t1", "boot_count": boot, "uptime_ms": up,
+                                           "cmd_results": list(results)})["commands"]
+
+    def done(self, cmds, reply="already done"):
+        return [{"id": x["id"], "status": "done", "reply": reply} for x in cmds]
+
+    def rows(self):
+        return self.core.db.conn().execute("SELECT id, type, line, status, result, sent_boot FROM commands ORDER BY id").fetchall()
+
+    def heads(self, cmds):
+        return [x["line"].rsplit(" h=", 1)[0] for x in cmds]
+
+    def assert_signed(self):
+        for r in self.rows():
+            if r["type"] == "target":
+                head, _, tag = r["line"].rpartition(" h=")
+                self.assertEqual(tag, mac(KEY, head.encode()), r["line"])
+
+    def test_skipped_commands_go_again_numbered_past(self):
+        self.bound()                                            # get (i=1) and status (i=2) waiting
+        first = self.hb(7)
+        self.assertEqual([x["id"] for x in first], [1, 2])
+        self.core.target_command("t1", "sleep")                 # i=3, waiting (id 3)
+        again = self.hb(7, self.done(first))
+        self.assertEqual([x["id"] for x in again], [25, 26, 27], "past 8 times the highest number in use (3)")
+        self.assertEqual(self.heads(again), ["FT1 C b=3 i=4 get", "FT1 C b=3 i=5 status", "FT1 C b=3 i=6 sleep"],
+                         "signed again with new ids, in their order")
+        self.assert_signed()
+        self.assertEqual([(r["status"], r["result"]) for r in self.rows()], [("sent", None)] * 3)
+        self.assertNotIn("already done", [r["result"] for r in self.rows()])
+        self.assertEqual(self.target()["target_cmd_id"], 6)
+        self.assertEqual(self.hb(7, self.done(again, "sent")), [])
+        self.assertEqual([r["status"] for r in self.rows()], ["done"] * 3)
+        self.core.target_command("t1", "wake")
+        self.assertEqual(self.rows()[-1]["id"], 28, "new commands are numbered from there on")
+        self.assertEqual(self.heads(self.hb(7))[-1], "FT1 C b=3 i=7 wake")
+
+    def test_it_jumps_again_until_the_bridge_takes_them(self):
+        self.bound()
+        cmds = self.hb(7)
+        for want in (17, 18 * 8 + 1, (18 * 8 + 2) * 8 + 1):
+            cmds = self.hb(7, self.done(cmds))
+            self.assertEqual(cmds[0]["id"], want)
+        self.assertEqual(self.hb(7, self.done(cmds, "sent")), [])
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_run_before_a_restart_stays_done(self):
+        self.bound()
+        first = self.hb(7)
+        self.assertEqual([r["sent_boot"] for r in self.rows()], [7, 7])
+        self.assertEqual(self.hb(8, self.done(first), up=3000), [], "a new start: it ran them, then restarted")
+        self.assertEqual([(r["id"], r["status"], r["result"]) for r in self.rows()],
+                         [(1, "done", "already done"), (2, "done", "already done")])
+
+    def test_first_handed_over_in_an_earlier_start(self):
+        self.bound()
+        self.hb(7)                                              # handed over; the reply is lost and the bridge restarts
+        again = self.hb(8, up=3000)                             # sent again: it keeps the start it was first sent in
+        self.assertEqual([r["sent_boot"] for r in self.rows()], [7, 7])
+        self.assertEqual(self.hb(8, self.done(again)), [])
+        self.assertEqual([r["result"] for r in self.rows()], ["already done"] * 2)
+
+    def test_other_commands_move_unchanged(self):
+        self.bound()
+        self.hb(7, self.done(self.hb(7), "sent"))
+        cid = self.core.enqueue_command("t1", "reboot")
+        sent = self.hb(7)
+        self.assertEqual([x["id"] for x in sent], [cid])
+        again = self.hb(7, self.done(sent))
+        self.assertEqual([(x["type"], x.get("line")) for x in again], [("reboot", None)])
+        self.assertEqual(again[0]["id"], cid * 8 + 1)
+
+    def test_another_devices_commands_stay(self):
+        self.bound()
+        self.core.handle_heartbeat({"device_id": "t2", "boot_count": 1, "uptime_ms": 1})
+        other = self.core.enqueue_command("t2", "reboot")
+        self.hb(7, self.done(self.hb(7)))
+        self.assertIn(other, [r["id"] for r in self.rows()])
+        self.assertEqual([x["id"] for x in self.core.handle_heartbeat(
+            {"device_id": "t2", "boot_count": 1, "uptime_ms": 2})["commands"]], [other])
+
+
 class EndToEnd(Base):
     def test_a_line_signed_by_the_firmware_core_scores(self):
         from tests.test_target_core import KEY as CORE_KEY, Harness, build

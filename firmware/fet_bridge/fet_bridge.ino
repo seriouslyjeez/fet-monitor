@@ -73,7 +73,7 @@ void setup() {
   size_t total = g_fs.totalBytes();
   size_t cap = total / 2;                                 // leave the rest for settings, temp files, flash wear-levelling
   if (cap < 16000) cap = 16000;
-  fet::BridgeInfo info{g_id, g_cfg.name, FET_FW_VERSION};
+  fet::BridgeInfo info{g_id, g_cfg.name, FET_FW_VERSION, fet::serverKey(g_cfg)};
   FET_STAGE(5);
   g_net = new WifiNet(g_cfg, g_hold);
   g_bridge = new fet::Bridge(g_fs, *g_net, g_uart, g_hooks, info, cap, FET_LOG_SEGMENT_BYTES);

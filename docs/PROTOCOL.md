@@ -117,6 +117,14 @@ Commands (at most 5 per answer; each has a server-wide unique `id` and is carrie
 remembers the ids it has done and reports each result once in `cmd_results`; the server resends a command until a
 result for its id arrives):
 
+The bridge keeps only the highest id it has done, and skips any id at or below it with the result `already done`
+(a command it ran just before a restart, handed over again). Ids must therefore keep growing for each bridge. That
+number belongs to one server: in firmware after FeT Bridge 0.5.0 and FeT target ESP32 0.4.2, the bridge starts again from 0 when its
+server settings change (address, port, HTTPS or device token). A bridge with an older number from another server
+(set up at deeptens.com, then moved to a Pi) skips every command. FeT Monitor after 1.2.1 sees this: an `already done`
+for a command first handed over in the same bridge start (`boot_count`) cannot have run. The Pi then moves that
+device's skipped and waiting commands to ids 8 times higher, and sends them again, as many times as it takes.
+
 | type | line | What the bridge does |
 |---|---|---|
 | `serial` | an allowlisted Arduino command: `{"ECHO":0}`, `{"VERSION":0}`, `{"NEW":n}` | writes it to the Arduino. The bridge itself refuses anything else, whatever the server sends. |

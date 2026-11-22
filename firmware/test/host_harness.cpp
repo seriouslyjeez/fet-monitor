@@ -152,7 +152,7 @@ static std::string escape(const std::string& s) {
 
 int main() {
   MemFs fs; TcpNet net; CapUart uart; CapHooks hooks;
-  BridgeInfo info{"fet-test01", "Test Lane", "fw-test"};
+  BridgeInfo info{"fet-test01", "Test Lane", "fw-test", ""};
   size_t cap = 90000;
   std::unique_ptr<Bridge> br;
   std::unique_ptr<Provision> prov;
@@ -177,6 +177,10 @@ int main() {
     else if (cmd == "uart") { std::string d = unescape(rest); for (unsigned char c : d) { t += 1; br->onByte(c, t); } }
     else if (cmd == "tick") { long ms = atol(rest.c_str()); for (long k = 0; k < ms; k += 50) { t += 50; br->tick(t); if (hooks.erases) net.up = false; } }   // an erased unit no longer reports
     else if (cmd == "wipe") { fs.files.clear(); }
+    else if (cmd == "server") info.server = rest;                   // the server key for the next "boot"
+    else if (cmd == "put") { std::istringstream a(rest); std::string p, d; a >> p; std::getline(a, d); if (!d.empty()) d.erase(0, 1); fs.files[p] = unescape(d); }
+    else if (cmd == "get") { std::string v; std::cout << (fs.read(rest, v) ? escape(v) : std::string("none")) << "\n"; }
+    else if (cmd == "serverkey") { fet::Config c; std::cout << (fet::configFromJson(unescape(rest), c) ? fet::serverKey(c) : std::string("bad json")) << "\n"; }
     else if (cmd == "net") net.up = rest == "up";
     else if (cmd == "drop") net.dropPct = atoi(rest.c_str());
     else if (cmd == "fake") net.fakeStatus = atoi(rest.c_str());

@@ -550,6 +550,12 @@ MIGRATIONS = [
     CREATE UNIQUE INDEX lane_displays_target ON lane_displays (device_id);
     CREATE UNIQUE INDEX lane_displays_hw ON lane_displays (hw_id);
     """,
+    """
+    -- The bridge start (boot_count) a command was first handed over in (user 2026-11-22): an "already done" in that
+    -- same start means the bridge skipped it (its saved command number was higher: set up with another server), not
+    -- that it ran it before a restart. Core.handle_heartbeat then numbers the device's commands past it.
+    ALTER TABLE commands ADD COLUMN sent_boot INTEGER;
+    """,
 ]
 
 

@@ -469,7 +469,7 @@ static void bridgeBegin() {
   size_t cap = lfs.totalBytes() / 2;                                        // room for settings and wear-levelling
   if (cap < 16000) cap = 16000;
   net = new fete::WifiNet(cfg);
-  fet::BridgeInfo info{id, cfg.name, BRIDGE_FW};
+  fet::BridgeInfo info{id, cfg.name, BRIDGE_FW, fet::serverKey(cfg)};
   bridge = new fet::Bridge(lfs, *net, cmdUart, hooks, info, cap, FET_LOG_SEGMENT_BYTES);
   bridge->begin(fete::nowMs());
   std::string why;                                                         // the board restarted itself last time: say why

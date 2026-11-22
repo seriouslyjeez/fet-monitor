@@ -652,9 +652,15 @@ class Core:
                         ota_space=_nonneg(payload.get("ota_space")), flash_size=_nonneg(payload.get("flash_size")),
                         link_json=json.dumps(link) if (link := wifilink.clean(payload.get("link"))) else None)
             self._register_boot(c, device_id, boot_count, recv_ms - uptime_ms)
+            skipped = []
             for r in results:
                 if isinstance(r, dict) and isinstance(r.get("id"), int):
                     status = "done" if r.get("status") == "done" else "failed"
+                    if status == "done" and r.get("reply") == "already done" and c.execute(
+                            "SELECT 1 FROM commands WHERE id=? AND device_id=? AND status IN ('queued','sent') AND sent_boot=?",
+                            (r["id"], device_id, boot_count)).fetchone():
+                        skipped.append(r["id"])           # handed over in this same start: skipped, never run
+                        continue
                     cur = c.execute("""UPDATE commands SET status=?, acked_ms=?, result=?
                                        WHERE id=? AND device_id=? AND status IN ('queued','sent')""",
                                     (status, recv_ms, _str(r.get("reply"), 500), r["id"], device_id))
@@ -663,13 +669,15 @@ class Core:
                         # the unit is erasing itself and will not report again: take it off the lists (history stays)
                         c.execute("UPDATE targets SET removed=1, lane=NULL WHERE device_id=?", (device_id,))   # its lane is free
                         c.execute("DELETE FROM leases WHERE device_id=?", (device_id,))
+            if skipped:
+                self._number_past(c, device_id, skipped)
             self._recheck_supply(c, device_id, recv_ms)
             rows = c.execute("""SELECT id, type, line FROM commands WHERE device_id=? AND status IN ('queued','sent')
                                 ORDER BY id LIMIT ?""", (device_id, MAX_COMMANDS_PER_HEARTBEAT)).fetchall()
             changed = bool(results)
             for r in rows:
-                cur = c.execute("UPDATE commands SET status='sent', sent_ms=COALESCE(sent_ms, ?) WHERE id=? AND status='queued'",
-                                (recv_ms, r["id"]))
+                cur = c.execute("""UPDATE commands SET status='sent', sent_ms=COALESCE(sent_ms, ?), sent_boot=COALESCE(sent_boot, ?)
+                                   WHERE id=? AND status='queued'""", (recv_ms, boot_count, r["id"]))
                 changed = changed or cur.rowcount > 0
         if changed:                                   # command progress (e.g. a firmware update) shows up live
             self.hub.publish({"type": "commands", "device_id": device_id})
@@ -677,6 +685,37 @@ class Core:
                 "heartbeat_interval_ms": self.heartbeat_interval_ms,
                 "commands": [{"id": r["id"], "type": r["type"], **({"line": r["line"]} if r["line"] else {})}
                              for r in rows]}
+
+    NUMBER_JUMP = 8                                     # how much higher each try numbers the commands
+
+    def _number_past(self, c, device_id: str, skipped: list) -> None:
+        """The bridge said "already done" to commands it was handed in this same start: it skipped them, because the
+        command number it saved is at least theirs (it was set up with another server, e.g. deepTENS, whose numbers
+        are higher; or this Pi's database is new). It does not say its number, so this device's skipped and waiting
+        commands move to numbers NUMBER_JUMP times higher (all commands are numbered from there on) and go again; a
+        number still too low is skipped again and jumps again. A FeT target command is signed again with a new id, so
+        the target takes them in their order."""
+        seq = c.execute("SELECT seq FROM sqlite_sequence WHERE name='commands'").fetchone()[0]
+        nxt = max(seq, max(skipped)) * self.NUMBER_JUMP
+        moving = c.execute(f"""SELECT id, type, line FROM commands WHERE device_id=? AND (status='queued' OR id IN
+                               ({",".join("?" * len(skipped))})) ORDER BY id""", (device_id, *skipped)).fetchall()
+        t = c.execute("SELECT target_boot, target_cmd_id FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        key = self._target_key(c, device_id)
+        cmd_id = t["target_cmd_id"] if t is not None else None
+        for m in moving:
+            nxt += 1
+            line = m["line"]
+            if m["type"] == "target" and key is not None and t["target_boot"] is not None and line and " h=" in line:
+                cmd_id += 1
+                head = f"FT1 C b={t['target_boot']} i={cmd_id} " + line.rsplit(" h=", 1)[0].split(" ", 4)[4]
+                line = f"{head} h={mac(key, head.encode())}"
+            c.execute("""UPDATE commands SET id=?, line=?, status='queued', sent_ms=NULL, sent_boot=NULL, acked_ms=NULL,
+                         result=NULL WHERE id=?""", (nxt, line, m["id"]))
+        if cmd_id is not None:
+            c.execute("UPDATE targets SET target_cmd_id=? WHERE device_id=?", (cmd_id, device_id))
+        c.execute("UPDATE sqlite_sequence SET seq=? WHERE name='commands'", (nxt,))
+        log.warning("%s skipped commands %s (its saved command number is higher: set up with another server?): "
+                    "commands now numbered from %d", device_id, skipped, nxt - len(moving) + 1)
 
     # ---- commands (called by the browser side, later by the control feature) ----
     def enqueue_command(self, device_id: str, ctype: str, line: Optional[str] = None) -> int:

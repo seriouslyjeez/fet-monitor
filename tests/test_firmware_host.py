@@ -349,6 +349,50 @@ class FirmwareHost(unittest.TestCase):
             st = [(r[0], r[1]) for r in c.execute("SELECT status, result FROM commands")]
         self.assertEqual(st, [("done", "already done")])
 
+    def test_a_higher_saved_command_number_is_numbered_past(self):
+        # user 2026-11-22: a target set up with deepTENS saved deepTENS's (higher) command number; this Pi's commands
+        # were all skipped as "already done", in silence. The Pi numbers past it, and they run, once each.
+        self.h.run("put /cmd.id 5000")
+        self.h.run("boot")
+        self.core.enqueue_command("fet-test01", "serial", '{"ECHO":0}')
+        self.core.enqueue_command("fet-test01", "serial", '{"NEW":5}')
+        self.tick(60000)
+        self.assertEqual(self.h.run("uartlog"), '{"ECHO":0}\\n{"NEW":5}\\n')
+        rows = [tuple(r) for r in self.core.db.conn().execute("SELECT id, status, result FROM commands ORDER BY id")]
+        self.assertEqual([r[1:] for r in rows], [("done", "sent")] * 2)
+        self.assertGreater(rows[0][0], 5000)
+        self.assertEqual(self.h.run("get /cmd.id"), str(rows[1][0]))
+
+    def test_saved_command_number_belongs_to_one_server(self):
+        self.h.run("put /cmd.id 5000")
+        self.h.run("put /cmd.srv http://a:8080 1")
+        self.h.run("server http://a:8080 1")
+        self.h.run("boot")
+        self.assertEqual(self.h.run("get /cmd.id"), "5000", "the same server: kept")
+        self.h.run("server https://devices.example:443 2")
+        self.h.run("boot")
+        self.assertEqual(self.h.run("get /cmd.id"), "0", "another server: from 0")
+        self.assertEqual(self.h.run("get /cmd.srv"), "https://devices.example:443 2")
+        self.h.run("put /cmd.id 7")
+        self.h.run("boot")
+        self.assertEqual(self.h.run("get /cmd.id"), "7")
+
+    def test_saved_command_number_before_the_server_was_saved(self):
+        self.h.run("put /cmd.id 5000")                    # older firmware: no /cmd.srv; whose number is unknown: kept
+        self.h.run("server http://a:8080 1")
+        self.h.run("boot")
+        self.assertEqual(self.h.run("get /cmd.id"), "5000")
+        self.assertEqual(self.h.run("get /cmd.srv"), "http://a:8080 1")
+
+    def test_server_key(self):
+        k = lambda j: self.h.run("serverkey " + j)
+        a = k('{"host":"10.0.0.5","port":8080,"token":"secret-token"}')
+        self.assertTrue(a.startswith("http://10.0.0.5:8080 "), a)
+        self.assertNotIn("secret", a)
+        self.assertNotEqual(a, k('{"host":"10.0.0.5","port":8080,"token":"other-token"}'))
+        self.assertNotEqual(a, k('{"host":"10.0.0.6","port":8080,"token":"secret-token"}'))
+        self.assertTrue(k('{"host":"devices.deeptens.com","port":443,"tls":true,"token":"t"}').startswith("https://devices.deeptens.com:443 "))
+
     def test_bad_serial_command_is_refused(self):
         # the server's allowlist refuses this, so plant it straight in the database: the device must refuse it too
         with self.core.db.write() as c:

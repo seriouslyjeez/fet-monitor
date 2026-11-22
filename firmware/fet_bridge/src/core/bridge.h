@@ -14,6 +14,7 @@ struct BridgeInfo {
   std::string deviceId;      // fet-a38f31 : unique per ESP, from its chip id
   std::string name;          // shown on the dashboard
   std::string fwVersion;     // this firmware
+  std::string server;        // which server it reports to (serverKey): the saved command number is that server's
 };
 
 class Bridge : public RecordSink {

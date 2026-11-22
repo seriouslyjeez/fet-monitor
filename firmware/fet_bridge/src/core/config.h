@@ -28,6 +28,8 @@ bool configFromJson(const std::string& json, Config& out);        // false if it
 bool loadConfig(Fs& fs, Config& out);                             // false if missing or invalid (out is then defaults)
 bool saveConfig(Fs& fs, const Config& c);                         // validates, then writes atomically
 bool validName(const std::string& n);
+// Which server the settings report to: address, port, HTTPS and a checksum of the device token (not the token).
+std::string serverKey(const Config& c);
 bool parseIpv4(const std::string& s, uint8_t out[4]);              // strict dotted quad, no leading zeros / spaces
 
 // Three power cycles in quick succession reopen the setup portal, with no extra hardware.

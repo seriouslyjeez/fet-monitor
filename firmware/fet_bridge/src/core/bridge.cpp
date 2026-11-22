@@ -33,6 +33,13 @@ void Bridge::begin(uint64_t now) {
     lastCmd_ = 0;
   }
   fsOk = fs_.writeAtomic("/boot.cnt", u32s(boot_));
+  // The saved command number counts the commands of one server: moved to another one (deepTENS to a Pi, a Pi to
+  // another, a new device token), the board starts again from 0, or it would skip that server's commands as "already
+  // done" (user 2026-11-22). The number is cleared before the new server is written: a power cut between does it again.
+  std::string srv;
+  bool haveSrv = fs_.read("/cmd.srv", srv);
+  if (!info_.server.empty() && haveSrv && srv != info_.server) fs_.writeAtomic("/cmd.id", "0");
+  if (!info_.server.empty() && (!haveSrv || srv != info_.server)) fs_.writeAtomic("/cmd.srv", info_.server);
   if (fs_.read("/cmd.id", d)) lastCmd_ = atoll(d.c_str());
   log_.load();
   nextEvent_ = now;

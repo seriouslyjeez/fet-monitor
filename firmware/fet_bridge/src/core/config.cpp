@@ -2,8 +2,17 @@
 #include <cstdlib>
 #include "numfmt.h"
 #include "jmini.h"
+#include "crc32.h"
 
 namespace fet {
+
+std::string serverKey(const Config& c) {
+  static const char HEX[] = "0123456789abcdef";
+  uint32_t t = crc32(c.token.data(), c.token.size());
+  std::string k = (c.tls ? "https://" : "http://") + c.host + ":" + i32s(c.port) + " ";
+  for (int s = 28; s >= 0; s -= 4) k += HEX[(t >> s) & 15];
+  return k;
+}
 
 bool validName(const std::string& n) {
   if (n.empty() || n.size() > 32) return false;
