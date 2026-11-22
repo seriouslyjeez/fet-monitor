@@ -560,6 +560,23 @@ class LaneBoard(MatchCase):
         self.assertEqual(d[2]["state"], "idle")
         self.assertTrue(d[1]["face"]["rings"] and d[1]["face"]["black"] > 0, "the face's rings to draw")
 
+    def test_the_last_60_shots_of_the_series(self):
+        # user 2026-11-22: "show the last 60 shots in a series. 60 shots is generally the course of a practice"
+        self.fake.board = True
+        for i in range(65):
+            self.clock.t += 1000
+            self.shoot("lane-1", "1.00")
+        self.beat()
+        d = self.lanes()[1]
+        self.assertEqual((d["state"], d["count"], len(d["shots"])), ("practice", 65, 60), "one practice; the last 60 shots")
+        self.assertEqual([s["n"] for s in d["shots"]], list(range(6, 66)), "numbered, oldest first")
+        self.assertEqual([(g["first"], g["last"]) for g in d["groups"]], [(1, 10), (11, 20), (21, 30), (31, 40), (41, 50), (51, 60), (61, 65)],
+                         "the series of 10 that hold those shots")
+        self.assertEqual(sum(g["int"] for g in d["groups"]), d["int"])
+        self.assertAlmostEqual(sum(g["total"] for g in d["groups"]), d["total"], places=6)
+        self.assertEqual(d["x"], sum(g["x"] for g in d["groups"]))
+        self.assertIsInstance(d["int"], int)
+
     def test_only_changes_every_2_s_and_a_refresh_every_30_s(self):
         self.fake.board = True
         self.beat()

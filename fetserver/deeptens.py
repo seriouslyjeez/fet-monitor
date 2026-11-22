@@ -412,20 +412,27 @@ class DeepTens:
                     out.append(dict(lane, state="private"))
                     continue
                 record = t["mode"] not in ("sighter",)
-                out.append(dict(lane, state="match", name=mi.get("competitor") or "", label=(m["cname"] or m["name"]) + ("" if record else " · sighters"),
-                                shots=self._shots(v) if record else [], total=v["agg"]["decimal"] if record else None,
-                                count=v["count"] if record else 0, x=v["agg"]["x"] if record else 0))
+                lane = dict(lane, state="match", name=mi.get("competitor") or "", label=(m["cname"] or m["name"]) + ("" if record else " · sighters"))
+                out.append(dict(lane, **self._series(c, v)) if record else dict(lane, shots=[], total=None, count=0, x=0))
                 continue
             if not v.get("series_id"):
                 out.append(dict(lane, state="idle", shots=[], total=None, count=0, x=0))
                 continue
-            out.append(dict(lane, state="sighter" if t["mode"] == "sighter" else "practice", shots=self._shots(v),
-                            total=v["agg"]["decimal"], count=v["count"], x=v["agg"]["x"]))
+            out.append(dict(lane, state="sighter" if t["mode"] == "sighter" else "practice", **self._series(c, v)))
         return out
 
-    @staticmethod
-    def _shots(v) -> list:
-        return [{"x": s["x_mm"], "y": s["y_mm"], "v": s["decimal"], "m": s["miss"]} for s in v.get("bull_shots", [])]
+    SERIES_SHOTS = 60                                  # a practice is usually 60 shots (user 2026-11-22)
+
+    def _series(self, c, v) -> dict:
+        """The lane's series as the board shows it (user 2026-11-22: "show the last 60 shots in a series"): its last 60
+        shots with their numbers (not only the current target picture's), and the totals of its series of 10 (the
+        target's aggregate groups) among them; the whole series' totals, decimal and whole rings."""
+        shots = self.core.recent_shots(c, v["series_id"], v["stream"], self.SERIES_SHOTS) if v.get("series_id") else []
+        first = shots[0]["n"] if shots else 0
+        return {"shots": [{"x": s["x_mm"], "y": s["y_mm"], "v": s["decimal"], "m": s["miss"], "n": s["n"]} for s in shots],
+                "groups": [{"first": g["first"], "last": g["last"], "total": g["decimal"], "int": g["integer"], "x": g["x"]}
+                           for g in v.get("groups", []) if g["last"] >= first],
+                "total": v["agg"]["decimal"], "int": v["agg"]["integer"], "count": v["count"], "x": v["agg"]["x"]}
 
     def _send_lanes(self, now: float) -> None:
         self.next_lanes = now + LANES_S

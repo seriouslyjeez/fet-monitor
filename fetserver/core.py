@@ -1523,6 +1523,12 @@ class Core:
             out.append(item)
         return out
 
+    def recent_shots(self, c, series_id: int, stream: str, n: int = 60) -> list:
+        """The last n shots of one stream of a series, oldest first (the live board's 60-shot series)."""
+        rows = c.execute("SELECT * FROM shots WHERE series_id=? AND stream=? ORDER BY series_no DESC, id DESC LIMIT ?",
+                         (series_id, stream, n)).fetchall()
+        return [self._brief(r) for r in reversed(rows)]
+
     def series_view(self, series_id: int, stream: str = "scored", bull=None, upto=None) -> dict:
         if stream not in ("scored", "sighter"):
             raise BadRequest("stream must be scored or sighter")
