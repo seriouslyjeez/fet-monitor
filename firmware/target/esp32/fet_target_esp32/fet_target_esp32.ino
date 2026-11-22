@@ -518,9 +518,25 @@ static void diagLine() {                                                   // US
   Serial.print(out);
 }
 
+// USB only (the flash station; user 2026-11-22): the server the WiFi side reports to (its address; never the token) and
+// the command number it saved for it. "FT1 B forget": the number goes back to 0 and the board restarts (the WiFi side
+// runs in its own task: it reads the number again at its start). Its answer: FT1 B url=<address> cmd=<number> forget=0|1
+static void bridgeLine(bool forget) {
+  if (forget) { lfs.writeAtomic("/cmd.id", "0"); hooks.reboot(); }
+  std::string srv, id;
+  lfs.read("/cmd.srv", srv);
+  if (!lfs.read("/cmd.id", id) || id.empty()) id = "0";
+  size_t sp = srv.find(' ');
+  std::string url = sp == std::string::npos ? srv : srv.substr(0, sp);
+  if (url.empty()) url = "-";
+  std::string out = "FT1 B url=" + url + " cmd=" + id + " forget=" + (forget ? "1" : "0") + "\n";
+  Serial.write((const uint8_t*)out.data(), out.size());
+}
+
 static void handleUsbLine(const char* line) {
   char out[320];
   if (strcmp(line, "FT1 D") == 0) { diagLine(); return; }
+  if (strcmp(line, "FT1 B") == 0 || strcmp(line, "FT1 B forget") == 0) { bridgeLine(line[5] != 0); return; }
   size_t n = identity.setupLine(line, FW_VERSION, BOARD_REV, settings.id(), out, sizeof out);
   if (n) {
     if (identity.hasKey()) commands->setKey(identity.key(), tgt::Identity::KEY_LEN);

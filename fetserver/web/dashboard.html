@@ -1746,6 +1746,14 @@ function esp32Images(rc) {                       // the ESP32 board's firmware: 
     '<p class="mut">The full 8 MB image from the Arduino build of firmware/target/esp32 (fet_target_esp32.ino.merged.bin). It is checked: ' +
     'an intact ESP32-S3 image that carries FeT target firmware\'s name and version.</p>';
 }
+// Where the board's WiFi side reports and the command number it saved (FeT target ESP32 0.4.4+; user 2026-11-22: a
+// board set up on deepTENS kept deepTENS's higher number and skipped this Pi's commands).
+function e32Bridge(pr) {
+  const b = pr.bridge;
+  if (!b) return '';
+  return '<p class="mut">Its WiFi side reports to <b>' + esc(b.url || 'no server yet') + '</b>; last command number <span class="num">' + esc(b.cmd) + '</span>' +
+    (b.cmd ? ' <button data-act="rce32forget" data-port="' + esc(pr.port) + '">Forget the command number</button>' : '') + '</p>';
+}
 function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a USB port
   const dis = running || rc.flashBusy ? ' disabled' : '', mine = ownBackups(f, p, pr).filter(b => /\.bin$/.test(b.name));
   return devCard(p, esc(pr.label),
@@ -1758,6 +1766,7 @@ function esp32Row(p, pr, running, busy, rc, f) {   // an ESP32 target board on a
         '(saves about 7 minutes; only when one board of this batch is already saved: then it cannot be put back from here)</label>'
         : '<p class="mut">Only the program is written: the board keeps its key, WiFi settings and stored shots.</p>')
       : '<p class="mut">' + esc(pr.why_not || '') + '</p>') +
+    e32Bridge(pr) +
     (mine.length ? '<p class="mut">Its original firmware, saved here:</p>' + mine.map(b => '<div class="bulk"><button data-act="rce32restore" data-port="' + esc(p.port) + '" data-name="' + esc(b.name) + '"' + dis + '>Put back ' + esc(b.name) + '</button>' +
       ' <a href="#" data-act="rcflashbk" data-name="' + esc(b.name) + '">download</a></div>').join('') : ''),
     '<button data-act="rcflashid" data-port="' + esc(p.port) + '"' + dis + '>' + (busy ? 'Identifying…' : 'Identify') + '</button>' +
@@ -3709,6 +3718,13 @@ async function rangeAct(el, a) {
   if (a === 'rcwiz') { rc.fwiz = {k: el.dataset.k, step: 0}; rc.flashMsg = ''; render(true); return wizFocus(); }
   if (a === 'rcwizstep') { rc.fwiz.step = Math.max(0, (rc.fwiz.step || 0) + (+el.dataset.d)); rc.flashMsg = ''; render(true); return wizFocus(); }
   if (a === 'rcwizclose') { rc.fwiz = null; rc.flashMsg = ''; return render(true); }
+  if (a === 'rce32forget') {
+    if (!confirm('The ESP32 board on ' + el.dataset.port + ' forgets the command number it saved, and restarts.\n\n' +
+                 'Only needed if a server\'s commands are skipped; FeT Monitor 1.2.2 and newer number past it by themselves.')) return;
+    const res = await adminCall('/flash/esp32-forget', {port: el.dataset.port});
+    if (res.status !== 202) rc.flashMsg = res.data.error || 'not started';
+    return refresh();
+  }
   if (a === 'rce32go' || a === 'rce32key' || a === 'rce32restore') {
     const nobk = a === 'rce32go' && rc.e32NoBackup && ((rc.flash || {}).probes || {})[el.dataset.port] && rc.flash.probes[el.dataset.port].first_install;
     const what = a === 'rce32go' ? 'Install FeT target firmware on the ESP32 board on ' + el.dataset.port + '?\n\n' +
@@ -4600,7 +4616,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {sightsSection, clickWords, cmdText, cmdTrouble, reviewSiblings, sessionNav, laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {e32Bridge, sightsSection, clickWords, cmdText, cmdTrouble, reviewSiblings, sessionNav, laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

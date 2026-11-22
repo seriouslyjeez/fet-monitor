@@ -1995,3 +1995,14 @@ console.log('OK');
   assert(/needs 3 shots on paper/.test(few));
   console.log('sights in Range Control OK');
 }
+
+// --- the flash station: where an ESP32 board's WiFi side reports, and its saved command number (user 2026-11-22)
+{
+  const {e32Bridge} = X;
+  assert.strictEqual(e32Bridge({port: '/dev/ttyUSB0', bridge: null}), '', 'older firmware: nothing');
+  const b = e32Bridge({port: '/dev/ttyUSB0', bridge: {url: 'https://devices.deeptens.com:443', cmd: 51234}});
+  assert(/reports to <b>https:\/\/devices\.deeptens\.com:443<\/b>/.test(b) && /51234/.test(b) && /data-act="rce32forget" data-port="\/dev\/ttyUSB0"/.test(b));
+  assert(!/rce32forget/.test(e32Bridge({port: 'p', bridge: {url: null, cmd: 0}})) && /no server yet/.test(e32Bridge({port: 'p', bridge: {url: null, cmd: 0}})), 'nothing to forget');
+  assert(!/<script/.test(e32Bridge({port: 'p', bridge: {url: '<script>', cmd: 1}})), 'escaped');
+  console.log('flash station command number OK');
+}

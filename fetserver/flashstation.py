@@ -90,6 +90,20 @@ def ft_info(line: str):
     if not re.fullmatch(r"[0-9A-Za-z.\-]{1,20}", fw) or not re.fullmatch(r"[0-9a-f]{8}|none", key):
         return None
     return fw, None if key == "none" else key
+ESP32_BRIDGE_FROM = (0, 4, 4)          # FeT target ESP32 answers "FT1 B": its server and saved command number
+
+
+def ft_bridge(line: str):
+    """{"url", "cmd", "forgot"} from an ESP32 board's "FT1 B url=... cmd=... forget=0|1"; else None."""
+    if not line.startswith("FT1 B "):
+        return None
+    f = dict(p.split("=", 1) for p in line.split(" ")[2:] if "=" in p)
+    url, cmd = f.get("url", ""), f.get("cmd", "")
+    if not re.fullmatch(r"[\x21-\x7e]{1,200}", url) or not re.fullmatch(r"\d{1,19}", cmd):
+        return None
+    return {"url": None if url == "-" else url, "cmd": int(cmd), "forgot": f.get("forget") == "1"}
+
+
 HELLO_RE = re.compile(r"FETCFG HELLO (\S+) (\S+)")
 OK_RE = re.compile(r"FETCFG OK (\S+)")
 ERROR_RE = re.compile(r"FETCFG ERROR (.*)")
@@ -302,8 +316,9 @@ class FlashStation:
 
     # ------------------------------------------------------------------------------------- the ESP32 board
     def _esp32_found(self, port: str, chip: str, mac: str, size: int) -> dict:
-        running, key = self._esp32_hello(port)
+        running, key, bridge = self._esp32_hello(port)
         res = {"port": port, "device": "esp32", "chip": chip, "mac": mac, "flash_size": size, "running": running, "key_fp": key,
+               "bridge": bridge,                         # where it reports and its saved command number (0.4.4+)
                "label": f"{chip} board ({flash_label(size)} flash), " + (f"FeT target {running} (" + (f"key {key}" if key else "no key yet") + ")"
                                                                           if running else "not FeT target firmware (first install)"),
                "can_key": running is not None, "configurable": running is not None}
@@ -321,12 +336,13 @@ class FlashStation:
         return res
 
     def _esp32_hello(self, port: str) -> tuple:
-        """(FeT target version, key fingerprint) if the board runs FeT target firmware: restarted, it says hello within
-        a second; asked "FT1 I", it answers. (None, None) otherwise (upstream freETarget, or nothing)."""
+        """(FeT target version, key fingerprint, its WiFi side's server and command number) if the board runs FeT target
+        firmware: restarted, it says hello within a second; asked "FT1 I", it answers; from 0.4.4 asked "FT1 B", it says
+        where it reports. (None, None, None) otherwise (upstream freETarget, or nothing)."""
         try:
             link = self.opener(port)
         except OSError:
-            return None, None
+            return None, None, None
         try:
             link.restart_esp()
             start = time.monotonic()
@@ -335,15 +351,48 @@ class FlashStation:
                 got = link.readline(0.2)
                 info = ft_info(got) if got else None
                 if info:
-                    return info
+                    return info + (self._esp32_bridge(link) if (version_tuple(info[0]) or (0, 0, 0)) >= ESP32_BRIDGE_FROM else None,)
                 if not asked and time.monotonic() - start > self.mega_wait / 2:
                     link.write(b"FT1 I\n")
                     asked = True
-            return None, None
+            return None, None, None
         except OSError:
-            return None, None
+            return None, None, None
         finally:
             link.close()
+
+    def _esp32_bridge(self, link, forget: bool = False):
+        link.write(b"FT1 B forget\n" if forget else b"FT1 B\n")
+        start = time.monotonic()
+        while time.monotonic() - start < self.mega_wait:
+            got = link.readline(0.2)
+            b = ft_bridge(got) if got else None
+            if b:
+                return b
+        return None
+
+    def start_esp32_forget(self, port: str, by: str) -> dict:
+        """The board's WiFi side forgets its saved command number (user 2026-11-22: a board that reported to another
+        server skipped this Pi's commands as "already done"): 0, then it restarts. FeT target ESP32 0.4.4+."""
+        with self.lock:
+            probe = self.probes.get(port)
+        if not probe or probe.get("device") != "esp32" or not probe.get("running"):
+            raise FlashError("identify the board first: it must run FeT target firmware")
+        if (version_tuple(probe["running"]) or (0, 0, 0)) < ESP32_BRIDGE_FROM:
+            raise FlashError("this needs FeT target ESP32 0.4.4 or newer on the board: install it first")
+
+        def work(job):
+            link = self.opener(port)
+            try:
+                b = self._esp32_bridge(link, forget=True)
+            finally:
+                link.close()
+            if not b or not b["forgot"]:
+                raise FlashError("the board did not answer: identify it again and retry")
+            with self.lock:
+                probe["bridge"] = b
+            return "its WiFi side's command number is 0 now; the board restarts (reports to " + (b["url"] or "no server yet") + ")"
+        return self._mega_job(port, "Forget the command number", by, work)
 
     def _same_esp32(self, port: str, probe: dict) -> None:
         self._step("checking it is the same board")

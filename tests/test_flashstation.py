@@ -899,6 +899,7 @@ class FakeEsp32:
         self.runs, self.fw, self.key_fp = runs, fw, key_fp
         self.out, self.written, self.keys, self.settings = [], [], [], None
         self.restarts = 0
+        self.url, self.cmd = "https://devices.deeptens.com:443", 51234     # its WiFi side (FT1 B, 0.4.4+)
 
     def open(self, port):
         self.out = []                                  # no restart on open: the station restarts it
@@ -922,6 +923,12 @@ class FakeEsp32:
             self.keys.append(key)
             self.key_fp = hashlib.sha256(key).hexdigest()[:8]
             self.out.append("FT1 K ok fp=" + self.key_fp)
+        elif line in ("FT1 B", "FT1 B forget") and tuple(int(x) for x in self.fw.split(".")) >= (0, 4, 4):
+            forget = line.endswith("forget") and not getattr(self, "deaf_to_forget", False)
+            if forget:
+                self.cmd = 0
+                self.restarts += 1
+            self.out.append("FT1 B url=%s cmd=%d forget=%d" % (self.url or "-", self.cmd, forget))
         elif line == "FETCFG HELLO":
             self.out.append("FETCFG HELLO fet-db173c esp32/" + self.fw)
         elif line.startswith("FETCFG "):
@@ -970,6 +977,36 @@ class Esp32(Case):
         self.assertIn("FeT target 0.2.0 (key ab12cd34)", r["label"], "as on a Mega")
         r = self.station32(FakeEsp32("fet", fw="0.2.0", key_fp=None)).identify("/dev/ttyUSB0")
         self.assertIn("FeT target 0.2.0 (no key yet)", r["label"])
+
+    def test_where_its_wifi_side_reports_and_forgetting_its_command_number(self):
+        # user 2026-11-22: a board set up on deepTENS kept deepTENS's higher command number; this Pi's were skipped
+        old = FakeEsp32("fet", fw="0.4.3", key_fp="ab12cd34")
+        st_old = self.station32(old)
+        r = st_old.identify("/dev/ttyUSB0")
+        self.assertIsNone(r["bridge"], "before 0.4.4: not asked")
+        self.assertNotIn(b"FT1 B\n", old.written)
+        with self.assertRaisesRegex(FlashError, "0.4.4 or newer"):
+            st_old.start_esp32_forget("/dev/ttyUSB0", "test")
+        board = FakeEsp32("fet", fw="0.4.4", key_fp="ab12cd34")
+        st = self.station32(board)
+        r = st.identify("/dev/ttyUSB0")
+        self.assertEqual(r["bridge"], {"url": "https://devices.deeptens.com:443", "cmd": 51234, "forgot": False})
+        job = st.start_esp32_forget("/dev/ttyUSB0", "test")
+        self.assertEqual(job["state"], "done", job.get("message"))
+        self.assertIn("command number is 0 now", job["message"])
+        self.assertEqual((board.cmd, st.probes["/dev/ttyUSB0"]["bridge"]["cmd"]), (0, 0))
+        board.url = None
+        self.assertIsNone(st.identify("/dev/ttyUSB0")["bridge"]["url"], "no server yet")
+        board.cmd, board.deaf_to_forget = 9, True                  # it answered, but did not forget: not done
+        job = st.start_esp32_forget("/dev/ttyUSB0", "test")
+        self.assertEqual((job["state"], board.cmd), ("failed", 9), job.get("message"))
+
+    def test_ft1_b_lines(self):
+        from fetserver.flashstation import ft_bridge
+        self.assertEqual(ft_bridge("FT1 B url=http://10.0.0.5:8080 cmd=7 forget=0"), {"url": "http://10.0.0.5:8080", "cmd": 7, "forgot": False})
+        self.assertEqual(ft_bridge("FT1 B url=- cmd=0 forget=1"), {"url": None, "cmd": 0, "forgot": True})
+        for bad in ("FT1 B url= cmd=7", "FT1 B url=x cmd=-1", "FT1 B url=x", "FT1 I b=7", "", "FT1 B url=x cmd=12345678901234567890"):
+            self.assertIsNone(ft_bridge(bad), bad)
 
     def test_first_install_saves_writes_keys_and_configures(self):
         board = FakeEsp32("upstream")

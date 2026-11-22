@@ -717,6 +717,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": str(exc)})
             log.warning("Range Control from %s: Arduino Mega on %s: %s", self.client_address[0], port, job["what"])
             return self._send(202, job)
+        if path == "/api/v1/admin/flash/esp32-forget" and method == "POST":
+            try:
+                job = self.server.flash.start_esp32_forget(str(payload.get("port", "")), "Range Control")
+            except FlashError as exc:
+                return self._send(400, {"error": str(exc)})
+            log.warning("Range Control from %s: ESP32 board on %s: %s", self.client_address[0], payload.get("port"), job["what"])
+            return self._send(202, job)
         if path in ("/api/v1/admin/flash/esp32-install", "/api/v1/admin/flash/esp32-key", "/api/v1/admin/flash/esp32-restore") and method == "POST":
             port, fl = str(payload.get("port", "")), self.server.flash
             settings = payload.get("settings")
