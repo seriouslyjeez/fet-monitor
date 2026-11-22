@@ -6,6 +6,7 @@ import ui
 
 WHITE, BLACK = rgb(255, 255, 255), rgb(0, 0, 0)
 SHOT, SHOT_LAST, SHOT_EDGE = rgb(40, 140, 255), rgb(255, 50, 50), rgb(255, 255, 255)
+CENTRE = rgb(255, 150, 0)                          # the group's centre on the sights screen
 FACE, FX, FY, STRIP_H = 208, 4, 30, 16             # the face: 208 px square at (4, 30), drawn 16 rows at a time
 PX = FX + FACE + 6                                 # the panel on the right: x 218..319
 PW = W - PX
@@ -106,11 +107,13 @@ def strip():
     return _STRIP[0]
 
 
-def face(s, v, zoom="full"):
-    """The face and the current bull's shots (the last one red), in strips, at this zoom (ZOOMS)."""
+def face(s, v, zoom="full", centre=None, half=None):
+    """The face and the current bull's shots (the last one red), in strips, at this zoom (ZOOMS). centre: (x_h, y_h),
+    the group's centre on the sights screen (a cross); a flyer there is drawn as a ring. half: the half-width shown, mm
+    (else from the zoom)."""
     f = v["face"]
     rings = sorted(f["rings"], key=lambda r: -r["dia_mm"])
-    k = (FACE / 2) / half_mm(v, zoom)              # mm -> px
+    k = (FACE / 2) / (half or half_mm(v, zoom))   # mm -> px
     c = FACE // 2
     black = f.get("black_mm") or 0
     shots = [sh for sh in v["shots"] if not sh["miss"] and sh["x_h"] is not None]
@@ -133,8 +136,16 @@ def face(s, v, zoom="full"):
             x = c + int(sh["x_h"] / 100 * k + 0.5)
             y = cy - int(sh["y_h"] / 100 * k + 0.5)
             last = i == len(shots) - 1
-            st.ellipse(x, y, pr, pr, SHOT_LAST if last else SHOT, True)
-            st.ellipse(x, y, pr, pr, SHOT_EDGE, False)
+            if sh.get("flyer"):
+                st.ellipse(x, y, pr, pr, SHOT_LAST if last else SHOT, False)
+            else:
+                st.ellipse(x, y, pr, pr, SHOT_LAST if last else SHOT, True)
+                st.ellipse(x, y, pr, pr, SHOT_EDGE, False)
+        if centre:
+            x = c + int(centre[0] / 100 * k + 0.5)
+            y = cy - int(centre[1] / 100 * k + 0.5)
+            st.fill_rect(x - 7, y - 1, 15, 3, CENTRE)
+            st.fill_rect(x - 1, y - 7, 3, 15, CENTRE)
         s.show(st, FX, FY + y0)
 
 
@@ -227,6 +238,76 @@ def clock(s, v, now_server_ms=None):
         left = max(0, (m.get("remaining_ms") or 0) // 1000)
     text = "%d:%02d" % (left // 60, left % 60) if left < 6000 else "%d h" % (left // 3600)
     _text(s, text, PX, y + 12, 2, ui.WARN if m.get("state") == "running" else ui.DIM, PW)
+
+
+# ------------------------------------------------------------------------------------------------ sights
+def _sights_face_key(v):
+    g = v["sights"]
+    return (v["face"]["id"], [(p["n"], p["x_h"], p["y_h"], p.get("flyer")) for p in g["shots"]], tuple(g.get("center_h") or ()))
+
+
+def _sights_panel_key(v, problem):
+    g = v["sights"]
+    return (len(g["shots"]), g.get("misses"), g["ready"], g["min_shots"], g["show"], g.get("clicks") and (g["clicks"]["x"], g["clicks"]["y"]),
+            v["target"]["online"], problem)
+
+
+def _click_lines(c):
+    """[(direction, clicks)] for the shooter: up/down first, then left/right; never rings (user 2026-11-22)."""
+    out = []
+    if c["y"]:
+        out.append(("UP" if c["y"] > 0 else "DOWN", abs(c["y"])))
+    if c["x"]:
+        out.append(("RIGHT" if c["x"] > 0 else "LEFT", abs(c["x"])))
+    return out
+
+
+def sights(s, v, problem=None, prev=None, prev_problem=None):
+    """Sights (user 2026-11-22; the range master turns it on): the group since sights started, zoomed to it, its centre
+    marked; the shooter estimates the adjustment, and the clicks show only when the range master says so. prev: the
+    view drawn before on this screen, with its problem line (only what changed is drawn again)."""
+    g = v["sights"]
+    full = prev is None or not prev.get("sights")
+    if full:
+        s.fill(0, 0, W, H, ui.BG)
+        forget()
+    if full or _top(prev) != _top(v):
+        top(s, v)
+    if full or _sights_face_key(prev) != _sights_face_key(v):
+        kept = [p for p in g["shots"] if not p.get("flyer")]          # zoomed on the group: a flyer may be off the face
+        face(s, {"face": v["face"], "shots": g["shots"]}, "auto", g.get("center_h"), half_mm({"face": v["face"], "shots": kept}, "auto"))
+    if not full and _sights_panel_key(prev, prev_problem) == _sights_panel_key(v, problem):
+        return
+    s.fill(PX, FY, PW, H - FY, ui.BG)
+    forget(FY, H)
+    big(s, "SIGHTS", PX, FY, 2, ui.WARN, ui.BG)
+    n = len(g["shots"])
+    big(s, "%d SHOT%s" % (n, "" if n == 1 else "S"), PX, FY + 22, 1, ui.DIM, ui.BG)
+    y = FY + 44
+    if g.get("clicks") is not None:
+        lines = _click_lines(g["clicks"])
+        if not lines:
+            big(s, "NO", PX, y, 2, ui.GOOD, ui.BG)
+            big(s, "CHANGE", PX, y + 20, 2, ui.GOOD, ui.BG)
+        for word, k in lines:
+            big(s, word, PX, y, 2, ui.GOOD, ui.BG)
+            num = str(k)[:4]
+            big(s, num, PX, y + 20, 3, ui.FG, ui.BG)
+            word = "CLICK" if k == 1 else "CLICKS"
+            if PX + 24 * len(num) + 4 + 8 * len(word) <= W:
+                big(s, word, PX + 24 * len(num) + 4, y + 34, 1, ui.FG, ui.BG)
+            else:                                  # a long number: the word under it
+                big(s, word, PX, y + 46, 1, ui.FG, ui.BG)
+            y += 60
+    elif not g["ready"]:
+        big(s, "FIRE", PX, y, 2, ui.FG, ui.BG)
+        more = max(0, g["min_shots"] - n)
+        big(s, "%d MORE" % more if more else "MORE", PX, y + 20, 2, ui.FG, ui.BG)
+    else:
+        for i, w in enumerate(("ESTIMATE", "YOUR", "SIGHT", "CHANGE")):
+            big(s, w, PX, y + 14 * i, 1, ui.FG, ui.BG)
+    if problem or not v["target"]["online"]:
+        big(s, (problem or "TARGET SILENT")[: PW // 8], PX, FY + 152, 1, ui.BAD, ui.BG)
 
 
 # ------------------------------------------------------------------------------------------------ buttons, sign-in

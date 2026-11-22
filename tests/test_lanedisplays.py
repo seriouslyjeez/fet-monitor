@@ -388,3 +388,84 @@ class Http(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Sights(Base):
+    """Sights on the lane's display (user 2026-11-22: "The range control needs an option to switch a CYD into 'sights'
+    mode. The shooter should be able to estimate their adjustment, it would be helpful to show the calculated
+    adjustments on the screen at the command of the range master"; "clicks per ring should default to 4, be settable
+    when the Sights command gets sent ... shooter sees clicks. Nothing should ever talk about rings")."""
+    def setUp(self):
+        super().setUp()
+        self.tok = self.paired()
+        self.core.set_mode("lane-1", None, "practice", admin=True)
+        self.shoot("lane-1", "3.00")                             # before sights: not in the group
+
+    def sights(self):
+        return self.view(self.tok)["sights"]
+
+    def test_start_estimate_then_show_clicks(self):
+        self.assertIsNone(self.sights(), "off until the range master starts it")
+        st = self.core.set_sights("lane-1", "start")
+        self.assertEqual((st["show"], st["cpr"], st["shots"]), (False, 4.0, 0), "clicks per ring: 4 unless set")
+        for x in ("1.00", "1.20", "0.80"):
+            self.shoot("lane-1", x)
+        g = self.sights()
+        self.assertEqual(sorted(p["n"] for p in g["shots"]), [2, 3, 4], "the shots since sights started")
+        self.assertTrue(g["ready"])
+        self.assertEqual(g["center_h"], [100, 50])
+        self.assertIsNone(g["clicks"], "the shooter estimates first")
+        self.core.set_sights("lane-1", "show")
+        g = self.sights()
+        self.assertEqual(g["clicks"], {"x": -2, "y": -1}, "1.0 mm right, 0.5 mm high: 2 clicks left, 1 click down at 4 per ring")
+        self.assertNotIn("ring", json.dumps(g).replace("ring_mm", ""), "never rings for the shooter")
+        self.core.set_sights("lane-1", "hide")
+        self.assertIsNone(self.sights()["clicks"])
+
+    def test_clicks_per_ring_set_with_the_command_and_kept_for_the_lane(self):
+        self.core.set_sights("lane-1", "start", 8)
+        for x in ("1.00", "1.20", "0.80"):
+            self.shoot("lane-1", x)
+        self.core.set_sights("lane-1", "show")
+        self.assertEqual(self.sights()["clicks"], {"x": -3, "y": -2}, "8 per ring: 3.2 and 1.6")
+        self.core.set_sights("lane-1", "end")
+        self.assertIsNone(self.sights())
+        self.assertEqual(self.core.set_sights("lane-1", "start")["cpr"], 8.0, "the lane's last value")
+        for bad in (0, -1, 101, "4", True):
+            with self.assertRaises(Exception):
+                self.core.set_sights("lane-1", "start", bad)
+
+    def test_a_new_group_after_an_adjustment(self):
+        self.core.set_sights("lane-1", "start")
+        for x in ("1.00", "1.20", "0.80"):
+            self.shoot("lane-1", x)
+        self.core.set_sights("lane-1", "show")
+        self.core.set_sights("lane-1", "group")
+        g = self.sights()
+        self.assertEqual((g["shots"], g["ready"], g["show"], g["clicks"]), ([], False, False, None), "from the next shot, hidden")
+        self.shoot("lane-1", "0.00")
+        self.assertEqual([p["n"] for p in self.sights()["shots"]], [5], "shown before there are enough for a suggestion")
+
+    def test_practice_only(self):
+        with self.assertRaisesRegex(Exception, "start sights first"):
+            self.core.set_sights("lane-1", "show")
+        with self.assertRaisesRegex(Exception, "action must be"):
+            self.core.set_sights("lane-1", "rings")
+        self.core.set_sights("lane-1", "start")
+        self.core.set_mode("lane-1", None, "sighter", admin=True)
+        self.assertIsNone(self.sights(), "the lane left practice: the normal screen")
+        with self.assertRaisesRegex(Exception, "practice only"):
+            self.core.set_sights("lane-1", "start")
+        self.core.set_mode("lane-1", None, "practice", admin=True)
+        self.assertIsNotNone(self.sights(), "back in practice: on again (a new series: from its first shot)")
+        self.core.set_sights("lane-1", "end")
+
+    def test_range_control_sees_it(self):
+        self.core.set_sights("lane-1", "start", 5)
+        t = [x for x in self.core.admin_view()["targets"] if x["device_id"] == "lane-1"][0]
+        self.assertEqual((t["sights"]["show"], t["sights_cpr"]), (False, 5.0))
+
+    def test_clicks_round_as_the_lane_view(self):
+        c = self.core.clicks
+        self.assertEqual([c(0.3125, 4, 2.5), c(-0.3125, 4, 2.5), c(0.3, 4, 2.5), c(0.0, 4, 2.5), c(-0.1, 4, 2.5)], [1, -1, 0, 0, 0],
+                         "half a click rounds away from zero; nothing is 0, never -0")

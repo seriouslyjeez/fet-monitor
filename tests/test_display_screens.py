@@ -179,6 +179,20 @@ for pg in range(4):
 for status in (None, "deepTENS: type K7M2QX at deeptens.com/display to send this kit's shots there",
                "deepTENS: all sent (3 not taken: not one of your targets on deepTENS)"):
     check("kit info", target.kit_info(s, "FeT-Kit-7e08f8", "abcdefghjk", "kit_abcdefghjkmnpqrs", 8080, "FeT Display 0.1.0  cyd-7e08f8", status))
+sv = [k for k in views if k.startswith("sights")]      # sights (user 2026-11-22): every state, with and without a problem
+for a in sv:
+    for pa in (None, "RECONNECTING"):
+        target.sights(s, views[a], pa)
+        n += 1
+for a in sv:                                           # each over each other: the picture a full drawing gives
+    for b in sv:
+        for pa, pb in ((None, None), (None, "RECONNECTING"), ("RECONNECTING", None)):
+            target.sights(s, views[a], pa)
+            target.sights(s, views[b], pb, views[a], pa)
+            same(("sights", a, pa, b, pb), lambda: target.sights(s, views[b], pb))
+            n += 1
+assert [w for w, _ in target._click_lines({"x": -2, "y": 1})] == ["UP", "LEFT"]
+assert target._click_lines({"x": 0, "y": 0}) == []
 print("SCREENS", n)
 """
 
@@ -216,6 +230,25 @@ class EveryScreen(LinkedCase):
         self.at(10)
         views["match"] = ld.view(ld.auth(tok2))
         self.assertEqual(views["match"]["match"]["buttons"], ["start_record"])
+        self.core.handle_heartbeat({"device_id": "lane-3", "boot_count": 1, "uptime_ms": 0})
+        self.core.set_lane("lane-3", 3)
+        lane3 = paired("lane-3")
+        self.core.set_mode("lane-3", None, "practice", admin=True)
+        self.core.set_sights("lane-3", "start")
+        views["sights empty"] = ld.view(ld.auth(lane3))
+        self.shoot("lane-3", "1.00")
+        views["sights fire more"] = ld.view(ld.auth(lane3))
+        for x in ("1.20", "0.80", "-14.00"):
+            self.shoot("lane-3", x)
+        views["sights estimate"] = ld.view(ld.auth(lane3))
+        self.core.set_sights("lane-3", "show")
+        views["sights clicks"] = ld.view(ld.auth(lane3))
+        self.core.set_sights("lane-3", "show", 100)
+        views["sights many clicks"] = ld.view(ld.auth(lane3))
+        views["sights no change"] = dict(views["sights clicks"], sights=dict(views["sights clicks"]["sights"], clicks={"x": 0, "y": 0}))
+        views["sights one way"] = dict(views["sights clicks"], sights=dict(views["sights clicks"]["sights"], clicks={"x": 1, "y": 0}))
+        self.assertEqual(views["sights many clicks"]["sights"]["clicks"]["x"], -40, "100 per ring")
+        views["sights huge clicks"] = dict(views["sights clicks"], sights=dict(views["sights clicks"]["sights"], clicks={"x": -250, "y": 12345}))
         views["claim"] = dict(views["empty"], claim={"public_name": "Al Aim", "until_ms": views["empty"]["server_time_ms"] + 90000, "left_ms": 90000})
         self.assertTrue(views["empty"]["signin_url"], "linked: the sign-in address")
         with tempfile.TemporaryDirectory() as tmp:

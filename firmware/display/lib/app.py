@@ -192,7 +192,14 @@ def paired(cfg):
             scr = st["screen"] = default_screen(v)
         elif scr == "signin" and (v.get("athlete") or v.get("claim") or v.get("match")):
             scr = st["screen"] = "target"              # signed in (a phone, a claim) or a match began meanwhile
-        if scr == "signin":
+        if v.get("sights") and scr in ("target", "signin"):
+            scr = st["screen"] = "sights"              # the range master turned sights on (user 2026-11-22)
+        elif scr == "sights" and not v.get("sights"):
+            scr = st["screen"] = default_screen(v)
+        if scr == "sights":
+            target.sights(s, v, st["problem"], drawn_v if drawn_scr == "sights" else None, drawn_problem)
+            st["buttons"] = []
+        elif scr == "signin":
             url = v.get("signin_url")
             if drawn_scr != "signin" or (drawn_v or {}).get("signin_url") != url or (drawn_v or {}).get("pin_signin") != v.get("pin_signin"):
                 if url and st["qr"][0] != url:

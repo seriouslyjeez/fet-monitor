@@ -1455,6 +1455,8 @@ class Core:
             t["link"] = wifilink.view(json.loads(r["link_json"]) if r["link_json"] else None, r["uptime_ms"])
             t["fw_job"] = jobs.get(t["device_id"])
             t["delivery"] = delivery.get(t["device_id"])
+            t["sights"] = self.sights_state(self.db.conn(), t["device_id"])          # the range master's sights (practice)
+            t["sights_cpr"] = self.db.conn().execute("SELECT sights_cpr FROM targets WHERE device_id=?", (t["device_id"],)).fetchone()[0]
             ft = self.db.conn().execute("""SELECT key_fp, target_boot, target_settings_id, target_settings_json, board_rev, arduino_version,
                                                   hello_key_fp, target_seen_ms, target_status_json, target_asleep FROM targets WHERE device_id=?""",
                                         (t["device_id"],)).fetchone()
@@ -1522,6 +1524,93 @@ class Core:
                 item["ammo"] = self._stream_view(c, g, "scored")["ammo"]
             out.append(item)
         return out
+
+    # ---- sights on the lane's display (user 2026-11-22) --------------------
+    SIGHT_ACTIONS = ("start", "show", "hide", "group", "end")
+
+    @staticmethod
+    def clicks(move_mm: float, cpr: float, ring_mm: float) -> int:
+        """Whole clicks, nearest, a half rounding away from zero (as the lane view's clicksFor)."""
+        import math
+        c = math.floor(abs(move_mm * cpr / ring_mm) + 0.5)
+        return -c if c and move_mm < 0 else c
+
+    def _live_practice(self, c, device_id: str):
+        """The target's live practice series (in practice mode, in no match), or None."""
+        ser = c.execute("""SELECT s.* FROM series s JOIN segments g ON g.series_id=s.id
+                           WHERE g.device_id=? AND g.ended_ms IS NULL ORDER BY g.id DESC LIMIT 1""", (device_id,)).fetchone()
+        seg = c.execute("SELECT mode FROM segments WHERE device_id=? AND ended_ms IS NULL ORDER BY id DESC LIMIT 1", (device_id,)).fetchone()
+        if ser is None or ser["kind"] != "practice" or seg is None or seg["mode"] != "practice" or self.matches.lock_of(c, device_id):
+            return None
+        return ser
+
+    def _last_n(self, c, series_id: int) -> int:
+        return c.execute("SELECT COALESCE(MAX(series_no), 0) FROM shots WHERE series_id=? AND stream='scored'", (series_id,)).fetchone()[0]
+
+    def set_sights(self, device_id: str, action, cpr=None) -> dict:
+        """Range Control (the range master): sights on a practice lane's display. start: from the next shot, with clicks
+        per ring (default the lane's last, else 4); show / hide: the adjustment on the display (the shooter estimates
+        first); group: a new group from the next shot (after an adjustment), the adjustment hidden; end: back to the
+        normal screen. Never in a match. The shooter sees clicks only (never rings)."""
+        if action not in self.SIGHT_ACTIONS:
+            raise BadRequest("action must be one of " + ", ".join(self.SIGHT_ACTIONS))
+        if cpr is not None:
+            if isinstance(cpr, bool) or not isinstance(cpr, (int, float)) or not 0 < cpr <= 100:
+                raise BadRequest("clicks per ring: a number above 0, at most 100 (e.g. 4)")
+            cpr = round(float(cpr), 2)
+        with self.db.write() as c:
+            t = c.execute("SELECT sights_json, sights_cpr FROM targets WHERE device_id=? AND removed=0 AND banned=0", (device_id,)).fetchone()
+            if t is None:
+                raise NotFound(f"unknown target {device_id}")
+            cur = json.loads(t["sights_json"]) if t["sights_json"] else None
+            if action == "end":
+                c.execute("UPDATE targets SET sights_json=NULL WHERE device_id=?", (device_id,))
+            else:
+                ser = self._live_practice(c, device_id)
+                if ser is None:
+                    raise BadRequest(f"{device_id} is not in practice: sights are for practice only (never in a match)")
+                if action != "start" and cur is None:
+                    raise BadRequest("start sights first")
+                if action in ("start", "group"):
+                    cur = {"series_id": ser["id"], "after": self._last_n(c, ser["id"]), "show": False}
+                else:
+                    cur["show"] = action == "show"
+                c.execute("UPDATE targets SET sights_json=?, sights_cpr=? WHERE device_id=?",
+                          (json.dumps(cur), cpr if cpr is not None else t["sights_cpr"], device_id))
+        self.hub.publish({"type": "targets", "device_id": device_id})
+        return self.sights_state(self.db.conn(), device_id)
+
+    def sights_state(self, c, device_id: str, shots: bool = False) -> Optional[dict]:
+        """The sights on a lane now, or None (off, or the lane left practice). The group is the live practice series'
+        shots after the mark (a new series, e.g. New series: from its first shot). clicks only while shown."""
+        t = c.execute("SELECT sights_json, sights_cpr FROM targets WHERE device_id=?", (device_id,)).fetchone()
+        if t is None or not t["sights_json"]:
+            return None
+        cur = json.loads(t["sights_json"])
+        ser = self._live_practice(c, device_id)
+        if ser is None:
+            return None
+        after = cur["after"] if cur.get("series_id") == ser["id"] else 0
+        sug = self.sight_suggestion(ser["id"], after)
+        out = {"show": bool(cur.get("show")), "cpr": t["sights_cpr"], "ready": sug["ready"], "min_shots": sug["min_shots"],
+               "shots": sug["shots"], "on_paper": sug["on_paper"], "misses": sug["misses"], "clicks": None}
+        if sug["ready"]:
+            out["center_h"] = [int(round(sug["center_x_mm"] * 100)), int(round(sug["center_y_mm"] * 100))]
+            out["flyers"] = sug["flyers"]
+            if out["show"]:
+                out["clicks"] = {"x": self.clicks(sug["move_x_mm"], t["sights_cpr"], sug["ring_mm"]),
+                                 "y": self.clicks(sug["move_y_mm"], t["sights_cpr"], sug["ring_mm"])}
+        if shots:
+            out["points"] = [{"n": p["n"], "x_h": int(round(p["x_mm"] * 100)), "y_h": int(round(p["y_mm"] * 100)), "miss": False,
+                              "flyer": p["flyer"]} for p in sug["points"]] if sug["ready"] else self._sight_points(c, ser["id"], after)
+        return out
+
+    @staticmethod
+    def _sight_points(c, series_id: int, after: int) -> list:
+        """The group's shots on paper before there are enough for a suggestion (the display shows them anyway)."""
+        return [{"n": r["series_no"], "x_h": r["ax_h"], "y_h": r["ay_h"], "miss": False, "flyer": False}
+                for r in c.execute("SELECT series_no, ax_h, ay_h FROM shots WHERE series_id=? AND stream='scored' AND series_no>? "
+                                   "AND is_miss=0 ORDER BY series_no, id", (series_id, after))]
 
     def recent_shots(self, c, series_id: int, stream: str, n: int = 60) -> list:
         """The last n shots of one stream of a series, oldest first (the live board's 60-shot series)."""

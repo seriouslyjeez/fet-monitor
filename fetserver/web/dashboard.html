@@ -1858,6 +1858,22 @@ function deviceSection(t) {                    // the target as a device: trip p
     '<p class="mut">Setup portal opens the target\'s own setup WiFi (FeTMonitor-xxxxxx) for 15 minutes; shots keep flowing. Factory reset erases its ' +
     'WiFi settings, server address and stored shots, for selling or disposing of a target.</p>';
 }
+// Sights on the lane's display (user 2026-11-22): the range master starts it with clicks per ring (default 4, the lane's
+// last), the shooter estimates, the range master shows the adjustment (clicks only, never rings), a new group after it.
+const clickWords = c => !c ? '' : !c.x && !c.y ? 'No adjustment' : [c.y ? (c.y > 0 ? 'Up ' : 'Down ') + Math.abs(c.y) + (Math.abs(c.y) === 1 ? ' click' : ' clicks') : '',
+  c.x ? (c.x > 0 ? 'Right ' : 'Left ') + Math.abs(c.x) + (Math.abs(c.x) === 1 ? ' click' : ' clicks') : ''].filter(Boolean).join(', ');
+function sightsSection(t) {
+  const g = t.sights, eid = esc(t.device_id), b = (act, label, pri) => '<button' + (pri ? ' class="pri"' : '') + ' data-act="rcsight" data-a="' + act + '" data-id="' + eid + '">' + label + '</button>';
+  if (!g && t.mode !== 'practice') return '';
+  const fact = (k, v) => '<div class="fact"><span>' + k + '</span><span>' + v + '</span></div>';
+  const cpr = '<label class="cprl">Clicks per ring <input id="cpr_' + eid + '" type="text" inputmode="decimal" size="4" value="' + esc(g ? g.cpr : (t.sights_cpr || 4)) + '"></label>';
+  if (!g) return '<section class="tsec"><h3>Sights</h3><p class="mut">The lane display shows the group large; the adjustment, in clicks, only when you show it.</p>' +
+    '<div class="bulk">' + cpr + b('start', 'Sights', true) + '</div></section>';
+  return '<section class="tsec"><h3>Sights <span class="mut">on</span></h3>' +
+    fact('Group', g.shots + (g.shots === 1 ? ' shot' : ' shots') + (g.misses ? ' (' + g.misses + ' missed)' : '')) +
+    fact('Adjustment', !g.ready ? '<span class="mut">needs ' + g.min_shots + ' shots on paper</span>' : g.show ? '<b>' + esc(clickWords(g.clicks)) + '</b> <span class="mut">on the display</span>' : '<span class="mut">hidden: the shooter estimates</span>') +
+    '<div class="bulk">' + (g.show ? b('hide', 'Hide adjustment') : b('show', 'Show adjustment', true)) + cpr + b('group', 'New group') + b('end', 'End sights') + '</div></section>';
+}
 function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): now, on the range, its settings, the device, actions
   const kept = rc.tsf || {}, ft = t.fet_target, cur = (ft && ft.settings) || {}, id = t.device_id, eid = esc(id);
   const val = k => { const v = kept[id + ':' + k]; return v != null ? v : (cur[k] != null ? cur[k] : ''); };
@@ -1881,7 +1897,8 @@ function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): no
     fact('Athlete', t.athlete ? esc(t.athlete.name) + ' <button data-act="rcathout" data-id="' + eid + '">Sign out</button>'
       : (rc.athletes && rc.athletes.length && t.lane != null ? '<button data-act="rcathin" data-id="' + eid + '">Sign in…</button>' : '–')) +
     fact('Control', esc((t.lease && t.lease.held_by) || 'nobody')) +
-    '<div class="bulk">' + RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '" data-id="' + eid + '">' + m[1] + '</button>').join('') + '<button data-act="rcnew" data-id="' + eid + '">New series</button></div></section>';
+    '<div class="bulk">' + RC_MODES.map(m => '<button data-act="rcmode" data-mode="' + m[0] + '" data-id="' + eid + '">' + m[1] + '</button>').join('') + '<button data-act="rcnew" data-id="' + eid + '">New series</button></div></section>' +
+    sightsSection(t);
   const settings = ft ? '<section class="tsec"><h3>Settings</h3><div class="tsgrid">' + TARGET_SETTINGS.filter(r => r[6] === 'esp32' ? !!ft.esp32 : !r[6] || String(val(r[6])) === '1').map(([k, label, unit, lo, hi, what]) => '<label title="' + esc(what) + '">' + esc(label) + ' ' + (unit === 'yesno'
       ? '<select id="ts_' + eid + '_' + k + '" data-ts="' + eid + ':' + k + '">' + [['0', 'No'], ['1', 'Yes']].map(([v, l]) =>
           '<option value="' + v + '"' + (String(val(k) === '' || val(k) == null ? 0 : val(k)) === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
@@ -3825,6 +3842,14 @@ async function rangeAct(el, a) {
     toast(errs.length ? 'Not set on ' + errs.length + ': ' + errs.join(' · ') : 'Face set: swap the masks and faceplates now');
     return refresh();
   }
+  if (a === 'rcsight') {                        // sights on the lane display (practice): start / show / hide / group / end
+    const box = document.getElementById('cpr_' + el.dataset.id), cpr = box ? parseCpr(box.value) : null;
+    if (box && cpr == null && el.dataset.a !== 'end') return toast('Clicks per ring: a number, e.g. 4');
+    const res = await adminCall('/targets/' + encodeURIComponent(el.dataset.id) + '/sights', Object.assign({action: el.dataset.a}, cpr != null && el.dataset.a !== 'end' ? {cpr: cpr} : {}));
+    if (res.status === 401) toast('Logged out: log in again');
+    else if (res.status !== 200) toast(res.data.error || 'error ' + res.status);
+    return refresh();
+  }
   if (a === 'rcsleep' || a === 'rcsleepsel') {  // lights out (shots ignored) or on: FeT targets with a key; each signed for itself
     const all = sleepers(rc.data || {targets: []}), v = el.dataset.v;
     const ts = a === 'rcsleep' ? all : all.filter(t => el.dataset.id ? t.device_id === el.dataset.id : sel[t.device_id]);
@@ -4571,7 +4596,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {cmdText, cmdTrouble, reviewSiblings, sessionNav, laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {sightsSection, clickWords, cmdText, cmdTrouble, reviewSiblings, sessionNav, laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

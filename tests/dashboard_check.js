@@ -1969,3 +1969,22 @@ console.log('OK');
                          [false, true, false, true, true]);
   console.log('commands sent OK');
 }
+
+// --- Range Control: sights on the lane display (user 2026-11-22: clicks only, never rings; default 4 per ring)
+{
+  const {sightsSection, clickWords} = X;
+  assert.strictEqual(clickWords({x: -2, y: -1}), 'Down 1 click, Left 2 clicks');
+  assert.strictEqual(clickWords({x: 3, y: 0}), 'Right 3 clicks');
+  assert.strictEqual(clickWords({x: 0, y: 0}), 'No adjustment');
+  assert.strictEqual(sightsSection({device_id: 'l1', mode: 'record', sights: null}), '', 'practice only');
+  const off = sightsSection({device_id: 'l1', mode: 'practice', sights: null, sights_cpr: 4});
+  assert(/id="cpr_l1"[^>]*value="4"/.test(off) && /data-a="start"/.test(off), 'clicks per ring (the lane\'s last, 4) and Sights');
+  const est = sightsSection({device_id: 'l1', mode: 'practice', sights: {show: false, ready: true, shots: 5, misses: 0, min_shots: 3, cpr: 8, clicks: null}});
+  assert(/value="8"/.test(est) && /data-a="show"/.test(est) && /the shooter estimates/.test(est) && /data-a="group"/.test(est) && /data-a="end"/.test(est));
+  const shown = sightsSection({device_id: 'l1', mode: 'practice', sights: {show: true, ready: true, shots: 5, misses: 1, min_shots: 3, cpr: 4, clicks: {x: -2, y: -1}}});
+  assert(/Down 1 click, Left 2 clicks/.test(shown) && /data-a="hide"/.test(shown) && /1 missed/.test(shown));
+  assert(!/ring/i.test(shown.replace(/Clicks per ring/g, '')), 'nothing but the setting mentions rings');
+  const few = sightsSection({device_id: 'l1', mode: 'practice', sights: {show: false, ready: false, shots: 1, misses: 0, min_shots: 3, cpr: 4, clicks: null}});
+  assert(/needs 3 shots on paper/.test(few));
+  console.log('sights in Range Control OK');
+}

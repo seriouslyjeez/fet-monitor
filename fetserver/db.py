@@ -556,6 +556,13 @@ MIGRATIONS = [
     -- that it ran it before a restart. Core.handle_heartbeat then numbers the device's commands past it.
     ALTER TABLE commands ADD COLUMN sent_boot INTEGER;
     """,
+    """
+    -- Sights on the lane's display (user 2026-11-22): the range master turns it on for a practice lane. sights_json:
+    -- {"after": the last shot before the group, "series_id", "show": the adjustment is on the display}; NULL: off.
+    -- sights_cpr: clicks per ring, the last value used on this lane (default 4).
+    ALTER TABLE targets ADD COLUMN sights_json TEXT;
+    ALTER TABLE targets ADD COLUMN sights_cpr REAL NOT NULL DEFAULT 4;
+    """,
 ]
 
 

@@ -51,7 +51,7 @@ RESULTS_RE = re.compile(r"^/api/v1/results/([cma]?\d{1,9})(\.csv|-teams\.csv)?$"
 MATCH_FORMAT_DELETE_RE = re.compile(r"^/api/v1/match/formats/([a-z0-9-]{2,41})/delete$")
 MATCH_USER_DELETE_RE = re.compile(r"^/api/v1/admin/match-users/([A-Za-z0-9._-]{2,32})/delete$")
 SERIES_RE = re.compile(r"^/api/v1/series/(\d{1,12})(/sight)?$")
-ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane|athlete)$")
+ADMIN_TARGET_RE = re.compile(r"^/api/v1/admin/targets/([A-Za-z0-9_-]{1,64})/(mode|face|remove|ban|unban|firmware|command|target-command|target-update|lane|athlete|sights)$")
 ADMIN_E32_DELETE_RE = re.compile(r"^/api/v1/admin/esp32-firmware/([0-9a-f]{64})/delete$")
 ADMIN_DISPLAY_FW_DELETE_RE = re.compile(r"^/api/v1/admin/display-firmware/([0-9a-f]{64})/delete$")
 ADMIN_FW_DELETE_RE = re.compile(r"^/api/v1/admin/firmware/([0-9a-f]{64})/delete$")
@@ -904,6 +904,8 @@ class Handler(BaseHTTPRequestHandler):
             log.info("Range Control from %s: %s %s %s", self.client_address[0], what, did, payload if what in ("mode", "face", "athlete") else "")
             if what == "athlete":
                 return self._staff_athlete(did, payload)
+            if what == "sights":                      # the range master: sights on the lane's display (practice)
+                return self._send(200, {"sights": core.set_sights(did, payload.get("action"), payload.get("cpr"))})
             if what == "mode":
                 return self._send(200, core.set_mode(did, None, payload.get("mode"), payload.get("session"),
                                                      bool(payload.get("new_series")), payload.get("label"), admin=True))

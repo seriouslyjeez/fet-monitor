@@ -252,6 +252,15 @@ class LaneDisplays:
         self.seen[r["id"]] = {"ms": now, "fw": fw if isinstance(fw, str) and FW_RE.match(fw) else prev.get("fw"), "ip": ip}
         return r
 
+    @staticmethod
+    def _sights(st):
+        """Sights for the display (user 2026-11-22): the group (shots after the mark), its centre, and the clicks only
+        when the range master shows them; never rings."""
+        if st is None:
+            return None
+        return {"show": st["show"], "ready": st["ready"], "min_shots": st["min_shots"], "shots": st["points"],
+                "misses": st["misses"], "center_h": st.get("center_h"), "clicks": st["clicks"]}
+
     def view(self, r) -> dict:
         """What the display draws now (see the module notes)."""
         core = self.core
@@ -293,6 +302,7 @@ class LaneDisplays:
             "totals": {"shots": agg["shots"], "score": str(agg["integer"]) if whole else "%.1f" % agg["decimal"],
                        "x": agg["x"], "misses": agg["misses"]},
             "match": match,
+            "sights": self._sights(core.sights_state(c, r["device_id"], shots=True)),
             "server_time_ms": now,
         }
         out["rev"] = hashlib.sha256(json.dumps(_stable(out), sort_keys=True).encode()).hexdigest()[:16]
