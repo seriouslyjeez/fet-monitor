@@ -168,7 +168,7 @@ assert(/data-mode="record" class="sel"/.test(pageOf(asMine(recordT))) && /data-m
 assert.strictEqual(count(pageOf(asFree(recordT)), /data-act="mode"[^>]* disabled/g), 2, 'only the person in control can use them');
 const ovMine = overlayView(asMine(recordT), state(), 'Alice');
 assert(/data-act="release"/.test(ovMine) && /data-kind="practice"/.test(ovMine) && /data-kind="match" class="sel"/.test(ovMine));
-assert(/id="f_bull"[^>]*value="10"/.test(ovMine) && /id="f_group"/.test(ovMine) && /id="f_tp"[^>]*value="20"/.test(ovMine) && /id="f_tm"[^>]*value="60"/.test(ovMine), 'advanced settings');
+assert(/id="f_bull"[^>]*value="10"/.test(ovMine) && /id="f_group"/.test(ovMine) && !/id="f_tp"/.test(ovMine) && /id="f_tm"[^>]*value="60"/.test(ovMine), 'advanced settings');
 assert(ovMine.includes('<details') && ovMine.includes('Advanced'));
 assert(/data-act="review"/.test(ovMine), 'review is under the gear');
 const ovFree = overlayView(asFree(recordT), state(), 'Al');
@@ -1244,7 +1244,7 @@ console.log('OK');
   assert(h.includes('Own range network <b>FeTMonitor-Range</b>') && h.includes('<br>Cable</dd>'), 'the range network by its name; a cable by itself');
   assert(['This Pi', 'Network', 'Name and time', 'Access', 'Software', 'Power'].every(x => h.includes('<h3>' + x + '</h3>')), 'one section per job');
   assert(h.indexOf('<dl class="facts">') < h.indexOf('<h3>Network</h3>'), 'the facts first, at a glance');
-  assert(h.includes('http://range.local:8080/'), 'the .local name for phones and laptops');
+  assert(h.includes('http://range.local/ ') && !h.includes('range.local:8080'), 'the .local name for phones and laptops (port 80)');
   assert(h.includes('SSH is <b>off</b>') && h.includes('data-on="1"'), 'SSH: the switch turns it on');
   assert(!/data-act="rcsys"[^>]*disabled/.test(h) && h.includes('id="sy_psk"'), 'ready: buttons enabled; WiFi password field');
   const busy = systemPanel(Object.assign({}, v, {busy: true, facts: Object.assign({}, v.facts, {ntp: true})}), {sysf: {network: {mode: 'own'}}});
@@ -1934,4 +1934,38 @@ console.log('OK');
   const fw = firmwareTab({targets: []}, {dimages: [{version: '0.2.0', size: 1716736, sha256: '0dc3a7f873da'}]});
   assert(fw.includes('FeT Display (CYD shot monitor)') && fw.includes('FeT Display, CYD shot monitors'), 'the Firmware tab: a card and its images');
   console.log('display flashing OK');
+}
+
+// --- review: the next and previous session (user 2026-11-22: "we need a 'next session' button when reviewing sessions")
+{
+  const {reviewSiblings, sessionNav} = X;
+  const list = [{id: 9}, {id: 7}, {id: 4}];                 // newest first, as the server lists them
+  assert.deepStrictEqual(reviewSiblings(list, 7), {prev: 4, next: 9});
+  assert.deepStrictEqual(reviewSiblings(list, 9), {prev: 7, next: null}, 'the newest: nothing after it');
+  assert.deepStrictEqual(reviewSiblings(list, 4), {prev: null, next: 7}, 'the oldest: nothing before it');
+  assert.deepStrictEqual(reviewSiblings([{id: 4}, {id: 9}, {id: 7}], 7), {prev: 4, next: 9}, 'by id, whatever the order');
+  assert.deepStrictEqual(reviewSiblings(list, 5), {prev: null, next: null}, 'not in the list');
+  const top = sessionNav({count: 1, full_count: 20}, {prev: 4, next: 9});
+  assert(/data-act="rgo" data-sid="4"[^>]*>&lsaquo; Previous session/.test(top) && /data-sid="9"[^>]*>Next session/.test(top), 'both ways at the top');
+  assert(!/Previous/.test(sessionNav({count: 1, full_count: 20}, {prev: null, next: 9})), 'no previous for the oldest');
+  assert.strictEqual(sessionNav({count: 1, full_count: 20}, {prev: null, next: null}), '', 'a single session: nothing');
+  assert.strictEqual(sessionNav({count: 19, full_count: 20}, {prev: 4, next: 9}, true), '', 'not yet at the end');
+  assert(/data-sid="9"[^>]*>Next session/.test(sessionNav({count: 20, full_count: 20}, {prev: 4, next: 9}, true)), 'at the last shot: next session');
+  assert.strictEqual(sessionNav({count: 20, full_count: 20}, {prev: 4, next: null}, true), '', 'the newest: back to live is enough');
+  console.log('session navigation OK');
+}
+
+// --- Commands sent: what the WiFi module said when the target did not answer (user 2026-11-22)
+{
+  const {cmdText, cmdTrouble} = X;
+  assert.strictEqual(cmdText({status: 'done', result: 'sent', reply: 'ok'}), 'ok');
+  assert.strictEqual(cmdText({status: 'done', result: 'sent', reply: 'key_mismatch'}), 'refused: the target has another key');
+  assert.strictEqual(cmdText({status: 'sent', result: null, reply: null}), '–', 'on its way');
+  assert.strictEqual(cmdText({status: 'done', result: 'sent', reply: null}), '–', 'given to the target, no answer yet');
+  assert.strictEqual(cmdText({status: 'done', result: 'already done', reply: null}), 'no answer: its WiFi module ran it before a restart');
+  assert.strictEqual(cmdText({status: 'failed', result: 'refused: not a target command line', reply: null}), 'not sent: refused: not a target command line');
+  assert.strictEqual(cmdText({status: 'failed', result: null, reply: null}), 'not sent: its WiFi module refused it');
+  assert.deepStrictEqual([{reply: 'ok'}, {reply: 'old_command'}, {status: 'done', result: 'sent'}, {status: 'done', result: 'already done'}, {status: 'failed'}].map(cmdTrouble),
+                         [false, true, false, true, true]);
+  console.log('commands sent OK');
 }

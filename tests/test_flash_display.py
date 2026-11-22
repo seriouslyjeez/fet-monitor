@@ -301,13 +301,14 @@ class OverHttp(T.MatchHttpBase):
         self.cookies["admin"] = cookie.split(";")[0]
 
     def test_the_routes(self):
+        self.server.device_port = 8080                  # as on the Pi's port-80 server: displays report to the main port
         page = {"ssid": "club", "pass": "password1", "host": "192.168.1.20", "port": 1}
         for body in ({}, {"erase": "yes"}, {"erase": True}):
             st, _, _ = self.req("POST", "/api/v1/admin/flash/display-install", dict(body, port="/dev/ttyUSB0", sha256="a" * 64, settings=page,
                                                                                    device_id="lane-1"), "admin")
             self.assertEqual(st, 202)
         self.assertEqual([s[2] for s in self.seen], [None, None, True], "erase only when exactly true")
-        self.assertEqual(self.seen[0][0]["port"], self.server.server_address[1], "this server's port, not the page's")
+        self.assertEqual(self.seen[0][0]["port"], 8080, "the main port, not the page's nor the one this page came from")
         st, _, _ = self.req("POST", "/api/v1/admin/flash/display-configure", {"port": "/dev/ttyUSB0", "settings": page, "device_id": "lane-1"}, "admin")
         self.assertEqual((st, self.seen[-1][1]), (202, "lane-1"))
         st, body, _ = self.req("GET", "/api/v1/admin/display-firmware", None, "admin")

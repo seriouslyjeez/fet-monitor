@@ -569,7 +569,7 @@ class Core:
     def _new_series(c, device_id: str, kind: str, shooter, start_ms: int) -> int:
         t = c.execute("SELECT bull_size, group_size, total_practice, total_match, projectile_h, face_id FROM targets WHERE device_id=?",
                       (device_id,)).fetchone()
-        total = 0 if kind == "ammo" else (t["total_match"] if kind == "match" else t["total_practice"])   # ammo: no limit
+        total = t["total_match"] if kind == "match" else 0     # practice and ammo: no limit (user 2026-11-22: one practice is one session)
         return c.execute("""INSERT INTO series (device_id, kind, shooter, started_ms, bull_size, group_size, total, projectile_h, face_id)
                             VALUES (?,?,?,?,?,?,?,?,?)""",
                          (device_id, kind, shooter, start_ms, t["bull_size"], t["group_size"], total,
@@ -610,7 +610,10 @@ class Core:
             last = c.execute("SELECT MAX(event_ms) FROM shots WHERE series_id=?", (ser["id"],)).fetchone()[0]
             # A match lane's series never rolls over: a shot beyond the record count stays in the match and is flagged.
             in_match = c.execute("SELECT 1 FROM match_lanes WHERE series_id=?", (ser["id"],)).fetchone() is not None
-            full = stream == "scored" and ser["kind"] != "ammo" and n >= ser["total"] and not in_match
+            # A practice never rolls over by count (user 2026-11-22: "one practice should be one session"; it closed every
+            # 20 shots): it ends after an idle spell, a new shooter, or New series. An older practice series keeps its total
+            # in the database but no longer closes on it.
+            full = stream == "scored" and ser["kind"] == "match" and n >= ser["total"] and not in_match
             idle = ser["kind"] == "practice" and last is not None and event_ms - last > self.idle_new_series_ms
             if full or idle:
                 c.execute("UPDATE segments SET ended_ms=? WHERE id=?", (event_ms, seg["id"]))
@@ -1234,7 +1237,7 @@ class Core:
                         c.execute("UPDATE series SET projectile_h=? WHERE id=?", (clean["projectile_h"], live["id"]))
                         self._rescore_series(c, live["id"])
                 elif live is not None:
-                    key = "total_match" if live["kind"] == "match" else "total_practice"
+                    key = "total_match" if live["kind"] == "match" else None
                     c.execute("UPDATE series SET bull_size=COALESCE(?,bull_size), group_size=COALESCE(?,group_size), "
                               "total=COALESCE(?,total) WHERE id=?",
                               (clean.get("bull_size"), clean.get("group_size"), clean.get(key), live["id"]))
@@ -1317,7 +1320,7 @@ class Core:
         bull_count = max(1, -(-n // bs))
         idx = bull_count - 1 if bull is None else max(0, min(int(bull), bull_count - 1))
         return {"series_id": ser["id"], "kind": ser["kind"], "stream": stream, "shooter": ser["shooter"], "label": ser["label"],
-                "open": ser["ended_ms"] is None, "count": n, "total": ser["total"] if stream == "scored" else None,
+                "open": ser["ended_ms"] is None, "count": n, "total": ser["total"] if stream == "scored" and ser["kind"] == "match" else None,
                 "bull_size": bs, "group_size": gs, "agg": self._aggregate(rows), "groups": groups,
                 "bull_index": idx, "bull_count": bull_count,
                 "bull_shots": [self._brief(r, checks=checks) for r in rows[idx * bs:(idx + 1) * bs]],
@@ -1345,7 +1348,7 @@ class Core:
                     "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
                     "ammo": group_stats([], t["projectile_h"]) | {"misses": 0}, "face": F.view(F.face(t["face_id"]))}
         return {"series_id": None, "kind": kind, "stream": "scored", "shooter": None, "label": None, "open": True, "count": 0,
-                "total": t["total_match"] if kind == "match" else t["total_practice"],
+                "total": t["total_match"] if kind == "match" else None,
                 "bull_size": t["bull_size"], "group_size": t["group_size"], "agg": zero, "groups": [],
                 "bull_index": 0, "bull_count": 1, "bull_shots": [], "last_shot": None, "full_count": 0,
                 "face": F.view(F.face(t["face_id"]))}
@@ -1456,7 +1459,7 @@ class Core:
                                                   hello_key_fp, target_seen_ms, target_status_json, target_asleep FROM targets WHERE device_id=?""",
                                         (t["device_id"],)).fetchone()
             if ft["key_fp"] or ft["target_settings_json"] or ft["target_seen_ms"] or (ft["arduino_version"] or "").startswith("FeT target "):
-                cmds = self.db.conn().execute("""SELECT id, line, status, reply, created_ms FROM commands
+                cmds = self.db.conn().execute("""SELECT id, line, status, result, reply, created_ms FROM commands
                                                  WHERE device_id=? AND type='target' ORDER BY id DESC LIMIT 5""", (t["device_id"],))
                 v = ft["arduino_version"] or ""
                 t["fet_target"] = {"key_fp": ft["key_fp"], "boot": ft["target_boot"], "settings_id": ft["target_settings_id"],
@@ -1467,7 +1470,7 @@ class Core:
                                    "version": v[len("FeT target "):] if v.startswith("FeT target ") else None,
                                    "settings": json.loads(ft["target_settings_json"]) if ft["target_settings_json"] else None,
                                    "commands": [{"id": c["id"], "verb": c["line"].split(" ")[4], "status": c["status"],
-                                                 "reply": c["reply"], "created": iso(c["created_ms"])} for c in cmds]}
+                                                 "reply": c["reply"], "result": c["result"], "created": iso(c["created_ms"])} for c in cmds]}
         return {"targets": targets, "banned": banned}
 
     def remove_target(self, device_id: str) -> None:
@@ -1510,7 +1513,7 @@ class Core:
         for g in c.execute("SELECT * FROM series WHERE device_id=? ORDER BY id DESC LIMIT ?", (device_id, limit)).fetchall():
             item = {"id": g["id"], "kind": g["kind"], "shooter": g["shooter"], "label": g["label"], "started": iso(g["started_ms"]),
                     "ended": iso(g["ended_ms"]) if g["ended_ms"] is not None else None, "open": g["ended_ms"] is None,
-                    "bull_size": g["bull_size"], "group_size": g["group_size"], "total": g["total"]}
+                    "bull_size": g["bull_size"], "group_size": g["group_size"], "total": g["total"] if g["kind"] == "match" else None}
             for stream in ("scored", "sighter"):
                 rows = c.execute("SELECT tenths, ring, is_miss, inner FROM shots WHERE series_id=? AND stream=?",
                                  (g["id"], stream)).fetchall()

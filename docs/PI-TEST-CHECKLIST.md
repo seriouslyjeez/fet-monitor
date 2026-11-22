@@ -21,7 +21,9 @@ Fresh SD card, Raspberry Pi OS (Legacy, 32-bit) Lite, Bookworm, set up as in `do
 - [ ] `id fet-monitor` exists; `getent passwd fet-monitor` shows shell `/usr/sbin/nologin`; `ls -d /home/fet-monitor` does NOT exist.
 - [ ] `sudo ls -l /var/lib/fet-monitor`: `device_token` and `admin_password` are `-rw-------` owned by `fet-monitor`; `fetserver.db` exists (made by the service).
 - [ ] `ls -ld /opt/fet-monitor /var/lib/fet-monitor /var/backups/fet-monitor`: root 755, fet-monitor 750, fet-monitor 750.
-- [ ] `http://<Pi IP>:8080/` opens from a phone on the same network.
+- [ ] `http://<Pi IP>/` and `http://<Pi IP>:8080/` open from a phone on the same network (port 80 since 1.2.3).
+- [ ] While the setup page is open (three quick power cycles of the network, or no network at boot), it has port 80;
+      after it closes, `http://<Pi IP>/` is FeT Monitor again within a few seconds; targets keep reporting on 8080 throughout.
 - [ ] A target with FeT Bridge firmware 0.1.16 or newer, set up with that IP and token, reports and a shot appears.
 - [ ] `sudo reboot`; after it, the page works again without doing anything (service enabled at boot).
 - [ ] `sudo systemctl start fet-monitor-backup.service` then `ls /var/backups/fet-monitor` shows a new `fet-*.db`.

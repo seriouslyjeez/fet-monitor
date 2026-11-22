@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import config
+from fetserver.webports import YIELD_FILE
+
 from .system import ETH, SETUP_IP, System, SystemError_
 
 log = logging.getLogger("fetsetup")
@@ -214,7 +216,7 @@ class Portal:
                 self.phase = "form"
             raise config.SetupError(f"could not apply the settings: {exc}")
         addr = config.server_address(cfg, live)
-        summary = {"hostname": cfg.get("hostname"), "address": addr, "url": f"http://{addr}:{SERVER_PORT}/" if addr else None,
+        summary = {"hostname": cfg.get("hostname"), "address": addr, "url": f"http://{addr}/" if addr else None,   # port 80 for people (targets: SERVER_PORT)
                    "token": self.sys.device_token(), "mode": net["mode"], "ssid": net.get("ssid"),
                    "fixed": isinstance(net["address"], dict), "ssh": cfg.get("ssh", False), "admin": cfg.get("admin")}
         with self.lock:
@@ -360,13 +362,32 @@ class SetupServer(ThreadingHTTPServer):
         self.portal, self.extra_host = portal, extra_host
 
 
-def serve(portal: Portal, host: str = "0.0.0.0", port: int = 80) -> None:
+def bind_taking_turns(make: Callable[[], SetupServer], yield_file: Path = YIELD_FILE, tries: int = 40,
+                      sleep: Callable[[float], None] = time.sleep) -> SetupServer:
+    """FeT Monitor also answers on port 80 (fetserver/webports.py): the yield file asks it to let go (it looks every
+    2 s), and the bind is tried again until it has (the caller removes the file when the setup is done)."""
+    yield_file.parent.mkdir(parents=True, exist_ok=True)
+    yield_file.write_text("the setup page needs port 80\n")
+    for i in range(tries):
+        try:
+            return make()
+        except OSError:
+            if i == tries - 1:
+                raise
+            sleep(0.25)
+
+
+def serve(portal: Portal, host: str = "0.0.0.0", port: int = 80, yield_file: Path = YIELD_FILE) -> None:
     """Run until the setup is done."""
     portal.start()
-    srv = SetupServer((host, port), portal)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-    if portal.reopen:
-        threading.Thread(target=portal.watch, daemon=True).start()
-    portal.stopped.wait()
-    time.sleep(1)
-    srv.shutdown()
+    try:
+        srv = bind_taking_turns(lambda: SetupServer((host, port), portal), yield_file)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        if portal.reopen:
+            threading.Thread(target=portal.watch, daemon=True).start()
+        portal.stopped.wait()
+        time.sleep(1)
+        srv.shutdown()
+        srv.server_close()
+    finally:
+        yield_file.unlink(missing_ok=True)          # FeT Monitor takes port 80 again

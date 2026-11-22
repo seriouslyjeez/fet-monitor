@@ -721,7 +721,7 @@ class Handler(BaseHTTPRequestHandler):
             port, fl = str(payload.get("port", "")), self.server.flash
             settings = payload.get("settings")
             if isinstance(settings, dict):                                # it reports to this server, with its token
-                settings = dict(settings, port=self.server.server_address[1], token=self.server.token)
+                settings = dict(settings, port=self.server.device_port, token=self.server.token)
             try:
                 if path.endswith("install"):
                     job = fl.start_esp32_flash(port, str(payload.get("sha256", "")), "Range Control", settings if isinstance(settings, dict) else None,
@@ -738,7 +738,7 @@ class Handler(BaseHTTPRequestHandler):
             port, fl = str(payload.get("port", "")), self.server.flash
             settings = payload.get("settings")
             if isinstance(settings, dict):                                # it reports to this server, on this port
-                settings = dict(settings, port=self.server.server_address[1])
+                settings = dict(settings, port=self.server.device_port)
             did = payload.get("device_id") if isinstance(payload.get("device_id"), str) else None
             try:
                 if path.endswith("install"):
@@ -755,7 +755,7 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/api/v1/admin/flash/identify", "/api/v1/admin/flash/start", "/api/v1/admin/flash/configure") and method == "POST":
             settings = payload.get("settings")
             if isinstance(settings, dict):                                # the bridge reports to this server, with its token
-                settings = dict(settings, port=self.server.server_address[1], token=self.server.token)
+                settings = dict(settings, port=self.server.device_port, token=self.server.token)
             try:
                 if path.endswith("identify"):
                     return self._send(200, self.server.flash.identify(str(payload.get("port", ""))))
@@ -1295,6 +1295,7 @@ class FetHTTPServer(ThreadingHTTPServer):
                  target_firmware: TargetFirmwareStore = None, esp32_firmware: Esp32FirmwareStore = None, deeptens: DeepTens = None,
                  display_firmware: DisplayFirmwareStore = None):
         super().__init__(addr, Handler)
+        self.device_port = self.server_address[1]    # the port targets report to (__main__: the main one, from any port)
         self.deeptens = deeptens                      # the link to deepTENS (None: not available, e.g. tests)
         if deeptens is not None and admin is not None:
             admin.dt_ok = deeptens.still_has          # sessions made through deepTENS last while the roster gives the role

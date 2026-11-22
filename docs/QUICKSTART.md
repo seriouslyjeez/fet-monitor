@@ -22,7 +22,7 @@ card reader, and a phone.
    the club WiFi, or the Pi's own range network (no router needed). **Save settings**, and write down the
    **address** it shows.
 4. **Open FeT Monitor.** Put the phone back on the range network and open the address, for example
-   `http://192.168.1.20:8080/`. Use the IP address: names ending in `.local` do not work on most club networks.
+   `http://192.168.1.20/`. Use the IP address: names ending in `.local` do not work on most club networks.
 5. **Sign in to Range Control** (the menu) with the password from step 3. From here you set up targets
    ([guide 2](#2-your-first-target)), firmware, TV displays, staff logins and the Pi itself.
 

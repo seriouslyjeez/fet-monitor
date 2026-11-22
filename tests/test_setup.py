@@ -308,7 +308,7 @@ class Flow(unittest.TestCase):
         p = self.portal(cable={"ip": "192.168.1.30", "prefix": 24, "gateway": "192.168.1.1", "dns": []})
         self.assertEqual((p.ssid, p.sys.ap), ("FeTMonitor-Setup-AB12", True))
         s = p.finish(good())
-        self.assertEqual((s["address"], s["url"], s["token"], s["fixed"]), ("192.168.1.30", "http://192.168.1.30:8080/", "tok-123", False))
+        self.assertEqual((s["address"], s["url"], s["token"], s["fixed"]), ("192.168.1.30", "http://192.168.1.30/", "tok-123", False))
         self.assertEqual([x[1] for x in p.sys.log if x[0] == "apply"], ["country", "timezone", "clock", "hostname", "admin", "range_password", "ssh"])
         self.assertTrue(p.sys.ap, "the setup network stays until Switch")
         p.switch()

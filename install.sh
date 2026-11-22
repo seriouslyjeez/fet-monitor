@@ -368,7 +368,7 @@ summary() {
 =====================================================================
  FeT Monitor $(version_of_release) is installed and running.
 
- Open in a browser on the same network:   http://$ip:$PORT/
+ Open in a browser on the same network:   http://$ip/   (or http://$ip:$PORT/)
 
  Device token (enter it in each target's setup portal, with the
  server address $ip):

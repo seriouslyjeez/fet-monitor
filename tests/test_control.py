@@ -131,7 +131,7 @@ class Modes(CtlCase):
     def test_default_mode_is_practice_with_no_series(self):
         t = self.target()
         self.assertEqual((t["mode"], t["series_id"], t["shooter"], t["kind"]), ("practice", None, None, "practice"))
-        self.assertEqual((t["view"]["count"], t["view"]["total"], t["view"]["bull_size"]), (0, 20, 10))
+        self.assertEqual((t["view"]["count"], t["view"]["total"], t["view"]["bull_size"]), (0, None, 10))   # practice: no total
 
     def test_shot_takes_the_mode_in_force_when_it_was_fired(self):
         self.core.acquire_control("a1", ALICE, "Alice")

@@ -14,6 +14,7 @@ import threading
 import time
 from pathlib import Path
 
+from .webports import WebPorts, ports_from_env
 from .admin import MIN_PASSWORD, Admin, write_password
 from .core import Core
 from .db import Database
@@ -54,10 +55,18 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
                          esp32_images=esp32_firmware, display_images=display_firmware, program_display=core.lane_displays.program)
     deeptens = DeepTens(core, data_dir, name=socket.gethostname, version=__version__)
     core.deeptens = deeptens                     # the match code queues snapshots while linked
-    server = make_server(core, load_token(data_dir), args.host, args.port, admin=Admin(data_dir),
-                         firmware=firmware, updates=Updates(data_dir), rulebooks=rulebooks,
-                         appliance=Appliance(data_dir), flash=flash, target_firmware=target_firmware,
-                         esp32_firmware=esp32_firmware, deeptens=deeptens, display_firmware=display_firmware)
+    admin, updates, appliance = Admin(data_dir), Updates(data_dir), Appliance(data_dir)
+
+    def make(port):                          # the main port (targets) and the extra web ports share everything
+        srv = make_server(core, load_token(data_dir), args.host, port, admin=admin,
+                          firmware=firmware, updates=updates, rulebooks=rulebooks,
+                          appliance=appliance, flash=flash, target_firmware=target_firmware,
+                          esp32_firmware=esp32_firmware, deeptens=deeptens, display_firmware=display_firmware)
+        srv.device_port = args.port          # targets set up from any port report to the main one
+        return srv
+
+    server = make(args.port)
+    web = WebPorts(make, ports_from_env(args.port))
     stop = threading.Event()
 
     def on_signal(signum, _frame):
@@ -81,9 +90,12 @@ def cmd_serve(args, db: Database, data_dir: Path) -> int:
 
     threading.Thread(target=match_clock, daemon=True).start()
     threading.Thread(target=deeptens.run, args=(stop,), daemon=True).start()   # the link to deepTENS, if linked
+    if web.ports:
+        threading.Thread(target=web.run, args=(stop,), daemon=True).start()     # port 80 for people (webports.py)
     if not args.no_rulebook_download:          # the rulebooks not stored yet, from their publishers (needs internet once)
         threading.Thread(target=rulebooks.download_missing, daemon=True).start()
-    log.info("listening on %s:%d, data in %s", args.host, args.port, data_dir)
+    log.info("listening on %s:%d%s, data in %s", args.host, args.port,
+             "".join(f" (and {p} for people)" for p in web.ports), data_dir)
     stop.wait()
     server.shutdown()
     server.server_close()

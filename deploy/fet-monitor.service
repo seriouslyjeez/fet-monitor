@@ -8,6 +8,11 @@ User=fet-monitor
 Group=fet-monitor
 WorkingDirectory=/opt/fet-monitor
 ExecStart=/usr/bin/python3 -m fetserver serve --data-dir /var/lib/fet-monitor --port 8080
+# Port 80 for people (http://<Pi address>/, user 2026-11-22); 8080 stays for targets. The variable, not an option: a
+# rolled-back update keeps this file, and an older version ignores it. The setup page borrows port 80 (webports.py).
+Environment=FETM_WEB_PORTS=80
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 Restart=always
 RestartSec=2
 TimeoutStopSec=15

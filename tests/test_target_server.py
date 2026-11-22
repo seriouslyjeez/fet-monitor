@@ -608,6 +608,13 @@ class SkippingBridge(Base):
         self.assertEqual(self.hb(8, self.done(again)), [])
         self.assertEqual([r["result"] for r in self.rows()], ["already done"] * 2)
 
+    def test_range_control_sees_what_the_wifi_module_said(self):
+        self.bound()
+        first = self.hb(7)
+        self.hb(8, self.done(first), up=3000)                   # ran before a restart: "already done", no answer
+        ft = [t for t in self.core.admin_view()["targets"] if t["device_id"] == "t1"][0]["fet_target"]
+        self.assertEqual([(c["status"], c["result"], c["reply"]) for c in ft["commands"]], [("done", "already done", None)] * 2)
+
     def test_other_commands_move_unchanged(self):
         self.bound()
         self.hb(7, self.done(self.hb(7), "sent"))

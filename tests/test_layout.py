@@ -145,6 +145,49 @@ return {overflow: overflow(), small: small('.lane button, .lane a, .shoot .right
                         self.assertTrue(v["wide"])
                         self.assertGreaterEqual(v["faceW"], 600, "a large face on a tablet")
 
+    def test_next_and_previous_session_in_review(self):
+        # user 2026-11-22: "we would get to the end of a session review and want to view the next session, but have to go
+        # back to 'return to live' first"
+        init = self.lane(shots=3)
+        first = self.core.list_targets()[0]["series_id"]
+        self.core.set_mode("lane-1", "layout-client-0001", "practice", shooter="Alice", new_series=True)
+        from fetserver.simtarget import SimTarget
+        sim = SimTarget(self.url, "test-token", "lane-1", "Lane 1", seed=4)
+        sim.boot_count = 2                                # a new start: its event numbers begin again
+        for _ in range(2):
+            sim.fire()
+        sim.deliver()
+        second = self.core.list_targets()[0]["series_id"]
+        self.assertNotEqual(first, second)
+        script = r"""
+for (let i = 0; i < 80 && !document.querySelector('.face'); i++) await sleep(50);
+S.review = {sid: %d, stream: 'scored', shot: 1}; refresh();
+const nextBtn = () => Array.from(document.querySelectorAll('button[data-act="rgo"]')).filter(shown).filter(b => /Next session/.test(b.textContent));
+for (let i = 0; i < 80 && !document.querySelector('.revhead'); i++) await sleep(50);
+const atStart = nextBtn().length;                          // in the header only
+for (let i = 0; i < 80 && !document.querySelector('[data-revshot], .pager'); i++) await sleep(50);
+S.review.shot = S.reviewView.full_count; refresh();
+for (let i = 0; i < 80 && nextBtn().length < 2; i++) await sleep(50);
+const atEnd = nextBtn().length, sm = small('.sessnav button');
+nextBtn()[nextBtn().length - 1].click();
+for (let i = 0; i < 80 && !(S.reviewView && S.reviewView.series_id === %d); i++) await sleep(50);
+const now = S.reviewView.series_id, shot = S.reviewView.count;
+const prev = Array.from(document.querySelectorAll('button[data-act="rgo"]')).filter(shown).filter(b => /Previous session/.test(b.textContent));
+const noNext = nextBtn().length;
+prev[0].click();
+for (let i = 0; i < 80 && !(S.reviewView && S.reviewView.series_id === %d); i++) await sleep(50);
+return {atStart, atEnd, now, shot, prev: prev.length, noNext, back: S.reviewView.series_id, small: sm, overflow: overflow()};""" % (first, second, first)
+        for size in (PHONE, TABLET):
+            with self.subTest(size=size):
+                v = self.look("/#/t/lane-1", size, "light", script, init)
+                self.assertEqual(v["atStart"], 1, "the header offers the next session")
+                self.assertEqual(v["atEnd"], 2, "and at the last shot, next to the shot controls")
+                self.assertEqual((v["now"], v["shot"]), (second, 1), "the next session, from its first shot")
+                self.assertEqual((v["prev"], v["noNext"]), (1, 0), "the newest: back to the one before, nothing after")
+                self.assertEqual(v["back"], first)
+                self.assertEqual(v["small"], [], "at least 44 px")
+                self.assertFalse(v["overflow"])
+
     def range_of(self, n):
         """n lanes with a named shooter and shots each, as the spectators see them."""
         from fetserver.simtarget import SimTarget

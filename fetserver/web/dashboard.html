@@ -98,6 +98,7 @@ a.btn.pri{background:var(--accent);color:var(--on-accent);border-color:var(--acc
 .mcbanner{background:var(--band);color:var(--band-ink);border:0;border-radius:16px;padding:12px 16px;margin-bottom:0}.mcbanner .mut{color:var(--band-mut)}
 .mcbanner .mcphase{color:var(--band-hot);font-weight:800;letter-spacing:.02em}.mcbanner .mcclock{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--band-ink)}
 .mcbanner button{background:transparent;color:var(--band-ink);border-color:var(--band-mut);margin-top:6px}.mcbanner button.pri{background:var(--last);color:#14202B;border-color:var(--last)}
+.sessnav{display:flex;justify-content:space-between;gap:8px;margin:8px 0}.sessnav button{min-height:44px}
 .revhead{display:flex;align-items:center;gap:10px;margin:calc(-1*var(--pad)) calc(-1*var(--pad)) 0;padding:8px 8px 8px 16px;min-height:56px;background:var(--b-sighter);color:var(--bf-sighter)}.revhead>span{flex:1;display:flex;flex-direction:column}.revhead .small{font-size:12px}
 .revshot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 16px}
 .revshot>div{display:flex;flex-direction:column}.revshot b{font-size:24px}.revshot b.last{color:var(--last-ink);font-size:30px}
@@ -1346,9 +1347,21 @@ function reviewBar(v, ammo) {                    // phones: step through in thum
     b('step-', 'prev', 'Back one shot', k <= 1, true) + b('step+', 'next', 'Forward one shot', k >= full, true) +
     b('page+', 'last', ammo ? 'Forward ten shots' : 'Forward one target', reviewShot(k, ps, full, 'page+') === k) + '</nav>';
 }
+// The sessions either side of the one reviewed (user 2026-11-22: at the end of a session's review, go to the next one
+// without going back to live first). list: this target's series, newest first (the gear's list).
+function reviewSiblings(list, sid) {
+  const ids = (list || []).map(g => g.id).sort((a, b) => b - a), i = ids.indexOf(sid);
+  return i < 0 ? {prev: null, next: null} : {prev: i + 1 < ids.length ? ids[i + 1] : null, next: i > 0 ? ids[i - 1] : null};
+}
+function sessionNav(v, sib, end) {               // end: only "next", shown at the last shot
+  const b = (sid, label) => '<button data-act="rgo" data-sid="' + sid + '">' + label + '</button>';
+  if (end) return sib.next != null && v.count >= v.full_count ? '<div class="sessnav">' + b(sib.next, 'Next session &rsaquo;') + '</div>' : '';
+  return sib.prev == null && sib.next == null ? '' : '<div class="sessnav">' + (sib.prev != null ? b(sib.prev, '&lsaquo; Previous session') : '<span></span>') +
+    (sib.next != null ? b(sib.next, 'Next session &rsaquo;') : '') + '</div>';
+}
 function reviewHead(t, v, ammo) {
   return '<div class="revhead"><span><b>Reviewing · ' + esc(laneTitle(t)) + '</b><span class="small">' + (ammo ? 'An ammo test' : 'A ' + esc(v.kind) + ' series') + ' from ' + esc(when(v.started)) +
-    '</span></span><button class="pri" data-act="rback">Back to live</button></div>' +
+    '</span></span><button class="pri" data-act="rback">Back to live</button></div>' + sessionNav(v, reviewSiblings(S.seriesList, v.series_id)) +
     (v.kind === 'match' ? '<div class="zseg" role="group" aria-label="Record or sighters"><button data-act="rstream" data-stream="scored" class="' + (v.stream === 'scored' ? 'sel' : '') + '">Record</button>' +
       '<button data-act="rstream" data-stream="sighter" class="' + (v.stream === 'sighter' ? 'sel' : '') + '">Sighters</button></div>' : '');
 }
@@ -1364,7 +1377,7 @@ function shooterView(t, S) {
     '<span class="meta">' + (v.kind === 'ammo' ? 'Shooter ' + esc(v.shooter || t.shooter || '–') + ' · Label ' + (v.label ? esc(v.label) : '–') : esc(v.shooter || t.shooter || 'No session yet')) +
     (L.held_by ? ' · controlled by ' + esc(L.held_by) : '') + (t.queue_depth ? ' · ' + t.queue_depth + (t.queue_depth === 1 ? ' shot' : ' shots') + ' waiting on the target' : '') + '</span>' +
     (mine ? '<button data-act="theme">' + themeLabel() + '</button>' : '') + '<button class="iconbtn" data-act="gear" title="Settings" aria-label="Settings">' + LI.gear + '</button></div>';
-  const top = reviewing ? reviewHead(t, v, ammo) + reviewPager(v, ammo) + reviewDetail(v) : laneLost(t) + laneClaim(t) + matchBanner(t.match, t, S) + laneSignin(t, S) + laneModes(t, S);
+  const top = reviewing ? reviewHead(t, v, ammo) + reviewPager(v, ammo) + sessionNav(v, reviewSiblings(S.seriesList, v.series_id), true) + reviewDetail(v) : laneLost(t) + laneClaim(t) + matchBanner(t.match, t, S) + laneSignin(t, S) + laneModes(t, S);
   const body = ammo ? laneZoom(S.zoom, v.face) + ammoPanel(t, v) + ammoCompare(v, S) + ammoTable(v, true) : laneScore(t, v) + laneZoom(S.zoom, v.face) + laneSeries(v, true) + laneGrid(v);
   const acts = reviewing ? '' : '<div class="laneacts">' + (mine ? (t.kind === 'practice' ? act('sight', 'sights', 'Sights', !ready) : '') + act('menureview', 'review', 'Review') +
       (t.match ? '' : act('newseries', 'plus', t.kind === 'ammo' ? 'New test' : 'New series')) + exitButton : act('menureview', 'review', 'Review')) + '</div>';
@@ -1419,7 +1432,8 @@ function tabStrip(items, cur, href, label) {
 function phoneView(t, S) {
   const reviewing = !!(S.review && S.reviewView), v = reviewing ? S.reviewView : t.view;
   const ammo = v.kind === 'ammo' && !!v.ammo, mode = laneMode(t, v, reviewing);
-  if (reviewing) return '<div class="phone lane">' + reviewHead(t, v, ammo) + laneFace(v, mode, S) + reviewDetail(v) + reviewBar(v, ammo) + '</div>';
+  if (reviewing) return '<div class="phone lane">' + reviewHead(t, v, ammo) + laneFace(v, mode, S) + reviewDetail(v) + reviewBar(v, ammo) +
+    sessionNav(v, reviewSiblings(S.seriesList, v.series_id), true) + '</div>';
   if (showSignin(t, S)) return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneSigninScreen(t, S) + '</div>';
   return '<div class="phone lane">' + laneHead(t, mode, S) + laneMenu(t, S) + laneLost(t) + laneClaim(t) + matchBanner(t.match, t, S) + (t.athlete ? laneSignin(t, S, true) : '') + laneModes(t, S) +
     (ammo ? '' : laneScore(t, v)) + laneFace(v, mode, S) + laneZoom(S.zoom, v.face) + (ammo ? laneAmmo(v, S) : laneSeries(v, false) + laneGrid(v)) + laneBar(t, S) + '</div>';
@@ -1462,7 +1476,6 @@ function overlayView(t, S, name) {
          (t.kind === 'ammo' ? '' : '<section><details' + (S.adv ? ' open' : '') + ' id="adv"><summary>Advanced</summary><div class="fields" style="margin-top:8px">' +
          '<label for="f_bull">Shots per target picture</label><input id="f_bull" type="number" min="1" max="100" value="' + st.bull_size + '">' +
          '<label for="f_group">Shots per aggregate group</label><input id="f_group" type="number" min="1" max="100" value="' + st.group_size + '">' +
-         '<label for="f_tp">Total shots, practice</label><input id="f_tp" type="number" min="1" max="1000" value="' + st.total_practice + '">' +
          '<label for="f_tm">Total shots, match</label><input id="f_tm" type="number" min="1" max="1000" value="' + st.total_match + '"></div>' +
          '<p class="mut">Applies to the current series and to new ones.</p><button data-act="savesettings">Save</button></details></section>');
   }
@@ -1890,7 +1903,7 @@ function targetSettingsSheet(t, d, rc) {       // one target (FmTargetSheet): no
     '<button data-act="rccmd" data-type="reboot" data-id="' + eid + '">Restart</button>' +
     '<button class="danger" data-act="rcremove" data-id="' + eid + '">Remove from this range</button><button class="danger" data-act="rcban" data-id="' + eid + '">Ban</button></div></section>';
   const cmds = ft && ft.commands.length ? '<details class="rodet"><summary><b>Commands sent</b> <span class="mut">' + ft.commands.length + '</span></summary><ul class="flist">' + ft.commands.map(c =>
-      '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (c.reply && c.reply !== 'ok' ? 'bad' : 'mut') + '">' + esc(replyText(c.reply)) + '</span></span></li>').join('') + '</ul></details>' : '';
+      '<li><span class="fli"><b>' + esc(c.verb) + '</b><span class="mut">' + esc(c.status) + '</span><span class="' + (cmdTrouble(c) ? 'bad' : 'mut') + '">' + esc(cmdText(c)) + '</span></span></li>').join('') + '</ul></details>' : '';
   return '<div class="sheet wide"><div class="shhead"><span><span class="mut">' + (boardOf(t) ? esc(boardOf(t)) + ' · ' : '') + eid + (ft && ft.boot != null ? ' · start ' + esc(ft.boot) : '') + (ft && ft.settings_id ? ' · settings ' + esc(ft.settings_id) : '') + '</span>' +
     '<h2><span class="dot' + dotOn(t) + '" aria-hidden="true"></span> ' + esc(laneTitle(t)) + (t.online ? '' : ' <span class="bad">not reporting</span>') + '</h2></span>' +
     '<button class="iconbtn" data-act="rctclose" aria-label="Close">' + LI.close + '</button></div>' + now + range + settings + device + acts + cmds + '</div>';
@@ -1902,6 +1915,16 @@ const REPLY_TEXT = {key_mismatch: 'refused: the target has another key', no_key:
   wrong_boot: 'refused: for an earlier start (sent again for this one)', bad_signature: 'refused: not signed with its key',
   old_command: 'refused: already used', no_boot_count: 'refused: the target could not count this start', not_supported: 'not supported by this board'};
 const replyText = r => !r ? '–' : REPLY_TEXT[r] || r;
+// A command with no answer from the target says what its WiFi module said (user 2026-11-22: skipped commands showed
+// only "–"; a skip is now numbered past and sent again, so an "already done" left here ran before a restart and its
+// answer was lost).
+function cmdText(c) {
+  if (c.reply) return replyText(c.reply);
+  if (c.status === 'failed') return 'not sent: ' + (c.result || 'its WiFi module refused it');
+  if (c.result === 'already done') return 'no answer: its WiFi module ran it before a restart';
+  return '–';
+}
+const cmdTrouble = c => c.reply ? c.reply !== 'ok' : c.status === 'failed' || c.result === 'already done';
 function noKeyReason(ft) {                       // why this Pi cannot sign for the target (or it refuses), and what to do
   const where = ft.esp32 ? 'its ESP32 board' : 'its Arduino Mega';
   if (ft.key_fp && ft.hello_key_fp === 'none')
@@ -2062,7 +2085,7 @@ function systemPanel(v, rc) {                   // Range Control → This Pi (fe
     (st ? '<p class="' + (st.state === 'failed' ? 'bad' : 'mut') + '">' + esc(SYS_STATE[st.state] || st.state) + ': ' + esc(st.message || '') + ' · ' + esc(when(new Date(st.time).toISOString())) + '</p>' : '') +
     (rc.sysMsg ? '<p class="bad">' + esc(rc.sysMsg) + '</p>' : '') +
     '<dl class="facts">' +
-    row('Name', '<b>' + esc(f.hostname || '?') + '</b>' + (f.hostname ? ' <span class="mut">phones and laptops: http://' + esc(f.hostname) + '.local:8080/ (targets need the IP address)</span>' : '')) +
+    row('Name', '<b>' + esc(f.hostname || '?') + '</b>' + (f.hostname ? ' <span class="mut">phones and laptops: http://' + esc(f.hostname) + '.local/ (targets need the IP address and port 8080)</span>' : '')) +
     row('Network', conn || '<span class="mut">none</span>') +
     row('Clock', esc(new Date(v.clock_ms).toLocaleString()) + ' ' + (f.ntp ? '<span class="mut">from the internet</span>' : skew ? '<span class="bad">differs from this device</span>' : '<span class="mut">no internet time</span>')) +
     row('Time zone', esc(f.timezone || '?')) +
@@ -3184,7 +3207,9 @@ async function refresh() {
         S.res = r.status === 404 ? {missing: true} : r.ok ? await r.json() : S.res;
       } else S.resList = (await get('/results')).results;
     }
-    if (t && (S.gear || (t.kind === 'ammo' && Date.now() - (S.seriesAt || 0) > 15000))) {   // the gear's list, and an ammo test's comparison
+    if (t && (S.gear || ((t.kind === 'ammo' || S.review) && Date.now() - (S.seriesAt || 0) > 15000) ||   // the gear's list, an ammo test's comparison,
+              (S.review && S.seriesFor !== t.device_id))) {                                               // and the sessions either side of a review
+      S.seriesFor = t.device_id;
       S.seriesList = (await get('/targets/' + t.device_id + '/series?limit=50')).series; S.seriesAt = Date.now(); }
     render();
   } catch (e) { document.getElementById('live').textContent = 'server unreachable'; if (route().display) render(); }
@@ -3368,6 +3393,7 @@ async function act(el) {
   if (a === 'gearclose') { S.gear = false; return render(); }
   if (a === 'rback') { S.review = null; S.reviewView = null; return render(); }
   if (a === 'review') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; S.gear = false; return refresh(); }   // reviews start at shot 1
+  if (a === 'rgo') { S.review = {sid: +el.dataset.sid, stream: 'scored', shot: 1}; return refresh(); }   // the next or previous session
   if (a === 'rstream') { S.review.stream = el.dataset.stream; S.review.shot = 1; return refresh(); }
   if (a === 'rnav') return reviewMove(el.dataset.move);
   if (a === 'wpick' || a === 'wteam' || a === 'worder') {     // watching: kept on this device only
@@ -3444,7 +3470,7 @@ async function act(el) {
     if (res.status === 200) toast('Projectile set to ' + res.data.projectile_mm + ' mm'); else toast(res.data.error || 'Could not set the size');
   } else if (a === 'savesettings') {
     const n = k => { const v = parseInt(val(k), 10); return isNaN(v) ? undefined : v; };
-    const res = await post('/targets/' + id + '/settings', {bull_size: n('f_bull'), group_size: n('f_group'), total_practice: n('f_tp'), total_match: n('f_tm')});
+    const res = await post('/targets/' + id + '/settings', {bull_size: n('f_bull'), group_size: n('f_group'), total_match: n('f_tm')});
     if (res.status === 200) toast('Saved'); else toast(res.data.error || 'Could not save');
   }
   S.review = null; S.reviewView = null;
@@ -4545,7 +4571,7 @@ function renew() {                                               // keep the con
   if (t && t.lease.mine) post('/targets/' + t.device_id + '/control', {name: store('fet_name') || 'Shooter'});
 }
 if (typeof document !== 'undefined' && document.getElementById('app')) boot();
-if (typeof module !== 'undefined') module.exports = {laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
+if (typeof module !== 'undefined') module.exports = {cmdText, cmdTrouble, reviewSiblings, sessionNav, laneDisplaysTab, ldTargetLabel, flashWizard, wizPick, wizWatch, WIZ, flashCards, flashForm, flashJob, mcHostedHtml, powerLine, dotOn, powerBadge, printPosters, posterUrl, laneClaim, tvFaces, tvSize, aboutView, staffSignIn, deeptensPanel, updatesPanel, fwSummary, newestImg, targetsTab, rcAttention, boardOf, fwOf, compQual, howItRuns, coachCard, laneSheet, flagSheet, laneNeeds, laneCard, flagsList, phaseList, roBand, nameOn, watchState, watchToggle, watchMatch, watchTargets, watchDensity, placesOf, liveBand, spectTabs, rankingTab, finalPhone, watchView, watchCard, watchPick, spectatorView, resultsList, resultsPhone, drawerHtml, tabStrip, phoneView, laneScore, laneGrid, laneSeries, laneZoom, laneLost, laneBar, laneMenu, laneSigninScreen, showSignin, reviewDetail, reviewBar, laneAmmo, ammoCompare, laneTitle, dtSignin, publishPanel, publishChoice, askPublish, deeptensPanel, dtIcon, byLane, laneOf, tName, FP, fpKey, mcNew, faceWarning, faceOf, AR10, zoomBar, fullHalf, lowestRing, ringRf, sleepers, targetSettingsSheet, targetSettingsAll, linkLines, deliveryCell, firmwareTab, rcTab, RC_TABS, flashPanel, flashSettings, verAtLeast, megaRow, esp32Row, displayRow, displayImages, noKeyReason, targetImages, esp32Images, esp32Update, targetSettingsChanges, TARGET_SETTINGS, systemPanel, sysRequest, osPart, tvFinalBoard, ORD, mcRulebooks, bookLink, bookFile, reviewPage, reviewShot, reviewPager, KIND_MODE, ammoPanel, ammoTable, ammoMarks, ammoCard, coachCard, faceSvg, esc, dec, ringR, autoRing, halfFor, zoomHalf, strip, groupsRow, shotsTable, checkMark, lastPanel, coachView, shooterView, overlayView, infoPanel,
   statusUrl, rangeView, matchView, tvBoard, tvCompBoard, resultsPage, resultsIndex, printResults, scoreCards, mcCompPage, mcCompNew, competitorSheet, shotSheet, lateSheet, finalsPanel, finalPanel, finalTable, officialPanel, incidentReport, incidentCsv, statusLine, corrText, ruleNotes, placeSection, moveSheet, mcList, deletable, tvTargets, tvUrl, displaysTab, displayEditor, displayPage, readOnly, displayFollows, DISPLAY_RE, commandsPanel, correctionsPanel, matchBanner, matchUsersPanel, fmtClock, remainingNow, mcConsole, mcNew, mcFormatEditor, fwJobText, updatesPanel, parseCpr, clicksFor, sightAllowed, sightSince, sightResult, sightView, S};
 </script>
 </body>

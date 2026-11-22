@@ -802,6 +802,18 @@ class OverHttp(MatchHttpBase):
             self.assertEqual(st, 202)
         self.assertEqual(seen, [True, True, False], "saved unless skip_backup is exactly true")
 
+    def test_targets_are_given_the_main_port_from_any_port(self):
+        # user 2026-11-22: people use port 80; a target set up from there must still report to the main port (8080)
+        seen = []
+        self.server.flash.start_esp32_flash = lambda port, sha, by, settings=None, backup=True: (seen.append(settings), {"state": "done", "what": "x"})[1]
+        self.assertEqual(self.server.device_port, self.server.server_address[1], "by default the port it listens on")
+        self.server.device_port = 8080                            # as __main__ sets it on the port-80 server
+        st, _, cookie = self.req("POST", "/api/v1/admin/login", {"password": "range-pass"})
+        self.cookies["admin"] = cookie.split(";")[0]
+        page = {"ssid": "club", "pass": "password1", "host": "192.168.1.20", "port": 80}
+        st, _, _ = self.req("POST", "/api/v1/admin/flash/esp32-install", {"port": "/dev/ttyUSB0", "sha256": "a" * 64, "settings": page}, "admin")
+        self.assertEqual((st, seen[0]["port"]), (202, 8080))
+
     def test_configure_uses_this_servers_port_and_token(self):
         link = FakeBridge()
         st = self.server.flash

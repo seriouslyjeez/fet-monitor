@@ -59,7 +59,7 @@ class Practice(SeriesCase):
     def test_first_shot_creates_a_practice_series_without_anyone_in_control(self):
         self.shoot()
         t = self.core.list_targets()[0]
-        self.assertEqual((t["kind"], t["mode"], t["view"]["count"], t["view"]["total"]), ("practice", "practice", 1, 20))
+        self.assertEqual((t["kind"], t["mode"], t["view"]["count"], t["view"]["total"]), ("practice", "practice", 1, None))
         self.assertIsNotNone(t["series_id"])
 
     def test_numbering_bull_reset_groups_and_totals(self):
@@ -76,20 +76,37 @@ class Practice(SeriesCase):
         self.assertEqual((v["agg"]["decimal"], v["agg"]["integer"], v["agg"]["x"]), (119.9, 110, 11))
         self.assertEqual(v["last_shot"]["n"], 11)
 
-    def test_series_rolls_over_after_the_total(self):
-        for i in range(20):
+    def test_one_practice_is_one_series(self):
+        # user 2026-11-22: "each 20 shot groups was split into a new session ... one practice should be one session"
+        for i in range(65):
             self.shoot()
-        first = self.core.list_targets()[0]["series_id"]
-        v = self.view()
-        self.assertEqual((v["count"], v["bull_index"]), (20, 1))
-        self.assertEqual(len(v["groups"]), 2)
-        self.shoot()                                         # the 21st starts a new series at shot 1
+        t = self.core.list_targets()[0]
+        self.assertEqual((t["view"]["count"], t["view"]["total"], t["view"]["bull_index"]), (65, None, 6))
+        self.assertEqual(len(self.core.list_series("a1")), 1)
+        self.assertIsNone(self.core.list_series("a1")[0]["total"])
+
+    def test_an_older_practice_series_with_a_total_no_longer_closes_on_it(self):
+        self.shoot()
+        sid = self.core.list_targets()[0]["series_id"]
+        with self.core.db.write() as c:
+            c.execute("UPDATE series SET total=3 WHERE id=?", (sid,))      # made before 1.2.3 (total 20)
+        for i in range(5):
+            self.shoot()
+        self.assertEqual((self.core.list_targets()[0]["series_id"], self.view()["count"], self.view()["total"]), (sid, 6, None))
+
+    def test_a_match_series_rolls_over_after_its_total(self):
+        self.control()
+        self.core.set_settings("a1", ALICE, total_match=3)
+        first = self.control("record")["series_id"]
+        for i in range(3):
+            self.shoot()
+        self.assertEqual((self.view()["count"], self.view()["total"]), (3, 3))
+        self.shoot()                                         # the 4th starts a new series at shot 1
         t = self.core.list_targets()[0]
         self.assertNotEqual(t["series_id"], first)
-        self.assertEqual((t["view"]["count"], t["view"]["bull_shots"][0]["n"]), (1, 1))
-        old = self.core.list_series("a1")[1]
-        self.assertEqual((old["id"], old["open"], old["scored"]["shots"]), (first, False, 20))
-        self.assertEqual(self.core.series_view(first)["agg"]["shots"], 20)
+        self.assertEqual(t["view"]["count"], 1)
+        old = [g for g in self.core.list_series("a1") if g["id"] == first][0]
+        self.assertEqual((old["open"], old["scored"]["shots"], old["total"]), (False, 3, 3))
 
     def test_idle_practice_series_starts_afresh_but_a_match_does_not(self):
         for i in range(3):
@@ -222,13 +239,13 @@ class Settings(SeriesCase):
         s = self.core.set_settings("a1", ALICE, bull_size=5, group_size=6, total_practice=15)
         self.assertEqual(s, {"bull_size": 5, "group_size": 6, "total_practice": 15, "total_match": 60, "projectile_mm": 4.5})
         v = self.view()
-        self.assertEqual((v["bull_size"], v["group_size"], v["total"], v["bull_index"], v["bull_count"]), (5, 6, 15, 2, 3))
+        self.assertEqual((v["bull_size"], v["group_size"], v["total"], v["bull_index"], v["bull_count"]), (5, 6, None, 2, 3))
         self.assertEqual([s["n"] for s in v["bull_shots"]], [11, 12])
         self.assertEqual([(g["first"], g["last"]) for g in v["groups"]], [(1, 6), (7, 12)])
         for i in range(3):
             self.shoot()
-        self.shoot()                                         # 16th shot: past the new total of 15
-        self.assertEqual(self.view()["count"], 1)
+        self.shoot()                                         # 16th shot: a practice has no total any more
+        self.assertEqual(self.view()["count"], 16)
 
     def test_new_series_use_the_target_settings(self):
         self.control()

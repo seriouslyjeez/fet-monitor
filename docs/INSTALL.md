@@ -64,14 +64,15 @@ about **2 minutes**.
 4. **Save settings.** The page shows the **address of FeT Monitor** and the **device token**. **Write both down**:
    every target needs them.
 5. **Switch now.** The setup network goes away and the Pi uses its network. Put the phone back on that network (club
-   WiFi, or the range network) and open the address you wrote down, e.g. `http://192.168.1.20:8080/`.
+   WiFi, or the range network) and open the address you wrote down, e.g. `http://192.168.1.20/`.
 
 If the Pi cannot use the network you chose (for example the cable is not plugged in), the setup network comes back
 by itself: join it and correct the network.
 
 ## 5. Open FeT Monitor
 
-On any phone, tablet or computer on the same network, open the address, for example `http://192.168.1.20:8080/`.
+On any phone, tablet or computer on the same network, open the address, for example `http://192.168.1.20/`.
+(FeT Monitor answers on port 80 and on 8080; targets report to 8080, as their setup suggests.)
 You see *All targets* (empty until a target reports).
 
 ## 6. Set up each target
@@ -299,9 +300,9 @@ If anything fails, the installer stops with a message saying which step failed. 
 
 On any phone, tablet or computer on the same network, open a browser at:
 
-    http://<Pi IP>:8080/
+    http://<Pi IP>/
 
-You should see the FeT Monitor page with *All targets* (empty until a target reports).
+(or `http://<Pi IP>:8080/`: both work; targets use 8080.) You should see the FeT Monitor page with *All targets* (empty until a target reports).
 
 ### B10. Optional: automatic security updates
 
@@ -342,9 +343,10 @@ The key line is the same as in step B7; its fingerprint is `SHA256:X50vi9/xw7zvN
 
 `active (running)` is good. To restart it: `sudo systemctl restart fet-monitor`.
 
-**The page at port 8080 does not open.**
+**The page does not open.**
 
-- Check the address: `hostname -I` on the Pi prints it. Use `http://`, not `https://`, and add `:8080`.
+- Check the address: `hostname -I` on the Pi prints it. Use `http://`, not `https://`. If `http://<Pi IP>/` does not
+  open but `http://<Pi IP>:8080/` does, port 80 is taken (the setup page uses it while it is open) or blocked.
 - Check the server answers on the Pi itself: `curl http://127.0.0.1:8080/api/v1/health` should print `"ok": true`.
   If it does, the problem is the network: is your phone on the same network (not a guest network, not mobile data)?
   Some routers isolate WiFi clients ("AP isolation" / "client isolation"); turn that off for the club network.
